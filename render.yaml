@@ -1,0 +1,30 @@
+services:
+  # API Web Service
+  - type: web
+    name: pixlpresence-api
+    env: node
+    buildCommand: npm install && npm run generate --workspace=@discord-rpc/database && npx turbo run build --filter=api
+    startCommand: npm start --workspace=api
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: DISCORD_CALLBACK_URL
+        sync: false
+      - key: ADMIN_DISCORD_IDS
+        sync: false
+
+  # Bot Background Worker
+  - type: worker
+    name: pixlpresence-bot
+    env: node
+    buildCommand: npm install && npm run generate --workspace=@discord-rpc/database && npx turbo run build --filter=bot
+    startCommand: npm start --workspace=bot
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DISCORD_BOT_TOKEN
+        sync: false
