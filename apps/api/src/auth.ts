@@ -81,12 +81,14 @@ export const authRouter = Router();
 
 authRouter.get('/discord', passport.authenticate('discord'));
 
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+
 authRouter.get(
   '/discord/callback',
-  passport.authenticate('discord', { failureRedirect: '/' }),
+  passport.authenticate('discord', { failureRedirect: `${FRONTEND_URL}/` }),
   (req, res) => {
     // Redirect to the frontend dashboard on success
-    res.redirect('http://localhost:3001/dashboard');
+    res.redirect(`${FRONTEND_URL}/dashboard`);
   }
 );
 
@@ -95,7 +97,7 @@ authRouter.get('/logout', (req, res, next) => {
     if (err) {
       return next(err);
     }
-    res.redirect('/');
+    res.redirect(`${FRONTEND_URL}/`);
   });
 });
 
