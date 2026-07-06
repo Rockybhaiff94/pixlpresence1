@@ -2,11 +2,12 @@
   "name": "@discord-rpc/database",
   "version": "1.0.0",
   "description": "",
-  "main": "index.ts",
-  "types": "index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "generate": "prisma generate"
+    "generate": "prisma generate",
+    "build": "tsup index.ts --format cjs,esm --dts"
   },
   "keywords": [],
   "author": "",
@@ -16,6 +17,7 @@
     "@types/node": "^20.19.43",
     "dotenv": "^17.4.2",
     "prisma": "5.22.0",
+    "tsup": "^8.5.1",
     "typescript": "^5.9.3"
   },
   "dependencies": {
