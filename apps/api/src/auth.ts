@@ -5,7 +5,7 @@ import { Router } from 'express';
 
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || 'your_client_id';
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || 'your_client_secret';
-const DISCORD_CALLBACK_URL = process.env.DISCORD_CALLBACK_URL || 'http://localhost:3000/auth/discord/callback';
+const DISCORD_CALLBACK_URL = process.env.DISCORD_CALLBACK_URL || 'http://localhost:3001/auth/discord/callback';
 
 const scopes = ['identify', 'email'];
 
