@@ -1,6 +1,10 @@
 import Link from 'next/link';
 
 export default function Home() {
+  let apiUrl = process.env.NEXT_PUBLIC_API_URL 
+    ? (process.env.NEXT_PUBLIC_API_URL.startsWith('http') ? process.env.NEXT_PUBLIC_API_URL : `https://${process.env.NEXT_PUBLIC_API_URL}`)
+    : 'https://pixlpresence-api-production.up.railway.app';
+    
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-zinc-950 text-white p-24">
       <div className="z-10 max-w-5xl w-full items-center justify-center font-mono text-sm flex flex-col space-y-8">
@@ -14,7 +18,7 @@ export default function Home() {
 
         <div className="flex gap-4 items-center justify-center pt-8">
           <a
-            href={`${process.env.NEXT_PUBLIC_API_URL || 'https://pixlpresence-api-production.up.railway.app'}/auth/discord`}
+            href={`${apiUrl}/auth/discord`}
             className="group rounded-full border border-transparent px-8 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30 bg-purple-600 text-white font-bold text-lg hover:text-white"
           >
             Login with Discord
