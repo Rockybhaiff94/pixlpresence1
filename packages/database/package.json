@@ -1,0 +1,25 @@
+{
+  "name": "@discord-rpc/database",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.ts",
+  "types": "index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "generate": "prisma generate"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "dotenv": "^17.4.2",
+    "prisma": "5.22.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@prisma/client": "5.22.0",
+    "@quixo3/prisma-session-store": "^3.1.21"
+  }
+}

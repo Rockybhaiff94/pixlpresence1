@@ -1,0 +1,152 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model User {
+  id            String    @id @default(cuid())
+  discordId     String    @unique
+  username      String    @unique
+  globalName    String?
+  avatar        String?
+  banner        String?
+  email         String?   @unique
+  role          Role      @default(USER)
+  badges        String[]  // Array of badge IDs/names
+  nitroStatus   Int       @default(0) // 0: None, 1: Classic, 2: Nitro
+  premiumStatus Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  profile       Profile?
+  sessions      Session[]
+  auditLogs     AuditLog[]
+  richPresence  RichPresence?
+  templates     ActivityTemplate[]
+  appToken      String?   @unique
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  sid       String   @unique
+  data      String
+  expiresAt DateTime
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Profile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Customization
+  displayName    String?
+  bio            String?
+  avatarUrl      String?
+  bannerUrl      String?
+  themeId        String?
+  accentColor    String?
+  musicUrl       String?
+  particles      String?
+  blur           Int      @default(0)
+  opacity        Int      @default(100)
+  roundedCorners Int      @default(10)
+
+  // Social & Buttons
+  links          Link[]
+  buttons        Button[]
+
+  // Analytics
+  views          Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Link {
+  id        String   @id @default(cuid())
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  
+  url       String
+  label     String
+  icon      String?
+  color     String?
+  animation String?
+  visibility Boolean @default(true)
+  order     Int      @default(0)
+}
+
+model Button {
+  id        String   @id @default(cuid())
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  
+  title     String
+  subtitle  String?
+  url       String
+  icon      String?
+  gradient  String?
+  animation String?
+  hoverEffect String?
+  openInNewTab Boolean @default(true)
+  order     Int      @default(0)
+}
+
+model RichPresence {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  appName         String?
+  appId           String?
+  state           String?
+  details         String?
+  largeImage      String?
+  smallImage      String?
+  largeImageText  String?
+  smallImageText  String?
+  startTimestamp  DateTime?
+  endTimestamp    DateTime?
+  partySize       Int?
+  partyMax        Int?
+  
+  button1Label    String?
+  button1Url      String?
+  button2Label    String?
+  button2Url      String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ActivityTemplate {
+  id              String   @id @default(cuid())
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isGlobal        Boolean  @default(false)
+  
+  name            String
+  category        String
+  config          String   // JSON string of RichPresence data
+  
+  createdAt       DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  targetId  String?
+  adminId   String
+  admin     User     @relation(fields: [adminId], references: [id])
+  timestamp DateTime @default(now())
+}
