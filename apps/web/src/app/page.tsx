@@ -14,7 +14,7 @@ export default function Home() {
 
         <div className="flex gap-4 items-center justify-center pt-8">
           <a
-            href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/auth/discord`}
+            href={`${process.env.NEXT_PUBLIC_API_URL || 'https://pixlpresence-api-production.up.railway.app'}/auth/discord`}
             className="group rounded-full border border-transparent px-8 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30 bg-purple-600 text-white font-bold text-lg hover:text-white"
           >
             Login with Discord
