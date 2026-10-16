@@ -89,6 +89,10 @@ app.get('/', (req, res) => {
   res.json({ message: 'Discord RPC Platform API is running.' });
 });
 
-server.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', uptime: process.uptime() });
+});
+
+server.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`Server running on http://0.0.0.0:${PORT}`);
 });

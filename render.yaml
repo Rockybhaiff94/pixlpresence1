@@ -1,12 +1,22 @@
 services:
   # API Web Service
   - type: web
-    name: pixlpresence-api
+    name: pixelgg-api
     env: node
-    buildCommand: npm install && npm run generate --workspace=@discord-rpc/database && npx turbo run build --filter=api
+    plan: free
+    buildCommand: npm install && npm run generate --workspace=@discord-rpc/database && npm run db:push --workspace=@discord-rpc/database && npm run build --workspace=@discord-rpc/database && npm run build --workspace=api
     startCommand: npm start --workspace=api
+    healthCheckPath: /health
     envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NODE_ENV
+        value: production
       - key: DATABASE_URL
+        value: file:./dev.db
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
         sync: false
       - key: DISCORD_CLIENT_ID
         sync: false
@@ -19,12 +29,17 @@ services:
 
   # Bot Background Worker
   - type: worker
-    name: pixlpresence-bot
+    name: pixelgg-bot
     env: node
-    buildCommand: npm install && npm run generate --workspace=@discord-rpc/database && npx turbo run build --filter=bot
+    plan: free
+    buildCommand: npm install && npm run generate --workspace=@discord-rpc/database && npm run build --workspace=@discord-rpc/database && npm run build --workspace=bot
     startCommand: npm start --workspace=bot
     envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NODE_ENV
+        value: production
       - key: DATABASE_URL
-        sync: false
+        value: file:./dev.db
       - key: DISCORD_BOT_TOKEN
         sync: false
