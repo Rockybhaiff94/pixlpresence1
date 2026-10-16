@@ -7,9 +7,10 @@ dotenv.config({ path: path.join(rootDir, '.env') });
 dotenv.config({ path: path.resolve(rootDir, '../../.env') });
 dotenv.config();
 
-const dbUrl = process.env.DATABASE_URL || 'file:./dev.db';
+const dbUrl = process.env.DATABASE_URL || 'postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true';
+const directUrl = process.env.DIRECT_URL || 'postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres';
 
-console.log(`[generate] Generating Prisma Client (${dbUrl.startsWith('file:') ? 'SQLite' : 'Remote'})...`);
+console.log(`[generate] Generating Prisma Client...`);
 
 try {
   execSync('npx prisma generate --schema=prisma/schema.prisma', {
@@ -18,6 +19,7 @@ try {
     env: {
       ...process.env,
       DATABASE_URL: dbUrl,
+      DIRECT_URL: directUrl,
     },
   });
 } catch (err) {

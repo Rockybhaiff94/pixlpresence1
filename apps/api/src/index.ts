@@ -5,7 +5,12 @@ dotenv.config({ path: path.resolve(__dirname, '../../packages/database/prisma/.e
 dotenv.config();
 
 if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = 'file:./dev.db';
+  process.env.DATABASE_URL =
+    'postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true';
+}
+if (!process.env.DIRECT_URL) {
+  process.env.DIRECT_URL =
+    'postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres';
 }
 
 import express from 'express';

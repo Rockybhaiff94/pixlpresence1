@@ -11,8 +11,15 @@ dotenv.config({ path: path.resolve(__dirname, '../prisma/.env') });
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 dotenv.config();
 
-const defaultDatabaseUrl = process.env.DATABASE_URL || 'file:./dev.db';
+const defaultDatabaseUrl =
+  process.env.DATABASE_URL ||
+  'postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true';
 process.env.DATABASE_URL = defaultDatabaseUrl;
+
+if (!process.env.DIRECT_URL) {
+  process.env.DIRECT_URL =
+    'postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres';
+}
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
