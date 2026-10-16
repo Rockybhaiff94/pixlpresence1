@@ -2,6 +2,7 @@ import passport from 'passport';
 import { Strategy as DiscordStrategy, Profile } from 'passport-discord';
 import { prisma } from '@discord-rpc/database';
 import { Router } from 'express';
+import crypto from 'crypto';
 
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || 'your_client_id';
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || 'your_client_secret';
@@ -42,6 +43,7 @@ passport.use(
             nitroStatus: profile.premium_type || 0,
             // @ts-ignore - The role field exists in Prisma schema but IDE cache might be stale
             role: isAdmin ? 'ADMIN' : 'USER',
+            appToken: crypto.randomBytes(32).toString('hex'),
           },
         });
         
@@ -101,10 +103,20 @@ authRouter.get('/logout', (req, res, next) => {
   });
 });
 
-authRouter.get('/me', (req, res) => {
+authRouter.get('/me', async (req: any, res) => {
   if (req.isAuthenticated()) {
-    res.json(req.user);
+    let user = req.user;
+    if (!user.appToken) {
+      const generatedToken = crypto.randomBytes(32).toString('hex');
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { appToken: generatedToken }
+      });
+      req.user = user;
+    }
+    res.json(user);
   } else {
     res.status(401).json({ error: 'Unauthorized' });
   }
 });
+

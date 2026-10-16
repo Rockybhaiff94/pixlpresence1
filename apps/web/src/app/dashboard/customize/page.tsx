@@ -2,7 +2,7 @@ export default function CustomizePage() {
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold">Customize Profile</h1>
-      <p className="text-zinc-400">Personalize your profile's theme, colors, and visual effects.</p>
+      <p className="text-zinc-400">Personalize your profile&apos;s theme, colors, and visual effects.</p>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="space-y-6">

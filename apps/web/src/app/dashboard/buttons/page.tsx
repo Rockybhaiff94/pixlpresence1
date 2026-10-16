@@ -8,7 +8,7 @@ export default function ButtonsPage() {
         </button>
       </div>
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 text-center text-zinc-500">
-        No buttons added yet. Click "Add Button" to get started.
+        No buttons added yet. Click &quot;Add Button&quot; to get started.
       </div>
     </div>
   );

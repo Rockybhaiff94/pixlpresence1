@@ -2,20 +2,25 @@
 
 import { useEffect, useState } from 'react';
 
+interface ManagedUser {
+  id: string;
+  username: string;
+  email: string | null;
+  discordId: string;
+  role: string;
+  premiumStatus: boolean;
+}
+
 export default function AdminUsers() {
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<ManagedUser[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  const fetchUsers = async () => {
+  const loadUsers = async () => {
     try {
       const res = await fetch('/api/admin/users');
       if (res.ok) {
         const data = await res.json();
-        setUsers(data.users);
+        setUsers(data.users || []);
       }
     } catch (err) {
       console.error(err);
@@ -24,6 +29,25 @@ export default function AdminUsers() {
     }
   };
 
+  useEffect(() => {
+    let active = true;
+    fetch('/api/admin/users')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data) {
+          setUsers(data.users || []);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const togglePremium = async (userId: string, currentStatus: boolean) => {
     try {
       await fetch(`/api/admin/users/${userId}`, {
@@ -31,13 +55,13 @@ export default function AdminUsers() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ premiumStatus: !currentStatus })
       });
-      fetchUsers();
+      loadUsers();
     } catch (err) {
       console.error(err);
     }
   };
 
-  if (loading) return <div className="animate-pulse">Loading users...</div>;
+  if (loading) return <div className="animate-pulse text-zinc-400">Loading users...</div>;
 
   return (
     <div>

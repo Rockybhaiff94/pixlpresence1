@@ -3,21 +3,25 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
+interface TemplateItem {
+  id: string;
+  name: string;
+  category: string;
+  config: string;
+  isGlobal: boolean;
+}
+
 export default function TemplatesPage() {
-  const [templates, setTemplates] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    fetchTemplates();
-  }, []);
-
-  const fetchTemplates = async () => {
+  const loadTemplates = async () => {
     try {
       const res = await fetch('/api/rpc/templates');
       if (res.ok) {
         const data = await res.json();
-        setTemplates(data);
+        setTemplates(data || []);
       }
     } catch (err) {
       console.error(err);
@@ -26,13 +30,32 @@ export default function TemplatesPage() {
     }
   };
 
+  useEffect(() => {
+    let active = true;
+    fetch('/api/rpc/templates')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data) {
+          setTemplates(data);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleApply = async (id: string) => {
     try {
       const res = await fetch(`/api/rpc/templates/${id}/apply`, {
         method: 'POST'
       });
       if (res.ok) {
-        alert('Template applied successfully!');
+        alert('Template applied successfully! Your Rich Presence is updating.');
       }
     } catch (err) {
       console.error(err);
@@ -43,7 +66,7 @@ export default function TemplatesPage() {
     if (!confirm('Delete this template?')) return;
     try {
       await fetch(`/api/rpc/templates/${id}`, { method: 'DELETE' });
-      fetchTemplates();
+      loadTemplates();
     } catch (err) {
       console.error(err);
     }
@@ -69,7 +92,7 @@ export default function TemplatesPage() {
       });
 
       if (res.ok) {
-        fetchTemplates();
+        loadTemplates();
       } else {
         const errData = await res.json();
         setError(errData.error || 'Failed to save template');
@@ -135,16 +158,19 @@ export default function TemplatesPage() {
                     <p className="text-xs text-[#b5bac1] font-bold mb-2 uppercase tracking-wide">Playing a game</p>
                     <div className="flex space-x-4">
                       {config.largeImage ? (
-                        <img src={config.largeImage} className="w-16 h-16 rounded-lg object-cover bg-[#1e1f22]" alt="" />
+                        <div className="w-16 h-16 rounded-lg overflow-hidden bg-[#1e1f22] shrink-0">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={config.largeImage} className="w-full h-full object-cover" alt={t.name} />
+                        </div>
                       ) : (
-                        <div className="w-16 h-16 rounded-lg bg-[#1e1f22] flex items-center justify-center">
+                        <div className="w-16 h-16 rounded-lg bg-[#1e1f22] flex items-center justify-center shrink-0">
                           <span className="text-2xl">🎮</span>
                         </div>
                       )}
-                      <div>
-                        <p className="text-white font-bold text-sm leading-tight">{config.appName || 'Unknown App'}</p>
-                        <p className="text-[#dbdee1] text-sm leading-snug">{config.details}</p>
-                        <p className="text-[#dbdee1] text-sm leading-snug">{config.state}</p>
+                      <div className="overflow-hidden">
+                        <p className="text-white font-bold text-sm leading-tight truncate">{config.appName || 'Unknown App'}</p>
+                        <p className="text-[#dbdee1] text-sm leading-snug truncate">{config.details}</p>
+                        <p className="text-[#dbdee1] text-sm leading-snug truncate">{config.state}</p>
                       </div>
                     </div>
                   </div>
@@ -154,13 +180,13 @@ export default function TemplatesPage() {
                       onClick={() => handleApply(t.id)}
                       className="flex-1 bg-white hover:bg-gray-100 text-black font-medium py-2 rounded-lg transition-colors text-sm"
                     >
-                      Apply Template
+                      Apply
                     </button>
                     {!t.isGlobal && (
                       <button 
                         onClick={() => handleDelete(t.id)}
-                        className="bg-red-500/10 hover:bg-red-500/20 text-red-400 p-2 rounded-lg transition-colors border border-red-500/20"
-                        title="Delete Template"
+                        className="p-2 text-zinc-500 hover:text-red-400 transition-colors"
+                        title="Delete template"
                       >
                         🗑️
                       </button>
@@ -170,14 +196,6 @@ export default function TemplatesPage() {
               </div>
             );
           })}
-        </div>
-      )}
-      
-      {templates.length === 0 && !loading && (
-        <div className="text-center py-20 border border-dashed border-[#333] rounded-2xl">
-          <span className="text-4xl mb-4 block">📋</span>
-          <h3 className="text-xl font-medium text-white mb-2">No templates found</h3>
-          <p className="text-gray-400 text-sm">Save your current configuration to see it here.</p>
         </div>
       )}
     </motion.div>

@@ -8,7 +8,7 @@ export default function SocialsPage() {
         </button>
       </div>
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 text-center text-zinc-500">
-        No social links added yet. Click "Add Link" to get started.
+        No social links added yet. Click &quot;Add Link&quot; to get started.
       </div>
     </div>
   );

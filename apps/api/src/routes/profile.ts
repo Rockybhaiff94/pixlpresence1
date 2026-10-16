@@ -87,8 +87,25 @@ profileRouter.get('/me', requireAuth, async (req: any, res) => {
   }
 });
 
-// Generate or Regenerate App Token
+// Get or Generate App Token
 import crypto from 'crypto';
+
+profileRouter.get('/me/token', requireAuth, async (req: any, res) => {
+  try {
+    let token = req.user.appToken;
+    if (!token) {
+      token = crypto.randomBytes(32).toString('hex');
+      await prisma.user.update({
+        where: { id: req.user.id },
+        data: { appToken: token }
+      });
+      req.user.appToken = token;
+    }
+    res.json({ token });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve token' });
+  }
+});
 
 profileRouter.post('/me/token', requireAuth, async (req: any, res) => {
   try {
@@ -97,6 +114,7 @@ profileRouter.post('/me/token', requireAuth, async (req: any, res) => {
       where: { id: req.user.id },
       data: { appToken: newToken }
     });
+    req.user.appToken = newToken;
     res.json({ token: newToken });
   } catch (err) {
     res.status(500).json({ error: 'Failed to generate token' });

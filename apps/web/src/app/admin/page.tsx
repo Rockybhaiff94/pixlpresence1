@@ -2,17 +2,30 @@
 
 import { useEffect, useState } from 'react';
 
+interface AdminStats {
+  totalUsers: number;
+  totalProfiles: number;
+  totalRpcConfigs: number;
+}
+
 export default function AdminOverview() {
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<AdminStats | null>(null);
 
   useEffect(() => {
+    let mounted = true;
     fetch('/api/admin/stats')
       .then(res => {
         if (!res.ok) throw new Error('Unauthorized');
         return res.json();
       })
-      .then(data => setStats(data))
+      .then(data => {
+        if (mounted) setStats(data);
+      })
       .catch(err => console.error(err));
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   if (!stats) return <div className="animate-pulse">Loading platform metrics...</div>;

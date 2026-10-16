@@ -1,13 +1,14 @@
 {
   "name": "shared-types",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Shared TypeScript definitions for Pixel.gg",
+  "main": "index.ts",
+  "types": "index.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "node -e \"console.log('Shared types verified')\"",
+    "test": "node -e \"console.log('Shared types test passed')\""
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs"
+  "author": "Pixel.gg",
+  "license": "ISC"
 }

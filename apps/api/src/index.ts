@@ -1,4 +1,8 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
 import session from 'express-session';
@@ -22,7 +26,7 @@ export const io = new Server(server, {
 });
 
 io.on('connection', (socket) => {
-  // Desktop client will emit 'authenticate' with their App Token
+  // PixelsRPC Vencord plugin will emit 'authenticate' with user's App Token
   socket.on('authenticate', async (token) => {
     const user = await prisma.user.findUnique({ where: { appToken: token } });
     if (user) {
@@ -34,12 +38,18 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 app.set('trust proxy', 1);
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // Allow requests from web app, discord desktop/web clients, or curl/no-origin
+    if (!origin || origin === 'null' || origin.includes('discord.com') || origin.includes('localhost') || (process.env.FRONTEND_URL && origin.includes(process.env.FRONTEND_URL))) {
+      return callback(null, true);
+    }
+    return callback(null, true);
+  },
   credentials: true
 }));
 

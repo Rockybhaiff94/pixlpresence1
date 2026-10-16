@@ -2,12 +2,31 @@ import { notFound } from 'next/navigation';
 import { ViewTracker } from '@/components/effects/ViewTracker';
 import { ParticlesCanvas } from '@/components/effects/ParticlesCanvas';
 
+interface ProfileButton {
+  id: string;
+  url: string;
+  title: string;
+  subtitle?: string | null;
+  openInNewTab?: boolean;
+  order: number;
+  gradient?: string | null;
+}
+
+interface ProfileLink {
+  id: string;
+  url: string;
+  label: string;
+  visibility: boolean;
+  order: number;
+}
+
 async function getProfile(username: string) {
   try {
-    const res = await fetch(`http://localhost:3000/api/profile/u/${username}`, { next: { revalidate: 60 } });
+    const apiUrl = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const res = await fetch(`${apiUrl}/api/profile/u/${username}`, { next: { revalidate: 60 } });
     if (!res.ok) return null;
     return res.json();
-  } catch (err) {
+  } catch {
     return null;
   }
 }
@@ -55,6 +74,7 @@ export default async function ProfilePage({ params }: { params: { username: stri
         >
           <div className="w-full h-full rounded-full overflow-hidden bg-zinc-900 border-2 border-zinc-900">
             {profile.avatarUrl || user.avatar ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
               <img 
                 src={profile.avatarUrl || `https://cdn.discordapp.com/avatars/${user.discordId}/${user.avatar}.png`} 
                 alt="Avatar"
@@ -85,7 +105,7 @@ export default async function ProfilePage({ params }: { params: { username: stri
         {/* Action Buttons */}
         {profile.buttons && profile.buttons.length > 0 && (
           <div className="w-full space-y-3 mb-6">
-            {profile.buttons.sort((a: any, b: any) => a.order - b.order).map((btn: any) => (
+            {profile.buttons.sort((a: ProfileButton, b: ProfileButton) => a.order - b.order).map((btn: ProfileButton) => (
               <a
                 key={btn.id}
                 href={btn.url}
@@ -108,7 +128,7 @@ export default async function ProfilePage({ params }: { params: { username: stri
         {/* Social Links Row */}
         {profile.links && profile.links.length > 0 && (
           <div className="flex flex-wrap justify-center gap-3">
-            {profile.links.filter((l:any) => l.visibility).sort((a: any, b: any) => a.order - b.order).map((link: any) => (
+            {profile.links.filter((l: ProfileLink) => l.visibility).sort((a: ProfileLink, b: ProfileLink) => a.order - b.order).map((link: ProfileLink) => (
               <a
                 key={link.id}
                 href={link.url}
@@ -125,7 +145,7 @@ export default async function ProfilePage({ params }: { params: { username: stri
 
         {/* Footer Brand */}
         <div className="mt-8 pt-4 border-t border-white/10 w-full text-center">
-          <p className="text-xs text-zinc-600 font-medium">powered by discord rpc platform</p>
+          <p className="text-xs text-zinc-500 font-medium">powered by Pixel.gg</p>
         </div>
       </div>
     </main>

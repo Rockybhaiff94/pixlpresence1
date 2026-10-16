@@ -1,0 +1,20 @@
+{
+  "name": "@pixelgg/pixels-rpc-vencord",
+  "version": "1.0.0",
+  "description": "Pixel.gg Discord Rich Presence Integration Plugin for Vencord",
+  "main": "dist/PixelsRPC.vencord.js",
+  "types": "src/index.tsx",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "test": "node scripts/test.js"
+  },
+  "keywords": [
+    "vencord",
+    "vencord-plugin",
+    "discord-rpc",
+    "pixelgg",
+    "rich-presence"
+  ],
+  "author": "Pixel.gg",
+  "license": "MIT"
+}
