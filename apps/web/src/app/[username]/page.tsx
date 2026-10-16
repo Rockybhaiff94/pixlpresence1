@@ -20,9 +20,18 @@ interface ProfileLink {
   order: number;
 }
 
+function getApiUrl(): string {
+  const raw = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  let trimmed = raw.trim();
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+    trimmed = `https://${trimmed}`;
+  }
+  return trimmed.replace(/\/+$/, '');
+}
+
 async function getProfile(username: string) {
   try {
-    const apiUrl = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const apiUrl = getApiUrl();
     const res = await fetch(`${apiUrl}/api/profile/u/${username}`, { next: { revalidate: 60 } });
     if (!res.ok) return null;
     return res.json();
@@ -31,8 +40,9 @@ async function getProfile(username: string) {
   }
 }
 
-export default async function ProfilePage({ params }: { params: { username: string } }) {
-  const data = await getProfile(params.username);
+export default async function ProfilePage({ params }: { params: Promise<{ username: string }> | { username: string } }) {
+  const { username } = await Promise.resolve(params);
+  const data = await getProfile(username);
   
   if (!data || !data.profile) {
     notFound();
@@ -45,7 +55,7 @@ export default async function ProfilePage({ params }: { params: { username: stri
 
   return (
     <main className="min-h-screen relative flex items-center justify-center p-4 overflow-hidden" style={{ backgroundColor: '#09090b' }}>
-      <ViewTracker username={params.username} />
+      <ViewTracker username={username} />
       
       {/* Dynamic Background Gradient */}
       <div 
