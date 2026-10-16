@@ -6,8 +6,8 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "generate": "prisma generate",
-    "db:push": "prisma db push",
+    "generate": "node scripts/generate.js",
+    "db:push": "node scripts/db-push.js",
     "build": "tsup index.ts --format cjs,esm --dts"
   },
   "keywords": [],
@@ -16,13 +16,13 @@
   "type": "commonjs",
   "devDependencies": {
     "@types/node": "^20.19.43",
-    "dotenv": "^17.4.2",
     "prisma": "5.22.0",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "@prisma/client": "5.22.0",
-    "@quixo3/prisma-session-store": "^3.1.21"
+    "@quixo3/prisma-session-store": "^3.1.21",
+    "dotenv": "^17.4.2"
   }
 }

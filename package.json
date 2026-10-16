@@ -9,8 +9,12 @@
   ],
   "scripts": {
     "build": "turbo run build",
+    "build:backend": "npm run generate --workspace=@discord-rpc/database && npm run db:push --workspace=@discord-rpc/database && npm run build --workspace=@discord-rpc/database && npm run build --workspace=api",
     "dev": "turbo run dev",
-    "start": "turbo run dev",
+    "start": "npm start --workspace=api",
+    "start:api": "npm start --workspace=api",
+    "start:bot": "npm start --workspace=bot",
+    "start:dev": "turbo run dev",
     "lint": "turbo run lint"
   },
   "devDependencies": {
