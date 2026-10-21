@@ -12,6 +12,12 @@ if (!process.env.DIRECT_URL) {
   process.env.DIRECT_URL =
     'postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres';
 }
+if (!process.env.FRONTEND_URL && process.env.NODE_ENV === 'production') {
+  process.env.FRONTEND_URL = 'https://pixlpresence1-web.vercel.app';
+}
+if (!process.env.SESSION_SECRET) {
+  process.env.SESSION_SECRET = 'super_secret_discord_rpc_production_key_948210';
+}
 
 import express from 'express';
 import cors from 'cors';

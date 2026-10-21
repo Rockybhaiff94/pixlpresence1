@@ -4,9 +4,13 @@ import { prisma } from '@discord-rpc/database';
 import { Router } from 'express';
 import crypto from 'crypto';
 
-const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || 'your_client_id';
-const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || 'your_client_secret';
-const DISCORD_CALLBACK_URL = process.env.DISCORD_CALLBACK_URL || 'http://localhost:3001/auth/discord/callback';
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1523632136878559302';
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || '2MbiMbAAS3S333QmWMPSVUDoBT0hAZPh';
+const DISCORD_CALLBACK_URL =
+  process.env.DISCORD_CALLBACK_URL ||
+  (process.env.NODE_ENV === 'production'
+    ? 'https://pixlpresence1.onrender.com/auth/discord/callback'
+    : 'http://localhost:3001/auth/discord/callback');
 
 const scopes = ['identify', 'email'];
 
@@ -20,7 +24,7 @@ passport.use(
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
-        const adminIds = (process.env.ADMIN_DISCORD_IDS || '').split(',');
+        const adminIds = (process.env.ADMIN_DISCORD_IDS || '704548873145942076').split(',');
         const isAdmin = adminIds.includes(profile.id);
 
         const user = await prisma.user.upsert({
@@ -83,7 +87,11 @@ export const authRouter = Router();
 
 authRouter.get('/discord', passport.authenticate('discord'));
 
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+const FRONTEND_URL =
+  process.env.FRONTEND_URL ||
+  (process.env.NODE_ENV === 'production'
+    ? 'https://pixlpresence1-web.vercel.app'
+    : 'http://localhost:3000');
 
 authRouter.get(
   '/discord/callback',
