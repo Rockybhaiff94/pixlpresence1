@@ -68,10 +68,21 @@ profileRouter.post('/u/:username/view', async (req: any, res) => {
   }
 });
 
-// Middleware to check authentication
-const requireAuth = (req: any, res: any, next: any) => {
-  if (!req.isAuthenticated()) return res.status(401).json({ error: 'Unauthorized' });
-  next();
+// Middleware to check authentication via Session OR Bearer Token
+const requireAuth = async (req: any, res: any, next: any) => {
+  if (req.isAuthenticated()) return next();
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1]?.trim();
+    if (token) {
+      const user = await prisma.user.findUnique({ where: { appToken: token } });
+      if (user) {
+        req.user = user;
+        return next();
+      }
+    }
+  }
+  return res.status(401).json({ error: 'Unauthorized' });
 };
 
 // Get Profile

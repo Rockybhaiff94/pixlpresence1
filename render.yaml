@@ -19,15 +19,15 @@ services:
       - key: SESSION_SECRET
         generateValue: true
       - key: FRONTEND_URL
-        sync: false
+        value: https://pixlpresence1-web.vercel.app
       - key: DISCORD_CLIENT_ID
-        sync: false
+        value: "1523632136878559302"
       - key: DISCORD_CLIENT_SECRET
-        sync: false
+        value: 2MbiMbAAS3S333QmWMPSVUDoBT0hAZPh
       - key: DISCORD_CALLBACK_URL
-        sync: false
+        value: https://pixlpresence1.onrender.com/auth/discord/callback
       - key: ADMIN_DISCORD_IDS
-        sync: false
+        value: "704548873145942076"
 
   # Bot Background Worker
   - type: worker

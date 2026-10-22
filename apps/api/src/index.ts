@@ -80,8 +80,8 @@ app.use(
       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
     },
     secret: process.env.SESSION_SECRET || 'super_secret_discord_rpc_key',
-    resave: true,
-    saveUninitialized: true,
+    resave: false,
+    saveUninitialized: false,
     store: new PrismaSessionStore(
       prisma,
       {
@@ -107,6 +107,24 @@ app.get('/', (req, res) => {
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', uptime: process.uptime() });
+});
+
+// Global Express Error Handler
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('[Unhandled Server Error]:', err);
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  if (req.path.includes('/auth/discord/callback') || req.path.startsWith('/auth/')) {
+    const frontend = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://pixlpresence1-web.vercel.app' : 'http://localhost:3000');
+    return res.redirect(`${frontend}/?error=${encodeURIComponent(err.message || 'Authentication error')}`);
+  }
+
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal Server Error',
+    ...(process.env.NODE_ENV !== 'production' ? { stack: err.stack } : {})
+  });
 });
 
 server.listen(Number(PORT), '0.0.0.0', () => {

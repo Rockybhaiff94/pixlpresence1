@@ -3,12 +3,25 @@ import { prisma } from '@discord-rpc/database';
 
 export const adminRouter = Router();
 
-// Middleware to check if user is an ADMIN
-const requireAdmin = (req: any, res: any, next: any) => {
-  if (!req.isAuthenticated() || req.user.role !== 'ADMIN') {
-    return res.status(403).json({ error: 'Forbidden: Admin access required' });
+// Middleware to check if user is an ADMIN via Session OR Bearer Token
+const requireAdmin = async (req: any, res: any, next: any) => {
+  if (req.isAuthenticated() && req.user?.role === 'ADMIN') {
+    return next();
   }
-  next();
+
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1]?.trim();
+    if (token) {
+      const user = await prisma.user.findUnique({ where: { appToken: token } });
+      if (user && user.role === 'ADMIN') {
+        req.user = user;
+        return next();
+      }
+    }
+  }
+
+  return res.status(403).json({ error: 'Forbidden: Admin access required' });
 };
 
 adminRouter.use(requireAdmin);
