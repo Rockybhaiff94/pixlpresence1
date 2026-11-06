@@ -1,5 +1,6 @@
 const { execSync } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 const dotenv = require('dotenv');
 
 const rootDir = path.resolve(__dirname, '..');
@@ -22,6 +23,30 @@ try {
       DIRECT_URL: directUrl,
     },
   });
+
+  // Synchronize generated client to root and workspace node_modules
+  const localPrisma = path.join(rootDir, 'node_modules', '.prisma');
+  const localPrismaClient = path.join(rootDir, 'node_modules', '@prisma', 'client');
+
+  const targets = [
+    path.resolve(rootDir, '../../node_modules'),
+    path.resolve(rootDir, '../../apps/api/node_modules'),
+    path.resolve(rootDir, '../../apps/bot/node_modules'),
+  ];
+
+  for (const target of targets) {
+    if (fs.existsSync(target)) {
+      if (fs.existsSync(localPrisma)) {
+        fs.cpSync(localPrisma, path.join(target, '.prisma'), { recursive: true, force: true });
+      }
+      if (fs.existsSync(localPrismaClient)) {
+        fs.cpSync(localPrismaClient, path.join(target, '@prisma', 'client'), { recursive: true, force: true });
+      }
+    }
+  }
+
+  console.log(`[generate] Successfully synchronized Prisma Client across workspaces.`);
 } catch (err) {
+  console.error('[generate] Error generating or syncing Prisma client:', err);
   process.exit(1);
 }

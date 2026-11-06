@@ -17,6 +17,10 @@
     "start:dev": "turbo run dev",
     "lint": "turbo run lint"
   },
+  "dependencies": {
+    "@prisma/client": "5.22.0",
+    "prisma": "5.22.0"
+  },
   "devDependencies": {
     "turbo": "^2.10.3"
   }
