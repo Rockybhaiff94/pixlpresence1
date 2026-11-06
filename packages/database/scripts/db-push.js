@@ -22,6 +22,17 @@ try {
       DIRECT_URL: directUrl,
     },
   });
+
+  // Automatically enable RLS on all tables so Supabase Security Advisor remains satisfied
+  execSync('node -r dotenv/config scripts/enable-rls.js', {
+    cwd: rootDir,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      DATABASE_URL: dbUrl,
+      DIRECT_URL: directUrl,
+    },
+  });
 } catch (err) {
   process.exit(1);
 }

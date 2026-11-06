@@ -8,6 +8,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "generate": "node scripts/generate.js",
     "db:push": "node scripts/db-push.js",
+    "rls:enable": "node -r dotenv/config scripts/enable-rls.js",
     "build": "node scripts/generate.js && tsup index.ts --format cjs,esm --dts"
   },
   "keywords": [],
