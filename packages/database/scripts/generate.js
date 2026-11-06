@@ -24,23 +24,40 @@ try {
     },
   });
 
-  // Synchronize generated client to root and workspace node_modules
-  const localPrisma = path.join(rootDir, 'node_modules', '.prisma');
-  const localPrismaClient = path.join(rootDir, 'node_modules', '@prisma', 'client');
-
-  const targets = [
+  const searchDirs = [
+    path.join(rootDir, 'node_modules'),
     path.resolve(rootDir, '../../node_modules'),
-    path.resolve(rootDir, '../../apps/api/node_modules'),
-    path.resolve(rootDir, '../../apps/bot/node_modules'),
   ];
 
-  for (const target of targets) {
-    if (fs.existsSync(target)) {
-      if (fs.existsSync(localPrisma)) {
-        fs.cpSync(localPrisma, path.join(target, '.prisma'), { recursive: true, force: true });
-      }
-      if (fs.existsSync(localPrismaClient)) {
-        fs.cpSync(localPrismaClient, path.join(target, '@prisma', 'client'), { recursive: true, force: true });
+  let sourcePrisma = null;
+  let sourcePrismaClient = null;
+
+  for (const dir of searchDirs) {
+    const p1 = path.join(dir, '.prisma');
+    const p2 = path.join(dir, '@prisma', 'client');
+    if (fs.existsSync(p1) && fs.existsSync(p2)) {
+      sourcePrisma = p1;
+      sourcePrismaClient = p2;
+      break;
+    }
+  }
+
+  if (sourcePrisma && sourcePrismaClient) {
+    const targets = [
+      path.resolve(rootDir, '../../node_modules'),
+      path.resolve(rootDir, '../../apps/api/node_modules'),
+      path.resolve(rootDir, '../../apps/bot/node_modules'),
+      path.join(rootDir, 'node_modules'),
+    ];
+
+    for (const target of targets) {
+      if (fs.existsSync(target) && path.resolve(target) !== path.dirname(sourcePrisma)) {
+        try {
+          fs.cpSync(sourcePrisma, path.join(target, '.prisma'), { recursive: true, force: true });
+          fs.cpSync(sourcePrismaClient, path.join(target, '@prisma', 'client'), { recursive: true, force: true });
+        } catch (e) {
+          // ignore
+        }
       }
     }
   }
