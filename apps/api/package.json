@@ -15,6 +15,13 @@
   "dependencies": {
     "@discord-rpc/database": "*",
     "@quixo3/prisma-session-store": "^3.1.21",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/express-session": "^1.19.0",
+    "@types/node": "^20.19.43",
+    "@types/passport": "^1.0.17",
+    "@types/passport-discord": "^0.1.15",
+    "@types/socket.io": "^3.0.1",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
@@ -25,13 +32,6 @@
     "typescript": "^5.9.3"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.6",
-    "@types/express-session": "^1.19.0",
-    "@types/node": "^20.19.43",
-    "@types/passport": "^1.0.17",
-    "@types/passport-discord": "^0.1.15",
-    "@types/socket.io": "^3.0.1",
     "nodemon": "^3.1.14",
     "ts-node-dev": "^2.0.0"
   }

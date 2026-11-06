@@ -103,11 +103,11 @@ app.use('/api/rpc', rpcRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/guild', guildRouter);
 
-app.get('/', (req, res) => {
+app.get('/', (req: express.Request, res: express.Response) => {
   res.json({ message: 'Discord RPC Platform API is running.' });
 });
 
-app.get('/health', (req, res) => {
+app.get('/health', (req: express.Request, res: express.Response) => {
   res.status(200).json({ status: 'ok', uptime: process.uptime() });
 });
 
