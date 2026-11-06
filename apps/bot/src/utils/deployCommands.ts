@@ -4,6 +4,8 @@ import fs from 'fs';
 import path from 'path';
 
 dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 const commands: any[] = [];
 const commandsPath = path.join(__dirname, '../commands');

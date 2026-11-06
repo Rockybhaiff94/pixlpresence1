@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '@discord-rpc/database';
+import { recordSyncEvent } from '../utils/sync';
 
 export const profileRouter = Router();
 
@@ -19,11 +20,40 @@ profileRouter.get('/u/:username', async (req: any, res) => {
       return res.status(404).json({ error: 'Profile not found' });
     }
 
+    // Check visibility permissions
+    const isOwner = req.user && req.user.id === user.id;
+    if (user.profile.visibility === 'PRIVATE' && !isOwner) {
+      return res.status(403).json({ error: 'This profile is private' });
+    }
+
     // Omit sensitive data
     const { email, appToken, ...safeUser } = user;
     res.json({ user: safeUser, profile: user.profile });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+// Lookup Profile by Discord ID
+profileRouter.get('/by-discord/:discordId', async (req: any, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { discordId: req.params.discordId },
+      include: {
+        profile: {
+          include: { links: true, buttons: true }
+        }
+      }
+    });
+
+    if (!user || !user.profile) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    const { email, appToken, ...safeUser } = user;
+    res.json({ user: safeUser, profile: user.profile });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch profile by discord id' });
   }
 });
 
@@ -138,11 +168,47 @@ profileRouter.patch('/me', requireAuth, async (req: any, res) => {
     const data = req.body;
     const profile = await prisma.profile.update({
       where: { userId: req.user.id },
-      data,
+      data: {
+        ...data,
+        profileVersion: { increment: 1 }
+      },
     });
+
+    await recordSyncEvent('profile.updated', req.user.id, data, profile.profileVersion);
     res.json(profile);
   } catch (err) {
     res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+// Update Status (ONLINE, IN_GAME, AWAY, OFFLINE)
+profileRouter.patch('/me/status', requireAuth, async (req: any, res) => {
+  try {
+    const { status, currentGame, customStatus } = req.body;
+    const validStatuses = ['ONLINE', 'IN_GAME', 'AWAY', 'OFFLINE'];
+    if (status && !validStatuses.includes(status)) {
+      return res.status(400).json({ error: 'Invalid status. Must be ONLINE, IN_GAME, AWAY, or OFFLINE' });
+    }
+
+    const updatedProfile = await prisma.profile.update({
+      where: { userId: req.user.id },
+      data: {
+        ...(status ? { status } : {}),
+        ...(currentGame !== undefined ? { currentGame } : {}),
+        ...(customStatus !== undefined ? { customStatus } : {}),
+        profileVersion: { increment: 1 }
+      }
+    });
+
+    await recordSyncEvent('player.status.updated', req.user.id, {
+      status: updatedProfile.status,
+      currentGame: updatedProfile.currentGame,
+      customStatus: updatedProfile.customStatus
+    }, updatedProfile.profileVersion);
+
+    res.json({ success: true, profile: updatedProfile });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update status' });
   }
 });
 

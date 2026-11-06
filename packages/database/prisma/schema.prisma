@@ -28,6 +28,7 @@ model User {
   auditLogs     AuditLog[]
   richPresence  RichPresence?
   templates     ActivityTemplate[]
+  layers        ProfileLayer[]
   appToken      String?   @unique
 }
 
@@ -57,6 +58,13 @@ model Profile {
   blur           Int      @default(0)
   opacity        Int      @default(100)
   roundedCorners Int      @default(10)
+
+  // Status & Presence
+  status         String   @default("ONLINE") // ONLINE, IN_GAME, AWAY, OFFLINE
+  customStatus   String?
+  currentGame    String?
+  visibility     String   @default("PUBLIC") // PUBLIC, PRIVATE, UNLISTED
+  profileVersion Int      @default(1)
 
   // Social & Buttons
   links          Link[]
@@ -145,4 +153,42 @@ model AuditLog {
   adminId   String
   admin     User     @relation(fields: [adminId], references: [id])
   timestamp DateTime @default(now())
+}
+
+model GuildConfiguration {
+  id              String   @id @default(cuid())
+  guildId         String   @unique
+  theme           String?
+  embedColor      String?  @default("#8b5cf6")
+  footer          String?
+  profileChannel  String?
+  allowedChannels String   @default("[]") // JSON string of channel IDs
+  featureSettings String   @default("{}") // JSON string of settings
+  authorizedRoles String   @default("[]") // JSON string of role IDs
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ProfileLayer {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  layerType     String   // background, image, video, text, icon, button, overlay
+  configuration String   // JSON string of properties
+  order         Int      @default(0)
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model SynchronizationEvent {
+  id             String    @id @default(cuid())
+  eventType      String
+  entityId       String
+  version        Int       @default(1)
+  payload        String    // JSON string
+  deliveryStatus String    @default("PENDING") // PENDING, PROCESSED, FAILED
+  attempts       Int       @default(0)
+  createdAt      DateTime  @default(now())
+  processedAt    DateTime?
 }
