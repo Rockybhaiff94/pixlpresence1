@@ -38,7 +38,7 @@ If you prefer to create a standalone **Web Service** manually:
    - **Runtime**: `Node`
    - **Build Command**:
      ```bash
-     npm install && npm run generate --workspace=@discord-rpc/database && npm run db:push --workspace=@discord-rpc/database && npm run build --workspace=@discord-rpc/database && npm run build --workspace=api
+     npm install --include=dev && npm run generate --workspace=@discord-rpc/database && npm run db:push --workspace=@discord-rpc/database && npm run build --workspace=@discord-rpc/database && npm run build --workspace=api
      ```
    - **Start Command**:
      ```bash
