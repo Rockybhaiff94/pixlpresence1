@@ -33,6 +33,8 @@ import { guildRouter } from './routes/guild';
 
 import { Server } from 'socket.io';
 import http from 'http';
+import fs from 'fs';
+import { fork } from 'child_process';
 
 const app = express();
 const server = http.createServer(app);
@@ -131,4 +133,23 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 
 server.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`);
+
+  // Automatically start PixelBot companion if DISCORD_BOT_TOKEN is present
+  if (process.env.DISCORD_BOT_TOKEN) {
+    const botPath = path.resolve(__dirname, '../../bot/dist/index.js');
+    if (fs.existsSync(botPath)) {
+      console.log('[Pixel.gg API] DISCORD_BOT_TOKEN detected. Starting PixelBot companion...');
+      const botProcess = fork(botPath, [], {
+        env: { ...process.env },
+        stdio: 'inherit',
+      });
+      botProcess.on('exit', (code, signal) => {
+        console.warn(`[PixelBot] Process exited with code ${code} and signal ${signal}`);
+      });
+    } else {
+      console.warn(`[Pixel.gg API] PixelBot dist not found at ${botPath}. Run build for bot workspace.`);
+    }
+  } else {
+    console.log('[Pixel.gg API] No DISCORD_BOT_TOKEN set in environment. Bot companion skipped.');
+  }
 });

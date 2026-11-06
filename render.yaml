@@ -4,7 +4,7 @@ services:
     name: pixelgg-api
     env: node
     plan: free
-    buildCommand: npm install --include=dev && npm run generate --workspace=@discord-rpc/database && npm run db:push --workspace=@discord-rpc/database && npm run build --workspace=@discord-rpc/database && npm run build --workspace=api
+    buildCommand: npm install --include=dev && npm run generate --workspace=@discord-rpc/database && npm run db:push --workspace=@discord-rpc/database && npm run build --workspace=@discord-rpc/database && npm run build --workspace=bot && npm run build --workspace=api
     startCommand: npm start --workspace=api
     healthCheckPath: /health
     envVars:
@@ -28,6 +28,8 @@ services:
         value: https://pixlpresence1.onrender.com/auth/discord/callback
       - key: ADMIN_DISCORD_IDS
         value: "704548873145942076"
+      - key: DISCORD_BOT_TOKEN
+        sync: false
 
   # Bot Background Worker
   - type: worker
