@@ -1,0 +1,39 @@
+/* PixelsRPC Vencord Plugin Styles */
+
+.pixelsrpc-status-card {
+    background-color: var(--background-secondary);
+    border-radius: 8px;
+    padding: 16px;
+    border: 1px solid var(--background-tertiary);
+    margin-bottom: 16px;
+}
+
+.pixelsrpc-status-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.pixelsrpc-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 8px;
+}
+
+.pixelsrpc-indicator-connected {
+    background-color: var(--status-positive);
+    box-shadow: 0 0 6px var(--status-positive);
+}
+
+.pixelsrpc-indicator-warning {
+    background-color: var(--status-warning);
+    box-shadow: 0 0 6px var(--status-warning);
+}
+
+.pixelsrpc-indicator-danger {
+    background-color: var(--status-danger);
+    box-shadow: 0 0 6px var(--status-danger);
+}

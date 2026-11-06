@@ -117,15 +117,15 @@ export default function RpcPage() {
     }
   };
 
-  const vencordConsoleSnippet = `// === PixelsRPC Vencord Loader ===
-(async () => {
+  const vencordConsoleSnippet = `// === PixelsRPC Vencord Quick-Start ===
+(() => {
   const token = "${token || 'PASTE_YOUR_TOKEN_HERE'}";
-  const apiUrl = "${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001'}";
-  const script = document.createElement("script");
-  script.src = apiUrl + "/PixelsRPC.vencord.js";
-  script.onload = () => window.PixelsRPC?.start({ token, apiUrl });
-  document.head.appendChild(script);
-  console.log("[PixelsRPC] Loader initialized.");
+  const apiUrl = "${typeof window !== 'undefined' ? window.location.origin : 'https://pixlpresence1-web.vercel.app'}";
+  if (window.PixelsRPC) {
+    window.PixelsRPC.start({ token, apiUrl });
+  } else {
+    console.info("[PixelsRPC] Recommended: Install the native PixelsRPC plugin into Vencord: src/userplugins/pixelsrpc");
+  }
 })();`;
 
   const handleCopySnippet = () => {
@@ -134,14 +134,20 @@ export default function RpcPage() {
     setTimeout(() => setCopiedSnippet(false), 2000);
   };
 
-  const handleDownloadPlugin = () => {
-    const blob = new Blob([vencordConsoleSnippet], { type: "text/javascript" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "PixelsRPC.vencord.js";
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleDownloadPlugin = async () => {
+    try {
+      const res = await fetch("/PixelsRPC.vencord.js");
+      const text = await res.text();
+      const blob = new Blob([text], { type: "text/javascript" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "PixelsRPC.vencord.js";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Failed to download plugin file", e);
+    }
   };
 
   return (

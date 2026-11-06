@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@utils/*": ["./src/vencord-types/*"],
+      "@api/*": ["./src/vencord-types/*"],
+      "@webpack/common": ["./src/vencord-types/webpack-common"],
+      "@webpack": ["./src/vencord-types/webpack"]
+    }
+  },
+  "include": ["src/**/*"]
+}
