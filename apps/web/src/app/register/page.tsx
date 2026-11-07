@@ -19,6 +19,8 @@ function RegisterContent() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    // Warm up the Render backend in the background so OAuth is instant
+    fetch("/health").catch(() => {});
     if (initialClaim) {
       setUsername(initialClaim.toLowerCase().replace(/[^a-z0-9_-]/g, ""));
     }
