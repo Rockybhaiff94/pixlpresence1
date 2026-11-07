@@ -11,12 +11,18 @@ function cleanEnv(val: string | undefined, fallback: string): string {
   return trimmed || fallback;
 }
 
-const DISCORD_CLIENT_ID = cleanEnv(process.env.DISCORD_CLIENT_ID, '1523632136878559302');
-const DISCORD_CLIENT_SECRET = cleanEnv(process.env.DISCORD_CLIENT_SECRET, '2MbiMbAAS3S333QmWMPSVUDoBT0hAZPh');
+function requiredEnv(name: string): string {
+  const value = process.env[name]?.trim().replace(/^["']|["']$/g, '');
+  if (!value) throw new Error(`Missing required environment variable: ${name}`);
+  return value;
+}
+
+const DISCORD_CLIENT_ID = cleanEnv(process.env.DISCORD_CLIENT_ID, '');
+const DISCORD_CLIENT_SECRET = cleanEnv(process.env.DISCORD_CLIENT_SECRET, '');
 const DISCORD_CALLBACK_URL = cleanEnv(
   process.env.DISCORD_CALLBACK_URL,
   process.env.NODE_ENV === 'production'
-    ? 'https://pixlpresence1.onrender.com/auth/discord/callback'
+    ? 'https://pixelgg-api.onrender.com/auth/discord/callback'
     : 'http://localhost:3001/auth/discord/callback'
 );
 const FRONTEND_URL = cleanEnv(
@@ -50,15 +56,16 @@ export function resolveDiscordAvatarUrl(discordId: string | null | undefined, av
   return `https://cdn.discordapp.com/avatars/${discordId}/${avatar}.${ext}?size=256`;
 }
 
-passport.use(
-  new DiscordStrategy(
-    {
-      clientID: DISCORD_CLIENT_ID,
-      clientSecret: DISCORD_CLIENT_SECRET,
-      callbackURL: DISCORD_CALLBACK_URL,
-      scope: scopes,
-    },
-    async (accessToken, refreshToken, profile, done) => {
+if (DISCORD_CLIENT_ID && DISCORD_CLIENT_SECRET) {
+  passport.use(
+    new DiscordStrategy(
+      {
+        clientID: DISCORD_CLIENT_ID,
+        clientSecret: DISCORD_CLIENT_SECRET,
+        callbackURL: DISCORD_CALLBACK_URL,
+        scope: scopes,
+      },
+      async (accessToken, refreshToken, profile, done) => {
       try {
         console.log(`[Discord OAuth] Processing login for Discord ID: ${profile.id} (${profile.username})`);
         const adminIds = cleanEnv(process.env.ADMIN_DISCORD_IDS, '704548873145942076')
@@ -186,6 +193,9 @@ passport.use(
     }
   )
 );
+} else {
+  console.warn('[Discord OAuth] DISCORD_CLIENT_ID or DISCORD_CLIENT_SECRET not configured.');
+}
 
 passport.serializeUser((user: any, done) => {
   done(null, user.id);
@@ -239,7 +249,12 @@ authRouter.get('/discord/status', async (req, res) => {
   });
 });
 
-authRouter.get('/discord', passport.authenticate('discord'));
+authRouter.get('/discord', (req, res, next) => {
+  if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET) {
+    return res.status(503).json({ error: 'Discord OAuth is not configured on this server.' });
+  }
+  passport.authenticate('discord')(req, res, next);
+});
 
 authRouter.get('/discord/callback', (req, res, next) => {
   passport.authenticate('discord', async (err: any, user: any, info: any) => {

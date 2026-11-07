@@ -8,20 +8,13 @@ dotenv.config({ path: path.join(rootDir, '.env') });
 dotenv.config({ path: path.resolve(rootDir, '../../.env') });
 dotenv.config();
 
-const dbUrl = process.env.DATABASE_URL || 'postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true';
-const directUrl = process.env.DIRECT_URL || 'postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres';
-
 console.log(`[generate] Generating Prisma Client...`);
 
 try {
   execSync('npx prisma generate --schema=prisma/schema.prisma', {
     cwd: rootDir,
     stdio: 'inherit',
-    env: {
-      ...process.env,
-      DATABASE_URL: dbUrl,
-      DIRECT_URL: directUrl,
-    },
+    env: process.env,
   });
 
   const searchDirs = [

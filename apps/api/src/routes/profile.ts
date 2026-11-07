@@ -4,17 +4,61 @@ import { recordSyncEvent } from '../utils/sync';
 
 export const profileRouter = Router();
 
+// Helper to resolve user by username (case-insensitive), leading @, CUID id, or Discord ID
+export async function findUserByIdentifier(rawIdentifier: string) {
+  if (!rawIdentifier) return null;
+  const clean = decodeURIComponent(rawIdentifier).trim().replace(/^@+/, '').trim();
+  if (!clean) return null;
+
+  // 1. Primary lookup: Case-insensitive username match
+  let user = await prisma.user.findFirst({
+    where: {
+      username: {
+        equals: clean,
+        mode: 'insensitive',
+      },
+    },
+    include: {
+      profile: {
+        include: { links: true, buttons: true },
+      },
+      richPresence: true,
+    },
+  });
+
+  // 2. Direct user ID (cuid) match if not found
+  if (!user && (clean.startsWith('cmw') || clean.length >= 20)) {
+    user = await prisma.user.findUnique({
+      where: { id: clean },
+      include: {
+        profile: {
+          include: { links: true, buttons: true },
+        },
+        richPresence: true,
+      },
+    });
+  }
+
+  // 3. Discord ID match if purely numeric snowflake (17-20 digits)
+  if (!user && /^\d{17,20}$/.test(clean)) {
+    user = await prisma.user.findUnique({
+      where: { discordId: clean },
+      include: {
+        profile: {
+          include: { links: true, buttons: true },
+        },
+        richPresence: true,
+      },
+    });
+  }
+
+  return user;
+}
+
 // Public Profile Endpoint
 profileRouter.get('/u/:username', async (req: any, res) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: { username: req.params.username },
-      include: {
-        profile: {
-          include: { links: true, buttons: true }
-        }
-      }
-    });
+    const user = await findUserByIdentifier(req.params.username);
 
     if (!user || !user.profile) {
       return res.status(404).json({ error: 'Profile not found' });
@@ -27,9 +71,14 @@ profileRouter.get('/u/:username', async (req: any, res) => {
     }
 
     // Omit sensitive data
-    const { email, appToken, ...safeUser } = user;
-    res.json({ user: safeUser, profile: user.profile });
+    const { email, passwordHash, appToken, ...safeUser } = user as any;
+    res.json({
+      user: safeUser,
+      profile: user.profile,
+      richPresence: (user as any).richPresence || null,
+    });
   } catch (err) {
+    console.error('[Public Profile Error]:', err);
     res.status(500).json({ error: 'Failed to fetch profile' });
   }
 });
@@ -80,10 +129,7 @@ profileRouter.post('/u/:username/view', async (req: any, res) => {
     // Clear cache every hour to allow return visitors
     setTimeout(() => viewCache.delete(viewKey), 1000 * 60 * 60);
 
-    const user = await prisma.user.findUnique({
-      where: { username },
-      select: { profile: { select: { id: true } } }
-    });
+    const user = await findUserByIdentifier(username);
 
     if (user && user.profile) {
       await prisma.profile.update({

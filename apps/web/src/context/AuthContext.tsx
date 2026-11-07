@@ -138,14 +138,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setToken(data.appToken);
         }
       } else if (res.status === 401) {
-        // Explicit 401 Unauthorized: Session is definitely invalid/expired
-        console.warn("[AuthContext] Backend confirmed session unauthorized (401).");
-        clearStoredToken();
-        clearCachedUser();
-        setUser(null);
-        setProfile(null);
-        setToken(null);
-        setStatus("UNAUTHENTICATED");
+        // Explicit 401 Unauthorized: Only wipe if we truly have no valid stored token
+        const currentToken = getStoredToken();
+        if (!currentToken) {
+          console.warn("[AuthContext] Backend confirmed session unauthorized (401) and no token found.");
+          clearStoredToken();
+          clearCachedUser();
+          setUser(null);
+          setProfile(null);
+          setToken(null);
+          setStatus("UNAUTHENTICATED");
+        } else {
+          console.warn("[AuthContext] Received 401 but stored token exists; preserving cached session.");
+          setStatus("AUTHENTICATED");
+        }
       } else {
         // Server warming up (500, 502, 503) or transient infrastructure error:
         // NEVER log the user out! Retain the cached user if available.
@@ -170,35 +176,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const setUserState = useCallback((updatedUser: AuthenticatedUser | null) => {
     if (updatedUser) {
-      updatedUser.avatar = formatAvatarUrl(updatedUser.avatar, updatedUser.discordId);
-      if (updatedUser.profile) {
-        updatedUser.profile.avatarUrl = formatAvatarUrl(
-          updatedUser.profile.avatarUrl || updatedUser.avatar,
-          updatedUser.discordId
+      const currentToken = getStoredToken();
+      const cached = getCachedUser();
+      const mergedUser: AuthenticatedUser = {
+        ...cached,
+        ...updatedUser,
+        appToken: updatedUser.appToken || currentToken || cached?.appToken || null,
+        discordId: updatedUser.discordId || cached?.discordId || null,
+      };
+      mergedUser.avatar = formatAvatarUrl(mergedUser.avatar, mergedUser.discordId);
+      if (mergedUser.profile) {
+        mergedUser.profile.avatarUrl = formatAvatarUrl(
+          mergedUser.profile.avatarUrl || mergedUser.avatar,
+          mergedUser.discordId
         );
       }
-      setUser((prev) => {
-        if (
-          prev &&
-          prev.id === updatedUser.id &&
-          prev.username === updatedUser.username &&
-          prev.avatar === updatedUser.avatar &&
-          prev.globalName === updatedUser.globalName
-        ) {
-          return prev;
-        }
-        return updatedUser;
-      });
-      setProfile((prev) => {
-        if (!updatedUser.profile) return prev;
-        return updatedUser.profile;
-      });
-      setCachedUser(updatedUser);
+      setUser(mergedUser);
+      setProfile(mergedUser.profile || null);
+      setCachedUser(mergedUser);
       setStatus("AUTHENTICATED");
       setLoading(false);
-      if (updatedUser.appToken) {
-        setStoredToken(updatedUser.appToken);
-        setToken(updatedUser.appToken);
+      if (mergedUser.appToken) {
+        setStoredToken(mergedUser.appToken);
+        setToken(mergedUser.appToken);
       }
     } else {
       setUser(null);
@@ -212,8 +212,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
-    // Initial fetch on mount
-    fetchCurrentUser();
+    // 1. Rehydrate immediately from persistent local cache on client mount (bypasses SSR null state)
+    const cached = getCachedUser();
+    const storedToken = getStoredToken();
+    if (cached) {
+      setUser(cached);
+      if (cached.profile) setProfile(cached.profile);
+      setStatus("AUTHENTICATED");
+      setLoading(false);
+    }
+    if (storedToken) {
+      setToken(storedToken);
+    }
+
+    // 2. Initial fetch on mount
+    fetchCurrentUser(storedToken);
 
     // Multi-tab synchronization: when login/logout happens in another tab
     const handleStorageChange = (e: StorageEvent) => {
@@ -239,9 +252,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    // Tab focus revalidation: quietly check session when tab regains focus
+    // Tab focus revalidation: quietly check session when tab regains focus (throttled to 30s)
+    let lastFocusCheck = Date.now();
     const handleFocus = () => {
-      fetchCurrentUser();
+      const now = Date.now();
+      if (now - lastFocusCheck > 30000) {
+        lastFocusCheck = now;
+        fetchCurrentUser();
+      }
     };
 
     window.addEventListener("storage", handleStorageChange);

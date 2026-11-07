@@ -1,8 +1,9 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { AccountSidebar } from "./AccountSidebar";
 import { useAuth } from "@/context/AuthContext";
+import { getCachedUser, getStoredToken } from "@/lib/api";
 import { RefreshCw, Lock, ArrowRight } from "lucide-react";
 import Link from "next/link";
 
@@ -25,14 +26,24 @@ export const AccountLayout: React.FC<AccountLayoutProps> = ({
   requireAuth = true,
 }) => {
   const { user: authUser, status: authStatus, loading: authLoading } = useAuth();
-  const activeUser = propUser || authUser || undefined;
+  const [cachedUser, setCachedUser] = useState<any>(null);
 
-  // Only consider genuinely unauthenticated if auth confirmed 401, not loading, and no cached/prop user
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setCachedUser(getCachedUser());
+    }
+  }, []);
+
+  const activeUser = propUser || authUser || cachedUser || undefined;
+  const hasToken = typeof window !== "undefined" ? Boolean(getStoredToken()) : false;
+
+  // Only consider genuinely unauthenticated if auth confirmed 401, not loading, and no cached/prop user/token
   const isUnauthenticated =
     requireAuth &&
     authStatus === "UNAUTHENTICATED" &&
     !authLoading &&
-    !activeUser;
+    !activeUser &&
+    !hasToken;
 
   return (
     <div className="min-h-screen bg-[#050505] text-[#ededed] flex flex-col lg:flex-row font-mono selection:bg-white selection:text-black">

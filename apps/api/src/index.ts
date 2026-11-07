@@ -4,19 +4,13 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 dotenv.config({ path: path.resolve(__dirname, '../../packages/database/prisma/.env') });
 dotenv.config();
 
-if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL =
-    'postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true';
+const requiredEnvironmentVariables = ['DATABASE_URL', 'DIRECT_URL', 'SESSION_SECRET'];
+const missingEnvironmentVariables = requiredEnvironmentVariables.filter((key) => !process.env[key]?.trim());
+if (missingEnvironmentVariables.length > 0) {
+  throw new Error(`Missing required environment variables: ${missingEnvironmentVariables.join(', ')}`);
 }
-if (!process.env.DIRECT_URL) {
-  process.env.DIRECT_URL =
-    'postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres';
-}
-if (!process.env.FRONTEND_URL && process.env.NODE_ENV === 'production') {
-  process.env.FRONTEND_URL = 'https://pixlpresence1-web.vercel.app';
-}
-if (!process.env.SESSION_SECRET) {
-  process.env.SESSION_SECRET = 'super_secret_discord_rpc_production_key_948210';
+if (process.env.NODE_ENV === 'production' && !process.env.FRONTEND_URL?.trim()) {
+  throw new Error('Missing required environment variable: FRONTEND_URL');
 }
 
 import express from 'express';
@@ -34,8 +28,7 @@ import { accountRouter } from './routes/account';
 
 import { Server } from 'socket.io';
 import http from 'http';
-import fs from 'fs';
-import { fork } from 'child_process';
+import { startBot, stopBot, getBotStatus } from 'bot';
 
 const app = express();
 const server = http.createServer(app);
@@ -83,7 +76,7 @@ app.use(
       secure: process.env.NODE_ENV === 'production',
       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
     },
-    secret: process.env.SESSION_SECRET || 'super_secret_discord_rpc_key',
+    secret: process.env.SESSION_SECRET!,
     resave: false,
     saveUninitialized: false,
     store: new PrismaSessionStore(
@@ -112,7 +105,12 @@ app.get('/', (req: express.Request, res: express.Response) => {
 });
 
 app.get(['/health', '/api/health'], (req: express.Request, res: express.Response) => {
-  res.status(200).json({ status: 'ok', uptime: process.uptime() });
+  res.status(200).json({
+    status: 'ok',
+    service: 'pixelgg-api',
+    uptime: process.uptime(),
+    bot: getBotStatus(),
+  });
 });
 
 // Global Express Error Handler
@@ -134,24 +132,61 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 });
 
 server.listen(Number(PORT), '0.0.0.0', () => {
-  console.log(`Server running on http://0.0.0.0:${PORT}`);
+  console.log(`[PixelGG Backend] Central API & Discord Bot listening on http://0.0.0.0:${PORT}`);
 
-  // Automatically start PixelBot companion if DISCORD_BOT_TOKEN is present
-  if (process.env.DISCORD_BOT_TOKEN) {
-    const botPath = path.resolve(__dirname, '../../bot/dist/index.js');
-    if (fs.existsSync(botPath)) {
-      console.log('[Pixel.gg API] DISCORD_BOT_TOKEN detected. Starting PixelBot companion...');
-      const botProcess = fork(botPath, [], {
-        env: { ...process.env },
-        stdio: 'inherit',
-      });
-      botProcess.on('exit', (code, signal) => {
-        console.warn(`[PixelBot] Process exited with code ${code} and signal ${signal}`);
-      });
-    } else {
-      console.warn(`[Pixel.gg API] PixelBot dist not found at ${botPath}. Run build for bot workspace.`);
-    }
-  } else {
-    console.log('[Pixel.gg API] No DISCORD_BOT_TOKEN set in environment. Bot companion skipped.');
+  // Automatically start Discord Bot companion if DISCORD_BOT_TOKEN is present
+  startBot().catch((err) => {
+    console.error('[PixelGG Backend] Discord Bot failed to initialize:', err);
+  });
+});
+
+// Process lifecycle management and graceful shutdown
+let isShuttingDown = false;
+async function gracefulShutdown(signal: string) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`[PixelGG Backend] Received ${signal}. Starting graceful shutdown...`);
+
+  // 1. Close HTTP server
+  server.close(() => {
+    console.log('[PixelGG Backend] HTTP server closed.');
+  });
+
+  // 2. Close Socket.IO
+  try {
+    io.close();
+    console.log('[PixelGG Backend] Socket.IO server closed.');
+  } catch (err) {
+    console.error('[PixelGG Backend] Error closing Socket.IO:', err);
   }
+
+  // 3. Gracefully stop Discord Bot
+  try {
+    await stopBot();
+    console.log('[PixelGG Backend] Discord Bot disconnected.');
+  } catch (err) {
+    console.error('[PixelGG Backend] Error stopping Discord Bot:', err);
+  }
+
+  // 4. Disconnect database connection pool
+  try {
+    await prisma.$disconnect();
+    console.log('[PixelGG Backend] Database connections disconnected.');
+  } catch (err) {
+    console.error('[PixelGG Backend] Error disconnecting database:', err);
+  }
+
+  console.log('[PixelGG Backend] Graceful shutdown complete. Exiting.');
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[PixelGG Backend Unhandled Rejection]:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[PixelGG Backend Uncaught Exception]:', err);
 });
