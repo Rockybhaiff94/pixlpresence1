@@ -170,6 +170,8 @@ accountRouter.get('/overview', requireAuth, async (req: any, res) => {
         premiumStatus: user.premiumStatus,
         badges: userBadges,
         createdAt: user.createdAt,
+        discordId: user.discordId,
+        appToken: user.appToken,
       },
       profile: {
         id: (profile as any).id,

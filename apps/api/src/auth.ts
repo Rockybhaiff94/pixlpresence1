@@ -17,8 +17,8 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-const DISCORD_CLIENT_ID = requiredEnv('DISCORD_CLIENT_ID');
-const DISCORD_CLIENT_SECRET = requiredEnv('DISCORD_CLIENT_SECRET');
+const DISCORD_CLIENT_ID = cleanEnv(process.env.DISCORD_CLIENT_ID, '1523632136878559302');
+const DISCORD_CLIENT_SECRET = cleanEnv(process.env.DISCORD_CLIENT_SECRET, '2MbiMbAAS3S333QmWMPSVUDoBT0hAZPh');
 const DISCORD_CALLBACK_URL = cleanEnv(
   process.env.DISCORD_CALLBACK_URL,
   process.env.NODE_ENV === 'production'
@@ -28,7 +28,7 @@ const DISCORD_CALLBACK_URL = cleanEnv(
 const FRONTEND_URL = cleanEnv(
   process.env.FRONTEND_URL,
   process.env.NODE_ENV === 'production'
-    ? 'https://pixlpresence1.onrender.com'
+    ? 'https://pixlpresence1-web.vercel.app'
     : 'http://localhost:3000'
 );
 

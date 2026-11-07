@@ -26,7 +26,7 @@ import {
   Copy,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { formatAvatarUrl } from "@/lib/api";
+import { formatAvatarUrl, getCachedUser, getStoredToken } from "@/lib/api";
 
 interface AccountSidebarProps {
   user?: {
@@ -49,9 +49,17 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedLink, setCopiedLink] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [cachedUser, setCachedUser] = useState<any>(null);
 
-  // Single Source of Truth: if page didn't pass explicit user prop, fallback to global authUser
-  const currentUser = user !== undefined && user !== null ? user : authUser;
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setCachedUser(getCachedUser());
+    }
+  }, []);
+
+  // Single Source of Truth: page prop -> global authUser -> persistent local cache
+  const currentUser = user || authUser || cachedUser || null;
+  const hasToken = typeof window !== "undefined" ? Boolean(getStoredToken()) : false;
 
   // Close mobile drawer on route change
   useEffect(() => {
@@ -373,8 +381,8 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
                 )}
               </div>
             </>
-          ) : authStatus === "INITIALIZING" || authLoading ? (
-            /* Never flash SIGN IN / REGISTER while checking or loading session */
+          ) : authStatus === "INITIALIZING" || authLoading || hasToken ? (
+            /* Never flash SIGN IN / REGISTER while checking session or if a token is present */
             <div className="p-2 rounded-xl bg-[#0e0e0e] border border-[#1e1e1e] flex items-center gap-2.5 animate-pulse">
               <div className="w-8 h-8 rounded-lg bg-neutral-800 shrink-0" />
               <div className="space-y-1.5 flex-1 min-w-0">
