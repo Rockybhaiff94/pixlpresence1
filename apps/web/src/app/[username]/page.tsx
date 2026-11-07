@@ -1,6 +1,7 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ViewTracker } from "@/components/effects/ViewTracker";
 import { ProfileClientView } from "@/components/nothing/ProfileClientView";
+import { ServiceWarmingView } from "@/components/nothing/ServiceWarmingView";
 
 function getApiUrl(): string {
   const raw = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -94,24 +95,42 @@ const exemplarProfiles: Record<string, any> = {
   },
 };
 
-async function getProfile(username: string) {
+type ProfileResult =
+  | { kind: "ok"; data: any }
+  | { kind: "not_found" }
+  | { kind: "warming" };
+
+async function getProfile(rawUsername: string): Promise<ProfileResult> {
+  const clean = decodeURIComponent(rawUsername).trim().replace(/^@+/, "");
+  if (!clean) return { kind: "not_found" };
+
+  const lower = clean.toLowerCase();
+  if (exemplarProfiles[lower]) {
+    return { kind: "ok", data: exemplarProfiles[lower] };
+  }
+
   try {
     const apiUrl = getApiUrl();
-    const res = await fetch(`${apiUrl}/api/profile/u/${username}`, { next: { revalidate: 60 } });
+    const res = await fetch(`${apiUrl}/api/profile/u/${encodeURIComponent(clean)}`, {
+      next: { revalidate: 60 },
+      signal: AbortSignal.timeout(8000),
+    });
+
     if (res.ok) {
       const data = await res.json();
-      if (data && data.profile) return data;
+      if (data && data.profile) return { kind: "ok", data };
     }
-  } catch {
-    // Fall back to exemplar
-  }
 
-  const clean = username.toLowerCase();
-  if (exemplarProfiles[clean]) {
-    return exemplarProfiles[clean];
-  }
+    if (res.status === 404) {
+      return { kind: "not_found" };
+    }
 
-  return null;
+    // 500, 502, 503, 504 from Render spin-up: do not disguise as 404
+    return { kind: "warming" };
+  } catch (err) {
+    // Network timeout or cold start
+    return { kind: "warming" };
+  }
 }
 
 export default async function ProfilePage({
@@ -120,20 +139,34 @@ export default async function ProfilePage({
   params: Promise<{ username: string }>;
 }) {
   const { username } = await params;
-  const data = await getProfile(username);
+  const clean = decodeURIComponent(username).trim().replace(/^@+/, "");
 
-  if (!data || !data.profile) {
+  // Intercept reserved keywords if accessed via root path
+  if (clean.toLowerCase() === "explore") {
+    redirect("/#showcase");
+  }
+  if (clean.toLowerCase() === "rpc") {
+    redirect("/dashboard/rpc");
+  }
+
+  const result = await getProfile(clean);
+
+  if (result.kind === "warming") {
+    return <ServiceWarmingView username={clean} />;
+  }
+
+  if (result.kind === "not_found" || !result.data || !result.data.profile) {
     notFound();
   }
 
-  const { user, profile, richPresence } = data;
+  const { user, profile, richPresence } = result.data;
 
   return (
     <>
-      <ViewTracker username={username} />
+      <ViewTracker username={clean} />
       <ProfileClientView
-        username={user?.username || username}
-        displayName={profile?.displayName || user?.username || username}
+        username={user?.username || clean}
+        displayName={profile?.displayName || user?.username || clean}
         bio={profile?.bio || null}
         avatarUrl={profile?.avatarUrl || ""}
         bannerUrl={profile?.bannerUrl || null}

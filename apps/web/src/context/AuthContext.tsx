@@ -252,9 +252,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    // Tab focus revalidation: quietly check session when tab regains focus
+    // Tab focus revalidation: quietly check session when tab regains focus (throttled to 30s)
+    let lastFocusCheck = Date.now();
     const handleFocus = () => {
-      fetchCurrentUser();
+      const now = Date.now();
+      if (now - lastFocusCheck > 30000) {
+        lastFocusCheck = now;
+        fetchCurrentUser();
+      }
     };
 
     window.addEventListener("storage", handleStorageChange);
