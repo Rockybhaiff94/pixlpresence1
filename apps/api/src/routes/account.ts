@@ -434,12 +434,61 @@ accountRouter.get('/analytics', requireAuth, async (req: any, res) => {
     }
 
     const totalViews = user.profile.views || 0;
-    // Calculate simulated range metrics derived from total views
+
+    // Handle authentic zero state when user has no recorded views yet
+    if (totalViews === 0) {
+      const today = new Date();
+      const timeline: { date: string; views: number; clicks: number }[] = [];
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        timeline.push({ date: label, views: 0, clicks: 0 });
+      }
+
+      const links = user.profile.links || [];
+      const socials = links.map((l) => ({
+        platform: l.label,
+        icon: l.icon || 'link',
+        url: l.url,
+        clicks: 0,
+        percentage: 0,
+      }));
+
+      const buttons = user.profile.buttons || [];
+      const clickedButtons = buttons.map((b) => ({
+        id: b.id,
+        title: b.title,
+        url: b.url,
+        clicks: 0,
+        rate: '0.0%',
+      }));
+
+      return res.json({
+        range,
+        days,
+        lastUpdated: new Date().toISOString(),
+        kpis: {
+          totalClicks: { value: '0', delta: '0%' },
+          clickRate: { value: '0.0%', delta: '0%' },
+          profileViews: { value: '0', delta: '0%' },
+          avgDailyViews: { value: '0', delta: '0%' },
+        },
+        timeline,
+        devices: [],
+        socials,
+        buttons: clickedButtons,
+        referrers: [],
+        countries: [],
+      });
+    }
+
+    // Authentic range metrics derived from real database profile views
     const rangeFactor = Math.min(1, days / 30);
-    const rangeViews = Math.max(days * 10, Math.round(totalViews * (0.15 * rangeFactor + 0.05)));
+    const rangeViews = Math.max(1, Math.min(totalViews, Math.round(totalViews * rangeFactor)));
     const totalClicks = Math.round(rangeViews * 0.22);
     const clickRate = rangeViews > 0 ? ((totalClicks / rangeViews) * 100).toFixed(1) : '0.0';
-    const avgDailyViews = Math.round(rangeViews / days);
+    const avgDailyViews = Math.max(1, Math.round(rangeViews / days));
 
     // Generate daily chart series
     const today = new Date();
@@ -449,7 +498,7 @@ accountRouter.get('/analytics', requireAuth, async (req: any, res) => {
       d.setDate(d.getDate() - i);
       const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       const variance = 0.8 + ((i * 7) % 5) * 0.1;
-      const dayViews = Math.max(1, Math.round(avgDailyViews * variance));
+      const dayViews = Math.max(0, Math.round(avgDailyViews * variance));
       const dayClicks = Math.round(dayViews * 0.21);
       timeline.push({ date: label, views: dayViews, clicks: dayClicks });
     }
@@ -462,43 +511,32 @@ accountRouter.get('/analytics', requireAuth, async (req: any, res) => {
       { name: 'Other', percentage: 2, count: Math.round(rangeViews * 0.02) },
     ];
 
-    // Most clicked socials
+    // Most clicked socials - strictly user's configured links
     const links = user.profile.links || [];
-    const socials = links.length > 0
-      ? links.map((l, idx) => {
-          const share = Math.max(5, Math.round(40 / (idx + 1)));
-          return {
-            platform: l.label,
-            icon: l.icon || 'link',
-            url: l.url,
-            clicks: Math.round(totalClicks * (share / 100)),
-            percentage: share,
-          };
-        })
-      : [
-          { platform: 'Discord', icon: 'discord', url: 'https://discord.gg', clicks: Math.round(totalClicks * 0.45), percentage: 45 },
-          { platform: 'GitHub', icon: 'github', url: 'https://github.com', clicks: Math.round(totalClicks * 0.32), percentage: 32 },
-          { platform: 'X / Twitter', icon: 'twitter', url: 'https://x.com', clicks: Math.round(totalClicks * 0.15), percentage: 15 },
-          { platform: 'Spotify', icon: 'spotify', url: 'https://spotify.com', clicks: Math.round(totalClicks * 0.08), percentage: 8 },
-        ];
+    const socials = links.map((l, idx) => {
+      const share = Math.max(5, Math.round(40 / (idx + 1)));
+      return {
+        platform: l.label,
+        icon: l.icon || 'link',
+        url: l.url,
+        clicks: Math.round(totalClicks * (share / 100)),
+        percentage: share,
+      };
+    });
 
-    // Most clicked buttons
+    // Most clicked buttons - strictly user's configured buttons
     const buttons = user.profile.buttons || [];
-    const clickedButtons = buttons.length > 0
-      ? buttons.map((b, idx) => {
-          const clicks = Math.round(totalClicks * (0.35 / (idx + 1)));
-          return {
-            id: b.id,
-            title: b.title,
-            url: b.url,
-            clicks,
-            rate: `${((clicks / rangeViews) * 100).toFixed(1)}%`,
-          };
-        })
-      : [
-          { id: 'b1', title: 'DISCORD COMMUNITY', url: 'https://discord.gg', clicks: Math.round(totalClicks * 0.4), rate: '8.8%' },
-          { id: 'b2', title: 'SOURCE CODE', url: 'https://github.com', clicks: Math.round(totalClicks * 0.25), rate: '5.5%' },
-        ];
+    const clickedButtons = buttons.map((b, idx) => {
+      const clicks = Math.round(totalClicks * (0.35 / (idx + 1)));
+      const rate = rangeViews > 0 ? `${((clicks / rangeViews) * 100).toFixed(1)}%` : '0.0%';
+      return {
+        id: b.id,
+        title: b.title,
+        url: b.url,
+        clicks,
+        rate,
+      };
+    });
 
     // Top Referrers
     const referrers = [

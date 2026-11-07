@@ -1,6 +1,15 @@
 import type { NextConfig } from "next";
 
-const apiUrl = (process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001")
+const defaultApiUrl =
+  process.env.NODE_ENV === "production"
+    ? "https://pixlpresence1.onrender.com"
+    : "http://localhost:3001";
+
+const apiUrl = (
+  process.env.INTERNAL_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  defaultApiUrl
+)
   .trim()
   .replace(/\/+$/, "");
 
@@ -43,10 +52,6 @@ const nextConfig: NextConfig = {
       {
         source: "/api/:path*",
         destination: `${apiUrl}/api/:path*`,
-      },
-      {
-        source: "/auth/:path*",
-        destination: `${apiUrl}/auth/:path*`,
       },
     ];
   },

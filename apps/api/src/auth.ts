@@ -103,6 +103,16 @@ passport.use(
           }
         }
 
+        // Ensure user has a persistent appToken for cross-domain Bearer auth
+        if (!user.appToken) {
+          const generatedToken = crypto.randomBytes(32).toString('hex');
+          user = await prisma.user.update({
+            where: { id: user.id },
+            data: { appToken: generatedToken },
+          });
+          console.log(`[Discord OAuth] Generated new appToken for user: ${user.username}`);
+        }
+
         // Ensure user profile exists and syncs latest avatar / display name
         await prisma.profile.upsert({
           where: { userId: user.id },
@@ -252,9 +262,24 @@ authRouter.get('/discord/callback', (req, res, next) => {
         );
       }
       console.log(`[Discord OAuth] User ${user.username} logged in successfully. Redirecting.`);
+      
+      const token = user.appToken || '';
+      try {
+        if (token) {
+          res.cookie('pixel_app_token', token, {
+            maxAge: 30 * 24 * 60 * 60 * 1000,
+            sameSite: 'none',
+            secure: true,
+            path: '/',
+          });
+        }
+      } catch (cErr) {
+        console.warn('[Cookie set warning]:', cErr);
+      }
+
       // Pass token in URL parameter so cross-domain environments can authenticate without 3rd party cookies
-      const redirectUrl = user.appToken
-        ? `${FRONTEND_URL}/account?token=${encodeURIComponent(user.appToken)}`
+      const redirectUrl = token
+        ? `${FRONTEND_URL}/account?token=${encodeURIComponent(token)}`
         : `${FRONTEND_URL}/account`;
       return res.redirect(redirectUrl);
     });

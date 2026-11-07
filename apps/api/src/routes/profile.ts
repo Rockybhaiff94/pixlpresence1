@@ -236,6 +236,18 @@ profileRouter.delete('/me/links/:id', requireAuth, async (req: any, res) => {
   }
 });
 
+profileRouter.patch('/me/links/:id', requireAuth, async (req: any, res) => {
+  try {
+    const link = await prisma.link.update({
+      where: { id: req.params.id },
+      data: req.body,
+    });
+    res.json(link);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update link' });
+  }
+});
+
 // Manage Buttons
 profileRouter.post('/me/buttons', requireAuth, async (req: any, res) => {
   try {

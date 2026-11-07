@@ -256,36 +256,42 @@ export default function AccountAnalyticsPage() {
               </div>
 
               <div className="space-y-3.5 pt-1">
-                {data.devices.map((dev) => {
-                  const getIcon = () => {
-                    if (dev.name === "Desktop") return Monitor;
-                    if (dev.name === "Mobile") return Smartphone;
-                    if (dev.name === "Tablet") return Tablet;
-                    return Globe;
-                  };
-                  const DevIcon = getIcon();
+                {data.devices.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-neutral-500">
+                    No visitor hardware data recorded yet.
+                  </div>
+                ) : (
+                  data.devices.map((dev) => {
+                    const getIcon = () => {
+                      if (dev.name === "Desktop") return Monitor;
+                      if (dev.name === "Mobile") return Smartphone;
+                      if (dev.name === "Tablet") return Tablet;
+                      return Globe;
+                    };
+                    const DevIcon = getIcon();
 
-                  return (
-                    <div key={dev.name} className="space-y-1.5 text-xs">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-neutral-300">
-                          <DevIcon size={14} className="text-neutral-500" />
-                          <span>{dev.name}</span>
+                    return (
+                      <div key={dev.name} className="space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-neutral-300">
+                            <DevIcon size={14} className="text-neutral-500" />
+                            <span>{dev.name}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-neutral-500 text-[11px]">{dev.count.toLocaleString()}</span>
+                            <span className="text-white font-bold">{dev.percentage}%</span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-neutral-500 text-[11px]">{dev.count.toLocaleString()}</span>
-                          <span className="text-white font-bold">{dev.percentage}%</span>
+                        <div className="w-full h-1.5 bg-[#181818] rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-white transition-all duration-300"
+                            style={{ width: `${dev.percentage}%` }}
+                          />
                         </div>
                       </div>
-                      <div className="w-full h-1.5 bg-[#181818] rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-white transition-all duration-300"
-                          style={{ width: `${dev.percentage}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
 
@@ -299,23 +305,29 @@ export default function AccountAnalyticsPage() {
               </div>
 
               <div className="space-y-3.5 pt-1">
-                {data.referrers.map((ref) => (
-                  <div key={ref.name} className="space-y-1.5 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-neutral-300">{ref.name}</span>
-                      <div className="flex items-center gap-3">
-                        <span className="text-neutral-500 text-[11px]">{ref.count.toLocaleString()}</span>
-                        <span className="text-white font-bold">{ref.percentage}%</span>
+                {data.referrers.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-neutral-500">
+                    No inbound referrers recorded yet.
+                  </div>
+                ) : (
+                  data.referrers.map((ref) => (
+                    <div key={ref.name} className="space-y-1.5 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-neutral-300">{ref.name}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-neutral-500 text-[11px]">{ref.count.toLocaleString()}</span>
+                          <span className="text-white font-bold">{ref.percentage}%</span>
+                        </div>
+                      </div>
+                      <div className="w-full h-1.5 bg-[#181818] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-neutral-400 transition-all duration-300"
+                          style={{ width: `${ref.percentage}%` }}
+                        />
                       </div>
                     </div>
-                    <div className="w-full h-1.5 bg-[#181818] rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-neutral-400 transition-all duration-300"
-                        style={{ width: `${ref.percentage}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -337,29 +349,35 @@ export default function AccountAnalyticsPage() {
               </div>
 
               <div className="space-y-2">
-                {data.socials.map((soc) => (
-                  <div
-                    key={soc.platform}
-                    className="p-3 rounded-xl bg-[#121212] border border-[#222222] flex items-center justify-between text-xs"
-                  >
-                    <div className="flex items-center gap-2.5 truncate">
-                      <div className="w-7 h-7 rounded-lg bg-neutral-900 border border-neutral-700 flex items-center justify-center font-bold text-[10px] text-white">
-                        {soc.platform.slice(0, 2).toUpperCase()}
-                      </div>
-                      <div className="truncate">
-                        <p className="text-white font-semibold truncate">{soc.platform}</p>
-                        <p className="text-[10px] text-neutral-500 truncate">{soc.url}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="text-white font-bold">{soc.clicks.toLocaleString()} clicks</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-400">
-                        {soc.percentage}%
-                      </span>
-                    </div>
+                {data.socials.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-neutral-500">
+                    No social link clicks recorded yet.
                   </div>
-                ))}
+                ) : (
+                  data.socials.map((soc) => (
+                    <div
+                      key={soc.platform}
+                      className="p-3 rounded-xl bg-[#121212] border border-[#222222] flex items-center justify-between text-xs"
+                    >
+                      <div className="flex items-center gap-2.5 truncate">
+                        <div className="w-7 h-7 rounded-lg bg-neutral-900 border border-neutral-700 flex items-center justify-center font-bold text-[10px] text-white">
+                          {soc.platform.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="truncate">
+                          <p className="text-white font-semibold truncate">{soc.platform}</p>
+                          <p className="text-[10px] text-neutral-500 truncate">{soc.url}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-white font-bold">{soc.clicks.toLocaleString()} clicks</span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-400">
+                          {soc.percentage}%
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
@@ -378,24 +396,30 @@ export default function AccountAnalyticsPage() {
               </div>
 
               <div className="space-y-2">
-                {data.buttons.map((btn) => (
-                  <div
-                    key={btn.id}
-                    className="p-3 rounded-xl bg-[#121212] border border-[#222222] flex items-center justify-between text-xs"
-                  >
-                    <div className="truncate pr-2">
-                      <p className="text-white font-semibold truncate">{btn.title}</p>
-                      <p className="text-[10px] text-neutral-500 truncate">{btn.url}</p>
-                    </div>
-
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="text-white font-bold">{btn.clicks.toLocaleString()} clicks</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-300">
-                        CTR: {btn.rate}
-                      </span>
-                    </div>
+                {data.buttons.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-neutral-500">
+                    No button interaction metrics recorded yet.
                   </div>
-                ))}
+                ) : (
+                  data.buttons.map((btn) => (
+                    <div
+                      key={btn.id}
+                      className="p-3 rounded-xl bg-[#121212] border border-[#222222] flex items-center justify-between text-xs"
+                    >
+                      <div className="truncate pr-2">
+                        <p className="text-white font-semibold truncate">{btn.title}</p>
+                        <p className="text-[10px] text-neutral-500 truncate">{btn.url}</p>
+                      </div>
+
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-white font-bold">{btn.clicks.toLocaleString()} clicks</span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-300">
+                          CTR: {btn.rate}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -410,21 +434,27 @@ export default function AccountAnalyticsPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
-              {data.countries.map((c) => (
-                <div
-                  key={c.code}
-                  className="p-3.5 rounded-xl bg-[#121212] border border-[#222222] space-y-2"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-neutral-400">{c.code}</span>
-                    <span className="text-white font-bold text-xs">{c.percentage}%</span>
-                  </div>
-                  <div>
-                    <p className="text-white font-medium text-xs truncate">{c.name}</p>
-                    <p className="text-[11px] text-neutral-500">{c.views.toLocaleString()} views</p>
-                  </div>
+              {data.countries.length === 0 ? (
+                <div className="col-span-full py-8 text-center text-xs text-neutral-500">
+                  No geographic visitor data recorded yet.
                 </div>
-              ))}
+              ) : (
+                data.countries.map((c) => (
+                  <div
+                    key={c.code}
+                    className="p-3.5 rounded-xl bg-[#121212] border border-[#222222] space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-neutral-400">{c.code}</span>
+                      <span className="text-white font-bold text-xs">{c.percentage}%</span>
+                    </div>
+                    <div>
+                      <p className="text-white font-medium text-xs truncate">{c.name}</p>
+                      <p className="text-[11px] text-neutral-500">{c.views.toLocaleString()} views</p>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
