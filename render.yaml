@@ -1,49 +1,65 @@
 services:
-  # API Web Service
+  # Pixel Presence website
   - type: web
-    name: pixelgg-api
+    name: pixlpresence1
     env: node
     plan: free
-    buildCommand: npm install --include=dev && npm run generate --workspace=@discord-rpc/database && npm run db:push --workspace=@discord-rpc/database && npm run build --workspace=@discord-rpc/database && npm run build --workspace=bot && npm run build --workspace=api
-    startCommand: npm start --workspace=api
-    healthCheckPath: /health
+    buildCommand: npm install --include=dev && npm run build --workspace=web
+    startCommand: npm start --workspace=web
+    healthCheckPath: /
     envVars:
       - key: NODE_VERSION
-        value: 20
+        value: "20"
       - key: NODE_ENV
         value: production
-      - key: DATABASE_URL
-        value: postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true
-      - key: DIRECT_URL
-        value: postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres
-      - key: SESSION_SECRET
-        generateValue: true
-      - key: FRONTEND_URL
-        value: https://pixlpresence1-web.vercel.app
-      - key: DISCORD_CLIENT_ID
-        value: "1523632136878559302"
-      - key: DISCORD_CLIENT_SECRET
-        value: 2MbiMbAAS3S333QmWMPSVUDoBT0hAZPh
-      - key: DISCORD_CALLBACK_URL
-        value: https://pixlpresence1.onrender.com/auth/discord/callback
-      - key: ADMIN_DISCORD_IDS
-        value: "704548873145942076"
-      - key: DISCORD_BOT_TOKEN
-        sync: false
+      - key: NEXT_PUBLIC_API_URL
+        value: https://pixelgg-api.onrender.com
+      - key: INTERNAL_API_URL
+        value: https://pixelgg-api.onrender.com
 
-  # Bot Background Worker
+  # Discord bot background worker (paid Render worker plan required)
   - type: worker
-    name: pixelgg-bot
+    name: pixelgg-mm
     env: node
-    plan: free
+    plan: starter
     buildCommand: npm install --include=dev && npm run generate --workspace=@discord-rpc/database && npm run build --workspace=@discord-rpc/database && npm run build --workspace=bot
     startCommand: npm start --workspace=bot
     envVars:
       - key: NODE_VERSION
-        value: 20
+        value: "20"
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
-        value: postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true
+        sync: false
+      - key: DIRECT_URL
+        sync: false
       - key: DISCORD_BOT_TOKEN
         sync: false
+
+  # Central API service
+  - type: web
+    name: pixelgg-api
+    env: node
+    plan: free
+    buildCommand: npm install --include=dev && npm run generate --workspace=@discord-rpc/database && npm run build --workspace=@discord-rpc/database && npm run build --workspace=api
+    startCommand: npm start --workspace=api
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        value: https://pixlpresence1.onrender.com
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: DISCORD_CALLBACK_URL
+        value: https://pixelgg-api.onrender.com/auth/discord/callback
