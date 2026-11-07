@@ -44,9 +44,9 @@ try {
 
   if (sourcePrisma && sourcePrismaClient) {
     const targets = [
-      path.resolve(rootDir, '../../node_modules'),
-      path.resolve(rootDir, '../../apps/api/node_modules'),
-      path.resolve(rootDir, '../../apps/bot/node_modules'),
+      path.resolve(rootDir, '..', '..', 'node_modules'),
+      path.resolve(rootDir, '..', '..', 'apps', 'api', 'node_modules'),
+      path.resolve(rootDir, '..', '..', 'apps', 'bot', 'node_modules'),
       path.join(rootDir, 'node_modules'),
     ];
 

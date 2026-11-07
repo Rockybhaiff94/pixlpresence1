@@ -161,3 +161,4 @@ export const StatusCard: React.FC<StatusCardProps> = ({ state, tokenConfigured, 
         )
     );
 };
+

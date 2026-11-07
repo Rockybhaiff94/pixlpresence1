@@ -53,3 +53,4 @@ export const settings = definePluginSettings({
 });
 
 export type PixelsRpcSettings = typeof settings.store;
+

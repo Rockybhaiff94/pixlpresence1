@@ -58,3 +58,4 @@ export const SettingsAbout: React.FC<SettingsAboutProps> = ({
         )
     );
 };
+
