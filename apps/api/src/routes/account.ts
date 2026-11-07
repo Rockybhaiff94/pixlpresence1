@@ -19,16 +19,6 @@ const requireAuth = async (req: any, res: any, next: any) => {
     }
   }
 
-  // Fallback demo/session user if no session for development/preview
-  const sessionUser = req.session?.passport?.user;
-  if (sessionUser) {
-    const user = await prisma.user.findUnique({ where: { id: sessionUser } });
-    if (user) {
-      req.user = user;
-      return next();
-    }
-  }
-
   return res.status(401).json({ error: 'Unauthorized. Please sign in.' });
 };
 
@@ -131,9 +121,7 @@ accountRouter.get('/overview', requireAuth, async (req: any, res) => {
       },
     ];
 
-    const completedWeight = completionTasks
-      .filter((t) => t.completed)
-      .reduce((acc, curr) => acc + curr.weight, 0);
+    const completedWeight = completionTasks.reduce((acc, t) => acc + (t.completed ? t.weight : 0), 0);
 
     // 7-day Analytics Mock/Aggregation
     const today = new Date();
@@ -425,11 +413,8 @@ accountRouter.delete('/aliases/:alias', requireAuth, async (req: any, res) => {
 // 6. Dedicated Analytics API with Time Ranges
 accountRouter.get('/analytics', requireAuth, async (req: any, res) => {
   try {
-    const rangeParam = (req.query.range as string) || '7d';
-    let days = 7;
-    if (rangeParam === '3d') days = 3;
-    else if (rangeParam === '14d') days = 14;
-    else if (rangeParam === '30d') days = 30;
+    const range = (req.query.range as string) || '7d';
+    const days = ({ '3d': 3, '14d': 14, '30d': 30 } as Record<string, number>)[range] || 7;
 
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
@@ -535,7 +520,7 @@ accountRouter.get('/analytics', requireAuth, async (req: any, res) => {
     ];
 
     res.json({
-      range: rangeParam,
+      range,
       days,
       lastUpdated: new Date().toISOString(),
       kpis: {

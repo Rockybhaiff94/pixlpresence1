@@ -53,59 +53,7 @@ export default function AccountAnalyticsPage() {
         const json = await res.json();
         setData(json);
       } else {
-        // Fallback exemplar state
-        const days = selectedRange === "3d" ? 3 : selectedRange === "14d" ? 14 : selectedRange === "30d" ? 30 : 7;
-        const baseViews = days * 1250;
-        const clicks = Math.round(baseViews * 0.22);
-        setData({
-          range: selectedRange,
-          days,
-          lastUpdated: new Date().toISOString(),
-          kpis: {
-            totalClicks: { value: clicks.toLocaleString(), delta: "+11.8% vs prev" },
-            clickRate: { value: "22.4%", delta: "+1.2% vs prev" },
-            profileViews: { value: baseViews.toLocaleString(), delta: "+16.5% vs prev" },
-            avgDailyViews: { value: "1,250", delta: "+14.0% vs prev" },
-          },
-          timeline: Array.from({ length: days }).map((_, i) => ({
-            date: `Day ${i + 1}`,
-            views: 1100 + ((i * 137) % 400),
-            clicks: 220 + ((i * 43) % 100),
-          })),
-          devices: [
-            { name: "Desktop", percentage: 66, count: Math.round(baseViews * 0.66) },
-            { name: "Mobile", percentage: 28, count: Math.round(baseViews * 0.28) },
-            { name: "Tablet", percentage: 4, count: Math.round(baseViews * 0.04) },
-            { name: "Other", percentage: 2, count: Math.round(baseViews * 0.02) },
-          ],
-          socials: [
-            { platform: "Discord", icon: "discord", url: "https://discord.gg", clicks: Math.round(clicks * 0.44), percentage: 44 },
-            { platform: "GitHub", icon: "github", url: "https://github.com", clicks: Math.round(clicks * 0.31), percentage: 31 },
-            { platform: "X / Twitter", icon: "twitter", url: "https://x.com", clicks: Math.round(clicks * 0.16), percentage: 16 },
-            { platform: "Spotify", icon: "spotify", url: "https://spotify.com", clicks: Math.round(clicks * 0.09), percentage: 9 },
-          ],
-          buttons: [
-            { id: "b1", title: "DISCORD COMMUNITY", url: "https://discord.gg", clicks: Math.round(clicks * 0.38), rate: "8.4%" },
-            { id: "b2", title: "PROJECT SOURCE CODE", url: "https://github.com", clicks: Math.round(clicks * 0.24), rate: "5.3%" },
-            { id: "b3", title: "SPOTIFY PLAYLIST", url: "https://spotify.com", clicks: Math.round(clicks * 0.12), rate: "2.6%" },
-          ],
-          referrers: [
-            { name: "Direct / Bookmark", count: Math.round(baseViews * 0.48), percentage: 48 },
-            { name: "Discord Client RPC", count: Math.round(baseViews * 0.28), percentage: 28 },
-            { name: "X / Twitter Posts", count: Math.round(baseViews * 0.14), percentage: 14 },
-            { name: "Google Search", count: Math.round(baseViews * 0.07), percentage: 7 },
-            { name: "Other", count: Math.round(baseViews * 0.03), percentage: 3 },
-          ],
-          countries: [
-            { code: "US", name: "United States", views: Math.round(baseViews * 0.42), percentage: 42 },
-            { code: "DE", name: "Germany", views: Math.round(baseViews * 0.18), percentage: 18 },
-            { code: "GB", name: "United Kingdom", views: Math.round(baseViews * 0.14), percentage: 14 },
-            { code: "FR", name: "France", views: Math.round(baseViews * 0.09), percentage: 9 },
-            { code: "JP", name: "Japan", views: Math.round(baseViews * 0.07), percentage: 7 },
-            { code: "CA", name: "Canada", views: Math.round(baseViews * 0.05), percentage: 5 },
-            { code: "OTHER", name: "Other Regions", views: Math.round(baseViews * 0.05), percentage: 5 },
-          ],
-        });
+        setData(null);
       }
     } catch {
       // Ignore
@@ -483,3 +431,4 @@ export default function AccountAnalyticsPage() {
     </AccountLayout>
   );
 }
+

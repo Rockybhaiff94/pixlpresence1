@@ -1,16 +1,8 @@
 import type { NextConfig } from "next";
 
-function normalizeApiUrl(raw?: string): string {
-  if (!raw || typeof raw !== "string") return "http://localhost:3001";
-  let trimmed = raw.trim();
-  if (!trimmed) return "http://localhost:3001";
-  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://") && !trimmed.startsWith("/")) {
-    trimmed = `https://${trimmed}`;
-  }
-  return trimmed.replace(/\/+$/, "");
-}
-
-const apiUrl = normalizeApiUrl(process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL);
+const apiUrl = (process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001")
+  .trim()
+  .replace(/\/+$/, "");
 
 const nextConfig: NextConfig = {
   async redirects() {
