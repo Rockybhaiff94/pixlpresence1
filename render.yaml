@@ -56,7 +56,7 @@ services:
       - key: SESSION_SECRET
         generateValue: true
       - key: FRONTEND_URL
-        value: https://pixlpresence1.onrender.com
+        value: https://pixlpresence1-web.vercel.app
       - key: DISCORD_CLIENT_ID
         sync: false
       - key: DISCORD_CLIENT_SECRET
