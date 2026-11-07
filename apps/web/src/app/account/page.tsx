@@ -100,39 +100,48 @@ export default function AccountOverviewPage() {
   const [aliasModalOpen, setAliasModalOpen] = useState(false);
   const [displayNameModalOpen, setDisplayNameModalOpen] = useState(false);
 
-  const fetchOverview = async (retryCount = 0) => {
-    try {
-      if (!data) setLoading(true);
-      setError("");
-      const res = await apiFetch("/api/account/overview");
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-        if (json.user) {
-          setUserState(json.user as any);
-        }
-      } else if (res.status === 401) {
-        setData(null);
-        setError("Please sign in to view your account dashboard.");
-      } else {
-        // If 500, 502, 503 (Render waking up), retry up to 2 times
-        if (retryCount < 2 && getStoredToken()) {
-          setTimeout(() => fetchOverview(retryCount + 1), 1500);
+  const fetchOverview = async () => {
+    setLoading(true);
+    setError("");
+    const maxRetries = 2;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await apiFetch("/api/account/overview");
+        if (res.ok) {
+          const json = await res.json();
+          setData(json);
+          if (json.user) {
+            setUserState(json.user as any);
+          }
+          setLoading(false);
           return;
         }
+
+        if (res.status === 401) {
+          setData(null);
+          setError("Please sign in to view your account dashboard.");
+          setLoading(false);
+          return;
+        }
+
+        // Backend warming up (500, 502, 503)
+        if (attempt < maxRetries && getStoredToken()) {
+          await new Promise((r) => setTimeout(r, 1500));
+          continue;
+        }
+
         setData(null);
         setError("Account service is warming up. Please refresh in a moment.");
+      } catch {
+        if (attempt < maxRetries && getStoredToken()) {
+          await new Promise((r) => setTimeout(r, 1500));
+          continue;
+        }
+        setData(null);
+        setError("Failed to connect to account API. Please check your network.");
       }
-    } catch {
-      if (retryCount < 2 && getStoredToken()) {
-        setTimeout(() => fetchOverview(retryCount + 1), 1500);
-        return;
-      }
-      setError("Failed to connect to account API. Please check your network.");
-      setData(null);
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   };
 
   useEffect(() => {

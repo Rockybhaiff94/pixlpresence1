@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const defaultApiUrl =
   process.env.NODE_ENV === "production"
-    ? "https://pixlpresence1.onrender.com"
+    ? "https://pixelgg-api.onrender.com"
     : "http://localhost:3001";
 
 const apiUrl = (
@@ -25,6 +25,26 @@ const nextConfig: NextConfig = {
         source: "/auth/google",
         destination: `${apiUrl}/auth/google`,
         permanent: false,
+      },
+      {
+        source: "/explore",
+        destination: "/#showcase",
+        permanent: false,
+      },
+      {
+        source: "/rpc",
+        destination: "/dashboard/rpc",
+        permanent: false,
+      },
+      {
+        source: "/profile/:username*",
+        destination: "/:username*",
+        permanent: true,
+      },
+      {
+        source: "/u/:username*",
+        destination: "/:username*",
+        permanent: true,
       },
       {
         source: "/dashboard/customize",

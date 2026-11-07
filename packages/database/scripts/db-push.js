@@ -7,13 +7,16 @@ dotenv.config({ path: path.join(rootDir, '.env') });
 dotenv.config({ path: path.resolve(rootDir, '../../.env') });
 dotenv.config();
 
-const dbUrl = process.env.DATABASE_URL || 'postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true';
-const directUrl = process.env.DIRECT_URL || 'postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres';
+const dbUrl = process.env.DATABASE_URL?.trim();
+const directUrl = process.env.DIRECT_URL?.trim();
+if (!dbUrl || !directUrl) {
+  throw new Error('DATABASE_URL and DIRECT_URL must be set before running db:push.');
+}
 
 console.log(`[db:push] Pushing schema to database (${dbUrl.includes('supabase') ? 'Supabase Postgres' : 'Database'})...`);
 
 try {
-  execSync('npx prisma db push --schema=prisma/schema.prisma --accept-data-loss', {
+  execSync('npx prisma db push --schema=prisma/schema.prisma', {
     cwd: rootDir,
     stdio: 'inherit',
     env: {
