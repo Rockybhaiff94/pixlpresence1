@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const defaultApiUrl =
   process.env.NODE_ENV === "production"
-    ? "https://pixlpresence1.onrender.com"
+    ? "https://pixelgg-api.onrender.com"
     : "http://localhost:3001";
 
 const apiUrl = (
