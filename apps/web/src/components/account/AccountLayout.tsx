@@ -44,3 +44,4 @@ export const AccountLayout: React.FC<AccountLayoutProps> = ({ children, user }) 
     </div>
   );
 };
+

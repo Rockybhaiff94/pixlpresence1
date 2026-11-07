@@ -138,3 +138,4 @@ export const EditDisplayNameModal: React.FC<EditDisplayNameModalProps> = ({
     </div>
   );
 };
+
