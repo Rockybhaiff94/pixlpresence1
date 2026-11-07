@@ -28,7 +28,8 @@ import { EditUsernameModal } from "@/components/account/EditUsernameModal";
 import { ManageAliasesModal } from "@/components/account/ManageAliasesModal";
 import { EditDisplayNameModal } from "@/components/account/EditDisplayNameModal";
 import { Button } from "@/components/nothing/Button";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getStoredToken } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 
 interface AccountOverviewData {
   user: {
@@ -88,6 +89,7 @@ interface AccountOverviewData {
 }
 
 export default function AccountOverviewPage() {
+  const { user: authUser, loading: authLoading } = useAuth();
   const [data, setData] = useState<AccountOverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -98,7 +100,7 @@ export default function AccountOverviewPage() {
   const [aliasModalOpen, setAliasModalOpen] = useState(false);
   const [displayNameModalOpen, setDisplayNameModalOpen] = useState(false);
 
-  const fetchOverview = async () => {
+  const fetchOverview = async (retryCount = 0) => {
     try {
       setLoading(true);
       setError("");
@@ -106,11 +108,23 @@ export default function AccountOverviewPage() {
       if (res.ok) {
         const json = await res.json();
         setData(json);
-      } else {
+      } else if (res.status === 401) {
         setData(null);
         setError("Please sign in to view your account dashboard.");
+      } else {
+        // If 500, 502, 503 (Render waking up), retry up to 2 times
+        if (retryCount < 2 && getStoredToken()) {
+          setTimeout(() => fetchOverview(retryCount + 1), 1500);
+          return;
+        }
+        setData(null);
+        setError("Account service is warming up. Please refresh in a moment.");
       }
     } catch {
+      if (retryCount < 2 && getStoredToken()) {
+        setTimeout(() => fetchOverview(retryCount + 1), 1500);
+        return;
+      }
       setError("Failed to connect to account API. Please check your network.");
       setData(null);
     } finally {
@@ -120,7 +134,7 @@ export default function AccountOverviewPage() {
 
   useEffect(() => {
     fetchOverview();
-  }, []);
+  }, [authUser]);
 
   const handleCopyUid = (uid: string) => {
     if (typeof window !== "undefined") {
@@ -130,11 +144,11 @@ export default function AccountOverviewPage() {
     }
   };
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
-      <AccountLayout>
+      <AccountLayout user={authUser || undefined}>
         <div className="flex items-center justify-center min-h-[60vh] font-mono text-neutral-500 text-xs">
-          <RefreshCw size={16} className="animate-spin mr-2" />
+          <RefreshCw size={16} className="animate-spin mr-2 text-white" />
           <span>LOADING ACCOUNT OVERVIEW...</span>
         </div>
       </AccountLayout>
@@ -142,32 +156,43 @@ export default function AccountOverviewPage() {
   }
 
   if (!data) {
+    if (!authUser && !getStoredToken()) {
+      return (
+        <AccountLayout>
+          <div className="flex flex-col items-center justify-center min-h-[60vh] font-mono text-center p-8 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-[#141414] border border-[#262626] flex items-center justify-center text-white">
+              <User size={22} className="text-neutral-400" />
+            </div>
+            <div className="space-y-1">
+              <h2 className="text-white font-bold text-sm tracking-wide">AUTHENTICATION REQUIRED</h2>
+              <p className="text-xs text-neutral-500 max-w-sm">
+                {error || "You are not signed in. Connect your Discord account or sign in with email to access your account."}
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <Link
+                href="/login"
+                className="px-5 py-2 rounded-lg bg-white text-black font-bold text-xs hover:bg-neutral-200 transition-colors"
+              >
+                SIGN IN
+              </Link>
+              <a
+                href="/auth/discord"
+                className="px-5 py-2 rounded-lg bg-[#141414] hover:bg-[#1a1a1a] text-white border border-[#2a2a2a] text-xs flex items-center gap-2 transition-colors"
+              >
+                <span>CONTINUE WITH DISCORD</span>
+              </a>
+            </div>
+          </div>
+        </AccountLayout>
+      );
+    }
+
     return (
-      <AccountLayout>
-        <div className="flex flex-col items-center justify-center min-h-[60vh] font-mono text-center p-8 space-y-4">
-          <div className="w-12 h-12 rounded-2xl bg-[#141414] border border-[#262626] flex items-center justify-center text-white">
-            <User size={22} className="text-neutral-400" />
-          </div>
-          <div className="space-y-1">
-            <h2 className="text-white font-bold text-sm tracking-wide">AUTHENTICATION REQUIRED</h2>
-            <p className="text-xs text-neutral-500 max-w-sm">
-              {error || "You are not signed in. Connect your Discord account or sign in with email to access your account."}
-            </p>
-          </div>
-          <div className="flex items-center gap-3 pt-2">
-            <Link
-              href="/login"
-              className="px-5 py-2 rounded-lg bg-white text-black font-bold text-xs hover:bg-neutral-200 transition-colors"
-            >
-              SIGN IN
-            </Link>
-            <a
-              href="/auth/discord"
-              className="px-5 py-2 rounded-lg bg-[#141414] hover:bg-[#1a1a1a] text-white border border-[#2a2a2a] text-xs flex items-center gap-2 transition-colors"
-            >
-              <span>CONTINUE WITH DISCORD</span>
-            </a>
-          </div>
+      <AccountLayout user={authUser || undefined}>
+        <div className="flex items-center justify-center min-h-[60vh] font-mono text-neutral-500 text-xs">
+          <RefreshCw size={16} className="animate-spin mr-2 text-white" />
+          <span>RESTORING ACCOUNT SESSION...</span>
         </div>
       </AccountLayout>
     );

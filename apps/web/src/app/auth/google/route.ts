@@ -15,3 +15,4 @@ export async function GET() {
 
   return NextResponse.redirect(`${backendUrl}/auth/google`, 307);
 }
+

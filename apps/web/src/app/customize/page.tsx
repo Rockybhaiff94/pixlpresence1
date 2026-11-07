@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { AccountLayout } from "@/components/account/AccountLayout";
 import { Button } from "@/components/nothing/Button";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, formatAvatarUrl } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 export default function CustomizePage() {
@@ -384,7 +384,14 @@ export default function CustomizePage() {
                 >
                   {avatarUrl ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
-                    <img src={avatarUrl} alt="Preview" className="w-full h-full object-cover" />
+                    <img
+                      src={formatAvatarUrl(avatarUrl, (user as any)?.discordId)}
+                      alt="Preview"
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src = "https://cdn.discordapp.com/embed/avatars/0.png";
+                      }}
+                    />
                   ) : (
                     <span>{(displayName || user?.username || "P").charAt(0).toUpperCase()}</span>
                   )}

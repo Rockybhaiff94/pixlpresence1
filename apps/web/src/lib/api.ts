@@ -1,13 +1,39 @@
 export function getApiBaseUrl(): string {
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL.trim().replace(/\/+$/, "");
-  }
   if (typeof window !== "undefined") {
+    // In production browser, prioritize live HTTPS API over localhost
     if (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+      if (process.env.NEXT_PUBLIC_API_URL && process.env.NEXT_PUBLIC_API_URL.startsWith("https://")) {
+        return process.env.NEXT_PUBLIC_API_URL.trim().replace(/\/+$/, "");
+      }
       return "https://pixlpresence1.onrender.com";
     }
   }
-  return "http://localhost:3001";
+  return (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001").trim().replace(/\/+$/, "");
+}
+
+export function formatAvatarUrl(avatar: string | null | undefined, discordId?: string | null): string {
+  if (!avatar || avatar.trim().length === 0) {
+    if (discordId) {
+      try {
+        const idx = Number((BigInt(discordId) >> BigInt(22)) % BigInt(6));
+        return `https://cdn.discordapp.com/embed/avatars/${Math.abs(idx)}.png`;
+      } catch (_) {}
+    }
+    return "https://cdn.discordapp.com/embed/avatars/0.png";
+  }
+
+  if (avatar.startsWith("http://") || avatar.startsWith("https://")) {
+    return avatar;
+  }
+
+  // Raw Discord 32-character avatar hash
+  if (discordId) {
+    const isAnimated = avatar.startsWith("a_");
+    const ext = isAnimated ? "gif" : "webp";
+    return `https://cdn.discordapp.com/avatars/${discordId}/${avatar}.${ext}?size=256`;
+  }
+
+  return "https://cdn.discordapp.com/embed/avatars/0.png";
 }
 
 export function getStoredToken(): string | null {

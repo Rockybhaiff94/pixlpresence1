@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '@discord-rpc/database';
 import { recordSyncEvent } from '../utils/sync';
 import bcrypt from 'bcryptjs';
+import { resolveDiscordAvatarUrl } from '../auth';
 
 export const accountRouter = Router();
 
@@ -147,13 +148,16 @@ accountRouter.get('/overview', requireAuth, async (req: any, res) => {
     // Alias capacity (1 for free, 5 for premium)
     const maxAliases = user.premiumStatus ? 5 : 1;
 
+    const resolvedAvatar = resolveDiscordAvatarUrl(user.discordId, user.avatar);
+    const resolvedProfileAvatar = resolveDiscordAvatarUrl(user.discordId, profile.avatarUrl || user.avatar);
+
     res.json({
       user: {
         id: user.id,
         username: user.username,
         email: user.email,
         globalName: user.globalName,
-        avatar: user.avatar,
+        avatar: resolvedAvatar,
         role: user.role,
         premiumStatus: user.premiumStatus,
         badges: userBadges,
@@ -163,7 +167,7 @@ accountRouter.get('/overview', requireAuth, async (req: any, res) => {
         id: (profile as any).id,
         displayName: profile.displayName || user.globalName || user.username,
         bio: profile.bio || '',
-        avatarUrl: profile.avatarUrl || user.avatar || '',
+        avatarUrl: resolvedProfileAvatar,
         views: profile.views || 0,
         linksCount: profile.links ? profile.links.length : 0,
         buttonsCount: profile.buttons ? profile.buttons.length : 0,
@@ -183,6 +187,7 @@ accountRouter.get('/overview', requireAuth, async (req: any, res) => {
           connected: Boolean(user.discordId),
           id: user.discordId,
           username: user.globalName || user.username,
+          avatar: resolvedAvatar,
         },
         google: {
           connected: Boolean((user as any).googleId),

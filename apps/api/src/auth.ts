@@ -28,6 +28,28 @@ const FRONTEND_URL = cleanEnv(
 
 const scopes = ['identify', 'email'];
 
+export function resolveDiscordAvatarUrl(discordId: string | null | undefined, avatar: string | null | undefined): string {
+  if (!avatar || avatar.trim().length === 0) {
+    if (!discordId) return 'https://cdn.discordapp.com/embed/avatars/0.png';
+    try {
+      const idx = Number((BigInt(discordId) >> BigInt(22)) % BigInt(6));
+      return `https://cdn.discordapp.com/embed/avatars/${Math.abs(idx)}.png`;
+    } catch (_) {
+      return 'https://cdn.discordapp.com/embed/avatars/0.png';
+    }
+  }
+
+  // Already an absolute HTTP/HTTPS URL
+  if (avatar.startsWith('http://') || avatar.startsWith('https://')) {
+    return avatar;
+  }
+
+  // Discord 32-character hex avatar hash (e.g. "a_..." or "1a2b...")
+  const isAnimated = avatar.startsWith('a_');
+  const ext = isAnimated ? 'gif' : 'webp';
+  return `https://cdn.discordapp.com/avatars/${discordId}/${avatar}.${ext}?size=256`;
+}
+
 passport.use(
   new DiscordStrategy(
     {
@@ -46,7 +68,8 @@ passport.use(
 
         const email = profile.email || null;
         const globalName = profile.global_name || null;
-        const avatar = profile.avatar || null;
+        const rawAvatar = profile.avatar || null;
+        const avatar = resolveDiscordAvatarUrl(profile.id, rawAvatar);
         const banner = profile.banner || null;
         const nitroStatus = Number(profile.premium_type) || 0;
 
@@ -170,7 +193,19 @@ passport.serializeUser((user: any, done) => {
 
 passport.deserializeUser(async (id: string, done) => {
   try {
-    const user = await prisma.user.findUnique({ where: { id } });
+    const user = await prisma.user.findUnique({
+      where: { id },
+      include: {
+        profile: true,
+        identities: true,
+      },
+    });
+    if (user) {
+      user.avatar = resolveDiscordAvatarUrl(user.discordId, user.avatar);
+      if (user.profile) {
+        user.profile.avatarUrl = resolveDiscordAvatarUrl(user.discordId, user.profile.avatarUrl || user.avatar);
+      }
+    }
     done(null, user);
   } catch (err) {
     console.error('[Discord OAuth Deserialize Error]:', err);
@@ -261,27 +296,48 @@ authRouter.get('/discord/callback', (req, res, next) => {
           `${FRONTEND_URL}/?error=${encodeURIComponent(loginErr.message || 'Session login failed')}`
         );
       }
-      console.log(`[Discord OAuth] User ${user.username} logged in successfully. Redirecting.`);
+      console.log(`[Discord OAuth] User ${user.username} logged in successfully.`);
       
-      const token = user.appToken || '';
-      try {
-        if (token) {
-          res.cookie('pixel_app_token', token, {
-            maxAge: 30 * 24 * 60 * 60 * 1000,
-            sameSite: 'none',
-            secure: true,
-            path: '/',
-          });
-        }
-      } catch (cErr) {
-        console.warn('[Cookie set warning]:', cErr);
-      }
+      // Explicitly set userId in session object
+      (req.session as any).userId = user.id;
 
-      // Pass token in URL parameter so cross-domain environments can authenticate without 3rd party cookies
-      const redirectUrl = token
-        ? `${FRONTEND_URL}/account?token=${encodeURIComponent(token)}`
-        : `${FRONTEND_URL}/account`;
-      return res.redirect(redirectUrl);
+      // CRITICAL: Wait for session persistence to complete before issuing 302 redirect
+      req.session.save(async (saveErr) => {
+        if (saveErr) {
+          console.error('[Session Save Warning]:', saveErr);
+        } else {
+          try {
+            if (req.sessionID) {
+              await prisma.session.updateMany({
+                where: { sid: req.sessionID },
+                data: { userId: user.id },
+              });
+            }
+          } catch (dbErr) {
+            console.warn('[Session.userId sync warning]:', dbErr);
+          }
+        }
+
+        const token = user.appToken || '';
+        try {
+          if (token) {
+            res.cookie('pixel_app_token', token, {
+              maxAge: 30 * 24 * 60 * 60 * 1000,
+              sameSite: 'none',
+              secure: true,
+              path: '/',
+            });
+          }
+        } catch (cErr) {
+          console.warn('[Cookie set warning]:', cErr);
+        }
+
+        // Pass token in URL parameter so cross-domain environments can authenticate without 3rd party cookies
+        const redirectUrl = token
+          ? `${FRONTEND_URL}/account?token=${encodeURIComponent(token)}`
+          : `${FRONTEND_URL}/account`;
+        return res.redirect(redirectUrl);
+      });
     });
   })(req, res, next);
 });
@@ -348,6 +404,10 @@ authRouter.get('/me', async (req: any, res) => {
             identities: true,
           },
         });
+      }
+      user.avatar = resolveDiscordAvatarUrl(user.discordId, user.avatar);
+      if (user.profile) {
+        user.profile.avatarUrl = resolveDiscordAvatarUrl(user.discordId, user.profile.avatarUrl || user.avatar);
       }
       return res.json(user);
     }

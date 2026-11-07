@@ -26,6 +26,7 @@ import {
   Copy,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { formatAvatarUrl } from "@/lib/api";
 
 interface AccountSidebarProps {
   user?: {
@@ -318,13 +319,16 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
                   className="w-full p-2 rounded-xl bg-[#101010] hover:bg-[#161616] border border-[#222222] flex items-center justify-between text-left transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-xs text-white shrink-0">
+                    <div className="w-8 h-8 rounded-lg bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-xs text-white shrink-0 overflow-hidden">
                       {currentUser.avatar ? (
                         /* eslint-disable-next-line @next/next/no-img-element */
                         <img
-                          src={currentUser.avatar}
+                          src={formatAvatarUrl(currentUser.avatar, (currentUser as any).discordId)}
                           alt={currentUser.username}
                           className="w-full h-full object-cover rounded-lg"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).src = "https://cdn.discordapp.com/embed/avatars/0.png";
+                          }}
                         />
                       ) : (
                         <span>{currentUser.username.charAt(0).toUpperCase()}</span>

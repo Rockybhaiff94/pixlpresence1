@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
-import { getStoredToken, setStoredToken, clearStoredToken, apiFetch } from "@/lib/api";
+import { getStoredToken, setStoredToken, clearStoredToken, apiFetch, formatAvatarUrl } from "@/lib/api";
 
 export interface UserProfile {
   id: string;
@@ -93,6 +93,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const res = await apiFetch("/api/auth/me");
       if (res.ok) {
         const data = await res.json();
+        data.avatar = formatAvatarUrl(data.avatar, (data as any).discordId);
+        if (data.profile) {
+          data.profile.avatarUrl = formatAvatarUrl(data.profile.avatarUrl || data.avatar, (data as any).discordId);
+        }
         setUser(data);
         setProfile(data.profile || null);
       } else if (res.status === 401) {
