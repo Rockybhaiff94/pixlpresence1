@@ -58,3 +58,4 @@ export interface DiscordActivity {
         button_urls: string[];
     };
 }
+

@@ -342,3 +342,4 @@ export default definePlugin({
         console.log("[PixelsRPC] Plugin stopped and Rich Presence cleared.");
     }
 });
+

@@ -21,3 +21,4 @@ export function definePluginSettings<T extends Record<string, PluginSettingOptio
         options
     };
 }
+

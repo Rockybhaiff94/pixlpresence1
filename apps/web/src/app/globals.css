@@ -1,8 +1,21 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --nt-black: #000000;
+  --nt-deep: #080808;
+  --nt-surface-0: #101010;
+  --nt-surface-1: #161616;
+  --nt-surface-2: #222222;
+  --nt-border-subtle: #242424;
+  --nt-border-strong: #383838;
+  --nt-text-muted: #6e6e6e;
+  --nt-text-secondary: #a3a3a3;
+  --nt-text-primary: #ededed;
+  --nt-white: #ffffff;
+  --nt-red: #d71920;
+
+  --background: #050505;
+  --foreground: #ededed;
 }
 
 @theme inline {
@@ -12,15 +25,94 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow-x: hidden;
+  selection-background-color: #ffffff;
+  selection-color: #000000;
+}
+
+::selection {
+  background-color: #ffffff;
+  color: #000000;
+}
+
+/* Nothing OS Dot-Matrix Grid Backgrounds */
+.nt-dot-grid {
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.nt-dot-grid-dense {
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* Technical Monospaced Dot-Matrix Typography Accents */
+.font-dot-matrix {
+  font-family: var(--font-geist-mono), monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* Industrial Corner Crosshair Accents */
+.nt-crosshair {
+  position: relative;
+}
+.nt-crosshair::before {
+  content: "+";
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 14px;
+  color: #555555;
+  line-height: 1;
+  pointer-events: none;
+}
+.nt-crosshair::after {
+  content: "+";
+  position: absolute;
+  bottom: -8px;
+  right: -8px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 14px;
+  color: #555555;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Hardware Glyph Status LED */
+.glyph-led-red {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #d71920;
+  box-shadow: 0 0 8px rgba(215, 25, 32, 0.8);
+}
+
+.glyph-led-white {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #ffffff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+}
+
+/* Custom Minimalist Monochromatic Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #080808;
+}
+::-webkit-scrollbar-thumb {
+  background: #262626;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #444444;
 }

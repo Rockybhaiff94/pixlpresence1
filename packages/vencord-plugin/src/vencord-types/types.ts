@@ -46,3 +46,4 @@ export interface PluginDefinition {
 export default function definePlugin<T extends PluginDefinition>(def: T): T {
     return def;
 }
+

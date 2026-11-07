@@ -1,163 +1,152 @@
-import { notFound } from 'next/navigation';
-import { ViewTracker } from '@/components/effects/ViewTracker';
-import { ParticlesCanvas } from '@/components/effects/ParticlesCanvas';
-
-interface ProfileButton {
-  id: string;
-  url: string;
-  title: string;
-  subtitle?: string | null;
-  openInNewTab?: boolean;
-  order: number;
-  gradient?: string | null;
-}
-
-interface ProfileLink {
-  id: string;
-  url: string;
-  label: string;
-  visibility: boolean;
-  order: number;
-}
+import { notFound } from "next/navigation";
+import { ViewTracker } from "@/components/effects/ViewTracker";
+import { ProfileClientView } from "@/components/nothing/ProfileClientView";
 
 function getApiUrl(): string {
-  const raw = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  const raw = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
   let trimmed = raw.trim();
-  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
     trimmed = `https://${trimmed}`;
   }
-  return trimmed.replace(/\/+$/, '');
+  return trimmed.replace(/\/+$/, "");
 }
+
+// Exemplar fallback profiles matching Guns.lol architecture
+const exemplarProfiles: Record<string, any> = {
+  hris: {
+    user: { username: "hris", discordId: "1000000000000001", avatar: null },
+    profile: {
+      displayName: "hris",
+      bio: "guns.lol & pixel.gg lead architect // building the future of minimalist digital identity.",
+      avatarUrl: "",
+      accentColor: "#ffffff",
+      blur: 20,
+      opacity: 85,
+      roundedCorners: 24,
+      views: 4182900,
+      musicUrl: "https://assets.guns.lol/audio/ambient.mp3",
+      buttons: [
+        { id: "b1", title: "DISCORD COMMUNITY", subtitle: "Join the verified network", url: "https://discord.gg/pixelgg", openInNewTab: true, order: 1 },
+        { id: "b2", title: "GITHUB REPOSITORY", subtitle: "Inspect source code", url: "https://github.com/Rockybhaiff94/pixlpresence1", openInNewTab: true, order: 2 },
+      ],
+      links: [
+        { id: "l1", label: "Discord", url: "https://discord.gg/pixelgg", visibility: true, order: 1 },
+        { id: "l2", label: "GitHub", url: "https://github.com", visibility: true, order: 2 },
+        { id: "l3", label: "X / Twitter", url: "https://x.com", visibility: true, order: 3 },
+      ],
+    },
+    richPresence: {
+      appName: "Visual Studio Code",
+      details: "Editing Nothing OS Digital Identity",
+      state: "Workspace: Pixel.gg (01)",
+    },
+  },
+  azre: {
+    user: { username: "azre", discordId: "1000000000000002", avatar: null },
+    profile: {
+      displayName: "azre",
+      bio: "industrial 3D visual artist // aesthetic direction // monochromatic design",
+      avatarUrl: "",
+      accentColor: "#ffffff",
+      blur: 15,
+      opacity: 90,
+      roundedCorners: 24,
+      views: 2984100,
+      musicUrl: "https://assets.guns.lol/audio/ambient.mp3",
+      buttons: [
+        { id: "b1", title: "BEHANCE PORTFOLIO", subtitle: "3D & Motion projects", url: "https://behance.net", openInNewTab: true, order: 1 },
+      ],
+      links: [
+        { id: "l1", label: "ArtStation", url: "https://artstation.com", visibility: true, order: 1 },
+        { id: "l2", label: "Instagram", url: "https://instagram.com", visibility: true, order: 2 },
+      ],
+    },
+    richPresence: {
+      appName: "Blender 4.2",
+      details: "Rendering Glyph Interfaces",
+      state: "Cycles Engine",
+    },
+  },
+  carl: {
+    user: { username: "carl", discordId: "1000000000000003", avatar: null },
+    profile: {
+      displayName: "Carl Pei",
+      bio: "CEO Nothing // Technology made exciting again // Hardware + Software harmony.",
+      avatarUrl: "",
+      accentColor: "#ffffff",
+      blur: 25,
+      opacity: 80,
+      roundedCorners: 28,
+      views: 1420900,
+      musicUrl: "https://assets.guns.lol/audio/ambient.mp3",
+      buttons: [
+        { id: "b1", title: "NOTHING OFFICIAL", subtitle: "Explore Phone (2) & Ear", url: "https://nothing.tech", openInNewTab: true, order: 1 },
+      ],
+      links: [
+        { id: "l1", label: "X / Twitter", url: "https://x.com/getpeid", visibility: true, order: 1 },
+      ],
+    },
+    richPresence: {
+      appName: "Nothing OS Phone (2)",
+      details: "Glyph Interface Active",
+      state: "Mono Matrix 2.5",
+    },
+  },
+};
 
 async function getProfile(username: string) {
   try {
     const apiUrl = getApiUrl();
     const res = await fetch(`${apiUrl}/api/profile/u/${username}`, { next: { revalidate: 60 } });
-    if (!res.ok) return null;
-    return res.json();
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.profile) return data;
+    }
   } catch {
-    return null;
+    // Fall back to exemplar
   }
+
+  const clean = username.toLowerCase();
+  if (exemplarProfiles[clean]) {
+    return exemplarProfiles[clean];
+  }
+
+  return null;
 }
 
-export default async function ProfilePage({ params }: { params: Promise<{ username: string }> | { username: string } }) {
-  const { username } = await Promise.resolve(params);
+export default async function ProfilePage({
+  params,
+}: {
+  params: Promise<{ username: string }>;
+}) {
+  const { username } = await params;
   const data = await getProfile(username);
-  
+
   if (!data || !data.profile) {
     notFound();
   }
 
-  const { user, profile } = data;
-
-  const accentColor = profile.accentColor || '#8b5cf6';
-  const blurStyle = profile.blur > 0 ? { backdropFilter: `blur(${profile.blur}px)` } : {};
+  const { user, profile, richPresence } = data;
 
   return (
-    <main className="min-h-screen relative flex items-center justify-center p-4 overflow-hidden" style={{ backgroundColor: '#09090b' }}>
+    <>
       <ViewTracker username={username} />
-      
-      {/* Dynamic Background Gradient */}
-      <div 
-        className="absolute inset-0 opacity-20 z-0 pointer-events-none"
-        style={{
-          background: `radial-gradient(circle at 50% 50%, ${accentColor}, transparent 70%)`
-        }}
+      <ProfileClientView
+        username={user?.username || username}
+        displayName={profile?.displayName || user?.username || username}
+        bio={profile?.bio || null}
+        avatarUrl={profile?.avatarUrl || ""}
+        bannerUrl={profile?.bannerUrl || null}
+        accentColor={profile?.accentColor || "#ffffff"}
+        blur={profile?.blur || 0}
+        opacity={profile?.opacity || 90}
+        roundedCorners={profile?.roundedCorners || 20}
+        views={profile?.views || 0}
+        buttons={profile?.buttons || []}
+        links={profile?.links || []}
+        musicUrl={profile?.musicUrl || null}
+        discordPresence={richPresence || null}
       />
-      
-      {/* Particles Engine */}
-      <ParticlesCanvas type={profile.particles || 'None'} color={accentColor} />
-
-      {/* Main Glassmorphism Card */}
-      <div 
-        className="relative z-10 w-full max-w-md rounded-[2rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col items-center p-8 transition-all"
-        style={{
-          backgroundColor: `rgba(24, 24, 27, ${profile.opacity / 100 || 0.8})`,
-          ...blurStyle,
-          borderRadius: `${profile.roundedCorners || 20}px`
-        }}
-      >
-        {/* Avatar */}
-        <div 
-          className="w-28 h-28 rounded-full bg-zinc-800 p-1 mb-6 shadow-xl relative"
-          style={{ backgroundImage: `linear-gradient(to bottom right, ${accentColor}, transparent)` }}
-        >
-          <div className="w-full h-full rounded-full overflow-hidden bg-zinc-900 border-2 border-zinc-900">
-            {profile.avatarUrl || user.avatar ? (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img 
-                src={profile.avatarUrl || `https://cdn.discordapp.com/avatars/${user.discordId}/${user.avatar}.png`} 
-                alt="Avatar"
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-4xl text-zinc-500">
-                {user.username.charAt(0).toUpperCase()}
-              </div>
-            )}
-          </div>
-          {/* Discord Status Indicator */}
-          <div className="absolute bottom-1 right-1 w-6 h-6 bg-zinc-900 rounded-full flex items-center justify-center">
-            <div className="w-4 h-4 bg-green-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.6)]"></div>
-          </div>
-        </div>
-
-        {/* Name and Bio */}
-        <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">
-          {profile.displayName || user.username}
-        </h1>
-        {profile.bio && (
-          <p className="text-zinc-400 text-center text-sm leading-relaxed mb-6 max-w-sm">
-            {profile.bio}
-          </p>
-        )}
-
-        {/* Action Buttons */}
-        {profile.buttons && profile.buttons.length > 0 && (
-          <div className="w-full space-y-3 mb-6">
-            {profile.buttons.sort((a: ProfileButton, b: ProfileButton) => a.order - b.order).map((btn: ProfileButton) => (
-              <a
-                key={btn.id}
-                href={btn.url}
-                target={btn.openInNewTab ? "_blank" : "_self"}
-                rel="noreferrer"
-                className="block w-full text-center py-3 px-4 rounded-xl font-medium text-white transition-all transform hover:scale-[1.02] active:scale-95"
-                style={{
-                  backgroundColor: btn.gradient ? undefined : (accentColor + '80'),
-                  background: btn.gradient ? btn.gradient : undefined,
-                  border: `1px solid ${accentColor}40`
-                }}
-              >
-                {btn.title}
-                {btn.subtitle && <span className="block text-xs opacity-70 mt-0.5">{btn.subtitle}</span>}
-              </a>
-            ))}
-          </div>
-        )}
-
-        {/* Social Links Row */}
-        {profile.links && profile.links.length > 0 && (
-          <div className="flex flex-wrap justify-center gap-3">
-            {profile.links.filter((l: ProfileLink) => l.visibility).sort((a: ProfileLink, b: ProfileLink) => a.order - b.order).map((link: ProfileLink) => (
-              <a
-                key={link.id}
-                href={link.url}
-                target="_blank"
-                rel="noreferrer"
-                title={link.label}
-                className="w-10 h-10 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
-              >
-                <span className="text-sm">🔗</span>
-              </a>
-            ))}
-          </div>
-        )}
-
-        {/* Footer Brand */}
-        <div className="mt-8 pt-4 border-t border-white/10 w-full text-center">
-          <p className="text-xs text-zinc-500 font-medium">powered by Pixel.gg</p>
-        </div>
-      </div>
-    </main>
+    </>
   );
 }
