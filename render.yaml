@@ -1,47 +1,10 @@
 services:
-  # Pixel Presence website
-  - type: web
-    name: pixlpresence1
-    env: node
-    plan: free
-    buildCommand: npm install --include=dev && npm run build --workspace=web
-    startCommand: npm start --workspace=web
-    healthCheckPath: /
-    envVars:
-      - key: NODE_VERSION
-        value: "20"
-      - key: NODE_ENV
-        value: production
-      - key: NEXT_PUBLIC_API_URL
-        value: https://pixelgg-api.onrender.com
-      - key: INTERNAL_API_URL
-        value: https://pixelgg-api.onrender.com
-
-  # Discord bot background worker (paid Render worker plan required)
-  - type: worker
-    name: pixelgg-mm
-    env: node
-    plan: starter
-    buildCommand: npm install --include=dev && npm run generate --workspace=@discord-rpc/database && npm run build --workspace=@discord-rpc/database && npm run build --workspace=bot
-    startCommand: npm start --workspace=bot
-    envVars:
-      - key: NODE_VERSION
-        value: "20"
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        sync: false
-      - key: DIRECT_URL
-        sync: false
-      - key: DISCORD_BOT_TOKEN
-        sync: false
-
-  # Central API service
+  # Pixel.gg Central Consolidated Backend Service (API + Discord Bot)
   - type: web
     name: pixelgg-api
     env: node
     plan: free
-    buildCommand: npm install --include=dev && npm run generate --workspace=@discord-rpc/database && npm run build --workspace=@discord-rpc/database && npm run build --workspace=api
+    buildCommand: npm install --include=dev && npm run generate --workspace=@discord-rpc/database && npm run build --workspace=@discord-rpc/database && npm run build --workspace=bot && npm run build --workspace=api
     startCommand: npm start --workspace=api
     healthCheckPath: /health
     envVars:
@@ -63,3 +26,11 @@ services:
         sync: false
       - key: DISCORD_CALLBACK_URL
         value: https://pixelgg-api.onrender.com/auth/discord/callback
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: BOT_ACTIVITY_NAME
+        value: Pixel.gg Profiles
+      - key: BOT_ACTIVITY_TYPE
+        value: WATCHING
+      - key: BOT_STATUS
+        value: online

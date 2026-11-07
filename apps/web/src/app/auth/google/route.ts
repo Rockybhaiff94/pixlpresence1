@@ -7,7 +7,7 @@ export async function GET() {
     process.env.INTERNAL_API_URL ||
     process.env.NEXT_PUBLIC_API_URL ||
     (process.env.NODE_ENV === "production"
-      ? "https://pixlpresence1.onrender.com"
+      ? "https://pixelgg-api.onrender.com"
       : "http://localhost:3001")
   )
     .trim()

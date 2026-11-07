@@ -19,8 +19,13 @@ for (const file of commandFiles) {
   }
 }
 
-const token = process.env.DISCORD_BOT_TOKEN!;
-const clientId = process.env.DISCORD_CLIENT_ID!;
+const token = process.env.DISCORD_BOT_TOKEN;
+const clientId = process.env.DISCORD_CLIENT_ID;
+
+if (!token || !clientId) {
+  console.error('[Deploy Commands] Error: DISCORD_BOT_TOKEN and DISCORD_CLIENT_ID are required in environment.');
+  process.exit(1);
+}
 
 const rest = new REST({ version: '10' }).setToken(token);
 
