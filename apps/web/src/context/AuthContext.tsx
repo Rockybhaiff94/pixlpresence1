@@ -177,8 +177,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           updatedUser.discordId
         );
       }
-      setUser(updatedUser);
-      setProfile(updatedUser.profile || null);
+      setUser((prev) => {
+        if (
+          prev &&
+          prev.id === updatedUser.id &&
+          prev.username === updatedUser.username &&
+          prev.avatar === updatedUser.avatar &&
+          prev.globalName === updatedUser.globalName
+        ) {
+          return prev;
+        }
+        return updatedUser;
+      });
+      setProfile((prev) => {
+        if (!updatedUser.profile) return prev;
+        return updatedUser.profile;
+      });
       setCachedUser(updatedUser);
       setStatus("AUTHENTICATED");
       setLoading(false);

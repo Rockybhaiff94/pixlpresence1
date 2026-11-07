@@ -102,7 +102,7 @@ export default function AccountOverviewPage() {
 
   const fetchOverview = async (retryCount = 0) => {
     try {
-      setLoading(true);
+      if (!data) setLoading(true);
       setError("");
       const res = await apiFetch("/api/account/overview");
       if (res.ok) {
@@ -137,7 +137,7 @@ export default function AccountOverviewPage() {
 
   useEffect(() => {
     fetchOverview();
-  }, [authUser]);
+  }, []);
 
   const handleCopyUid = (uid: string) => {
     if (typeof window !== "undefined") {
