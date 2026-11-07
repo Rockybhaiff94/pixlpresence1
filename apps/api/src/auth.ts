@@ -366,20 +366,26 @@ authRouter.get('/me', async (req: any, res) => {
   try {
     let user = req.user;
 
-    // Support Bearer token header
-    if (!user && req.headers.authorization) {
-      const authHeader = req.headers.authorization;
-      if (authHeader.startsWith('Bearer ')) {
-        const token = authHeader.split(' ')[1]?.trim();
-        if (token) {
-          user = await prisma.user.findFirst({
-            where: { appToken: token },
-            include: {
-              profile: true,
-              identities: true,
-            },
-          });
+    // Support Bearer token header or cookie
+    if (!user) {
+      let token: string | null = null;
+      if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+        token = req.headers.authorization.split(' ')[1]?.trim();
+      } else if (req.headers.cookie) {
+        const match = req.headers.cookie.match(/(?:^|;\s*)pixel_app_token=([^;]+)/);
+        if (match && match[1]) {
+          token = decodeURIComponent(match[1]).trim();
         }
+      }
+
+      if (token) {
+        user = await prisma.user.findFirst({
+          where: { appToken: token },
+          include: {
+            profile: true,
+            identities: true,
+          },
+        });
       }
     }
 

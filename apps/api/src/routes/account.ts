@@ -6,18 +6,26 @@ import { resolveDiscordAvatarUrl } from '../auth';
 
 export const accountRouter = Router();
 
-// Middleware to check authentication via Session OR Bearer Token
+// Middleware to check authentication via Session OR Bearer Token OR Token Cookie
 const requireAuth = async (req: any, res: any, next: any) => {
   if (req.isAuthenticated && req.isAuthenticated()) return next();
+  
+  let token: string | null = null;
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1]?.trim();
-    if (token) {
-      const user = await prisma.user.findFirst({ where: { appToken: token } });
-      if (user) {
-        req.user = user;
-        return next();
-      }
+    token = authHeader.split(' ')[1]?.trim() || null;
+  } else if (req.headers.cookie) {
+    const match = req.headers.cookie.match(/(?:^|;\s*)pixel_app_token=([^;]+)/);
+    if (match && match[1]) {
+      token = decodeURIComponent(match[1]).trim();
+    }
+  }
+
+  if (token) {
+    const user = await prisma.user.findFirst({ where: { appToken: token } });
+    if (user) {
+      req.user = user;
+      return next();
     }
   }
 

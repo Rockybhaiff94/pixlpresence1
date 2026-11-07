@@ -42,7 +42,7 @@ interface AccountSidebarProps {
 export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
   const pathname = usePathname();
   const router = useRouter();
-  const { user: authUser, logout } = useAuth();
+  const { user: authUser, status: authStatus, loading: authLoading, logout } = useAuth();
 
   const [accountExpanded, setAccountExpanded] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -50,7 +50,8 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
   const [copiedLink, setCopiedLink] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
-  const currentUser = user !== undefined ? user : authUser;
+  // Single Source of Truth: if page didn't pass explicit user prop, fallback to global authUser
+  const currentUser = user !== undefined && user !== null ? user : authUser;
 
   // Close mobile drawer on route change
   useEffect(() => {
@@ -372,7 +373,17 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
                 )}
               </div>
             </>
+          ) : authStatus === "INITIALIZING" || authLoading ? (
+            /* Never flash SIGN IN / REGISTER while checking or loading session */
+            <div className="p-2 rounded-xl bg-[#0e0e0e] border border-[#1e1e1e] flex items-center gap-2.5 animate-pulse">
+              <div className="w-8 h-8 rounded-lg bg-neutral-800 shrink-0" />
+              <div className="space-y-1.5 flex-1 min-w-0">
+                <div className="h-3 bg-neutral-800 rounded w-20" />
+                <div className="h-2 bg-neutral-900 rounded w-28" />
+              </div>
+            </div>
           ) : (
+            /* STATE B: Genuinely confirmed unauthenticated */
             <Link
               href="/login"
               className="w-full py-2.5 px-3 rounded-xl bg-white text-black font-bold text-xs flex items-center justify-center gap-2 transition-transform hover:scale-[1.02]"

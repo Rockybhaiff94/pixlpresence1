@@ -105,6 +105,35 @@ export function clearStoredToken(): void {
   } catch (_) {}
 }
 
+export function getCachedUser(): any | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem("pixel_cached_user");
+    if (raw && raw.trim().length > 0) {
+      return JSON.parse(raw);
+    }
+  } catch (_) {}
+  return null;
+}
+
+export function setCachedUser(user: any): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (user) {
+      localStorage.setItem("pixel_cached_user", JSON.stringify(user));
+    } else {
+      localStorage.removeItem("pixel_cached_user");
+    }
+  } catch (_) {}
+}
+
+export function clearCachedUser(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem("pixel_cached_user");
+  } catch (_) {}
+}
+
 export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
   const token = getStoredToken();
   const headers = new Headers(init.headers || {});

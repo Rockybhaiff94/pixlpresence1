@@ -89,7 +89,7 @@ interface AccountOverviewData {
 }
 
 export default function AccountOverviewPage() {
-  const { user: authUser, loading: authLoading } = useAuth();
+  const { user: authUser, setUserState, loading: authLoading } = useAuth();
   const [data, setData] = useState<AccountOverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -108,6 +108,9 @@ export default function AccountOverviewPage() {
       if (res.ok) {
         const json = await res.json();
         setData(json);
+        if (json.user) {
+          setUserState(json.user as any);
+        }
       } else if (res.status === 401) {
         setData(null);
         setError("Please sign in to view your account dashboard.");
