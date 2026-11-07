@@ -11,18 +11,24 @@ function cleanEnv(val: string | undefined, fallback: string): string {
   return trimmed || fallback;
 }
 
-const DISCORD_CLIENT_ID = cleanEnv(process.env.DISCORD_CLIENT_ID, '1523632136878559302');
-const DISCORD_CLIENT_SECRET = cleanEnv(process.env.DISCORD_CLIENT_SECRET, '2MbiMbAAS3S333QmWMPSVUDoBT0hAZPh');
+function requiredEnv(name: string): string {
+  const value = process.env[name]?.trim().replace(/^["']|["']$/g, '');
+  if (!value) throw new Error(`Missing required environment variable: ${name}`);
+  return value;
+}
+
+const DISCORD_CLIENT_ID = requiredEnv('DISCORD_CLIENT_ID');
+const DISCORD_CLIENT_SECRET = requiredEnv('DISCORD_CLIENT_SECRET');
 const DISCORD_CALLBACK_URL = cleanEnv(
   process.env.DISCORD_CALLBACK_URL,
   process.env.NODE_ENV === 'production'
-    ? 'https://pixlpresence1.onrender.com/auth/discord/callback'
+    ? 'https://pixelgg-api.onrender.com/auth/discord/callback'
     : 'http://localhost:3001/auth/discord/callback'
 );
 const FRONTEND_URL = cleanEnv(
   process.env.FRONTEND_URL,
   process.env.NODE_ENV === 'production'
-    ? 'https://pixlpresence1-web.vercel.app'
+    ? 'https://pixlpresence1.onrender.com'
     : 'http://localhost:3000'
 );
 
