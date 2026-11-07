@@ -100,7 +100,7 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
-app.use('/auth', authRouter);
+app.use(['/auth', '/api/auth'], authRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/rpc', rpcRouter);
 app.use('/api/admin', adminRouter);
