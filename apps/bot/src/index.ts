@@ -63,12 +63,21 @@ export async function startBot(overrideToken?: string): Promise<Client | null> {
 
       client.commands = new Collection();
 
-      // Independent Bot Error Listeners to prevent process crashes
+      // Independent Bot Error & Reconnection Listeners to prevent process crashes
       client.on('error', (err) => {
         console.error('[PixelBot Client Error]:', err);
       });
       client.on('shardError', (err, shardId) => {
         console.error(`[PixelBot Shard ${shardId} Error]:`, err);
+      });
+      client.on('shardDisconnect', (event, shardId) => {
+        console.warn(`[PixelBot Shard ${shardId} Disconnected]: Code ${event.code}, reason: ${event.reason}`);
+      });
+      client.on('shardReconnecting', (shardId) => {
+        console.log(`[PixelBot Shard ${shardId} Reconnecting] to Discord Gateway...`);
+      });
+      client.on('shardResume', (shardId, replayedEvents) => {
+        console.log(`[PixelBot Shard ${shardId} Resumed]: Replayed ${replayedEvents} events.`);
       });
 
       // Load Commands from commands directory
