@@ -5,7 +5,7 @@ export function getApiBaseUrl(): string {
       if (process.env.NEXT_PUBLIC_API_URL && process.env.NEXT_PUBLIC_API_URL.startsWith("https://")) {
         return process.env.NEXT_PUBLIC_API_URL.trim().replace(/\/+$/, "");
       }
-      return "https://pixlpresence1.onrender.com";
+      return "https://pixelgg-api.onrender.com";
     }
   }
   return (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001").trim().replace(/\/+$/, "");
