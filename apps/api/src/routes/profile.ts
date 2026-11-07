@@ -100,7 +100,7 @@ profileRouter.post('/u/:username/view', async (req: any, res) => {
 
 // Middleware to check authentication via Session OR Bearer Token
 const requireAuth = async (req: any, res: any, next: any) => {
-  if (req.isAuthenticated()) return next();
+  if (typeof req.isAuthenticated === 'function' && req.isAuthenticated()) return next();
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.split(' ')[1]?.trim();

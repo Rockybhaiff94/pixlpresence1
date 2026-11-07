@@ -2,36 +2,49 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowRight, Lock, Mail, Shield, AlertCircle } from "lucide-react";
 import { Navbar } from "@/components/nothing/Navbar";
 import { Footer } from "@/components/nothing/Footer";
 import { Button } from "@/components/nothing/Button";
+import { useAuth } from "@/context/AuthContext";
 
 export default function LoginPage() {
+  const router = useRouter();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   React.useEffect(() => {
-    // Warm up the Render backend in the background so OAuth is instant
+    // Warm up backend
     fetch("/health").catch(() => {});
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      setError("Please provide both email and password.");
+      setError("Please provide both email/username and password.");
       return;
     }
     setError("");
     setLoading(true);
 
     try {
-      // Forward to internal session login
-      window.location.href = `/api/auth/login?email=${encodeURIComponent(email)}`;
-    } catch {
-      setError("Sign-in failed. Please check your credentials.");
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emailOrUsername: email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Sign-in failed");
+      }
+      await login(data.token, data.user);
+      router.push("/account");
+    } catch (err: any) {
+      setError(err.message || "Sign-in failed. Please check your credentials.");
       setLoading(false);
     }
   };

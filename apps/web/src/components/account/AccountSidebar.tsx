@@ -25,6 +25,7 @@ import {
   Check,
   Copy,
 } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 interface AccountSidebarProps {
   user?: {
@@ -34,12 +35,13 @@ interface AccountSidebarProps {
     avatar?: string | null;
     role?: string;
     premiumStatus?: boolean;
-  };
+  } | null;
 }
 
 export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
   const pathname = usePathname();
   const router = useRouter();
+  const { user: authUser, logout } = useAuth();
 
   const [accountExpanded, setAccountExpanded] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -47,14 +49,7 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
   const [copiedLink, setCopiedLink] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
-  const currentUser = user || {
-    id: "cmw4fbemh0000a1sa2h3h5zzk",
-    username: "ashish.yt",
-    globalName: "Ashish",
-    avatar: null,
-    role: "USER",
-    premiumStatus: false,
-  };
+  const currentUser = user !== undefined ? user : authUser;
 
   // Close mobile drawer on route change
   useEffect(() => {
@@ -79,7 +74,7 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
   const allSearchable = [
     ...accountSubItems,
     ...mainNavItems,
-    { label: "Public Profile", href: `/${currentUser.username}`, icon: ExternalLink },
+    ...(currentUser ? [{ label: "Public Profile", href: `/${currentUser.username}`, icon: ExternalLink }] : []),
     { label: "Appearance Theme", href: "/customize", icon: Palette },
     { label: "Social Platform Icons", href: "/links", icon: LinkIcon },
     { label: "Account Aliases", href: "/account", icon: User },
@@ -92,7 +87,7 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
     : [];
 
   const handleShareProfile = () => {
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined" && currentUser?.username) {
       const url = `${window.location.origin}/${currentUser.username}`;
       navigator.clipboard.writeText(url);
       setCopiedLink(true);
@@ -261,7 +256,7 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
                     <item.icon size={14} className={isActive ? "text-black" : "text-neutral-500"} />
                     <span>{item.label}</span>
                   </div>
-                  {item.label === "Premium" && !currentUser.premiumStatus && (
+                  {item.label === "Premium" && !currentUser?.premiumStatus && (
                     <span className="text-[9px] px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-300">
                       7.99€
                     </span>
@@ -274,102 +269,113 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
 
         {/* Bottom Section */}
         <div className="p-3 border-t border-[#181818] space-y-2 bg-[#060606]">
-          {/* Quick Shortcuts */}
-          <div className="space-y-0.5">
-            <Link
-              href={`/${currentUser.username}`}
-              target="_blank"
-              className="w-full px-2.5 py-1.5 rounded-md text-neutral-400 hover:text-white hover:bg-[#121212] flex items-center justify-between transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                <ExternalLink size={13} className="text-neutral-500" />
-                <span>My Page</span>
-              </div>
-              <span className="text-[10px] text-neutral-600">pixel.gg/{currentUser.username}</span>
-            </Link>
-
-            <button
-              onClick={handleShareProfile}
-              className="w-full px-2.5 py-1.5 rounded-md text-neutral-400 hover:text-white hover:bg-[#121212] flex items-center justify-between transition-colors cursor-pointer"
-            >
-              <div className="flex items-center gap-2">
-                <Share2 size={13} className="text-neutral-500" />
-                <span>Share Your Profile</span>
-              </div>
-              {copiedLink ? (
-                <span className="text-[10px] text-white font-bold flex items-center gap-1">
-                  <Check size={10} /> Copied
-                </span>
-              ) : (
-                <Copy size={11} className="text-neutral-600" />
-              )}
-            </button>
-
-            <Link
-              href="/terms"
-              className="w-full px-2.5 py-1.5 rounded-md text-neutral-400 hover:text-white hover:bg-[#121212] flex items-center gap-2 transition-colors"
-            >
-              <HelpCircle size={13} className="text-neutral-500" />
-              <span>Help Center & Terms</span>
-            </Link>
-          </div>
-
-          {/* User Account Info Bar & Dropdown */}
-          <div className="relative pt-2 border-t border-[#141414]">
-            <button
-              onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-              className="w-full p-2 rounded-xl bg-[#101010] hover:bg-[#161616] border border-[#222222] flex items-center justify-between text-left transition-colors cursor-pointer"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-xs text-white shrink-0">
-                  {currentUser.avatar ? (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img
-                      src={currentUser.avatar}
-                      alt={currentUser.username}
-                      className="w-full h-full object-cover rounded-lg"
-                    />
-                  ) : (
-                    <span>{currentUser.username.charAt(0).toUpperCase()}</span>
-                  )}
-                </div>
-                <div className="truncate">
-                  <p className="text-white font-semibold text-xs truncate">
-                    {currentUser.globalName || currentUser.username}
-                  </p>
-                  <p className="text-neutral-500 text-[10px] truncate">
-                    UID: {currentUser.id.slice(0, 10)}...
-                  </p>
-                </div>
-              </div>
-              <ChevronDown size={14} className="text-neutral-500 shrink-0" />
-            </button>
-
-            {/* Account Menu Dropdown */}
-            {userDropdownOpen && (
-              <div className="absolute bottom-full left-0 right-0 mb-1.5 bg-[#121212] border border-[#262626] rounded-xl shadow-2xl p-1.5 space-y-1 z-50">
-                <div className="px-3 py-2 border-b border-[#1c1c1c] text-[10px] text-neutral-500">
-                  SIGNED IN AS <br />
-                  <span className="text-white font-bold text-xs">@{currentUser.username}</span>
-                </div>
+          {currentUser ? (
+            <>
+              {/* Quick Shortcuts */}
+              <div className="space-y-0.5">
                 <Link
-                  href="/account/settings"
-                  onClick={() => setUserDropdownOpen(false)}
-                  className="w-full px-3 py-1.5 rounded text-neutral-300 hover:text-white hover:bg-[#1a1a1a] flex items-center gap-2"
+                  href={`/${currentUser.username}`}
+                  target="_blank"
+                  className="w-full px-2.5 py-1.5 rounded-md text-neutral-400 hover:text-white hover:bg-[#121212] flex items-center justify-between transition-colors"
                 >
-                  <Settings size={13} />
-                  <span>Account Settings</span>
+                  <div className="flex items-center gap-2">
+                    <ExternalLink size={13} className="text-neutral-500" />
+                    <span>My Page</span>
+                  </div>
+                  <span className="text-[10px] text-neutral-600">pixel.gg/{currentUser.username}</span>
                 </Link>
-                <a
-                  href="/auth/logout"
-                  className="w-full px-3 py-1.5 rounded text-[#ff6b6b] hover:bg-[#2a1010] flex items-center gap-2"
+
+                <button
+                  onClick={handleShareProfile}
+                  className="w-full px-2.5 py-1.5 rounded-md text-neutral-400 hover:text-white hover:bg-[#121212] flex items-center justify-between transition-colors cursor-pointer"
                 >
-                  <LogOut size={13} />
-                  <span>Sign Out</span>
-                </a>
+                  <div className="flex items-center gap-2">
+                    <Share2 size={13} className="text-neutral-500" />
+                    <span>Share Your Profile</span>
+                  </div>
+                  {copiedLink ? (
+                    <span className="text-[10px] text-white font-bold flex items-center gap-1">
+                      <Check size={10} /> Copied
+                    </span>
+                  ) : (
+                    <Copy size={11} className="text-neutral-600" />
+                  )}
+                </button>
+
+                <Link
+                  href="/terms"
+                  className="w-full px-2.5 py-1.5 rounded-md text-neutral-400 hover:text-white hover:bg-[#121212] flex items-center gap-2 transition-colors"
+                >
+                  <HelpCircle size={13} className="text-neutral-500" />
+                  <span>Help Center & Terms</span>
+                </Link>
               </div>
-            )}
-          </div>
+
+              {/* User Account Info Bar & Dropdown */}
+              <div className="relative pt-2 border-t border-[#141414]">
+                <button
+                  onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                  className="w-full p-2 rounded-xl bg-[#101010] hover:bg-[#161616] border border-[#222222] flex items-center justify-between text-left transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-xs text-white shrink-0">
+                      {currentUser.avatar ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={currentUser.avatar}
+                          alt={currentUser.username}
+                          className="w-full h-full object-cover rounded-lg"
+                        />
+                      ) : (
+                        <span>{currentUser.username.charAt(0).toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div className="truncate">
+                      <p className="text-white font-semibold text-xs truncate">
+                        {currentUser.globalName || currentUser.username}
+                      </p>
+                      <p className="text-neutral-500 text-[10px] truncate">
+                        UID: {currentUser.id.slice(0, 10)}...
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronDown size={14} className="text-neutral-500 shrink-0" />
+                </button>
+
+                {/* Account Menu Dropdown */}
+                {userDropdownOpen && (
+                  <div className="absolute bottom-full left-0 right-0 mb-1.5 bg-[#121212] border border-[#262626] rounded-xl shadow-2xl p-1.5 space-y-1 z-50">
+                    <div className="px-3 py-2 border-b border-[#1c1c1c] text-[10px] text-neutral-500">
+                      SIGNED IN AS <br />
+                      <span className="text-white font-bold text-xs">@{currentUser.username}</span>
+                    </div>
+                    <Link
+                      href="/account/settings"
+                      onClick={() => setUserDropdownOpen(false)}
+                      className="w-full px-3 py-1.5 rounded text-neutral-300 hover:text-white hover:bg-[#1a1a1a] flex items-center gap-2"
+                    >
+                      <Settings size={13} />
+                      <span>Account Settings</span>
+                    </Link>
+                    <button
+                      onClick={() => logout()}
+                      className="w-full px-3 py-1.5 rounded text-[#ff6b6b] hover:bg-[#2a1010] flex items-center gap-2 cursor-pointer text-left"
+                    >
+                      <LogOut size={13} />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <Link
+              href="/login"
+              className="w-full py-2.5 px-3 rounded-xl bg-white text-black font-bold text-xs flex items-center justify-center gap-2 transition-transform hover:scale-[1.02]"
+            >
+              <span>SIGN IN / REGISTER</span>
+            </Link>
+          )}
         </div>
       </aside>
     </>

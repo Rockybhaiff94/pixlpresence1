@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { X, Check, AlertCircle } from "lucide-react";
 import { Button } from "@/components/nothing/Button";
+import { apiFetch } from "@/lib/api";
 
 interface EditDisplayNameModalProps {
   isOpen: boolean;
@@ -38,7 +39,7 @@ export const EditDisplayNameModal: React.FC<EditDisplayNameModalProps> = ({
     setError("");
 
     try {
-      const res = await fetch("/api/account/display-name", {
+      const res = await apiFetch("/api/account/display-name", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ displayName: clean }),

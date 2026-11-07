@@ -17,6 +17,21 @@ const nextConfig: NextConfig = {
         destination: `${apiUrl}/auth/google`,
         permanent: false,
       },
+      {
+        source: "/dashboard/customize",
+        destination: "/customize",
+        permanent: true,
+      },
+      {
+        source: "/dashboard/socials",
+        destination: "/links",
+        permanent: true,
+      },
+      {
+        source: "/dashboard/templates",
+        destination: "/templates",
+        permanent: true,
+      },
     ];
   },
   async rewrites() {

@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { X, Plus, Trash2, Crown, Check, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/nothing/Button";
+import { apiFetch } from "@/lib/api";
 
 interface ManageAliasesModalProps {
   isOpen: boolean;
@@ -54,7 +55,7 @@ export const ManageAliasesModal: React.FC<ManageAliasesModalProps> = ({
     setSuccess("");
 
     try {
-      const res = await fetch("/api/account/aliases", {
+      const res = await apiFetch("/api/account/aliases", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ alias: clean }),
@@ -81,7 +82,7 @@ export const ManageAliasesModal: React.FC<ManageAliasesModalProps> = ({
     setSuccess("");
 
     try {
-      const res = await fetch(`/api/account/aliases/${encodeURIComponent(aliasToDelete)}`, {
+      const res = await apiFetch(`/api/account/aliases/${encodeURIComponent(aliasToDelete)}`, {
         method: "DELETE",
       });
 

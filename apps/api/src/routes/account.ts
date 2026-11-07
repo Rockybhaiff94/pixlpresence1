@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '@discord-rpc/database';
 import { recordSyncEvent } from '../utils/sync';
+import bcrypt from 'bcryptjs';
 
 export const accountRouter = Router();
 
@@ -539,5 +540,99 @@ accountRouter.get('/analytics', requireAuth, async (req: any, res) => {
   } catch (err: any) {
     console.error('[Analytics Error]:', err);
     res.status(500).json({ error: 'Failed to retrieve analytics' });
+  }
+});
+
+// 7. Badges API
+const OFFICIAL_BADGES = [
+  { id: 'staff', name: 'Staff', description: 'Official Pixel.gg staff member', category: 'Staff', rarity: 'Legendary', icon: 'Shield' },
+  { id: 'helper', name: 'Helper', description: 'Community support & helper', category: 'Staff', rarity: 'Rare', icon: 'HeartHandshake' },
+  { id: 'premium', name: 'Premium', description: 'Pixel.gg Premium subscriber', category: 'Entitlement', rarity: 'Epic', icon: 'Crown' },
+  { id: 'verified', name: 'Verified', description: 'Verified authentic digital identity', category: 'Identity', rarity: 'Rare', icon: 'CheckCircle' },
+  { id: 'donor', name: 'Donor', description: 'Financial backer & supporter', category: 'Support', rarity: 'Rare', icon: 'Zap' },
+  { id: 'gifter', name: 'Gifter', description: 'Generously gifted memberships to others', category: 'Support', rarity: 'Rare', icon: 'Gift' },
+  { id: 'image_host', name: 'Image Host', description: 'Early access image & media hosting', category: 'Feature', rarity: 'Uncommon', icon: 'Image' },
+  { id: 'domain_legend', name: 'Domain Legend', description: 'Connected a custom root domain', category: 'Feature', rarity: 'Rare', icon: 'Globe' },
+  { id: 'og', name: 'OG', description: 'Platform member since inception', category: 'Special', rarity: 'Legendary', icon: 'Flame' },
+  { id: 'booster', name: 'Server Booster', description: 'Active Discord server booster', category: 'Discord', rarity: 'Rare', icon: 'Sparkles' },
+  { id: 'hon_gg', name: 'Hon.gg', description: 'Affiliated developer partner', category: 'Partner', rarity: 'Epic', icon: 'Award' },
+  { id: 'bug_hunter', name: 'Bug Hunter', description: 'Reported security or platform flaws', category: 'Special', rarity: 'Epic', icon: 'Bug' },
+  { id: 'summer_2026', name: 'Summer 2026', description: 'Participant in Summer 2026 event', category: 'Seasonal', rarity: 'Uncommon', icon: 'Sun' },
+  { id: 'easter_2026', name: 'Easter 2026', description: 'Found all hidden Easter eggs', category: 'Seasonal', rarity: 'Uncommon', icon: 'Egg' },
+  { id: 'christmas_2025', name: 'Christmas 2025', description: 'Holiday 2025 celebration badge', category: 'Seasonal', rarity: 'Uncommon', icon: 'Gift' },
+  { id: 'halloween_2025', name: 'Halloween 2025', description: 'Nightmare event 2025 badge', category: 'Seasonal', rarity: 'Uncommon', icon: 'Ghost' },
+  { id: 'the_million', name: 'The Million', description: 'Among first 1,000,000 profile claims', category: 'Milestone', rarity: 'Rare', icon: 'Milestone' },
+  { id: 'winner', name: '1st Place Winner', description: 'Champion of community showcase', category: 'Tournament', rarity: 'Legendary', icon: 'Trophy' },
+  { id: 'second_place', name: '2nd Place', description: 'Runner-up in community showcase', category: 'Tournament', rarity: 'Epic', icon: 'Medal' },
+  { id: 'third_place', name: '3rd Place', description: 'Podium finisher in community showcase', category: 'Tournament', rarity: 'Rare', icon: 'Award' },
+  { id: 'early_supporter', name: 'Early Supporter', description: 'Registered in the early beta cohort', category: 'Milestone', rarity: 'Epic', icon: 'Star' },
+];
+
+accountRouter.get('/badges', requireAuth, async (req: any, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+    });
+
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    let ownedBadgeIds: string[] = [];
+    try {
+      ownedBadgeIds = JSON.parse(user.badges || '[]');
+    } catch {
+      ownedBadgeIds = [];
+    }
+
+    // Auto-grant Premium badge if premiumStatus is true
+    if (user.premiumStatus && !ownedBadgeIds.includes('premium')) {
+      ownedBadgeIds.push('premium');
+    }
+
+    const badges = OFFICIAL_BADGES.map((b) => ({
+      ...b,
+      owned: ownedBadgeIds.includes(b.id) || (b.id === 'verified' && user.role === 'ADMIN'),
+    }));
+
+    res.json({
+      badges,
+      totalCount: OFFICIAL_BADGES.length,
+      ownedCount: badges.filter((b) => b.owned).length,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to retrieve badges' });
+  }
+});
+
+// 8. Update Account Password
+accountRouter.patch('/password', requireAuth, async (req: any, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters long.' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // If user already has a password, verify current password
+    if (user.passwordHash) {
+      if (!currentPassword) {
+        return res.status(400).json({ error: 'Current password is required.' });
+      }
+      const match = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!match) {
+        return res.status(401).json({ error: 'Current password is incorrect.' });
+      }
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: newHash },
+    });
+
+    res.json({ success: true, message: 'Password updated successfully' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to update password' });
   }
 });

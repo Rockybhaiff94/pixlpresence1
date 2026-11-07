@@ -3,6 +3,7 @@ import { Strategy as DiscordStrategy } from 'passport-discord';
 import { prisma } from '@discord-rpc/database';
 import { Router } from 'express';
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 
 function cleanEnv(val: string | undefined, fallback: string): string {
   if (!val) return fallback;
@@ -116,6 +117,33 @@ passport.use(
           },
         });
 
+        // Record or sync canonical Discord identity
+        try {
+          await prisma.userIdentity.upsert({
+            where: {
+              provider_providerUserId: {
+                provider: 'discord',
+                providerUserId: profile.id,
+              },
+            },
+            update: {
+              email,
+              displayName: globalName || profile.username,
+              avatarUrl: avatar,
+            },
+            create: {
+              userId: user.id,
+              provider: 'discord',
+              providerUserId: profile.id,
+              email,
+              displayName: globalName || profile.username,
+              avatarUrl: avatar,
+            },
+          });
+        } catch (identErr) {
+          console.warn('[Discord Identity Sync Warning]:', identErr);
+        }
+
         console.log(`[Discord OAuth] Successfully authenticated: ${user.username} (${user.id})`);
         return done(null, user);
       } catch (err) {
@@ -224,13 +252,23 @@ authRouter.get('/discord/callback', (req, res, next) => {
         );
       }
       console.log(`[Discord OAuth] User ${user.username} logged in successfully. Redirecting.`);
-      // Pass token in URL parameter so cross-domain environments (e.g. Brave shields) can authenticate without 3rd party cookie
+      // Pass token in URL parameter so cross-domain environments can authenticate without 3rd party cookies
       const redirectUrl = user.appToken
-        ? `${FRONTEND_URL}/dashboard?token=${encodeURIComponent(user.appToken)}`
-        : `${FRONTEND_URL}/dashboard`;
+        ? `${FRONTEND_URL}/account?token=${encodeURIComponent(user.appToken)}`
+        : `${FRONTEND_URL}/account`;
       return res.redirect(redirectUrl);
     });
   })(req, res, next);
+});
+
+// Google OAuth stub / bridge
+authRouter.get('/google', (req, res) => {
+  // If Google OAuth credentials are not yet configured in production environment
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    return res.redirect(`${FRONTEND_URL}/login?error=${encodeURIComponent('Google OAuth is not configured yet. Please configure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.')}`);
+  }
+  // If configured, forward
+  res.redirect(`${FRONTEND_URL}/login?error=${encodeURIComponent('Google OAuth initialization in progress.')}`);
 });
 
 authRouter.get('/logout', (req, res, next) => {
@@ -238,23 +276,40 @@ authRouter.get('/logout', (req, res, next) => {
     if (err) {
       return next(err);
     }
-    res.redirect(`${FRONTEND_URL}/`);
+    res.json({ success: true, message: 'Logged out successfully' });
   });
 });
 
+// Get Current Authenticated User & Profile
 authRouter.get('/me', async (req: any, res) => {
   try {
     let user = req.user;
 
-    // Support Bearer token header if session cookie is blocked by browser cross-site policy
+    // Support Bearer token header
     if (!user && req.headers.authorization) {
       const authHeader = req.headers.authorization;
       if (authHeader.startsWith('Bearer ')) {
         const token = authHeader.split(' ')[1]?.trim();
         if (token) {
-          user = await prisma.user.findFirst({ where: { appToken: token } });
+          user = await prisma.user.findFirst({
+            where: { appToken: token },
+            include: {
+              profile: true,
+              identities: true,
+            },
+          });
         }
       }
+    }
+
+    if (user && !user.profile) {
+      user = await prisma.user.findUnique({
+        where: { id: user.id },
+        include: {
+          profile: true,
+          identities: true,
+        },
+      });
     }
 
     if (user) {
@@ -263,8 +318,11 @@ authRouter.get('/me', async (req: any, res) => {
         user = await prisma.user.update({
           where: { id: user.id },
           data: { appToken: generatedToken },
+          include: {
+            profile: true,
+            identities: true,
+          },
         });
-        req.user = user;
       }
       return res.json(user);
     }
@@ -272,6 +330,255 @@ authRouter.get('/me', async (req: any, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// Email & Password Registration
+authRouter.post('/register', async (req, res) => {
+  try {
+    const { email, password, username, displayName } = req.body;
+
+    if (!email || !password || !username) {
+      return res.status(400).json({ error: 'Email, password, and username are required.' });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanUsername = String(username).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+
+    if (cleanUsername.length < 3 || cleanUsername.length > 24) {
+      return res.status(400).json({ error: 'Username must be between 3 and 24 characters.' });
+    }
+
+    if (String(password).length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    }
+
+    // Check existing email or username
+    const existing = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: cleanEmail },
+          { username: cleanUsername },
+        ],
+      },
+    });
+
+    if (existing) {
+      if (existing.email === cleanEmail) {
+        return res.status(400).json({ error: 'An account with this email address already exists.' });
+      }
+      return res.status(400).json({ error: 'This username is already taken. Please choose another.' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const appToken = crypto.randomBytes(32).toString('hex');
+
+    const newUser = await prisma.user.create({
+      data: {
+        username: cleanUsername,
+        email: cleanEmail,
+        globalName: displayName || cleanUsername,
+        passwordHash,
+        appToken,
+        role: 'USER',
+        profile: {
+          create: {
+            displayName: displayName || cleanUsername,
+            bio: '',
+            views: 0,
+          },
+        },
+        identities: {
+          create: {
+            provider: 'local',
+            providerUserId: cleanEmail,
+            email: cleanEmail,
+            displayName: displayName || cleanUsername,
+          },
+        },
+      },
+      include: {
+        profile: true,
+        identities: true,
+      },
+    });
+
+    return res.status(201).json({
+      user: newUser,
+      token: appToken,
+      message: 'Account created successfully',
+    });
+  } catch (err: any) {
+    console.error('[Register Error]:', err);
+    return res.status(500).json({ error: err.message || 'Registration failed' });
+  }
+});
+
+// Email or Username & Password Login
+authRouter.post('/login', async (req, res) => {
+  try {
+    const { emailOrUsername, password } = req.body;
+
+    if (!emailOrUsername || !password) {
+      return res.status(400).json({ error: 'Please enter your username/email and password.' });
+    }
+
+    const cleanInput = String(emailOrUsername).trim().toLowerCase();
+
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: cleanInput },
+          { username: cleanInput },
+        ],
+      },
+      include: {
+        profile: true,
+        identities: true,
+      },
+    });
+
+    if (!user || !user.passwordHash) {
+      return res.status(401).json({ error: 'Invalid credentials or account registered via OAuth.' });
+    }
+
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid credentials. Please verify your password.' });
+    }
+
+    // Ensure user has an appToken
+    let activeToken = user.appToken;
+    if (!activeToken) {
+      activeToken = crypto.randomBytes(32).toString('hex');
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { appToken: activeToken },
+      });
+    }
+
+    return res.json({
+      user,
+      token: activeToken,
+      message: 'Signed in successfully',
+    });
+  } catch (err: any) {
+    console.error('[Login Error]:', err);
+    return res.status(500).json({ error: err.message || 'Login failed' });
+  }
+});
+
+// Get User Connections
+authRouter.get('/connections', async (req: any, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    let user = req.user;
+
+    if (!user && authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1]?.trim();
+      if (token) {
+        user = await prisma.user.findFirst({
+          where: { appToken: token },
+          include: { identities: true },
+        });
+      }
+    }
+
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const identities = await prisma.userIdentity.findMany({
+      where: { userId: user.id },
+    });
+
+    const discordIdent = identities.find((i) => i.provider === 'discord') || (user.discordId ? {
+      provider: 'discord',
+      providerUserId: user.discordId,
+      displayName: user.globalName || user.username,
+      avatarUrl: user.avatar,
+    } : null);
+
+    const googleIdent = identities.find((i) => i.provider === 'google');
+    const localIdent = identities.find((i) => i.provider === 'local') || (user.passwordHash ? {
+      provider: 'local',
+      providerUserId: user.email,
+      email: user.email,
+    } : null);
+
+    return res.json({
+      discord: {
+        connected: Boolean(discordIdent),
+        id: discordIdent?.providerUserId || null,
+        displayName: discordIdent?.displayName || null,
+      },
+      google: {
+        connected: Boolean(googleIdent),
+        id: googleIdent?.providerUserId || null,
+        displayName: googleIdent?.displayName || null,
+      },
+      email: {
+        connected: Boolean(localIdent),
+        email: user.email || null,
+        hasPassword: Boolean(user.passwordHash),
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to retrieve connections' });
+  }
+});
+
+// Safe Disconnection / Unlinking
+authRouter.post('/connections/unlink', async (req: any, res) => {
+  try {
+    const { provider } = req.body;
+    const authHeader = req.headers.authorization;
+    let user = req.user;
+
+    if (!user && authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1]?.trim();
+      if (token) {
+        user = await prisma.user.findFirst({
+          where: { appToken: token },
+          include: { identities: true },
+        });
+      }
+    }
+
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Count available authentication methods
+    let methodCount = 0;
+    if (user.passwordHash) methodCount++;
+    if (user.discordId) methodCount++;
+    const googleCount = await prisma.userIdentity.count({
+      where: { userId: user.id, provider: 'google' },
+    });
+    methodCount += googleCount;
+
+    if (methodCount <= 1) {
+      return res.status(400).json({
+        error: 'Cannot disconnect your only authentication method. Please add another method or set a password first.',
+      });
+    }
+
+    if (provider === 'discord') {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { discordId: null as any },
+      });
+      await prisma.userIdentity.deleteMany({
+        where: { userId: user.id, provider: 'discord' },
+      });
+    } else if (provider === 'google') {
+      await prisma.userIdentity.deleteMany({
+        where: { userId: user.id, provider: 'google' },
+      });
+    }
+
+    return res.json({ success: true, message: `Disconnected ${provider} successfully.` });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Unlink failed' });
   }
 });
 

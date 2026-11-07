@@ -2,15 +2,18 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { ArrowRight, User, Mail, Lock, ShieldCheck, Check } from "lucide-react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { ArrowRight, User, Mail, Lock, ShieldCheck, Check, AlertCircle } from "lucide-react";
 import { Navbar } from "@/components/nothing/Navbar";
 import { Footer } from "@/components/nothing/Footer";
 import { Button } from "@/components/nothing/Button";
+import { useAuth } from "@/context/AuthContext";
 
 function RegisterContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const initialClaim = searchParams.get("claim") || "";
+  const { login } = useAuth();
 
   const [username, setUsername] = useState(initialClaim);
   const [email, setEmail] = useState("");
@@ -19,14 +22,14 @@ function RegisterContent() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    // Warm up the Render backend in the background so OAuth is instant
+    // Warm up backend
     fetch("/health").catch(() => {});
     if (initialClaim) {
       setUsername(initialClaim.toLowerCase().replace(/[^a-z0-9_-]/g, ""));
     }
   }, [initialClaim]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !email || !password) {
       setError("Please complete all required fields.");
@@ -35,8 +38,22 @@ function RegisterContent() {
     setError("");
     setLoading(true);
 
-    // Forward to OAuth / account registration
-    window.location.href = `/auth/discord?claim=${encodeURIComponent(username)}`;
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, username, displayName: username }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Registration failed");
+      }
+      await login(data.token, data.user);
+      router.push("/account");
+    } catch (err: any) {
+      setError(err.message || "Registration failed. Please try again.");
+      setLoading(false);
+    }
   };
 
   return (

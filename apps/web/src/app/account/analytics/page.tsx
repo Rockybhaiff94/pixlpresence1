@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { AccountLayout } from "@/components/account/AccountLayout";
 import { Button } from "@/components/nothing/Button";
+import { apiFetch } from "@/lib/api";
 
 interface AnalyticsData {
   range: string;
@@ -48,7 +49,7 @@ export default function AccountAnalyticsPage() {
   const fetchAnalytics = async (selectedRange: string) => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/account/analytics?range=${selectedRange}`);
+      const res = await apiFetch(`/api/account/analytics?range=${selectedRange}`);
       if (res.ok) {
         const json = await res.json();
         setData(json);

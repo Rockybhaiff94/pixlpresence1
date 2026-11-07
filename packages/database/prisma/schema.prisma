@@ -10,12 +10,13 @@ datasource db {
 
 model User {
   id            String    @id @default(cuid())
-  discordId     String    @unique
+  discordId     String?   @unique
   username      String    @unique
   globalName    String?
   avatar        String?
   banner        String?
   email         String?   @unique
+  passwordHash  String?
   role          String    @default("USER") // USER, ADMIN
   badges        String    @default("[]")   // JSON string of badge IDs/names
   nitroStatus   Int       @default(0)      // 0: None, 1: Classic, 2: Nitro
@@ -29,7 +30,23 @@ model User {
   richPresence  RichPresence?
   templates     ActivityTemplate[]
   layers        ProfileLayer[]
+  identities    UserIdentity[]
   appToken      String?   @unique
+}
+
+model UserIdentity {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider        String   // "discord" | "google" | "local"
+  providerUserId  String   // Discord ID, Google sub, or email
+  email           String?
+  displayName     String?
+  avatarUrl       String?
+  connectedAt     DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([provider, providerUserId])
 }
 
 model Session {

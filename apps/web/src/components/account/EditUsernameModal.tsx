@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { X, Check, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/nothing/Button";
+import { apiFetch } from "@/lib/api";
 
 interface EditUsernameModalProps {
   isOpen: boolean;
@@ -47,7 +48,7 @@ export const EditUsernameModal: React.FC<EditUsernameModalProps> = ({
     const timer = setTimeout(async () => {
       setChecking(true);
       try {
-        const res = await fetch(`/api/account/check-username/${encodeURIComponent(clean)}`);
+        const res = await apiFetch(`/api/account/check-username/${encodeURIComponent(clean)}`);
         if (res.ok) {
           const data = await res.json();
           setAvailability(data);
@@ -82,7 +83,7 @@ export const EditUsernameModal: React.FC<EditUsernameModalProps> = ({
     setError("");
 
     try {
-      const res = await fetch("/api/account/username", {
+      const res = await apiFetch("/api/account/username", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: clean }),

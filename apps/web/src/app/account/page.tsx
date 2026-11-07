@@ -28,6 +28,7 @@ import { EditUsernameModal } from "@/components/account/EditUsernameModal";
 import { ManageAliasesModal } from "@/components/account/ManageAliasesModal";
 import { EditDisplayNameModal } from "@/components/account/EditDisplayNameModal";
 import { Button } from "@/components/nothing/Button";
+import { apiFetch } from "@/lib/api";
 
 interface AccountOverviewData {
   user: {
@@ -100,74 +101,18 @@ export default function AccountOverviewPage() {
   const fetchOverview = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/account/overview");
+      setError("");
+      const res = await apiFetch("/api/account/overview");
       if (res.ok) {
         const json = await res.json();
         setData(json);
       } else {
-        // Fallback exemplar state if unauthenticated in dev
-        setData({
-          user: {
-            id: "cmw4fbemh0000a1sa2h3h5zzk",
-            username: "carl_pei",
-            email: "carl@nothing.tech",
-            globalName: "Carl Pei",
-            avatar: null,
-            role: "USER",
-            premiumStatus: true,
-            badges: ["Verified", "Founder"],
-          },
-          profile: {
-            displayName: "Carl Pei",
-            bio: "CEO Nothing // Pure industrial design, stripped to raw essentials.",
-            avatarUrl: "",
-            views: 142890,
-            linksCount: 4,
-            buttonsCount: 3,
-          },
-          aliases: {
-            list: ["carl", "pei"],
-            used: 2,
-            max: 5,
-            remaining: 3,
-          },
-          completion: {
-            percentage: 80,
-            tasks: [
-              { id: "avatar", title: "Upload an Avatar", completed: true, weight: 20, actionText: "Done", actionHref: "#" },
-              { id: "description", title: "Add a Description", completed: true, weight: 20, actionText: "Done", actionHref: "#" },
-              { id: "discord", title: "Link Discord Account", completed: true, weight: 20, actionText: "Done", actionHref: "#" },
-              { id: "socials", title: "Add Socials", completed: true, weight: 20, actionText: "Done", actionHref: "#" },
-              { id: "views", title: "Reach 10 Profile Views", completed: true, weight: 20, actionText: "142,890/10", actionHref: "#" },
-            ],
-          },
-          connections: {
-            discord: { connected: true, id: "704548873145942076", username: "carl_pei#0001" },
-            google: { connected: false },
-          },
-          analyticsPreview: {
-            totalViews: 142890,
-            viewsDeltaPct: "+18.4%",
-            dailyViews: [
-              { date: "Nov 1", views: 1820 },
-              { date: "Nov 2", views: 2410 },
-              { date: "Nov 3", views: 1950 },
-              { date: "Nov 4", views: 3200 },
-              { date: "Nov 5", views: 2890 },
-              { date: "Nov 6", views: 3410 },
-              { date: "Nov 7", views: 4120 },
-            ],
-            visitorDevices: [
-              { name: "Desktop", percentage: 64, count: 91450 },
-              { name: "Mobile", percentage: 31, count: 44295 },
-              { name: "Tablet", percentage: 4, count: 5715 },
-              { name: "Other", percentage: 1, count: 1430 },
-            ],
-          },
-        });
+        setData(null);
+        setError("Please sign in to view your account dashboard.");
       }
     } catch {
-      setError("Failed to load account information.");
+      setError("Failed to connect to account API. Please check your network.");
+      setData(null);
     } finally {
       setLoading(false);
     }
@@ -191,6 +136,38 @@ export default function AccountOverviewPage() {
         <div className="flex items-center justify-center min-h-[60vh] font-mono text-neutral-500 text-xs">
           <RefreshCw size={16} className="animate-spin mr-2" />
           <span>LOADING ACCOUNT OVERVIEW...</span>
+        </div>
+      </AccountLayout>
+    );
+  }
+
+  if (!data) {
+    return (
+      <AccountLayout>
+        <div className="flex flex-col items-center justify-center min-h-[60vh] font-mono text-center p-8 space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-[#141414] border border-[#262626] flex items-center justify-center text-white">
+            <User size={22} className="text-neutral-400" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-white font-bold text-sm tracking-wide">AUTHENTICATION REQUIRED</h2>
+            <p className="text-xs text-neutral-500 max-w-sm">
+              {error || "You are not signed in. Connect your Discord account or sign in with email to access your account."}
+            </p>
+          </div>
+          <div className="flex items-center gap-3 pt-2">
+            <Link
+              href="/login"
+              className="px-5 py-2 rounded-lg bg-white text-black font-bold text-xs hover:bg-neutral-200 transition-colors"
+            >
+              SIGN IN
+            </Link>
+            <a
+              href="/auth/discord"
+              className="px-5 py-2 rounded-lg bg-[#141414] hover:bg-[#1a1a1a] text-white border border-[#2a2a2a] text-xs flex items-center gap-2 transition-colors"
+            >
+              <span>CONTINUE WITH DISCORD</span>
+            </a>
+          </div>
         </div>
       </AccountLayout>
     );
