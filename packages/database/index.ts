@@ -11,14 +11,9 @@ dotenv.config({ path: path.resolve(__dirname, '../prisma/.env') });
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 dotenv.config();
 
-const defaultDatabaseUrl =
-  process.env.DATABASE_URL ||
-  'postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true';
-process.env.DATABASE_URL = defaultDatabaseUrl;
-
-if (!process.env.DIRECT_URL) {
-  process.env.DIRECT_URL =
-    'postgresql://postgres.zvebxnogbidjjnuelpec:tHpg8oylNnBdwEU5@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres';
+const databaseUrl = process.env.DATABASE_URL?.trim();
+if (!databaseUrl) {
+  throw new Error('Missing required environment variable: DATABASE_URL');
 }
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
@@ -28,7 +23,7 @@ export const prisma =
   new PrismaClient({
     datasources: {
       db: {
-        url: defaultDatabaseUrl,
+        url: databaseUrl,
       },
     },
   });
