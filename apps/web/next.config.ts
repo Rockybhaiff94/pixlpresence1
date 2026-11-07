@@ -13,6 +13,20 @@ function normalizeApiUrl(raw?: string): string {
 const apiUrl = normalizeApiUrl(process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL);
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [
+      {
+        source: "/auth/discord",
+        destination: `${apiUrl}/auth/discord`,
+        permanent: false,
+      },
+      {
+        source: "/auth/google",
+        destination: `${apiUrl}/auth/google`,
+        permanent: false,
+      },
+    ];
+  },
   async rewrites() {
     return [
       {
