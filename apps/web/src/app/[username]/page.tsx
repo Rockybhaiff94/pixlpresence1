@@ -12,8 +12,53 @@ function getApiUrl(): string {
   return trimmed.replace(/\/+$/, "");
 }
 
+interface PublicProfilePayload {
+  user: {
+    username: string;
+    discordId?: string | null;
+    avatar?: string | null;
+  };
+  profile: {
+    displayName?: string | null;
+    bio?: string | null;
+    avatarUrl?: string | null;
+    bannerUrl?: string | null;
+    accentColor?: string | null;
+    blur?: number;
+    opacity?: number;
+    roundedCorners?: number;
+    views?: number;
+    musicUrl?: string | null;
+    customCss?: string | null;
+    designConfig?: string | null;
+    buttons?: Array<{
+      id: string;
+      title: string;
+      subtitle?: string | null;
+      url: string;
+      openInNewTab?: boolean;
+      gradient?: string | null;
+      order: number;
+    }>;
+    links?: Array<{
+      id: string;
+      label: string;
+      url: string;
+      visibility: boolean;
+      order: number;
+    }>;
+  };
+  richPresence?: {
+    appName?: string | null;
+    details?: string | null;
+    state?: string | null;
+    largeImage?: string | null;
+    smallImage?: string | null;
+  } | null;
+}
+
 // Exemplar fallback profiles matching Guns.lol architecture
-const exemplarProfiles: Record<string, any> = {
+const exemplarProfiles: Record<string, PublicProfilePayload> = {
   hris: {
     user: { username: "hris", discordId: "1000000000000001", avatar: null },
     profile: {
@@ -96,7 +141,7 @@ const exemplarProfiles: Record<string, any> = {
 };
 
 type ProfileResult =
-  | { kind: "ok"; data: any }
+  | { kind: "ok"; data: PublicProfilePayload }
   | { kind: "not_found" }
   | { kind: "warming" };
 
@@ -127,7 +172,7 @@ async function getProfile(rawUsername: string): Promise<ProfileResult> {
 
     // 500, 502, 503, 504 from Render spin-up: do not disguise as 404
     return { kind: "warming" };
-  } catch (err) {
+  } catch {
     // Network timeout or cold start
     return { kind: "warming" };
   }
@@ -179,6 +224,8 @@ export default async function ProfilePage({
         links={profile?.links || []}
         musicUrl={profile?.musicUrl || null}
         discordPresence={richPresence || null}
+        customCss={profile?.customCss || null}
+        designConfig={profile?.designConfig || null}
       />
     </>
   );

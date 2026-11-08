@@ -351,21 +351,52 @@ profileRouter.post('/me/token', requireAuth, async (req: any, res) => {
   }
 });
 
+function sanitizeCustomCss(rawCss: string | undefined | null): string {
+  if (!rawCss || typeof rawCss !== 'string') return '';
+  return rawCss
+    .replace(/<\/?script[^>]*>/gi, '')
+    .replace(/expression\s*\([^)]*\)/gi, '')
+    .replace(/behavior\s*:[^;}]*/gi, '')
+    .replace(/javascript\s*:[^;}]*/gi, '')
+    .replace(/@import\s+[^;]+;/gi, '')
+    .trim();
+}
+
 // Update Profile
 profileRouter.patch('/me', requireAuth, async (req: any, res) => {
   try {
-    const data = req.body;
+    const data = { ...req.body };
+    // Remove protected or relation fields
+    delete data.id;
+    delete data.userId;
+    delete data.createdAt;
+    delete data.updatedAt;
+    delete data.views;
+    delete data.links;
+    delete data.buttons;
+    delete data.viewRecords;
+
+    if (data.customCss !== undefined) {
+      data.customCss = sanitizeCustomCss(data.customCss);
+    }
+
+    if (data.designConfig !== undefined && typeof data.designConfig === 'object') {
+      data.designConfig = JSON.stringify(data.designConfig);
+    }
+
     const profile = await prisma.profile.update({
       where: { userId: req.user.id },
       data: {
         ...data,
         profileVersion: { increment: 1 }
       },
+      include: { links: true, buttons: true },
     });
 
     await recordSyncEvent('profile.updated', req.user.id, data, profile.profileVersion);
     res.json(profile);
-  } catch (err) {
+  } catch (err: any) {
+    console.error('[Update Profile Error]:', err);
     res.status(500).json({ error: 'Failed to update profile' });
   }
 });

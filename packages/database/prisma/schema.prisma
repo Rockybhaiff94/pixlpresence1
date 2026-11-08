@@ -77,6 +77,11 @@ model Profile {
   opacity        Int      @default(100)
   roundedCorners Int      @default(10)
 
+  // Advanced Design Studio configuration
+  customCss      String?
+  designConfig   String?
+  templateId     String?
+
   // Status & Presence
   status         String   @default("ONLINE") // ONLINE, IN_GAME, AWAY, OFFLINE
   customStatus   String?
