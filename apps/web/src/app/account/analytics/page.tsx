@@ -22,6 +22,13 @@ import {
 import { AccountLayout } from "@/components/account/AccountLayout";
 import { Button } from "@/components/nothing/Button";
 import { apiFetch } from "@/lib/api";
+import { GlobalAudienceMap } from "@/components/analytics/GlobalAudienceMap";
+import {
+  CountryMetric,
+  StateMetric,
+  CityMetric,
+  TrafficRoute,
+} from "@/components/analytics/mapData";
 
 interface AnalyticsData {
   range: string;
@@ -31,6 +38,7 @@ interface AnalyticsData {
     totalClicks: { value: string; delta: string };
     clickRate: { value: string; delta: string };
     profileViews: { value: string; delta: string };
+    uniqueVisitors?: { value: string; delta: string };
     avgDailyViews: { value: string; delta: string };
   };
   timeline: { date: string; views: number; clicks: number }[];
@@ -38,11 +46,19 @@ interface AnalyticsData {
   socials: { platform: string; icon: string; url: string; clicks: number; percentage: number }[];
   buttons: { id: string; title: string; url: string; clicks: number; rate: string }[];
   referrers: { name: string; count: number; percentage: number }[];
-  countries: { code: string; name: string; views: number; percentage: number }[];
+  countries: CountryMetric[];
+  states?: StateMetric[];
+  cities?: CityMetric[];
+  routes?: TrafficRoute[];
+  realtime?: {
+    activeNow: number;
+    lastEventAt: string;
+    liveStatus?: string;
+  };
 }
 
 export default function AccountAnalyticsPage() {
-  const [range, setRange] = useState<"3d" | "7d" | "14d" | "30d">("7d");
+  const [range, setRange] = useState<"24h" | "3d" | "7d" | "14d" | "30d" | "90d">("7d");
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -65,13 +81,25 @@ export default function AccountAnalyticsPage() {
 
   useEffect(() => {
     fetchAnalytics(range);
+
+    // Optional subtle 30s background poll to refresh real-time pulse without layout jump
+    const pollTimer = setInterval(() => {
+      apiFetch(`/api/account/analytics?range=${range}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((fresh) => {
+          if (fresh) setData(fresh);
+        })
+        .catch(() => {});
+    }, 30000);
+
+    return () => clearInterval(pollTimer);
   }, [range]);
 
   const ranges = [
-    { id: "3d", label: "Last 3 days" },
+    { id: "24h", label: "Last 24 hours" },
     { id: "7d", label: "Last 7 days" },
-    { id: "14d", label: "Last 14 days" },
     { id: "30d", label: "Last 30 days" },
+    { id: "90d", label: "Last 90 days" },
   ] as const;
 
   const timeline = data?.timeline || [];
@@ -436,39 +464,16 @@ export default function AccountAnalyticsPage() {
             </div>
           </div>
 
-          {/* Part I: Top Countries Breakdown */}
-          <div className="p-6 rounded-2xl bg-[#0b0b0b] border border-[#202020] space-y-4 font-mono nt-crosshair">
-            <div className="space-y-0.5 text-left pb-3 border-b border-[#181818]">
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                TOP COUNTRIES BY VIEWS
-              </h3>
-              <p className="text-[11px] text-neutral-500">Geographic distribution of your audience</p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
-              {countries.length === 0 ? (
-                <div className="col-span-full py-8 text-center text-xs text-neutral-500">
-                  No geographic visitor data recorded yet.
-                </div>
-              ) : (
-                countries.map((c) => (
-                  <div
-                    key={c.code}
-                    className="p-3.5 rounded-xl bg-[#121212] border border-[#222222] space-y-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-neutral-400">{c.code}</span>
-                      <span className="text-white font-bold text-xs">{c.percentage}%</span>
-                    </div>
-                    <div>
-                      <p className="text-white font-medium text-xs truncate">{c.name}</p>
-                      <p className="text-[11px] text-neutral-500">{c.views.toLocaleString()} views</p>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+          {/* Part I: Master Interactive Global Audience Analytics Map & Drill-Down */}
+          <GlobalAudienceMap
+            countries={countries}
+            states={data.states || []}
+            cities={data.cities || []}
+            routes={data.routes || []}
+            range={range}
+            onRangeChange={(newRange) => setRange(newRange as any)}
+            realtime={data.realtime}
+          />
         </div>
       ) : null}
     </AccountLayout>

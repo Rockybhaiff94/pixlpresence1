@@ -14,7 +14,6 @@
   "type": "commonjs",
   "dependencies": {
     "@discord-rpc/database": "*",
-    "bot": "*",
     "@quixo3/prisma-session-store": "^3.1.21",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
@@ -24,10 +23,12 @@
     "@types/passport-discord": "^0.1.15",
     "@types/socket.io": "^3.0.1",
     "bcryptjs": "^3.0.3",
+    "bot": "*",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
+    "geoip-lite": "^2.0.3",
     "passport": "^0.7.0",
     "passport-discord": "^0.1.4",
     "socket.io": "^4.8.3",
@@ -35,6 +36,7 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
+    "@types/geoip-lite": "^1.4.4",
     "nodemon": "^3.1.14",
     "ts-node-dev": "^2.0.0"
   }

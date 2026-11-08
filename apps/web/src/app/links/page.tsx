@@ -163,49 +163,26 @@ export default function LinksPage() {
 
   return (
     <AccountLayout>
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4 border-b border-[#181818] text-left font-mono">
-        <div className="space-y-1">
-          <span className="text-[10px] text-neutral-500 uppercase tracking-widest block font-mono">
-            [ 03 // DIGITAL IDENTITY & SOCIAL GRAPH ]
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white font-mono">
-            SOCIAL LINKS
-          </h1>
-          <p className="text-xs text-neutral-400 font-sans">
-            Connect and showcase your verified social profiles, channels, gaming identities, and payment links.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Link href="/customize" className="text-xs text-neutral-400 hover:text-white underline">
-            Profile Appearance &rarr;
-          </Link>
-        </div>
-      </div>
-
       {/* Main Guns.lol-Style Social Selection Panel */}
-      <div className="p-6 sm:p-8 rounded-2xl bg-[#0c0c0e] border border-[#1e1e22] space-y-6 shadow-2xl">
-        <div className="space-y-1.5 text-left">
-          <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-3">
-            <span className="p-2 rounded-xl bg-[#17171a] border border-[#26262b] text-neutral-300">
-              <Link2 className="w-5 h-5" />
-            </span>
+      <div className="p-6 sm:p-8 rounded-3xl bg-[#0c0c0e] border border-[#1b1b20] space-y-6 shadow-2xl">
+        <div className="space-y-1 text-left">
+          <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
+            <Link2 className="w-5 h-5 text-neutral-300 shrink-0" />
             <span>Link your social media profiles.</span>
-          </h2>
-          <p className="text-xs sm:text-sm text-neutral-400 pl-1">
+          </h1>
+          <p className="text-xs sm:text-sm text-neutral-400">
             Pick a social media to add to your profile.
           </p>
         </div>
 
         {/* 45-Platform Icon Grid */}
-        <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-2 sm:gap-3 pt-2">
+        <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-12 gap-2 sm:gap-2.5 pt-1">
           {PLATFORMS.filter((p) => p.id !== "globe").map((platform) => (
             <button
               key={platform.id}
               onClick={() => openPlatformModal(platform)}
               title={platform.name}
-              className="w-full aspect-square rounded-2xl bg-[#141416] border border-[#222226] hover:border-neutral-400 hover:bg-[#1c1c20] transition-all duration-150 flex items-center justify-center p-2.5 sm:p-3 cursor-pointer group shadow-sm hover:scale-105 active:scale-95 focus:outline-none focus:ring-1 focus:ring-white"
+              className="w-full aspect-square rounded-2xl bg-[#141416] border border-[#202025] hover:border-neutral-400 hover:bg-[#1c1c22] transition-all duration-150 flex items-center justify-center p-2.5 sm:p-3 cursor-pointer group shadow-sm hover:scale-105 active:scale-95 focus:outline-none focus:ring-1 focus:ring-white"
             >
               <PlatformIcon
                 id={platform.id}
@@ -219,9 +196,9 @@ export default function LinksPage() {
         {/* Prominent Horizontal "Add Custom URL" Button */}
         <button
           onClick={() => openPlatformModal(PLATFORMS.find((p) => p.id === "globe") || PLATFORMS[PLATFORMS.length - 1])}
-          className="w-full sm:max-w-md p-3.5 rounded-2xl bg-[#141416] border border-[#222226] hover:border-neutral-400 hover:bg-[#1c1c20] transition-all flex items-center gap-3.5 text-left cursor-pointer group focus:outline-none"
+          className="w-full sm:max-w-md p-3.5 sm:p-4 rounded-2xl bg-[#141416] border border-[#202025] hover:border-neutral-400 hover:bg-[#1c1c22] transition-all flex items-center gap-3.5 text-left cursor-pointer group focus:outline-none"
         >
-          <div className="w-10 h-10 rounded-xl bg-[#1e1e22] border border-[#2c2c32] flex items-center justify-center shrink-0 text-neutral-400 group-hover:text-white group-hover:border-neutral-400 transition-colors">
+          <div className="w-10 h-10 rounded-xl bg-[#1e1e24] border border-[#2b2b32] flex items-center justify-center shrink-0 text-neutral-400 group-hover:text-white group-hover:border-neutral-400 transition-colors">
             <Globe className="w-5 h-5" />
           </div>
           <div className="space-y-0.5">

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { prisma } from '@discord-rpc/database';
 import { recordSyncEvent } from '../utils/sync';
+import { resolveTelemetry } from '../utils/geo';
 
 export const profileRouter = Router();
 
@@ -255,6 +256,9 @@ profileRouter.post('/u/:username/view', async (req: any, res) => {
     const dateBucket = new Date().toISOString().slice(0, 10);
     const deduplicationKey = `${profileId}:${viewerUserId || anonymousVisitorId}:${dateBucket}`;
 
+    // Resolve geographic and client telemetry
+    const geo = resolveTelemetry(req);
+
     const [viewRecord, updatedProfile] = await prisma.$transaction([
       prisma.profileView.create({
         data: {
@@ -267,6 +271,17 @@ profileRouter.post('/u/:username/view', async (req: any, res) => {
           deduplicationKey,
           ipHash,
           userAgent: userAgent.slice(0, 255),
+          countryCode: geo.countryCode,
+          countryName: geo.countryName,
+          region: geo.region,
+          city: geo.city,
+          latitude: geo.latitude,
+          longitude: geo.longitude,
+          trafficSource: geo.trafficSource,
+          referrer: geo.referrer,
+          device: geo.device,
+          browser: geo.browser,
+          os: geo.os,
         },
       }),
       prisma.profile.update({

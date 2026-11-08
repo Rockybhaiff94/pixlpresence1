@@ -113,12 +113,31 @@ model ProfileView {
   deduplicationKey   String    // e.g. `${profileId}:${viewerUserId || anonymousVisitorId}:${dayBucket}`
   ipHash             String?   // SHA-256 salted hash of IP (never store raw IP)
   userAgent          String?
+
+  // Geographic telemetry
+  countryCode        String?   // ISO 2-letter: "IN", "US", "DE"
+  countryName        String?   // e.g. "India", "United States"
+  region             String?   // State / Province, e.g. "Maharashtra", "Jharkhand", "California"
+  city               String?   // City name: "Mumbai", "Pune", "Ranchi"
+  latitude           Float?
+  longitude          Float?
+
+  // Inbound telemetry & device metadata
+  referrer           String?   // Inbound referrer URL / origin
+  trafficSource      String?   @default("DIRECT") // DIRECT, DISCORD, SEARCH, SOCIAL, EXTERNAL
+  device             String?   // Desktop, Mobile, Tablet
+  browser            String?   // Chrome, Firefox, Safari, Edge, etc.
+  os                 String?   // Windows, macOS, Linux, iOS, Android
+
   viewedAt           DateTime  @default(now())
 
   @@index([profileId, viewedAt])
   @@index([deduplicationKey])
   @@index([viewerUserId])
   @@index([anonymousVisitorId])
+  @@index([profileId, countryCode])
+  @@index([profileId, region])
+  @@index([profileId, city])
 }
 
 model Link {
