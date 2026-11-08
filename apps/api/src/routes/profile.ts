@@ -185,6 +185,7 @@ profileRouter.post('/u/:username/view', async (req: any, res) => {
     if (isOwner) {
       // Record internal owner visit for analytics (counted: false) without altering public profile.views
       try {
+        const geo = resolveTelemetry(req);
         await prisma.profileView.create({
           data: {
             profileId,
@@ -193,11 +194,24 @@ profileRouter.post('/u/:username/view', async (req: any, res) => {
             sessionId: req.sessionID || null,
             viewSource: 'OWNER',
             counted: false,
-            deduplicationKey: `${profileId}:owner:${new Date().toISOString().slice(0, 10)}`,
+            deduplicationKey: `${profileId}:owner:${new Date().toISOString().slice(0, 10)}:${Date.now()}`,
             userAgent: userAgent.slice(0, 255),
+            countryCode: geo.countryCode,
+            countryName: geo.countryName,
+            region: geo.region,
+            city: geo.city,
+            latitude: geo.latitude,
+            longitude: geo.longitude,
+            trafficSource: geo.trafficSource,
+            referrer: geo.referrer,
+            device: geo.device,
+            browser: geo.browser,
+            os: geo.os,
           },
         });
-      } catch (_) {}
+      } catch (ownerErr) {
+        console.warn('[Track Owner Visit Warning]:', ownerErr);
+      }
 
       return res.json({
         success: true,

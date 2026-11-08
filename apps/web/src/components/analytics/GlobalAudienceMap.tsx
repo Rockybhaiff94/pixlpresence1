@@ -247,8 +247,12 @@ export function GlobalAudienceMap({
 
   // Right Panel Dynamic Rankings Top 4
   const top4Items = useMemo(() => {
+    const safeCountries = Array.isArray(countries) ? countries : [];
+    const safeStates = Array.isArray(states) ? states : [];
+    const safeCities = Array.isArray(cities) ? cities : [];
+
     if (level === "world") {
-      return countries.slice(0, 4).map((c) => ({
+      return safeCountries.slice(0, 4).map((c) => ({
         id: c.code,
         title: c.name,
         flag: getCountryFlag(c.code),
@@ -260,7 +264,7 @@ export function GlobalAudienceMap({
     }
 
     if (level === "country") {
-      return states.slice(0, 4).map((s) => ({
+      return safeStates.slice(0, 4).map((s) => ({
         id: s.name,
         title: s.name,
         flag: "📍",
@@ -272,7 +276,7 @@ export function GlobalAudienceMap({
     }
 
     // State / City view
-    return cities.slice(0, 4).map((c) => ({
+    return safeCities.slice(0, 4).map((c) => ({
       id: c.name,
       title: c.name,
       flag: "🏙️",

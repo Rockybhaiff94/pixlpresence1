@@ -168,7 +168,7 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
 
           {/* Global Feature Search */}
           <div className="relative">
-            <div className="flex items-center bg-[#101012] border border-[#202025] focus-within:border-neutral-400 rounded-xl px-2.5 py-1.5 transition-colors">
+            <div className="flex items-center bg-[#101010] border border-[#222222] focus-within:border-white rounded-lg px-2.5 py-1.5 transition-colors">
               <Search size={13} className="text-neutral-500 mr-2 shrink-0" />
               <input
                 type="text"
@@ -264,14 +264,14 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
                 <Link
                   key={item.label}
                   href={item.href}
-                  className={`w-full px-3 py-2 rounded-xl flex items-center justify-between transition-all ${
+                  className={`w-full px-3 py-2 rounded-lg flex items-center justify-between transition-colors ${
                     isActive
-                      ? "bg-[#251737] border border-[#3f1f5e] text-white font-semibold shadow-sm"
-                      : "text-neutral-400 hover:text-white hover:bg-[#121215] border border-transparent"
+                      ? "bg-white text-black font-semibold"
+                      : "text-neutral-400 hover:text-white hover:bg-[#101010]"
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
-                    <item.icon size={14} className={isActive ? "text-[#c084fc]" : "text-neutral-500"} />
+                    <item.icon size={14} className={isActive ? "text-black" : "text-neutral-500"} />
                     <span>{item.label}</span>
                   </div>
                   {item.label === "Premium" && !currentUser?.premiumStatus && (
@@ -286,47 +286,49 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
         </div>
 
         {/* Bottom Section */}
-        <div className="p-3 border-t border-[#18181c] space-y-2 bg-[#060608]">
+        <div className="p-3 border-t border-[#181818] space-y-2 bg-[#060606]">
           {currentUser ? (
             <>
               {/* Quick Shortcuts */}
-              <div className="space-y-1.5 font-sans">
-                <Link
-                  href="/terms"
-                  className="w-full px-3 py-2 rounded-xl bg-[#121215] border border-[#222228] text-neutral-300 hover:text-white hover:bg-[#18181e] flex items-center gap-2.5 transition-all text-xs"
-                >
-                  <HelpCircle size={14} className="text-neutral-400" />
-                  <span>Help Center</span>
-                </Link>
-
-                <Link
-                  href={`/${currentUser.username}`}
-                  target="_blank"
-                  className="w-full px-3 py-2 rounded-xl bg-[#23152d] border border-[#3c1e4f] text-[#c084fc] hover:bg-[#2d1b3a] hover:text-white flex items-center justify-between transition-all text-xs"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <ExternalLink size={14} />
-                    <span className="font-medium">My Page</span>
-                  </div>
-                  <span className="text-[10px] text-[#936cb7] truncate max-w-[90px]">/{currentUser.username}</span>
-                </Link>
+              <div className="space-y-0.5">
+                {currentUser.username && (
+                  <Link
+                    href={`/${currentUser.username}`}
+                    target="_blank"
+                    className="w-full px-2.5 py-1.5 rounded-md text-neutral-400 hover:text-white hover:bg-[#121212] flex items-center justify-between transition-colors text-xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <ExternalLink size={13} className="text-neutral-500" />
+                      <span>My Page</span>
+                    </div>
+                    <span className="text-[10px] text-neutral-600 font-mono">/{currentUser.username}</span>
+                  </Link>
+                )}
 
                 <button
                   onClick={handleShareProfile}
-                  className="w-full px-3 py-2 rounded-xl bg-[#23152d] border border-[#3c1e4f] text-[#c084fc] hover:bg-[#2d1b3a] hover:text-white flex items-center justify-between transition-all text-xs cursor-pointer"
+                  className="w-full px-2.5 py-1.5 rounded-md text-neutral-400 hover:text-white hover:bg-[#121212] flex items-center justify-between transition-colors text-xs cursor-pointer"
                 >
-                  <div className="flex items-center gap-2.5">
-                    <Share2 size={14} />
-                    <span className="font-medium">Share Your Profile</span>
+                  <div className="flex items-center gap-2">
+                    <Share2 size={13} className="text-neutral-500" />
+                    <span>Share Your Profile</span>
                   </div>
                   {copiedLink ? (
-                    <span className="text-[10px] text-white font-bold flex items-center gap-1">
+                    <span className="text-[10px] text-green-400 flex items-center gap-0.5 font-mono">
                       <Check size={10} /> Copied
                     </span>
                   ) : (
-                    <Copy size={11} className="text-[#936cb7]" />
+                    <Copy size={11} className="text-neutral-600" />
                   )}
                 </button>
+
+                <Link
+                  href="/terms"
+                  className="w-full px-2.5 py-1.5 rounded-md text-neutral-400 hover:text-white hover:bg-[#121212] flex items-center gap-2 transition-colors text-xs"
+                >
+                  <HelpCircle size={13} className="text-neutral-500" />
+                  <span>Help Center & Terms</span>
+                </Link>
               </div>
 
               {/* User Account Info Bar & Dropdown */}
@@ -356,7 +358,7 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
                         {currentUser.globalName || currentUser.username}
                       </p>
                       <p className="text-neutral-500 text-[10px] truncate">
-                        UID: {currentUser.id.slice(0, 10)}...
+                        UID: {currentUser.id ? currentUser.id.slice(0, 10) : currentUser.username || "user"}...
                       </p>
                     </div>
                   </div>

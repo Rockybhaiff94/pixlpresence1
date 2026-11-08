@@ -401,7 +401,7 @@ export default function AccountAnalyticsPage() {
                     >
                       <div className="flex items-center gap-2.5 truncate">
                         <div className="w-7 h-7 rounded-lg bg-neutral-900 border border-neutral-700 flex items-center justify-center font-bold text-[10px] text-white">
-                          {soc.platform.slice(0, 2).toUpperCase()}
+                          {(soc.platform || "SO").slice(0, 2).toUpperCase()}
                         </div>
                         <div className="truncate">
                           <p className="text-white font-semibold truncate">{soc.platform}</p>
@@ -475,7 +475,23 @@ export default function AccountAnalyticsPage() {
             realtime={data.realtime}
           />
         </div>
-      ) : null}
+      ) : (
+        <div className="p-12 text-center border border-dashed border-[#222222] rounded-2xl my-8 font-mono text-xs text-neutral-500 space-y-4">
+          <Globe size={32} className="mx-auto text-neutral-600 mb-2" />
+          <p className="text-white font-medium text-sm">TELEMETRY STREAM CONNECTING</p>
+          <p className="text-neutral-400 max-w-md mx-auto">
+            Unable to load real-time analytics data. Ensure your network connection is active or retry below.
+          </p>
+          <div className="pt-2">
+            <button
+              onClick={() => fetchAnalytics(range)}
+              className="bg-white text-black hover:bg-neutral-200 font-bold text-xs font-mono px-4 py-2 rounded-lg cursor-pointer transition-colors inline-flex items-center gap-2"
+            >
+              <RefreshCw size={13} /> RETRY TELEMETRY STREAM
+            </button>
+          </div>
+        </div>
+      )}
     </AccountLayout>
   );
 }

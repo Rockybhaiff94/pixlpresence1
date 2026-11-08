@@ -459,7 +459,7 @@ accountRouter.get('/analytics', requireAuth, async (req: any, res) => {
       }
     }
 
-    const user = await prisma.user.findUnique({
+    let user = await prisma.user.findUnique({
       where: { id: req.user.id },
       include: {
         profile: {
@@ -470,6 +470,31 @@ accountRouter.get('/analytics', requireAuth, async (req: any, res) => {
         },
       },
     });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!user.profile) {
+      await prisma.profile.create({
+        data: {
+          userId: user.id,
+          displayName: user.globalName || user.username,
+          avatarUrl: user.avatar || '',
+        },
+      });
+      user = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        include: {
+          profile: {
+            include: {
+              links: true,
+              buttons: true,
+            },
+          },
+        },
+      });
+    }
 
     if (!user || !user.profile) {
       return res.status(404).json({ error: 'Profile not found' });
