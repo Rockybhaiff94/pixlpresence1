@@ -74,7 +74,19 @@ export default function AccountAnalyticsPage() {
     { id: "30d", label: "Last 30 days" },
   ] as const;
 
-  const maxTimelineViews = data ? Math.max(...data.timeline.map((t) => t.views), 10) : 100;
+  const timeline = data?.timeline || [];
+  const maxTimelineViews = timeline.length > 0 ? Math.max(...timeline.map((t) => t.views), 10) : 100;
+  const kpis = data?.kpis || {
+    totalClicks: { value: "0", delta: "0%" },
+    clickRate: { value: "0.0%", delta: "0%" },
+    profileViews: { value: "0", delta: "0%" },
+    avgDailyViews: { value: "0", delta: "0%" },
+  };
+  const devices = data?.devices || [];
+  const socials = data?.socials || [];
+  const buttons = data?.buttons || [];
+  const referrers = data?.referrers || [];
+  const countries = data?.countries || [];
 
   return (
     <AccountLayout>
@@ -129,11 +141,11 @@ export default function AccountAnalyticsPage() {
                 <MousePointerClick size={14} className="text-neutral-400" />
               </div>
               <div className="text-3xl font-bold text-white tracking-tight">
-                {data.kpis.totalClicks.value}
+                {kpis.totalClicks?.value || "0"}
               </div>
               <div className="text-[10px] text-[#4ade80] flex items-center gap-1">
                 <TrendingUp size={11} />
-                <span>{data.kpis.totalClicks.delta}</span>
+                <span>{kpis.totalClicks?.delta || "0%"}</span>
               </div>
             </div>
 
@@ -144,7 +156,7 @@ export default function AccountAnalyticsPage() {
                 <Percent size={14} className="text-neutral-400" />
               </div>
               <div className="text-3xl font-bold text-white tracking-tight">
-                {data.kpis.clickRate.value}
+                {kpis.clickRate?.value || "0.0%"}
               </div>
               <div className="text-[10px] text-neutral-400">
                 CLICKS PER ELIGIBLE VISIT
@@ -158,11 +170,11 @@ export default function AccountAnalyticsPage() {
                 <Eye size={14} className="text-neutral-400" />
               </div>
               <div className="text-3xl font-bold text-white tracking-tight">
-                {data.kpis.profileViews.value}
+                {kpis.profileViews?.value || "0"}
               </div>
               <div className="text-[10px] text-[#4ade80] flex items-center gap-1">
                 <TrendingUp size={11} />
-                <span>{data.kpis.profileViews.delta}</span>
+                <span>{kpis.profileViews?.delta || "0%"}</span>
               </div>
             </div>
 
@@ -173,10 +185,10 @@ export default function AccountAnalyticsPage() {
                 <Calendar size={14} className="text-neutral-400" />
               </div>
               <div className="text-3xl font-bold text-white tracking-tight">
-                {data.kpis.avgDailyViews.value}
+                {kpis.avgDailyViews?.value || "0"}
               </div>
               <div className="text-[10px] text-neutral-400">
-                VIEWS / {data.days} DAYS PERIOD
+                VIEWS / {data?.days || 7} DAYS PERIOD
               </div>
             </div>
           </div>
@@ -203,7 +215,7 @@ export default function AccountAnalyticsPage() {
             {/* Responsive Chart Container */}
             <div className="h-56 w-full bg-[#101010] border border-[#1f1f1f] rounded-xl p-4 flex flex-col justify-between">
               <div className="h-40 flex items-end justify-between gap-1.5 pt-4">
-                {data.timeline.map((point) => {
+                {timeline.map((point) => {
                   const viewPct = Math.max(10, Math.round((point.views / maxTimelineViews) * 100));
                   const clickPct = Math.max(6, Math.round((point.clicks / maxTimelineViews) * 100));
 
@@ -235,8 +247,8 @@ export default function AccountAnalyticsPage() {
 
               {/* X-Axis Dates */}
               <div className="flex justify-between border-t border-[#1c1c1c] pt-2 text-[10px] text-neutral-500">
-                {data.timeline
-                  .filter((_, idx) => data.timeline.length <= 10 || idx % Math.ceil(data.timeline.length / 7) === 0)
+                {timeline
+                  .filter((_, idx) => timeline.length <= 10 || idx % Math.ceil(timeline.length / 7) === 0)
                   .map((point) => (
                     <span key={point.date}>{point.date}</span>
                   ))}
@@ -256,12 +268,12 @@ export default function AccountAnalyticsPage() {
               </div>
 
               <div className="space-y-3.5 pt-1">
-                {data.devices.length === 0 ? (
+                {devices.length === 0 ? (
                   <div className="py-8 text-center text-xs text-neutral-500">
                     No visitor hardware data recorded yet.
                   </div>
                 ) : (
-                  data.devices.map((dev) => {
+                  devices.map((dev) => {
                     const getIcon = () => {
                       if (dev.name === "Desktop") return Monitor;
                       if (dev.name === "Mobile") return Smartphone;
@@ -305,12 +317,12 @@ export default function AccountAnalyticsPage() {
               </div>
 
               <div className="space-y-3.5 pt-1">
-                {data.referrers.length === 0 ? (
+                {referrers.length === 0 ? (
                   <div className="py-8 text-center text-xs text-neutral-500">
                     No inbound referrers recorded yet.
                   </div>
                 ) : (
-                  data.referrers.map((ref) => (
+                  referrers.map((ref) => (
                     <div key={ref.name} className="space-y-1.5 text-xs">
                       <div className="flex items-center justify-between">
                         <span className="text-neutral-300">{ref.name}</span>
@@ -349,12 +361,12 @@ export default function AccountAnalyticsPage() {
               </div>
 
               <div className="space-y-2">
-                {data.socials.length === 0 ? (
+                {socials.length === 0 ? (
                   <div className="py-8 text-center text-xs text-neutral-500">
                     No social link clicks recorded yet.
                   </div>
                 ) : (
-                  data.socials.map((soc) => (
+                  socials.map((soc) => (
                     <div
                       key={soc.platform}
                       className="p-3 rounded-xl bg-[#121212] border border-[#222222] flex items-center justify-between text-xs"
@@ -396,12 +408,12 @@ export default function AccountAnalyticsPage() {
               </div>
 
               <div className="space-y-2">
-                {data.buttons.length === 0 ? (
+                {buttons.length === 0 ? (
                   <div className="py-8 text-center text-xs text-neutral-500">
                     No button interaction metrics recorded yet.
                   </div>
                 ) : (
-                  data.buttons.map((btn) => (
+                  buttons.map((btn) => (
                     <div
                       key={btn.id}
                       className="p-3 rounded-xl bg-[#121212] border border-[#222222] flex items-center justify-between text-xs"
@@ -434,12 +446,12 @@ export default function AccountAnalyticsPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
-              {data.countries.length === 0 ? (
+              {countries.length === 0 ? (
                 <div className="col-span-full py-8 text-center text-xs text-neutral-500">
                   No geographic visitor data recorded yet.
                 </div>
               ) : (
-                data.countries.map((c) => (
+                countries.map((c) => (
                   <div
                     key={c.code}
                     className="p-3.5 rounded-xl bg-[#121212] border border-[#222222] space-y-2"

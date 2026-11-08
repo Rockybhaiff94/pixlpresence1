@@ -103,8 +103,8 @@ export default function BadgesPage() {
   const filteredBadges = filter === "ALL"
     ? badges
     : filter === "OWNED"
-    ? badges.filter((b) => b.owned)
-    : badges.filter((b) => b.category.toUpperCase() === filter);
+    ? badges.filter((b) => b?.owned)
+    : badges.filter((b) => b && b.category && String(b.category).toUpperCase() === filter);
 
   return (
     <AccountLayout>

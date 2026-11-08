@@ -27,15 +27,16 @@ export const AccountLayout: React.FC<AccountLayoutProps> = ({
 }) => {
   const { user: authUser, status: authStatus, loading: authLoading } = useAuth();
   const [cachedUser, setCachedUser] = useState<any>(null);
+  const [hasToken, setHasToken] = useState<boolean>(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       setCachedUser(getCachedUser());
+      setHasToken(Boolean(getStoredToken()));
     }
   }, []);
 
   const activeUser = propUser || authUser || cachedUser || undefined;
-  const hasToken = typeof window !== "undefined" ? Boolean(getStoredToken()) : false;
 
   // Only consider genuinely unauthenticated if auth confirmed 401, not loading, and no cached/prop user/token
   const isUnauthenticated =

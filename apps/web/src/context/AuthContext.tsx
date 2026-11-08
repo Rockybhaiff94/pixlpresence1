@@ -91,19 +91,12 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Synchronous hydration from persistent cache prevents ANY login flicker across page navigation
-  const [user, setUser] = useState<AuthenticatedUser | null>(() => getCachedUser());
-  const [profile, setProfile] = useState<UserProfile | null>(() => {
-    const cached = getCachedUser();
-    return cached?.profile || null;
-  });
-  const [token, setToken] = useState<string | null>(() => getStoredToken());
-  const [status, setStatus] = useState<AuthStatus>(() => {
-    return getCachedUser() ? "AUTHENTICATED" : "INITIALIZING";
-  });
-  const [loading, setLoading] = useState<boolean>(() => {
-    return !getCachedUser();
-  });
+  // Initialize with null/INITIALIZING so server and initial client render match identically (prevents React error #418)
+  const [user, setUser] = useState<AuthenticatedUser | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [status, setStatus] = useState<AuthStatus>("INITIALIZING");
+  const [loading, setLoading] = useState<boolean>(true);
 
   const isFetchingRef = useRef<boolean>(false);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
