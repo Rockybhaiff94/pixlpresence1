@@ -47,8 +47,8 @@ export default {
       .setStyle(ButtonStyle.Link);
 
     const dashboardBtn = new ButtonBuilder()
-      .setLabel('Dashboard')
-      .setURL(`${FRONTEND_BASE_URL}/dashboard`)
+      .setLabel('Account Studio')
+      .setURL(`${FRONTEND_BASE_URL}/account`)
       .setStyle(ButtonStyle.Link);
 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(webBtn, dashboardBtn);

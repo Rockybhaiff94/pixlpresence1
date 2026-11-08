@@ -21,7 +21,7 @@ export const SettingsAbout: React.FC<SettingsAboutProps> = ({
     onClear
 }) => {
     const handleOpenDashboard = () => {
-        window.open("https://pixlpresence1-web.vercel.app/dashboard/rpc", "_blank");
+        window.open("https://pixlpresence1-web.vercel.app/account/rpc", "_blank");
     };
 
     return React.createElement(
@@ -47,12 +47,12 @@ export const SettingsAbout: React.FC<SettingsAboutProps> = ({
             React.createElement(
                 "a",
                 {
-                    href: "https://pixlpresence1-web.vercel.app/dashboard/rpc",
+                    href: "https://pixlpresence1-web.vercel.app/account/rpc",
                     target: "_blank",
                     rel: "noopener noreferrer",
                     style: { color: "var(--text-link, #00a8fc)", textDecoration: "underline" }
                 },
-                "pixlpresence1-web.vercel.app/dashboard/rpc"
+                "pixlpresence1-web.vercel.app/account/rpc"
             ),
             ". PixelsRPC securely connects directly to your backend and updates your local Discord client without modifying external clients."
         )

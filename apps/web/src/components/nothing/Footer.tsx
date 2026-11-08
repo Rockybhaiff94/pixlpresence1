@@ -78,12 +78,12 @@ export const Footer: React.FC = () => {
               </Link>
             </li>
             <li>
-              <Link href="/dashboard/rpc" className="hover:text-white transition-colors">
+              <Link href="/account/rpc" className="hover:text-white transition-colors">
                 PixelsRPC Plugin
               </Link>
             </li>
             <li>
-              <Link href="/dashboard" className="hover:text-white transition-colors">
+              <Link href="/account" className="hover:text-white transition-colors">
                 Studio Editor
               </Link>
             </li>

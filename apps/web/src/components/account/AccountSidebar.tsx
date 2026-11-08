@@ -13,6 +13,7 @@ import {
   Crown,
   Image as ImageIcon,
   LayoutTemplate,
+  Gamepad2,
   ChevronDown,
   ChevronRight,
   Search,
@@ -76,14 +77,17 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
   const mainNavItems = [
     { label: "Customize", href: "/customize", icon: Palette },
     { label: "Links", href: "/links", icon: LinkIcon },
+    { label: "Discord RPC", href: "/account/rpc", icon: Gamepad2 },
+    { label: "Templates", href: "/templates", icon: LayoutTemplate },
     { label: "Premium", href: "/premium", icon: Crown },
     { label: "Image Host", href: "/image-host", icon: ImageIcon },
-    { label: "Templates", href: "/templates", icon: LayoutTemplate },
   ];
 
   const allSearchable = [
     ...accountSubItems,
     ...mainNavItems,
+    { label: "Discord Rich Presence Studio", href: "/account/rpc", icon: Gamepad2 },
+    { label: "Vencord Plugin Settings", href: "/account/rpc", icon: Gamepad2 },
     ...(currentUser ? [{ label: "Public Profile", href: `/${currentUser.username}`, icon: ExternalLink }] : []),
     { label: "Appearance Theme", href: "/customize", icon: Palette },
     { label: "Social Platform Icons", href: "/links", icon: LinkIcon },

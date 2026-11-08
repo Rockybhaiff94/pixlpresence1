@@ -146,7 +146,7 @@ export default async function ProfilePage({
     redirect("/#showcase");
   }
   if (clean.toLowerCase() === "rpc") {
-    redirect("/dashboard/rpc");
+    redirect("/account/rpc");
   }
 
   const result = await getProfile(clean);

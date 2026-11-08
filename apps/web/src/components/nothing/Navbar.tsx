@@ -19,7 +19,7 @@ export const Navbar: React.FC = () => {
     { label: "PRICING", href: "/pricing" },
     { label: "LEADERBOARD", href: "/leaderboard" },
     { label: "COMPARE", href: "/compare" },
-    { label: "RPC PLUGIN", href: "/dashboard/rpc" },
+    { label: "RPC PLUGIN", href: "/account/rpc" },
   ];
 
   return (
@@ -156,7 +156,7 @@ export const Navbar: React.FC = () => {
                       <span>Account Studio</span>
                     </Link>
                     <Link
-                      href="/dashboard/rpc"
+                      href="/account/rpc"
                       onClick={() => setDropdownOpen(false)}
                       className="flex items-center gap-2 px-3 py-2 text-neutral-300 hover:text-white hover:bg-[#181818]"
                     >
