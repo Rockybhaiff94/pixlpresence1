@@ -1,8 +1,47 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import { prisma } from '@discord-rpc/database';
 import { recordSyncEvent } from '../utils/sync';
 
 export const profileRouter = Router();
+
+// Helper to resolve viewer identity (session or token) without throwing 401
+async function resolveOptionalViewer(req: any) {
+  if (req.user) return req.user;
+  if (typeof req.isAuthenticated === 'function' && req.isAuthenticated()) return req.user;
+
+  let token: string | null = null;
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1]?.trim() || null;
+  } else if (req.headers.cookie) {
+    const match = req.headers.cookie.match(/(?:^|;\s*)pixel_app_token=([^;]+)/);
+    if (match && match[1]) {
+      token = decodeURIComponent(match[1]).trim();
+    }
+  }
+
+  if (token) {
+    try {
+      const user = await prisma.user.findUnique({ where: { appToken: token } });
+      if (user) return user;
+    } catch (_) {}
+  }
+
+  return null;
+}
+
+// Bot & crawler detection
+function isBotRequest(ua: string | undefined): boolean {
+  if (!ua) return false;
+  return /bot|crawl|spider|slurp|facebookexternalhit|whatsapp|preview|lighthouse|curl|wget|python|postman|headless/i.test(ua);
+}
+
+// Salted privacy-preserving one-way hash for IP
+function hashClientIp(rawIp: string): string {
+  const salt = process.env.SESSION_SECRET || 'pixel_analytics_salt_2026';
+  return crypto.createHmac('sha256', salt).update(rawIp).digest('hex').slice(0, 32);
+}
 
 // Helper to resolve user by username (case-insensitive), leading @, CUID id, or Discord ID
 export async function findUserByIdentifier(rawIdentifier: string) {
@@ -106,41 +145,147 @@ profileRouter.get('/by-discord/:discordId', async (req: any, res) => {
   }
 });
 
-// Simple in-memory rate limiting for views
-const viewCache = new Set<string>();
+// Configurable Deduplication Window (default 24 hours)
+const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-// Track Profile View
+// Track Profile View with Deduplication, Bot Filtering & Owner Exemption
 profileRouter.post('/u/:username/view', async (req: any, res) => {
   try {
-    const username = req.params.username;
-    
-    // Very basic IP + Username hashing for spam prevention
-    // In production, use req.ip, but for local dev we might just use a generic identifier
-    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-    const viewKey = `${username}_${clientIp}`;
+    const rawUsername = req.params.username;
+    const userAgent = req.headers['user-agent'] || '';
 
-    if (viewCache.has(viewKey)) {
-      return res.json({ success: true, message: 'View already counted' });
+    // 1. Bot & Crawler Filtering
+    if (isBotRequest(userAgent)) {
+      return res.json({ success: true, counted: false, reason: 'bot_ignored' });
     }
 
-    // Register view in cache (expires roughly never in this simple memory setup, or we could use node-cache)
-    // For now, it just prevents F5 spam in a single session
-    viewCache.add(viewKey);
-    // Clear cache every hour to allow return visitors
-    setTimeout(() => viewCache.delete(viewKey), 1000 * 60 * 60);
+    // 2. Resolve Profile
+    const targetUser = await findUserByIdentifier(rawUsername);
+    if (!targetUser || !targetUser.profile) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
 
-    const user = await findUserByIdentifier(username);
+    const profileId = targetUser.profile.id;
+    const targetUserId = targetUser.id;
 
-    if (user && user.profile) {
-      await prisma.profile.update({
-        where: { id: user.profile.id },
-        data: { views: { increment: 1 } }
+    // 3. Resolve Current Viewer (Session or Bearer token)
+    const viewer = await resolveOptionalViewer(req);
+    const viewerUserId = viewer ? viewer.id : null;
+    const isOwner = Boolean(viewerUserId && viewerUserId === targetUserId);
+
+    // 4. Rule: Profile Owner's own visits NEVER increase public view count
+    if (isOwner) {
+      // Record internal owner visit for analytics (counted: false) without altering public profile.views
+      try {
+        await prisma.profileView.create({
+          data: {
+            profileId,
+            viewerUserId,
+            anonymousVisitorId: null,
+            sessionId: req.sessionID || null,
+            viewSource: 'OWNER',
+            counted: false,
+            deduplicationKey: `${profileId}:owner:${new Date().toISOString().slice(0, 10)}`,
+            userAgent: userAgent.slice(0, 255),
+          },
+        });
+      } catch (_) {}
+
+      return res.json({
+        success: true,
+        counted: false,
+        reason: 'owner_visit',
+        currentViews: targetUser.profile.views,
       });
     }
 
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to track view' });
+    // 5. Generate / Resolve Privacy-Conscious Visitor Identifier
+    const clientIp = (
+      req.headers['x-forwarded-for']?.toString().split(',')[0] ||
+      req.socket.remoteAddress ||
+      'unknown'
+    ).trim();
+
+    const ipHash = hashClientIp(clientIp);
+    const bodyVisitorId = typeof req.body?.visitorId === 'string' ? req.body.visitorId.trim().slice(0, 64) : null;
+    const cookieVisitorId = req.headers.cookie?.match(/(?:^|;\s*)pixel_vid=([^;]+)/)?.[1]?.trim() || null;
+    const anonymousVisitorId = bodyVisitorId || cookieVisitorId || ipHash;
+
+    const windowStart = new Date(Date.now() - DEDUPE_WINDOW_MS);
+
+    // 6. Deduplication Check (24 hours)
+    // - Registered users are tracked uniquely by their authenticated viewerUserId
+    // - Anonymous guests are deduplicated by their persistent anonymousVisitorId / ipHash
+    const dedupeWhere: any = {
+      profileId,
+      viewedAt: { gte: windowStart },
+      counted: true,
+    };
+
+    if (viewerUserId) {
+      dedupeWhere.viewerUserId = viewerUserId;
+    } else {
+      const guestOr: any[] = [];
+      if (anonymousVisitorId) guestOr.push({ anonymousVisitorId });
+      if (ipHash) guestOr.push({ ipHash });
+      dedupeWhere.OR = guestOr;
+    }
+
+    const existingRecentView = await prisma.profileView.findFirst({
+      where: dedupeWhere,
+    });
+
+    if (existingRecentView) {
+      return res.json({
+        success: true,
+        counted: false,
+        reason: 'deduplicated_within_24h',
+        currentViews: targetUser.profile.views,
+      });
+    }
+
+    // 7. Atomic Transaction: Record Unique View + Increment Profile Views
+    const dateBucket = new Date().toISOString().slice(0, 10);
+    const deduplicationKey = `${profileId}:${viewerUserId || anonymousVisitorId}:${dateBucket}`;
+
+    const [viewRecord, updatedProfile] = await prisma.$transaction([
+      prisma.profileView.create({
+        data: {
+          profileId,
+          viewerUserId: viewerUserId || null,
+          anonymousVisitorId: anonymousVisitorId || null,
+          sessionId: req.sessionID || null,
+          viewSource: viewerUserId ? 'REGISTERED' : 'GUEST',
+          counted: true,
+          deduplicationKey,
+          ipHash,
+          userAgent: userAgent.slice(0, 255),
+        },
+      }),
+      prisma.profile.update({
+        where: { id: profileId },
+        data: { views: { increment: 1 } },
+      }),
+    ]);
+
+    // Also set or refresh pixel_vid cookie on guest response so browser maintains anonymous identifier
+    if (!cookieVisitorId) {
+      res.cookie('pixel_vid', anonymousVisitorId, {
+        maxAge: 365 * 24 * 60 * 60 * 1000, // 1 year
+        httpOnly: false,
+        sameSite: 'lax',
+        path: '/',
+      });
+    }
+
+    return res.json({
+      success: true,
+      counted: true,
+      currentViews: updatedProfile.views,
+    });
+  } catch (err: any) {
+    console.error('[Track Profile View Error]:', err);
+    return res.status(500).json({ error: 'Failed to record profile view' });
   }
 });
 
@@ -175,8 +320,6 @@ profileRouter.get('/me', requireAuth, async (req: any, res) => {
 });
 
 // Get or Generate App Token
-import crypto from 'crypto';
-
 profileRouter.get('/me/token', requireAuth, async (req: any, res) => {
   try {
     let token = req.user.appToken;

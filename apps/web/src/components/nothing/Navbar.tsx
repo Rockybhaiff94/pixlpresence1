@@ -3,13 +3,16 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, X, ArrowUpRight } from "lucide-react";
+import { Menu, X, ArrowUpRight, ChevronDown, ExternalLink, LayoutDashboard, LogOut, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "./Button";
+import { useAuth } from "@/context/AuthContext";
 
 export const Navbar: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const pathname = usePathname();
+  const { user, status, loading: authLoading, logout } = useAuth();
 
   const navLinks = [
     { label: "EXPLORE", href: "/#showcase" },
@@ -85,22 +88,115 @@ export const Navbar: React.FC = () => {
           })}
         </nav>
 
-        {/* Action Buttons */}
+        {/* Action Buttons: Synchronous Auth-Aware UI */}
         <div className="hidden sm:flex items-center gap-2.5">
-          <Link
-            href="/login"
-            className="px-3.5 py-1.5 text-xs font-mono text-neutral-300 hover:text-white transition-colors"
-          >
-            SIGN IN
-          </Link>
-          <Button
-            variant="solid-white"
-            href="/register"
-            className="text-xs px-4 py-2 rounded-full"
-            icon={<ArrowUpRight size={13} />}
-          >
-            CLAIM PROFILE
-          </Button>
+          {status === "INITIALIZING" || authLoading ? (
+            /* Transient loading state: never flashes wrong login buttons */
+            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#121212] border border-[#222222] animate-pulse">
+              <div className="w-4 h-4 rounded-full bg-neutral-800" />
+              <div className="w-16 h-3 bg-neutral-800 rounded" />
+            </div>
+          ) : user ? (
+            /* Authenticated state: Profile button & Account Menu */
+            <div className="flex items-center gap-2.5 relative">
+              <Link
+                href={`/${user.username}`}
+                className="px-3.5 py-1.5 rounded-full text-xs font-mono text-neutral-300 hover:text-white border border-[#2a2a2a] hover:border-neutral-500 bg-[#121212] transition-colors flex items-center gap-1.5"
+              >
+                <span>VIEW PROFILE</span>
+                <ArrowUpRight size={12} className="text-neutral-400" />
+              </Link>
+
+              <div className="relative">
+                <button
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                  className="flex items-center gap-2 py-1 px-2.5 rounded-full bg-[#121212] border border-[#242424] hover:border-neutral-500 transition-colors cursor-pointer text-left"
+                  aria-expanded={dropdownOpen}
+                >
+                  {user.avatar ? (
+                    <img
+                      src={user.avatar}
+                      alt={user.username}
+                      className="w-6 h-6 rounded-full object-cover border border-neutral-700 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-6 h-6 rounded-full bg-neutral-800 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                      {user.username.slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                  <span className="text-xs font-mono text-white max-w-[110px] truncate">
+                    @{user.username}
+                  </span>
+                  <ChevronDown size={12} className="text-neutral-400 shrink-0" />
+                </button>
+
+                {dropdownOpen && (
+                  <div
+                    className="absolute right-0 mt-2 w-52 bg-[#0e0e0e] border border-[#252525] rounded-xl shadow-2xl py-1.5 z-50 font-mono text-xs animate-in fade-in zoom-in-95 duration-100"
+                    onMouseLeave={() => setDropdownOpen(false)}
+                  >
+                    <div className="px-3 py-2 border-b border-[#1c1c1c]">
+                      <p className="text-[10px] text-neutral-500 uppercase tracking-widest">Signed In As</p>
+                      <p className="font-bold text-white truncate">@{user.username}</p>
+                    </div>
+                    <Link
+                      href={`/${user.username}`}
+                      onClick={() => setDropdownOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 text-neutral-300 hover:text-white hover:bg-[#181818]"
+                    >
+                      <ExternalLink size={13} className="text-neutral-500" />
+                      <span>View Public Profile</span>
+                    </Link>
+                    <Link
+                      href="/account"
+                      onClick={() => setDropdownOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 text-neutral-300 hover:text-white hover:bg-[#181818]"
+                    >
+                      <LayoutDashboard size={13} className="text-neutral-500" />
+                      <span>Account Studio</span>
+                    </Link>
+                    <Link
+                      href="/dashboard/rpc"
+                      onClick={() => setDropdownOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 text-neutral-300 hover:text-white hover:bg-[#181818]"
+                    >
+                      <Sparkles size={13} className="text-neutral-500" />
+                      <span>Discord RPC Studio</span>
+                    </Link>
+                    <div className="my-1 border-t border-[#1c1c1c]" />
+                    <button
+                      onClick={() => {
+                        setDropdownOpen(false);
+                        logout();
+                      }}
+                      className="w-full text-left flex items-center gap-2 px-3 py-2 text-[#ff6b6b] hover:bg-[#260e0e] cursor-pointer"
+                    >
+                      <LogOut size={13} />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* Unauthenticated state: Clean Sign In / Register buttons */
+            <>
+              <Link
+                href="/login"
+                className="px-3.5 py-1.5 text-xs font-mono text-neutral-300 hover:text-white transition-colors"
+              >
+                SIGN IN
+              </Link>
+              <Button
+                variant="solid-white"
+                href="/register"
+                className="text-xs px-4 py-2 rounded-full"
+                icon={<ArrowUpRight size={13} />}
+              >
+                CLAIM PROFILE
+              </Button>
+            </>
+          )}
         </div>
 
         {/* Mobile Menu Button */}
@@ -139,22 +235,73 @@ export const Navbar: React.FC = () => {
             </div>
 
             <div className="pt-4 border-t border-[#1a1a1a] flex flex-col gap-2.5">
-              <Button
-                variant="outline"
-                href="/login"
-                className="w-full justify-center text-xs"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                SIGN IN
-              </Button>
-              <Button
-                variant="solid-white"
-                href="/register"
-                className="w-full justify-center text-xs"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                CLAIM PROFILE
-              </Button>
+              {user ? (
+                <>
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-[#121212] border border-[#242424]">
+                    {user.avatar ? (
+                      <img
+                        src={user.avatar}
+                        alt={user.username}
+                        className="w-9 h-9 rounded-full object-cover border border-neutral-700 shrink-0"
+                      />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-neutral-800 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                        {user.username.slice(0, 1).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-white truncate font-mono">@{user.username}</p>
+                      <p className="text-[10px] text-neutral-500 truncate font-mono">
+                        {user.email || "Pixel.gg Resident"}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    href={`/${user.username}`}
+                    className="w-full justify-center text-xs"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    VIEW PUBLIC PROFILE
+                  </Button>
+                  <Button
+                    variant="solid-white"
+                    href="/account"
+                    className="w-full justify-center text-xs"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    ACCOUNT STUDIO
+                  </Button>
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      logout();
+                    }}
+                    className="w-full py-2.5 px-3 rounded-xl bg-[#241010] border border-[#4a1818] text-[#ff7777] text-xs font-mono text-center hover:bg-[#341616] cursor-pointer"
+                  >
+                    SIGN OUT
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    href="/login"
+                    className="w-full justify-center text-xs"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    SIGN IN
+                  </Button>
+                  <Button
+                    variant="solid-white"
+                    href="/register"
+                    className="w-full justify-center text-xs"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    CLAIM PROFILE
+                  </Button>
+                </>
+              )}
             </div>
           </motion.div>
         )}

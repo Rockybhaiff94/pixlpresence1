@@ -17,7 +17,10 @@ import {
   X,
   Shield,
   Activity,
+  Lock,
+  RefreshCw,
 } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 export default function DashboardLayout({
   children,
@@ -26,6 +29,7 @@ export default function DashboardLayout({
 }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const pathname = usePathname();
+  const { user, status, loading: authLoading } = useAuth();
 
   const navItems = [
     { href: "/dashboard", icon: LayoutDashboard, label: "01 // OVERVIEW", subtitle: "Telemetry & Status" },
@@ -170,9 +174,49 @@ export default function DashboardLayout({
           </div>
         )}
 
-        {/* Scrollable Children Canvas */}
+        {/* Scrollable Children Canvas with Auth Protection */}
         <main className="flex-1 overflow-y-auto p-6 sm:p-10 bg-[#060606] nt-dot-grid">
-          <div className="max-w-6xl mx-auto space-y-8">{children}</div>
+          {status === "INITIALIZING" && !user ? (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+              <RefreshCw size={24} className="animate-spin text-white" />
+              <p className="text-xs text-neutral-500 uppercase tracking-widest font-mono">
+                [ INITIALIZING STUDIO // VERIFYING IDENTITY ]
+              </p>
+            </div>
+          ) : !user && !authLoading ? (
+            <div className="flex flex-col items-center justify-center min-h-[65vh] p-8 max-w-lg mx-auto text-center space-y-6 bg-[#0a0a0a] border border-[#1f1f1f] rounded-2xl">
+              <div className="w-14 h-14 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-red-500">
+                <Lock size={26} />
+              </div>
+              <div className="space-y-2">
+                <span className="text-[10px] text-neutral-500 uppercase tracking-widest block font-mono">
+                  [ 401 // ACCESS RESTRICTED ]
+                </span>
+                <h2 className="text-2xl font-bold tracking-tight text-white font-mono">
+                  AUTHENTICATION REQUIRED
+                </h2>
+                <p className="text-xs text-neutral-400 font-sans leading-relaxed">
+                  You must be signed in to configure your profile studio, theme, buttons, and Discord RPC.
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row items-center gap-3 w-full pt-2">
+                <Link
+                  href="/login"
+                  className="w-full py-2.5 px-4 rounded-xl bg-white text-black font-bold text-xs font-mono text-center hover:bg-neutral-200 transition-colors"
+                >
+                  SIGN IN
+                </Link>
+                <Link
+                  href="/register"
+                  className="w-full py-2.5 px-4 rounded-xl bg-[#141414] border border-[#262626] text-white font-bold text-xs font-mono text-center hover:bg-[#1a1a1a] transition-colors"
+                >
+                  CLAIM PROFILE
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <div className="max-w-6xl mx-auto space-y-8">{children}</div>
+          )}
         </main>
       </div>
     </div>
