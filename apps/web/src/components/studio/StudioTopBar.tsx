@@ -11,11 +11,17 @@ import {
   Sliders,
   ExternalLink,
   RotateCcw,
+  LayoutTemplate,
+  Layers,
+  Sparkles,
 } from "lucide-react";
 
 export type DeviceMode = "desktop" | "tablet" | "mobile";
+export type StudioView = "categories" | "templates" | "layers";
 
 interface StudioTopBarProps {
+  currentView: StudioView;
+  setCurrentView: (view: StudioView) => void;
   deviceMode: DeviceMode;
   setDeviceMode: (mode: DeviceMode) => void;
   canUndo: boolean;
@@ -24,7 +30,9 @@ interface StudioTopBarProps {
   onRedo: () => void;
   onReset: () => void;
   onSave: () => void;
+  onPublish: () => void;
   saving: boolean;
+  publishing: boolean;
   isDirty: boolean;
   username?: string;
   isClassicMode: boolean;
@@ -32,6 +40,8 @@ interface StudioTopBarProps {
 }
 
 export const StudioTopBar: React.FC<StudioTopBarProps> = ({
+  currentView,
+  setCurrentView,
   deviceMode,
   setDeviceMode,
   canUndo,
@@ -40,28 +50,71 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
   onRedo,
   onReset,
   onSave,
+  onPublish,
   saving,
+  publishing,
   isDirty,
   username,
   isClassicMode,
   onToggleClassicMode,
 }) => {
   return (
-    <header className="h-14 border-b border-[#202020] bg-[#09090b]/90 backdrop-blur-md px-4 flex items-center justify-between text-xs font-mono text-[#ededed] shrink-0 z-30 select-none">
-      {/* Left: Brand & Breadcrumb */}
+    <header className="h-14 border-b border-[#202020] bg-[#09090b]/95 backdrop-blur-md px-4 flex items-center justify-between text-xs font-mono text-[#ededed] shrink-0 z-30 select-none">
+      {/* Left: Brand & Main Navigation (Categories / Templates / Layers) */}
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 pr-2 border-r border-neutral-800">
           <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-          <span className="font-bold tracking-wider text-white text-[11px]">
-            PIXEL.GG // STUDIO
+          <span className="font-bold tracking-wider text-white text-[11px] hidden sm:inline">
+            PIXEL.GG STUDIO
           </span>
         </div>
-        <span className="text-neutral-600 hidden sm:inline">|</span>
-        <span className="text-neutral-400 text-[11px] hidden sm:inline uppercase">
-          {isClassicMode ? "CLASSIC CUSTOMIZER" : "VISUAL PROFILE DESIGNER"}
-        </span>
+
+        {/* Categories / Templates / Layers Toolbar Switcher */}
+        {!isClassicMode && (
+          <div className="flex items-center bg-[#141416] border border-[#242426] rounded-lg p-0.5">
+            <button
+              onClick={() => setCurrentView("categories")}
+              className={`px-2.5 py-1 rounded text-[11px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                currentView === "categories"
+                  ? "bg-white text-black font-bold shadow-sm"
+                  : "text-neutral-400 hover:text-white"
+              }`}
+              title="Category Editors"
+            >
+              <Sliders size={12} />
+              <span>Categories</span>
+            </button>
+
+            <button
+              onClick={() => setCurrentView("templates")}
+              className={`px-2.5 py-1 rounded text-[11px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                currentView === "templates"
+                  ? "bg-white text-black font-bold shadow-sm"
+                  : "text-neutral-400 hover:text-white"
+              }`}
+              title="Templates & Presets"
+            >
+              <LayoutTemplate size={12} />
+              <span>Templates</span>
+            </button>
+
+            <button
+              onClick={() => setCurrentView("layers")}
+              className={`px-2.5 py-1 rounded text-[11px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                currentView === "layers"
+                  ? "bg-white text-black font-bold shadow-sm"
+                  : "text-neutral-400 hover:text-white"
+              }`}
+              title="Layer Hierarchy"
+            >
+              <Layers size={12} />
+              <span>Layers</span>
+            </button>
+          </div>
+        )}
+
         {isDirty && (
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 font-semibold">
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 font-semibold hidden md:inline">
             UNSAVED EDITS
           </span>
         )}
@@ -90,7 +143,7 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
             </button>
             <button
               onClick={onReset}
-              title="Reset to Default"
+              title="Reset Settings to Default"
               className="p-1.5 rounded text-neutral-400 hover:text-rose-400 transition-colors cursor-pointer"
             >
               <RotateCcw size={13} />
@@ -98,7 +151,7 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
           </div>
 
           {/* Device Frames */}
-          <div className="hidden md:flex items-center bg-[#141416] border border-[#242426] rounded-lg p-0.5">
+          <div className="hidden lg:flex items-center bg-[#141416] border border-[#242426] rounded-lg p-0.5">
             <button
               onClick={() => setDeviceMode("desktop")}
               className={`p-1.5 rounded flex items-center gap-1.5 transition-colors cursor-pointer ${
@@ -124,7 +177,7 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
               className={`p-1.5 rounded flex items-center gap-1.5 transition-colors cursor-pointer ${
                 deviceMode === "mobile" ? "bg-white text-black font-semibold" : "text-neutral-400 hover:text-white"
               }`}
-              title="Mobile View (380px)"
+              title="Mobile View (390px)"
             >
               <Smartphone size={13} />
               <span className="text-[10px]">Mobile</span>
@@ -138,34 +191,44 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
         {/* Toggle between Classic Customizer and Studio Mode */}
         <button
           onClick={onToggleClassicMode}
-          className="px-3 py-1.5 rounded-lg bg-[#141416] hover:bg-[#1a1a1d] border border-[#242426] text-[11px] text-neutral-300 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
-          title={isClassicMode ? "Switch to Advanced Visual Studio" : "Switch to Classic Customizer"}
+          title={isClassicMode ? "Switch to Modern Studio" : "Switch to Classic Mode"}
+          className="px-2.5 py-1 rounded-lg border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white transition-colors cursor-pointer text-[10px] hidden sm:inline"
         >
-          <Sliders size={12} className="text-neutral-400" />
-          <span className="hidden sm:inline">
-            {isClassicMode ? "Studio Mode" : "Classic Mode"}
-          </span>
+          {isClassicMode ? "⚡ Switch to Studio" : "Classic Mode"}
         </button>
 
+        {/* Live Public Profile Link */}
         {username && (
           <a
             href={`/${username}`}
             target="_blank"
-            rel="noreferrer"
-            className="px-3 py-1.5 rounded-lg bg-[#141416] hover:bg-[#1a1a1d] border border-[#242426] text-[11px] text-neutral-300 hover:text-white flex items-center gap-1.5 transition-colors"
+            rel="noopener noreferrer"
+            className="p-1.5 sm:px-2.5 sm:py-1 rounded-lg border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1 text-[10px]"
+            title="View Live Public Profile"
           >
-            <ExternalLink size={12} className="text-neutral-400" />
             <span className="hidden sm:inline">Live Profile</span>
+            <ExternalLink size={12} />
           </a>
         )}
 
+        {/* Save Draft */}
         <button
           onClick={onSave}
-          disabled={saving}
-          className="px-4 py-1.5 rounded-lg bg-white text-black font-bold text-[11px] hover:bg-neutral-200 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+          disabled={saving || publishing}
+          className="px-3 py-1 rounded-lg border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-white font-semibold transition-colors cursor-pointer flex items-center gap-1.5 text-[11px] disabled:opacity-50"
         >
-          <Save size={13} />
-          <span>{saving ? "SAVING..." : "PUBLISH"}</span>
+          <Save size={12} />
+          <span>{saving ? "Saving..." : "Save Draft"}</span>
+        </button>
+
+        {/* Publish Profile */}
+        <button
+          onClick={onPublish}
+          disabled={saving || publishing}
+          className="px-3.5 py-1 rounded-lg bg-white text-black font-bold hover:bg-neutral-200 transition-colors cursor-pointer flex items-center gap-1.5 text-[11px] disabled:opacity-50 shadow-md"
+        >
+          <Sparkles size={12} />
+          <span>{publishing ? "Publishing..." : "Publish"}</span>
         </button>
       </div>
     </header>

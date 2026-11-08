@@ -41,6 +41,8 @@ interface RpcConfig {
   button1Url?: string;
   button2Label?: string;
   button2Url?: string;
+  showProfileRpc?: boolean;
+  enableDiscordRpc?: boolean;
 }
 
 const DEFAULT_RPC: RpcConfig = {
@@ -56,6 +58,8 @@ const DEFAULT_RPC: RpcConfig = {
   button1Url: "https://pixel.gg",
   button2Label: "Get PixelsRPC",
   button2Url: "https://pixel.gg",
+  showProfileRpc: true,
+  enableDiscordRpc: true,
   partySize: null,
   partyMax: null,
   startTimestamp: null,
@@ -557,6 +561,96 @@ export default function AccountRpcStudioPage() {
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
           {/* Left Column: Form Editor (7 cols) */}
           <div className="xl:col-span-7 space-y-6">
+            {/* Independent Visibility Controls Matrix */}
+            <div className="p-5 bg-[#0a0a0a] border border-[#262626] rounded-2xl space-y-4">
+              <div className="flex items-center justify-between border-b border-[#181818] pb-3">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <span className="text-[#d71920]">[00]</span> INDEPENDENT VISIBILITY & PUBLISHING
+                </h3>
+                <span className="text-[10px] text-neutral-400 font-mono uppercase">2 DEDICATED SWITCHES</span>
+              </div>
+
+              {/* Control A: Website Profile RPC */}
+              <div className="flex items-center justify-between p-3.5 rounded-xl bg-black border border-[#222222]">
+                <div className="space-y-0.5 max-w-md">
+                  <div className="flex items-center gap-2">
+                    <span className="text-white font-bold text-xs">Website Profile RPC</span>
+                    <span
+                      className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${
+                        rpc.showProfileRpc !== false
+                          ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                          : "bg-neutral-800 text-neutral-400"
+                      }`}
+                    >
+                      {rpc.showProfileRpc !== false ? "VISIBLE" : "HIDDEN"}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-400">
+                    Controls whether this Rich Presence card appears inside your public Pixel.gg profile page.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => updateRpc({ showProfileRpc: rpc.showProfileRpc === false ? true : false })}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                    rpc.showProfileRpc !== false
+                      ? "bg-white text-black hover:bg-neutral-200"
+                      : "bg-neutral-800 text-neutral-400 hover:text-white"
+                  }`}
+                >
+                  {rpc.showProfileRpc !== false ? "ENABLED" : "DISABLED"}
+                </button>
+              </div>
+
+              {/* Control B: Discord RPC (PixelsRPC) */}
+              <div className="flex items-center justify-between p-3.5 rounded-xl bg-black border border-[#222222]">
+                <div className="space-y-0.5 max-w-md">
+                  <div className="flex items-center gap-2">
+                    <span className="text-white font-bold text-xs">Discord RPC (PixelsRPC)</span>
+                    <span
+                      className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${
+                        rpc.enableDiscordRpc !== false
+                          ? "bg-blue-500/20 text-blue-400 border border-blue-500/40"
+                          : "bg-neutral-800 text-neutral-400"
+                      }`}
+                    >
+                      {rpc.enableDiscordRpc !== false ? "PUBLISHING" : "STOPPED"}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-400">
+                    Controls whether your configured activity is sent to Discord through PixelsRPC or desktop client.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => updateRpc({ enableDiscordRpc: rpc.enableDiscordRpc === false ? true : false })}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                    rpc.enableDiscordRpc !== false
+                      ? "bg-white text-black hover:bg-neutral-200"
+                      : "bg-neutral-800 text-neutral-400 hover:text-white"
+                  }`}
+                >
+                  {rpc.enableDiscordRpc !== false ? "ENABLED" : "DISABLED"}
+                </button>
+              </div>
+
+              {/* Matrix Status Callout */}
+              <div className="p-3 rounded-xl bg-neutral-900/80 border border-neutral-800 text-[11px] text-neutral-400">
+                <span className="text-neutral-500 uppercase text-[10px] block font-bold mb-0.5">Integration State</span>
+                <span className="text-white font-medium">
+                  {rpc.showProfileRpc !== false && rpc.enableDiscordRpc !== false
+                    ? "Visible on website profile & published to Discord"
+                    : rpc.showProfileRpc !== false && rpc.enableDiscordRpc === false
+                    ? "Visible only on website profile (Discord publishing stopped)"
+                    : rpc.showProfileRpc === false && rpc.enableDiscordRpc !== false
+                    ? "Published to Discord, hidden on public website profile"
+                    : "Hidden in both destinations"}
+                </span>
+              </div>
+            </div>
+
             {/* Section 1: Application Identity */}
             <div className="p-6 bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl space-y-4">
               <div className="flex items-center justify-between border-b border-[#181818] pb-3">

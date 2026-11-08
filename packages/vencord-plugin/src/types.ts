@@ -16,6 +16,8 @@ export interface RpcResponse {
     button1Url?: string | null;
     button2Label?: string | null;
     button2Url?: string | null;
+    showProfileRpc?: boolean | null;
+    enableDiscordRpc?: boolean | null;
 }
 
 export type ConnectionStatus =

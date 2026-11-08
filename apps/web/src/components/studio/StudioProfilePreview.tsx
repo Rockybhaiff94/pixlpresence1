@@ -139,8 +139,9 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
       base.backgroundImage = `radial-gradient(at 10% 20%, ${identity.titleColor}15 0px, transparent 50%), radial-gradient(at 90% 80%, ${effects.glowColor}20 0px, transparent 50%)`;
     } else if (background.type === "image" && background.imageUrl) {
       base.backgroundImage = `url("${background.imageUrl}")`;
-      base.backgroundSize = "cover";
-      base.backgroundPosition = "center";
+      base.backgroundSize = background.size || "cover";
+      base.backgroundPosition = background.position || "center";
+      base.backgroundRepeat = background.repeat || "no-repeat";
     }
 
     return base;
@@ -261,10 +262,33 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
 
             // 1. Avatar
             if (elementId === "avatar") {
+              const alignClass =
+                avatar.alignment === "left"
+                  ? "self-start"
+                  : avatar.alignment === "right"
+                  ? "self-end"
+                  : "self-center";
+
+              const animClass =
+                avatar.hoverAnimation === "scale"
+                  ? "hover:scale-105"
+                  : avatar.hoverAnimation === "rotate"
+                  ? "hover:rotate-6"
+                  : avatar.hoverAnimation === "pulse"
+                  ? "animate-pulse"
+                  : "";
+
               return (
-                <div key="avatar" {...getElementSelectProps("avatar")} className="shrink-0">
+                <div
+                  key="avatar"
+                  {...getElementSelectProps("avatar")}
+                  className={`shrink-0 ${alignClass}`}
+                  style={{
+                    transform: avatar.offsetY ? `translateY(${avatar.offsetY}px)` : undefined,
+                  }}
+                >
                   <div
-                    className="profile-avatar relative overflow-hidden flex items-center justify-center font-bold text-white shadow-xl transition-transform"
+                    className={`profile-avatar relative overflow-hidden flex items-center justify-center font-bold text-white shadow-xl transition-all duration-300 ${animClass}`}
                     style={{
                       width: `${avatar.size}px`,
                       height: `${avatar.size}px`,
@@ -283,7 +307,8 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
                       <img
                         src={data.avatarUrl}
                         alt="Avatar"
-                        className="w-full h-full object-cover"
+                        className="w-full h-full"
+                        style={{ objectFit: avatar.objectFit || "cover" }}
                       />
                     ) : (
                       <span className="text-2xl">
@@ -369,12 +394,25 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
 
             // 3. Discord Rich Presence Tile
             if (elementId === "rpc") {
+              // Website Profile RPC visibility check:
+              // If disabled or layer hidden, do not display and do NOT reserve space
+              if (discordRpc.showProfileRpc === false || !isLayerVisible("rpc")) {
+                return null;
+              }
+
               const rpc = data.discordPresence || {
                 appName: "Visual Studio Code",
                 details: "Designing Nothing OS Presence",
                 state: "Pixel.gg Studio Engine",
                 largeImage: "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
               };
+
+              const imgSizeClass =
+                discordRpc.imageSize === "small"
+                  ? "w-10 h-10"
+                  : discordRpc.imageSize === "large"
+                  ? "w-16 h-16"
+                  : "w-12 h-12";
 
               return (
                 <div key="rpc" {...getElementSelectProps("rpc")} className="w-full">
@@ -414,7 +452,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
                       }`}
                     >
                       {discordRpc.imageLayout !== "hidden" && (
-                        <div className="w-12 h-12 rounded-xl bg-neutral-900 border border-neutral-700 flex items-center justify-center font-bold text-xs text-white shrink-0 overflow-hidden shadow-md">
+                        <div className={`${imgSizeClass} rounded-xl bg-neutral-900 border border-neutral-700 flex items-center justify-center font-bold text-xs text-white shrink-0 overflow-hidden shadow-md`}>
                           {rpc.largeImage ? (
                             /* eslint-disable-next-line @next/next/no-img-element */
                             <img

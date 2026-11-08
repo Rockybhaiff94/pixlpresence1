@@ -124,3 +124,4 @@ export const ParticlesCanvas: React.FC<ParticlesCanvasProps> = ({
 
   return <canvas ref={canvasRef} className={className} />;
 };
+

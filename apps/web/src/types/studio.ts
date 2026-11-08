@@ -19,10 +19,23 @@ export type ButtonVariant = "solid-white" | "glass" | "neon" | "minimal" | "outl
 export type SocialIconStyle = "minimal" | "pill" | "glass" | "neon" | "circle";
 export type RpcStyle = "card" | "glass" | "minimal" | "compact" | "neon";
 export type RpcImageLayout = "left" | "right" | "stacked" | "hidden";
+export type RpcImageSize = "small" | "medium" | "large";
+
+export type StudioTab =
+  | "layout"
+  | "identity"
+  | "avatar"
+  | "background"
+  | "typography"
+  | "rpc"
+  | "buttons"
+  | "effects"
+  | "css"
+  | "advanced";
 
 export interface StudioLayer {
   id: string;
-  type: "avatar" | "identity" | "rpc" | "music" | "buttons" | "socials" | "custom";
+  type: "background" | "container" | "avatar" | "username" | "bio" | "rpc" | "music" | "socials" | "buttons" | "custom" | "badges" | "identity";
   label: string;
   visible: boolean;
   locked: boolean;
@@ -46,11 +59,16 @@ export interface ProfileDesignConfig {
     titleColor: string;
     bioFont: string;
     bioColor: string;
+    bioSize?: number;
     badgeStyle: BadgeStyle;
+    alignment?: "left" | "center" | "right";
   };
   avatar: {
     shape: AvatarShape;
     size: number; // in px: 64 to 160
+    alignment?: "left" | "center" | "right";
+    objectFit?: "cover" | "contain" | "fill";
+    offsetY?: number;
     borderWidth: number;
     borderColor: string;
     borderGradient?: string;
@@ -68,6 +86,9 @@ export interface ProfileDesignConfig {
       stops: { color: string; offset: number }[];
     };
     imageUrl?: string;
+    position?: string;
+    repeat?: "no-repeat" | "repeat" | "repeat-x" | "repeat-y";
+    size?: "cover" | "contain" | "auto";
     pattern: PatternType;
     blur: number;
     opacity: number;
@@ -85,9 +106,12 @@ export interface ProfileDesignConfig {
   discordRpc: {
     style: RpcStyle;
     imageLayout: RpcImageLayout;
+    imageSize?: RpcImageSize;
     borderRadius: number;
     showTelemetryBadge: boolean;
     showTimer: boolean;
+    showProfileRpc?: boolean; // Independent control: visible on website profile
+    enableDiscordRpc?: boolean; // Independent control: published to Discord via PixelsRPC
     customBorderColor?: string;
   };
   buttons: {
@@ -113,6 +137,12 @@ export interface ProfileDesignConfig {
     ambientGlow: boolean;
     glowColor: string;
   };
+  advanced?: {
+    soundEffects?: boolean;
+    customCursor?: boolean;
+    watermark?: boolean;
+    wireframeMode?: boolean;
+  };
   customCss?: string;
   layers: StudioLayer[];
 }
@@ -135,11 +165,16 @@ export const DEFAULT_DESIGN_CONFIG: ProfileDesignConfig = {
     titleColor: "#ffffff",
     bioFont: "Inter",
     bioColor: "#a3a3a3",
+    bioSize: 14,
     badgeStyle: "pill",
+    alignment: "center",
   },
   avatar: {
     shape: "rounded",
     size: 96,
+    alignment: "center",
+    objectFit: "cover",
+    offsetY: 0,
     borderWidth: 2,
     borderColor: "rgba(255, 255, 255, 0.4)",
     glow: false,
@@ -159,6 +194,9 @@ export const DEFAULT_DESIGN_CONFIG: ProfileDesignConfig = {
       ],
     },
     pattern: "dots",
+    position: "center",
+    repeat: "no-repeat",
+    size: "cover",
     blur: 0,
     opacity: 100,
     overlayColor: "#000000",
@@ -173,9 +211,12 @@ export const DEFAULT_DESIGN_CONFIG: ProfileDesignConfig = {
   discordRpc: {
     style: "card",
     imageLayout: "left",
+    imageSize: "medium",
     borderRadius: 16,
     showTelemetryBadge: true,
     showTimer: true,
+    showProfileRpc: true,
+    enableDiscordRpc: true,
     customBorderColor: "#242424",
   },
   buttons: {
@@ -201,13 +242,24 @@ export const DEFAULT_DESIGN_CONFIG: ProfileDesignConfig = {
     ambientGlow: false,
     glowColor: "#ffffff",
   },
+  advanced: {
+    soundEffects: false,
+    customCursor: false,
+    watermark: true,
+    wireframeMode: false,
+  },
   customCss: "",
   layers: [
+    { id: "background", type: "background", label: "Background", visible: true, locked: false },
+    { id: "container", type: "container", label: "Main Container", visible: true, locked: false },
     { id: "avatar", type: "avatar", label: "Profile Avatar", visible: true, locked: false },
-    { id: "identity", type: "identity", label: "Name & Bio", visible: true, locked: false },
+    { id: "username", type: "username", label: "Username & Display Name", visible: true, locked: false },
+    { id: "bio", type: "bio", label: "Biography", visible: true, locked: false },
     { id: "rpc", type: "rpc", label: "Discord Rich Presence", visible: true, locked: false },
-    { id: "music", type: "music", label: "Ambient Audio Player", visible: true, locked: false },
+    { id: "music", type: "music", label: "Music Player", visible: true, locked: false },
+    { id: "socials", type: "socials", label: "Social Icons", visible: true, locked: false },
     { id: "buttons", type: "buttons", label: "Action Buttons", visible: true, locked: false },
-    { id: "socials", type: "socials", label: "Social Links", visible: true, locked: false },
+    { id: "badges", type: "badges", label: "Custom Elements / Badges", visible: true, locked: false },
   ],
 };
+

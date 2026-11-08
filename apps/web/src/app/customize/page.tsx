@@ -4,11 +4,10 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { AccountLayout } from "@/components/account/AccountLayout";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { ProfileDesignConfig, DEFAULT_DESIGN_CONFIG } from "@/types/studio";
-import { StudioTopBar, DeviceMode } from "@/components/studio/StudioTopBar";
-import { StudioLeftPanel, StudioTab } from "@/components/studio/StudioLeftPanel";
-import { StudioCenterCanvas } from "@/components/studio/StudioCenterCanvas";
-import { StudioRightInspector } from "@/components/studio/StudioRightInspector";
+import { ProfileDesignConfig, DEFAULT_DESIGN_CONFIG, StudioTab } from "@/types/studio";
+import { StudioTopBar, DeviceMode, StudioView } from "@/components/studio/StudioTopBar";
+import { StudioLeftWorkspace } from "@/components/studio/StudioLeftWorkspace";
+import { StudioRightPreviewCanvas } from "@/components/studio/StudioRightPreviewCanvas";
 import { ClassicCustomizer } from "@/components/studio/ClassicCustomizer";
 import { StudioTemplatePreset } from "@/components/studio/templates";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
@@ -16,9 +15,10 @@ import { AlertCircle, CheckCircle2 } from "lucide-react";
 export default function CustomizePage() {
   const { user, refreshUser } = useAuth();
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [msg, setMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
-  // Mode Selection: Studio 3-Panel vs Classic Customizer
+  // Mode Selection: Studio Workspace vs Classic Customizer
   const [isClassicMode, setIsClassicMode] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
       try {
@@ -46,10 +46,10 @@ export default function CustomizePage() {
 
   // Studio UI Navigation State
   const [deviceMode, setDeviceMode] = useState<DeviceMode>("desktop");
-  const [activeTab, setActiveTab] = useState<StudioTab>("layout");
-  const [activeElementId, setActiveElementId] = useState<string>("identity");
+  const [currentView, setCurrentView] = useState<StudioView>("categories");
+  const [activeCategory, setActiveCategory] = useState<StudioTab>("layout");
 
-  // Classic Form State (Two-way synchronized)
+  // Profile Identity & Classic Fields (Synchronized two-way)
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
@@ -102,8 +102,8 @@ export default function CustomizePage() {
       setIsDirty(true);
       setConfig((prev) => {
         const next = updater(prev);
-        setHistory((h) => [...h.slice(0, historyIdx + 1), next].slice(-25));
-        setHistoryIdx((i) => Math.min(i + 1, 24));
+        setHistory((h) => [...h.slice(0, historyIdx + 1), next].slice(-30));
+        setHistoryIdx((i) => Math.min(i + 1, 29));
         return next;
       });
     },
@@ -144,6 +144,7 @@ export default function CustomizePage() {
       buttons: { ...prev.buttons, ...(preset.config.buttons || {}) },
       socials: { ...prev.socials, ...(preset.config.socials || {}) },
       effects: { ...prev.effects, ...(preset.config.effects || {}) },
+      advanced: { ...prev.advanced, ...(preset.config.advanced || {}) },
     }));
 
     if (preset.accentColor) {
@@ -154,12 +155,21 @@ export default function CustomizePage() {
 
   // Layers handlers
   const handleToggleLayerVisibility = (layerId: string) => {
-    updateConfigWithHistory((prev) => ({
-      ...prev,
-      layers: prev.layers.map((l) =>
+    updateConfigWithHistory((prev) => {
+      const isRpc = layerId === "rpc";
+      const updatedLayers = prev.layers.map((l) =>
         l.id === layerId ? { ...l, visible: !l.visible } : l
-      ),
-    }));
+      );
+      const isVisible = updatedLayers.find((l) => l.id === layerId)?.visible ?? true;
+
+      return {
+        ...prev,
+        layers: updatedLayers,
+        discordRpc: isRpc
+          ? { ...prev.discordRpc, showProfileRpc: isVisible }
+          : prev.discordRpc,
+      };
+    });
   };
 
   const handleToggleLayerLock = (layerId: string) => {
@@ -191,17 +201,6 @@ export default function CustomizePage() {
         },
       };
     });
-  };
-
-  // Interactive selection from canvas element click
-  const handleSelectElement = (elementId: string) => {
-    setActiveElementId(elementId);
-    if (elementId === "avatar") setActiveTab("identity");
-    else if (elementId === "identity") setActiveTab("identity");
-    else if (elementId === "rpc") setActiveTab("rpc");
-    else if (elementId === "buttons") setActiveTab("buttons");
-    else if (elementId === "socials") setActiveTab("buttons");
-    else if (elementId === "background") setActiveTab("background");
   };
 
   // Load initial profile & presence
@@ -251,6 +250,7 @@ export default function CustomizePage() {
                   buttons: { ...DEFAULT_DESIGN_CONFIG.buttons, ...(parsed.buttons || {}) },
                   socials: { ...DEFAULT_DESIGN_CONFIG.socials, ...(parsed.socials || {}) },
                   effects: { ...DEFAULT_DESIGN_CONFIG.effects, ...(parsed.effects || {}) },
+                  advanced: { ...DEFAULT_DESIGN_CONFIG.advanced, ...(parsed.advanced || {}) },
                   customCss: p.customCss || parsed.customCss || "",
                 };
                 setConfig(merged);
@@ -293,6 +293,16 @@ export default function CustomizePage() {
         if (rpcRes.ok && active) {
           const rpc = await rpcRes.json();
           setDiscordPresence(rpc);
+          if (rpc) {
+            setConfig((prev) => ({
+              ...prev,
+              discordRpc: {
+                ...prev.discordRpc,
+                showProfileRpc: rpc.showProfileRpc !== false,
+                enableDiscordRpc: rpc.enableDiscordRpc !== false,
+              },
+            }));
+          }
         }
       } catch {
         // Fallback
@@ -306,14 +316,14 @@ export default function CustomizePage() {
     };
   }, []);
 
-  // Save handler synchronizing both classic & studio models
-  const handleSave = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  // Save / Publish handlers synchronizing profile + independent RPC controls
+  const executeSave = async (isPublish = false) => {
     try {
-      setSaving(true);
+      if (isPublish) setPublishing(true);
+      else setSaving(true);
       setMsg(null);
 
-      const payload = {
+      const profilePayload = {
         displayName,
         bio,
         avatarUrl,
@@ -328,27 +338,51 @@ export default function CustomizePage() {
         designConfig: JSON.stringify(config),
       };
 
-      const res = await apiFetch("/api/profile/me", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const rpcPayload = {
+        showProfileRpc: config.discordRpc.showProfileRpc,
+        enableDiscordRpc: config.discordRpc.enableDiscordRpc,
+      };
 
-      if (!res.ok) throw new Error("Failed to publish profile design");
+      // Concurrent update of both profile styling and independent RPC switches
+      const [profileRes, rpcRes] = await Promise.all([
+        apiFetch("/api/profile/me", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(profilePayload),
+        }),
+        apiFetch("/api/rpc/me", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(rpcPayload),
+        }),
+      ]);
+
+      if (!profileRes.ok || !rpcRes.ok) {
+        throw new Error("Failed to save changes to server");
+      }
 
       isDirtyRef.current = false;
       setIsDirty(false);
-      setMsg({ text: "Profile design published and live across all devices.", type: "success" });
+      setMsg({
+        text: isPublish
+          ? "Profile design successfully published and live across all devices."
+          : "Draft saved successfully.",
+        type: "success",
+      });
       await refreshUser();
       setTimeout(() => setMsg(null), 4000);
     } catch (err: unknown) {
       setMsg({ text: (err as Error)?.message || "Failed to update profile", type: "error" });
     } finally {
       setSaving(false);
+      setPublishing(false);
     }
   };
 
-  // Preview Data payload for WYSIWYG center canvas
+  const handleSaveDraft = () => executeSave(false);
+  const handlePublish = () => executeSave(true);
+
+  // Preview Data payload for WYSIWYG right preview
   const previewData = {
     username: user?.username || "yourname",
     displayName: displayName || user?.username || "Your Name",
@@ -367,8 +401,10 @@ export default function CustomizePage() {
   return (
     <AccountLayout>
       <div className="flex flex-col h-[calc(100vh-5rem)] min-h-[700px] -m-4 sm:-m-6 lg:-m-8 bg-[#09090b] rounded-2xl border border-[#202020] overflow-hidden select-none">
-        {/* Top Studio Bar */}
+        {/* Top Area: Compact Horizontal Navigation Toolbar */}
         <StudioTopBar
+          currentView={currentView}
+          setCurrentView={setCurrentView}
           deviceMode={deviceMode}
           setDeviceMode={setDeviceMode}
           canUndo={historyIdx > 0}
@@ -376,8 +412,10 @@ export default function CustomizePage() {
           onUndo={handleUndo}
           onRedo={handleRedo}
           onReset={handleResetToDefault}
-          onSave={handleSave}
+          onSave={handleSaveDraft}
+          onPublish={handlePublish}
           saving={saving}
+          publishing={publishing}
           isDirty={isDirty}
           username={user?.username}
           isClassicMode={isClassicMode}
@@ -406,7 +444,7 @@ export default function CustomizePage() {
           </div>
         )}
 
-        {/* Body Container: Classic Mode vs 3-Panel Studio */}
+        {/* Workspace Body: Classic Mode vs New Horizontal Visual Workspace */}
         {isClassicMode ? (
           <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#070709]">
             <ClassicCustomizer
@@ -430,49 +468,56 @@ export default function CustomizePage() {
               setOpacity={setOpacity}
               roundedCorners={roundedCorners}
               setRoundedCorners={setRoundedCorners}
-              handleSave={handleSave}
-              saving={saving}
+              handleSave={(e) => {
+                if (e) e.preventDefault();
+                handlePublish();
+              }}
+              saving={saving || publishing}
               username={user?.username}
             />
           </div>
         ) : (
-          <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
-            {/* Panel 1: Left Categories, Templates & Layers */}
-            <StudioLeftPanel
-              activeTab={activeTab}
-              setActiveTab={setActiveTab}
-              config={config}
-              onApplyTemplate={handleApplyTemplate}
-              onToggleLayerVisibility={handleToggleLayerVisibility}
-              onToggleLayerLock={handleToggleLayerLock}
-              onMoveLayer={handleMoveLayer}
-            />
+          <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
+            {/* LEFT AREA — EDITING WORKSPACE (occupies most of available editing space) */}
+            <div className="w-full lg:w-[60%] xl:w-[62%] h-full border-r border-[#202020] flex flex-col overflow-hidden">
+              <StudioLeftWorkspace
+                currentView={currentView}
+                setCurrentView={setCurrentView}
+                activeCategory={activeCategory}
+                setActiveCategory={setActiveCategory}
+                config={config}
+                updateConfig={updateConfigWithHistory}
+                displayName={displayName}
+                setDisplayName={setDisplayName}
+                bio={bio}
+                setBio={setBio}
+                avatarUrl={avatarUrl}
+                setAvatarUrl={setAvatarUrl}
+                bannerUrl={bannerUrl}
+                setBannerUrl={setBannerUrl}
+                musicUrl={musicUrl}
+                setMusicUrl={setMusicUrl}
+                onApplyTemplatePreset={handleApplyTemplate}
+                onToggleLayerVisibility={handleToggleLayerVisibility}
+                onToggleLayerLock={handleToggleLayerLock}
+                onMoveLayer={handleMoveLayer}
+              />
+            </div>
 
-            {/* Panel 2: Center Interactive Live Preview Canvas */}
-            <StudioCenterCanvas
-              deviceMode={deviceMode}
-              config={config}
-              previewData={previewData}
-              activeElementId={activeElementId}
-              onSelectElement={handleSelectElement}
-            />
-
-            {/* Panel 3: Right Properties Inspector */}
-            <StudioRightInspector
-              activeTab={activeTab}
-              config={config}
-              updateConfig={updateConfigWithHistory}
-              displayName={displayName}
-              setDisplayName={setDisplayName}
-              bio={bio}
-              setBio={setBio}
-              avatarUrl={avatarUrl}
-              setAvatarUrl={setAvatarUrl}
-              bannerUrl={bannerUrl}
-              setBannerUrl={setBannerUrl}
-              musicUrl={musicUrl}
-              setMusicUrl={setMusicUrl}
-            />
+            {/* RIGHT AREA — LIVE PROFILE PREVIEW (sticky, far right, independent live preview) */}
+            <div className="w-full lg:w-[40%] xl:w-[38%] h-full bg-[#050507] flex flex-col overflow-hidden relative">
+              <StudioRightPreviewCanvas
+                deviceMode={deviceMode}
+                setDeviceMode={setDeviceMode}
+                config={config}
+                previewData={previewData}
+                activeCategory={activeCategory}
+                onSelectCategory={(cat) => {
+                  setActiveCategory(cat);
+                  setCurrentView("categories");
+                }}
+              />
+            </div>
           </div>
         )}
       </div>

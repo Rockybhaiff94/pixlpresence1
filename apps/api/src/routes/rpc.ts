@@ -38,7 +38,16 @@ rpcRouter.get('/me', requireAuth, async (req: any, res) => {
 // Update RPC Config
 rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
   try {
-    const data = req.body;
+    const data = { ...req.body };
+    if (data.show_profile_rpc !== undefined && data.showProfileRpc === undefined) {
+      data.showProfileRpc = Boolean(data.show_profile_rpc);
+      delete data.show_profile_rpc;
+    }
+    if (data.enable_discord_rpc !== undefined && data.enableDiscordRpc === undefined) {
+      data.enableDiscordRpc = Boolean(data.enable_discord_rpc);
+      delete data.enable_discord_rpc;
+    }
+
     const rpc = await prisma.richPresence.upsert({
       where: { userId: req.user.id },
       update: data,
@@ -46,7 +55,11 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
     });
     
     // Emit a Socket.io event here to tell the desktop client to update
-    io.to(`user_${req.user.id}`).emit('rpc_update', rpc);
+    if (rpc.enableDiscordRpc === false) {
+      io.to(`user_${req.user.id}`).emit('rpc_update', { ...rpc, enabled: false, enableDiscordRpc: false });
+    } else {
+      io.to(`user_${req.user.id}`).emit('rpc_update', rpc);
+    }
     
     res.json(rpc);
   } catch (err) {

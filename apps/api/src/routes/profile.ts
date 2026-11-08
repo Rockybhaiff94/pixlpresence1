@@ -111,10 +111,17 @@ profileRouter.get('/u/:username', async (req: any, res) => {
 
     // Omit sensitive data
     const { email, passwordHash, appToken, ...safeUser } = user as any;
+    const rawRpc = (user as any).richPresence || null;
+    let safeRpc = rawRpc;
+    if (rawRpc && rawRpc.showProfileRpc === false) {
+      // If website RPC is disabled, hide it completely from public profile visitors
+      safeRpc = isOwner ? rawRpc : null;
+    }
+
     res.json({
       user: safeUser,
       profile: user.profile,
-      richPresence: (user as any).richPresence || null,
+      richPresence: safeRpc,
     });
   } catch (err) {
     console.error('[Public Profile Error]:', err);

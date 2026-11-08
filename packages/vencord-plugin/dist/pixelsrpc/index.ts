@@ -122,7 +122,12 @@ function buildDiscordActivity(rpc: RpcResponse): DiscordActivity {
 }
 
 export function applyActivity(rpc: RpcResponse) {
-    if (!settings.store.activityVisibility) {
+    if (
+        !settings.store.activityVisibility ||
+        rpc.enableDiscordRpc === false ||
+        (rpc as any).enable_discord_rpc === false ||
+        (rpc as any).enabled === false
+    ) {
         clearActivity();
         return;
     }
