@@ -55,7 +55,8 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
     });
     
     // Emit a Socket.io event here to tell the desktop client to update
-    if (rpc.enableDiscordRpc === false) {
+    const rpcRecord = rpc as typeof rpc & { enableDiscordRpc?: boolean; showProfileRpc?: boolean };
+    if (rpcRecord.enableDiscordRpc === false) {
       io.to(`user_${req.user.id}`).emit('rpc_update', { ...rpc, enabled: false, enableDiscordRpc: false });
     } else {
       io.to(`user_${req.user.id}`).emit('rpc_update', rpc);
