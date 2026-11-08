@@ -2,9 +2,10 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Sparkles, Terminal, Activity, ShieldCheck, Disc3 } from "lucide-react";
+import { ArrowRight, Sparkles, Terminal, Activity, ShieldCheck, Disc3, ExternalLink } from "lucide-react";
 import { motion, type Variants } from "framer-motion";
 import { Button } from "./Button";
+import { useAuth } from "@/context/AuthContext";
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -32,6 +33,7 @@ const itemVariants: Variants = {
 export const HeroSection: React.FC = () => {
   const [handle, setHandle] = useState("");
   const router = useRouter();
+  const { user } = useAuth();
 
   const handleClaim = (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,33 +92,63 @@ export const HeroSection: React.FC = () => {
             A radical departure from bloated link-in-bio widgets. Built with monochromatic discipline, dot-matrix typography, and native Discord Rich Presence streaming.
           </motion.p>
 
-          {/* Claim Handle Bar */}
-          <motion.form variants={itemVariants} onSubmit={handleClaim} className="pt-2 max-w-md">
-            <div className="flex items-center bg-[#101010] border border-[#282828] hover:border-[#404040] focus-within:border-white rounded-lg p-1.5 transition-all shadow-xl">
-              <span className="px-3 text-xs sm:text-sm font-mono text-neutral-500 select-none">
-                pixel.gg/
-              </span>
-              <input
-                type="text"
-                value={handle}
-                onChange={(e) => setHandle(e.target.value)}
-                placeholder="username"
-                className="bg-transparent flex-1 text-white font-mono text-sm placeholder:text-neutral-600 focus:outline-none min-w-0"
-              />
-              <motion.button
-                type="submit"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                transition={{ duration: 0.15, ease: "easeOut" }}
-                className="bg-white hover:bg-neutral-200 active:bg-neutral-300 text-black px-4 py-2 rounded-md font-mono text-xs font-medium tracking-tight flex items-center gap-1.5 transition-colors shrink-0 cursor-pointer"
-              >
-                CLAIM <ArrowRight size={13} />
-              </motion.button>
-            </div>
-            <p className="mt-2 text-[11px] font-mono text-neutral-500 flex items-center gap-2">
-              <ShieldCheck size={12} className="text-neutral-400" /> Free permanent URL &bull; Instant activation
-            </p>
-          </motion.form>
+          {/* Claim Handle Bar or Authenticated Profile Shortcut */}
+          {user ? (
+            <motion.div variants={itemVariants} className="pt-2 max-w-md space-y-3">
+              <div className="flex items-center justify-between p-3.5 rounded-xl bg-[#121212] border border-[#262626]">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-xs font-mono text-neutral-400">ACTIVE PROFILE:</span>
+                  <span className="text-xs font-mono font-bold text-white">pixel.gg/{user.username}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="solid-white"
+                  href="/account"
+                  className="text-xs px-5 py-2.5 rounded-lg flex-1 justify-center"
+                  icon={<ArrowRight size={13} />}
+                >
+                  OPEN STUDIO
+                </Button>
+                <Button
+                  variant="outline"
+                  href={`/${user.username}`}
+                  className="text-xs px-5 py-2.5 rounded-lg flex-1 justify-center"
+                  icon={<ExternalLink size={13} />}
+                >
+                  VIEW PROFILE
+                </Button>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.form variants={itemVariants} onSubmit={handleClaim} className="pt-2 max-w-md">
+              <div className="flex items-center bg-[#101010] border border-[#282828] hover:border-[#404040] focus-within:border-white rounded-lg p-1.5 transition-all shadow-xl">
+                <span className="px-3 text-xs sm:text-sm font-mono text-neutral-500 select-none">
+                  pixel.gg/
+                </span>
+                <input
+                  type="text"
+                  value={handle}
+                  onChange={(e) => setHandle(e.target.value)}
+                  placeholder="username"
+                  className="bg-transparent flex-1 text-white font-mono text-sm placeholder:text-neutral-600 focus:outline-none min-w-0"
+                />
+                <motion.button
+                  type="submit"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  transition={{ duration: 0.15, ease: "easeOut" }}
+                  className="bg-white hover:bg-neutral-200 active:bg-neutral-300 text-black px-4 py-2 rounded-md font-mono text-xs font-medium tracking-tight flex items-center gap-1.5 transition-colors shrink-0 cursor-pointer"
+                >
+                  CLAIM <ArrowRight size={13} />
+                </motion.button>
+              </div>
+              <p className="mt-2 text-[11px] font-mono text-neutral-500 flex items-center gap-2">
+                <ShieldCheck size={12} className="text-neutral-400" /> Free permanent URL &bull; Instant activation
+              </p>
+            </motion.form>
+          )}
 
           {/* Fast Navigation Shortcuts */}
           <motion.div variants={itemVariants} className="pt-4 flex flex-wrap items-center gap-3">

@@ -11,7 +11,7 @@ import { useAuth } from "@/context/AuthContext";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login } = useAuth();
+  const { user, status, login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -20,7 +20,10 @@ export default function LoginPage() {
   React.useEffect(() => {
     // Warm up backend
     fetch("/health").catch(() => {});
-  }, []);
+    if (status === "AUTHENTICATED" && user) {
+      router.replace("/account");
+    }
+  }, [status, user, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

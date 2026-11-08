@@ -367,14 +367,28 @@ authRouter.get('/google', (req, res) => {
   res.redirect(`${FRONTEND_URL}/login?error=${encodeURIComponent('Google OAuth initialization in progress.')}`);
 });
 
-authRouter.get('/logout', (req, res, next) => {
-  req.logout((err) => {
-    if (err) {
-      return next(err);
+const handleLogout = (req: any, res: any) => {
+  req.logout((err: any) => {
+    if (req.session) {
+      req.session.destroy(() => {});
     }
-    res.json({ success: true, message: 'Logged out successfully' });
+    const isProd = process.env.NODE_ENV === 'production';
+    res.clearCookie('connect.sid', {
+      path: '/',
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+    });
+    res.clearCookie('pixel_app_token', {
+      path: '/',
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+    });
+    return res.json({ success: true, message: 'Logged out successfully' });
   });
-});
+};
+
+authRouter.get('/logout', handleLogout);
+authRouter.post('/logout', handleLogout);
 
 // Get Current Authenticated User & Profile
 authRouter.get('/me', async (req: any, res) => {
@@ -397,7 +411,9 @@ authRouter.get('/me', async (req: any, res) => {
         user = await prisma.user.findFirst({
           where: { appToken: token },
           include: {
-            profile: true,
+            profile: {
+              include: { links: true, buttons: true },
+            },
             identities: true,
           },
         });
@@ -408,7 +424,9 @@ authRouter.get('/me', async (req: any, res) => {
       user = await prisma.user.findUnique({
         where: { id: user.id },
         include: {
-          profile: true,
+          profile: {
+            include: { links: true, buttons: true },
+          },
           identities: true,
         },
       });
@@ -421,7 +439,9 @@ authRouter.get('/me', async (req: any, res) => {
           where: { id: user.id },
           data: { appToken: generatedToken },
           include: {
-            profile: true,
+            profile: {
+              include: { links: true, buttons: true },
+            },
             identities: true,
           },
         });
@@ -430,7 +450,10 @@ authRouter.get('/me', async (req: any, res) => {
       if (user.profile) {
         user.profile.avatarUrl = resolveDiscordAvatarUrl(user.discordId, user.profile.avatarUrl || user.avatar);
       }
-      return res.json(user);
+
+      // Security: Never leak password hash to client
+      const { passwordHash, ...safeUser } = user;
+      return res.json(safeUser);
     }
 
     return res.status(401).json({ error: 'Unauthorized' });
@@ -438,6 +461,14 @@ authRouter.get('/me', async (req: any, res) => {
     return res.status(500).json({ error: err.message });
   }
 });
+
+// Reserved usernames that cannot be claimed
+const RESERVED_USERNAMES = new Set([
+  'admin', 'api', 'auth', 'dashboard', 'account', 'settings',
+  'login', 'register', 'logout', 'explore', 'rpc', 'terms', 'privacy',
+  'help', 'support', 'null', 'undefined', 'system', 'root', 'bot',
+  'pixel', 'pixelgg', 'status', 'pricing', 'compare', 'leaderboard'
+]);
 
 // Email & Password Registration
 authRouter.post('/register', async (req, res) => {
@@ -451,8 +482,17 @@ authRouter.post('/register', async (req, res) => {
     const cleanEmail = String(email).trim().toLowerCase();
     const cleanUsername = String(username).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
 
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!EMAIL_REGEX.test(cleanEmail)) {
+      return res.status(400).json({ error: 'Please enter a valid email address.' });
+    }
+
     if (cleanUsername.length < 3 || cleanUsername.length > 24) {
       return res.status(400).json({ error: 'Username must be between 3 and 24 characters.' });
+    }
+
+    if (RESERVED_USERNAMES.has(cleanUsername)) {
+      return res.status(400).json({ error: 'This username is reserved. Please choose another.' });
     }
 
     if (String(password).length < 8) {
@@ -509,10 +549,27 @@ authRouter.post('/register', async (req, res) => {
       },
     });
 
-    return res.status(201).json({
-      user: newUser,
-      token: appToken,
-      message: 'Account created successfully',
+    // Automatically establish server session
+    req.logIn(newUser, (loginErr) => {
+      if (loginErr) {
+        console.error('[Register req.logIn error]:', loginErr);
+      }
+
+      const isProd = process.env.NODE_ENV === 'production';
+      res.cookie('pixel_app_token', appToken, {
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        httpOnly: false,
+        secure: isProd,
+        sameSite: isProd ? 'none' : 'lax',
+        path: '/',
+      });
+
+      const { passwordHash, ...safeUser } = newUser as any;
+      return res.status(201).json({
+        user: safeUser,
+        token: appToken,
+        message: 'Account created successfully',
+      });
     });
   } catch (err: any) {
     console.error('[Register Error]:', err);
@@ -545,7 +602,7 @@ authRouter.post('/login', async (req, res) => {
     });
 
     if (!user || !user.passwordHash) {
-      return res.status(401).json({ error: 'Invalid credentials or account registered via OAuth.' });
+      return res.status(401).json({ error: 'Invalid credentials or account registered via Discord OAuth.' });
     }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
@@ -563,10 +620,27 @@ authRouter.post('/login', async (req, res) => {
       });
     }
 
-    return res.json({
-      user,
-      token: activeToken,
-      message: 'Signed in successfully',
+    // Regenerate / establish authenticated session
+    req.logIn(user, (loginErr) => {
+      if (loginErr) {
+        console.error('[Login req.logIn error]:', loginErr);
+      }
+
+      const isProd = process.env.NODE_ENV === 'production';
+      res.cookie('pixel_app_token', activeToken, {
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        httpOnly: false,
+        secure: isProd,
+        sameSite: isProd ? 'none' : 'lax',
+        path: '/',
+      });
+
+      const { passwordHash, ...safeUser } = user as any;
+      return res.json({
+        user: safeUser,
+        token: activeToken,
+        message: 'Signed in successfully',
+      });
     });
   } catch (err: any) {
     console.error('[Login Error]:', err);

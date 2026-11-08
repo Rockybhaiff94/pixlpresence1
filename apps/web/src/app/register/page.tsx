@@ -13,7 +13,7 @@ function RegisterContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialClaim = searchParams.get("claim") || "";
-  const { login } = useAuth();
+  const { user, status, login } = useAuth();
 
   const [username, setUsername] = useState(initialClaim);
   const [email, setEmail] = useState("");
@@ -24,10 +24,13 @@ function RegisterContent() {
   useEffect(() => {
     // Warm up backend
     fetch("/health").catch(() => {});
+    if (status === "AUTHENTICATED" && user) {
+      router.replace("/account");
+    }
     if (initialClaim) {
       setUsername(initialClaim.toLowerCase().replace(/[^a-z0-9_-]/g, ""));
     }
-  }, [initialClaim]);
+  }, [initialClaim, status, user, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

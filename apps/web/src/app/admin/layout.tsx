@@ -19,9 +19,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <span>👥</span>
             <span>Users</span>
           </Link>
-          <Link href="/dashboard" className="flex items-center space-x-3 p-3 rounded-lg hover:bg-zinc-800 transition-colors text-zinc-300 hover:text-white mt-10 border-t border-zinc-800 pt-6">
+          <Link href="/account" className="flex items-center space-x-3 p-3 rounded-lg hover:bg-zinc-800 transition-colors text-zinc-300 hover:text-white mt-10 border-t border-zinc-800 pt-6">
             <span>⬅️</span>
-            <span>Exit to Dashboard</span>
+            <span>Exit to Account</span>
           </Link>
         </nav>
       </aside>

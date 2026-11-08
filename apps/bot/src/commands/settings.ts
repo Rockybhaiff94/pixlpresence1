@@ -37,7 +37,7 @@ export default {
       if (!user || !user.profile) {
         const connectBtn = new ButtonBuilder()
           .setLabel('Connect Pixel.gg Account')
-          .setURL(`${FRONTEND_BASE_URL}/dashboard`)
+          .setURL(`${FRONTEND_BASE_URL}/account`)
           .setStyle(ButtonStyle.Link);
 
         const row = new ActionRowBuilder<ButtonBuilder>().addComponents(connectBtn);
@@ -65,8 +65,8 @@ export default {
         .setFooter({ text: 'Use the web dashboard for advanced visual layers & customization.' });
 
       const manageBtn = new ButtonBuilder()
-        .setLabel('Open Web Dashboard')
-        .setURL(`${FRONTEND_BASE_URL}/dashboard`)
+        .setLabel('Open Account Studio')
+        .setURL(`${FRONTEND_BASE_URL}/account`)
         .setStyle(ButtonStyle.Link);
 
       const refreshBtn = new ButtonBuilder()

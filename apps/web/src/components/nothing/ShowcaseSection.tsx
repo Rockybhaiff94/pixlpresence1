@@ -104,7 +104,7 @@ export const ShowcaseSection: React.FC = () => {
               Explore dynamic archetypes designed with Nothing OS proportions and high-contrast monochromatic typography.
             </p>
           </div>
-          <Button variant="outline" href="/dashboard/templates" className="self-start md:self-auto text-xs">
+          <Button variant="outline" href="/templates" className="self-start md:self-auto text-xs">
             VIEW ALL TEMPLATES
           </Button>
         </div>

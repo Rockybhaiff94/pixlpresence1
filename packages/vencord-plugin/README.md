@@ -69,7 +69,7 @@ src/plugins/pixelsrpc/ (or src/userplugins/pixelsrpc/)
 4. Restart Discord.
 5. In Discord, go to **User Settings ⚙️ → Vencord → Plugins**.
 6. Search for **PixelsRPC**, enable it, and open its settings gear ⚙️.
-7. Paste your **App Token** (copied from [https://pixlpresence1-web.vercel.app/dashboard/rpc](https://pixlpresence1-web.vercel.app/dashboard/rpc)).
+7. Paste your **App Token** (copied from [https://pixlpresence1-web.vercel.app/account/rpc](https://pixlpresence1-web.vercel.app/account/rpc)).
 
 ### Method 2: Official Vencord Core Plugin
 To contribute PixelsRPC to the main Vencord repository:

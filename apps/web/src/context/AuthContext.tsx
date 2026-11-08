@@ -293,16 +293,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await apiFetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    } catch (_) {}
+
     clearStoredToken();
     clearCachedUser();
     setUser(null);
     setProfile(null);
     setToken(null);
     setStatus("UNAUTHENTICATED");
-    apiFetch("/api/auth/logout").catch(() => {});
+
     if (typeof window !== "undefined") {
-      window.location.href = "/login";
+      window.location.href = "/";
     }
   };
 

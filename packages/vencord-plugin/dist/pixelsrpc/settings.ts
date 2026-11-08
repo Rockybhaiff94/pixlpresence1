@@ -4,7 +4,7 @@ import { OptionType } from "@utils/types";
 export const settings = definePluginSettings({
     token: {
         type: OptionType.STRING,
-        description: "Your Pixel.gg App Token (copy from https://pixlpresence1-web.vercel.app/dashboard/rpc)",
+        description: "Your Pixel.gg App Token (copy from https://pixlpresence1-web.vercel.app/account/rpc)",
         default: "",
         restartNeeded: false
     },

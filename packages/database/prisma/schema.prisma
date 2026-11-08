@@ -31,6 +31,7 @@ model User {
   templates     ActivityTemplate[]
   layers        ProfileLayer[]
   identities    UserIdentity[]
+  viewedProfiles ProfileView[] @relation("UserViewedProfiles")
   appToken      String?   @unique
 }
 
@@ -89,8 +90,30 @@ model Profile {
 
   // Analytics
   views          Int      @default(0)
+  viewRecords    ProfileView[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+}
+
+model ProfileView {
+  id                 String    @id @default(cuid())
+  profileId          String
+  profile            Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  viewerUserId       String?
+  viewerUser         User?     @relation("UserViewedProfiles", fields: [viewerUserId], references: [id], onDelete: SetNull)
+  anonymousVisitorId String?
+  sessionId          String?
+  viewSource         String    // "REGISTERED" | "GUEST" | "OWNER"
+  counted            Boolean   @default(true)
+  deduplicationKey   String    // e.g. `${profileId}:${viewerUserId || anonymousVisitorId}:${dayBucket}`
+  ipHash             String?   // SHA-256 salted hash of IP (never store raw IP)
+  userAgent          String?
+  viewedAt           DateTime  @default(now())
+
+  @@index([profileId, viewedAt])
+  @@index([deduplicationKey])
+  @@index([viewerUserId])
+  @@index([anonymousVisitorId])
 }
 
 model Link {

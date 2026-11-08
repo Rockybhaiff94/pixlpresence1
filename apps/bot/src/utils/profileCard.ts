@@ -27,7 +27,7 @@ export async function buildProfileResponse(targetDiscordId: string, requestingDi
     const isSelf = targetDiscordId === requestingDiscordId;
     const connectButton = new ButtonBuilder()
       .setLabel('Connect Pixel.gg')
-      .setURL(`${FRONTEND_BASE_URL}/dashboard`)
+      .setURL(`${FRONTEND_BASE_URL}/account`)
       .setStyle(ButtonStyle.Link);
 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(connectButton);
@@ -123,7 +123,7 @@ export async function buildProfileResponse(targetDiscordId: string, requestingDi
 
   const manageButton = new ButtonBuilder()
     .setLabel('Manage Profile')
-    .setURL(`${FRONTEND_BASE_URL}/dashboard`)
+    .setURL(`${FRONTEND_BASE_URL}/account`)
     .setStyle(ButtonStyle.Link);
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(visitButton, refreshButton, manageButton);

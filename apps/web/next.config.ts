@@ -33,17 +33,27 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/rpc",
-        destination: "/dashboard/rpc",
-        permanent: false,
-      },
-      {
-        source: "/profile/:username*",
-        destination: "/:username*",
+        destination: "/account/rpc",
         permanent: true,
       },
       {
-        source: "/u/:username*",
-        destination: "/:username*",
+        source: "/dashboard/rpc",
+        destination: "/account/rpc",
+        permanent: true,
+      },
+      {
+        source: "/dashboard",
+        destination: "/account",
+        permanent: true,
+      },
+      {
+        source: "/dashboard/bio",
+        destination: "/account",
+        permanent: true,
+      },
+      {
+        source: "/dashboard/buttons",
+        destination: "/links",
         permanent: true,
       },
       {
