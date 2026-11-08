@@ -147,6 +147,32 @@ export interface ProfileDesignConfig {
   layers: StudioLayer[];
 }
 
+export type WorkspaceTransparencyMode = "solid" | "transparent" | "glass" | "floating";
+
+export interface StudioWorkspacePrefs {
+  previewWidthPct: number; // 20 to 70 percentage
+  isPreviewVisible: boolean;
+  isEditorVisible: boolean;
+  transparencyMode: WorkspaceTransparencyMode;
+  panelOpacity: number; // 20 to 100
+  panelBlur: number; // 0 to 32 (in px)
+  panelBorderOpacity: number; // 10 to 100
+  deviceMode: "desktop" | "tablet" | "mobile";
+  zoom: number; // 50 to 150
+}
+
+export const DEFAULT_WORKSPACE_PREFS: StudioWorkspacePrefs = {
+  previewWidthPct: 40,
+  isPreviewVisible: true,
+  isEditorVisible: true,
+  transparencyMode: "solid",
+  panelOpacity: 85,
+  panelBlur: 12,
+  panelBorderOpacity: 30,
+  deviceMode: "desktop",
+  zoom: 100,
+};
+
 export const DEFAULT_DESIGN_CONFIG: ProfileDesignConfig = {
   version: 2,
   mode: "studio",

@@ -20,11 +20,13 @@ import {
   Layers,
   LayoutTemplate,
   FileCode,
+  PanelLeftClose,
 } from "lucide-react";
 import {
   ProfileDesignConfig,
   DEFAULT_DESIGN_CONFIG,
   StudioTab,
+  WorkspaceTransparencyMode,
   LayoutPreset,
   BackgroundType,
   PatternType,
@@ -65,6 +67,13 @@ interface StudioLeftWorkspaceProps {
   onToggleLayerVisibility: (layerId: string) => void;
   onToggleLayerLock: (layerId: string) => void;
   onMoveLayer: (layerId: string, direction: "up" | "down") => void;
+
+  // Workspace Appearance & Transparency
+  transparencyMode?: WorkspaceTransparencyMode;
+  panelOpacity?: number;
+  panelBlur?: number;
+  panelBorderOpacity?: number;
+  onCollapsePanel?: () => void;
 }
 
 export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
@@ -88,6 +97,11 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
   onToggleLayerVisibility,
   onToggleLayerLock,
   onMoveLayer,
+  transparencyMode = "solid",
+  panelOpacity = 85,
+  panelBlur = 12,
+  panelBorderOpacity = 30,
+  onCollapsePanel,
 }) => {
   const [cssValidation, setCssValidation] = useState<{ valid: boolean; error?: string }>({ valid: true });
 
@@ -132,13 +146,69 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
     handleCssChange(`${current}\n${snippet}`.trim());
   };
 
+  // Dynamic appearance styles based on transparency mode
+  const getWorkspaceStyles = (): React.CSSProperties => {
+    switch (transparencyMode) {
+      case "transparent":
+        return {
+          backgroundColor: `rgba(9, 9, 11, ${panelOpacity / 100})`,
+        };
+      case "glass":
+        return {
+          backgroundColor: `rgba(12, 12, 16, ${(panelOpacity / 100) * 0.75})`,
+          backdropFilter: `blur(${panelBlur}px)`,
+          WebkitBackdropFilter: `blur(${panelBlur}px)`,
+        };
+      case "floating":
+        return {
+          backgroundColor: `rgba(14, 14, 20, ${(panelOpacity / 100) * 0.85})`,
+          backdropFilter: `blur(${panelBlur}px)`,
+          WebkitBackdropFilter: `blur(${panelBlur}px)`,
+        };
+      case "solid":
+      default:
+        return {
+          backgroundColor: "#09090b",
+        };
+    }
+  };
+
+  const getHeaderStyles = (): React.CSSProperties => {
+    switch (transparencyMode) {
+      case "transparent":
+        return {
+          backgroundColor: `rgba(13, 13, 16, ${Math.min(1, (panelOpacity / 100) * 1.1)})`,
+        };
+      case "glass":
+      case "floating":
+        return {
+          backgroundColor: `rgba(13, 13, 16, 0.65)`,
+        };
+      case "solid":
+      default:
+        return {
+          backgroundColor: "#0d0d0f",
+        };
+    }
+  };
+
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-[#09090b] text-xs font-mono text-[#ededed] select-none">
+    <div
+      style={getWorkspaceStyles()}
+      className={`flex-1 flex flex-col min-h-0 text-xs font-mono text-[#ededed] select-none transition-colors duration-200 ${
+        transparencyMode === "floating"
+          ? "m-2 sm:m-3 rounded-2xl border shadow-2xl overflow-hidden"
+          : ""
+      }`}
+    >
       {/* Top Navigation Row: Sub-Tabs & Category Bar */}
-      <div className="border-b border-[#202020] bg-[#0d0d0f] shrink-0">
+      <div
+        style={getHeaderStyles()}
+        className="border-b border-[#202020] shrink-0 transition-colors duration-200"
+      >
         {/* View Switcher: Categories vs Templates vs Layers */}
         <div className="flex items-center justify-between px-4 py-2 border-b border-[#1b1b1e]">
-          <div className="flex items-center gap-1 bg-[#141416] p-1 rounded-xl border border-[#242426]">
+          <div className="flex items-center gap-1 bg-[#141416]/80 p-1 rounded-xl border border-[#242426]">
             <button
               onClick={() => setCurrentView("categories")}
               className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
@@ -176,9 +246,22 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
             </button>
           </div>
 
-          <div className="text-[10px] text-neutral-500 hidden sm:flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span>REAL-TIME EDITING WORKSPACE</span>
+          <div className="flex items-center gap-3">
+            <div className="text-[10px] text-neutral-500 hidden sm:flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span>REAL-TIME EDITING WORKSPACE</span>
+            </div>
+
+            {onCollapsePanel && (
+              <button
+                onClick={onCollapsePanel}
+                className="hidden lg:flex items-center gap-1.5 px-2 py-1 rounded-lg border border-neutral-800 bg-neutral-900/60 text-neutral-400 hover:text-white hover:border-neutral-700 transition-colors cursor-pointer text-[10px]"
+                title="Collapse Editing Workspace (Focus Live Preview)"
+              >
+                <PanelLeftClose size={12} />
+                <span>Collapse</span>
+              </button>
+            )}
           </div>
         </div>
 

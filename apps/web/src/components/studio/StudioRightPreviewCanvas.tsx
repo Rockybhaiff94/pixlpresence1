@@ -2,9 +2,10 @@
 
 import React, { useState } from "react";
 import { DeviceMode } from "./StudioTopBar";
-import { ProfileDesignConfig, StudioTab } from "@/types/studio";
+import { ProfileDesignConfig, StudioTab, WorkspaceTransparencyMode } from "@/types/studio";
 import { StudioProfilePreview, PreviewData } from "./StudioProfilePreview";
 import { FloatingPreviewToolbar } from "./FloatingPreviewToolbar";
+import { PanelLeftOpen } from "lucide-react";
 
 interface StudioRightPreviewCanvasProps {
   deviceMode: DeviceMode;
@@ -13,6 +14,25 @@ interface StudioRightPreviewCanvasProps {
   previewData: PreviewData;
   activeCategory: StudioTab;
   onSelectCategory: (cat: StudioTab) => void;
+
+  // Workspace controls & preferences
+  zoom?: number;
+  setZoom?: React.Dispatch<React.SetStateAction<number>>;
+  transparencyMode?: WorkspaceTransparencyMode;
+  setTransparencyMode?: (mode: WorkspaceTransparencyMode) => void;
+  panelOpacity?: number;
+  setPanelOpacity?: (opacity: number) => void;
+  panelBlur?: number;
+  setPanelBlur?: (blur: number) => void;
+  panelBorderOpacity?: number;
+  setPanelBorderOpacity?: (borderOpacity: number) => void;
+  isEditorVisible?: boolean;
+  setIsEditorVisible?: (val: boolean | ((prev: boolean) => boolean)) => void;
+  isPreviewVisible?: boolean;
+  setIsPreviewVisible?: (val: boolean | ((prev: boolean) => boolean)) => void;
+  onResetPanelSplit?: () => void;
+  isFullscreenPreview?: boolean;
+  onToggleFullscreenPreview?: () => void;
 }
 
 export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> = ({
@@ -22,8 +42,42 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
   previewData,
   activeCategory,
   onSelectCategory,
+  zoom: externalZoom,
+  setZoom: externalSetZoom,
+  transparencyMode = "solid",
+  setTransparencyMode,
+  panelOpacity,
+  setPanelOpacity,
+  panelBlur,
+  setPanelBlur,
+  panelBorderOpacity,
+  setPanelBorderOpacity,
+  isEditorVisible = true,
+  setIsEditorVisible,
+  isPreviewVisible = true,
+  setIsPreviewVisible,
+  onResetPanelSplit,
+  isFullscreenPreview = false,
+  onToggleFullscreenPreview,
 }) => {
-  const [zoom, setZoom] = useState(100);
+  const [internalZoom, setInternalZoom] = useState(100);
+  const zoom = externalZoom !== undefined ? externalZoom : internalZoom;
+  const setZoom = (updater: ((prev: number) => number) | number) => {
+    if (externalSetZoom) {
+      if (typeof updater === "function") {
+        externalSetZoom(updater as (prev: number) => number);
+      } else {
+        externalSetZoom(() => updater);
+      }
+    } else {
+      if (typeof updater === "function") {
+        setInternalZoom(updater);
+      } else {
+        setInternalZoom(updater);
+      }
+    }
+  };
+
   const [showGrid, setShowGrid] = useState(false);
   const [showGuides, setShowGuides] = useState(false);
   const [showWireframe, setShowWireframe] = useState(false);
@@ -90,6 +144,23 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
 
   return (
     <div className="relative w-full h-full flex flex-col items-center justify-start bg-[#050507] overflow-hidden select-none">
+      {/* Reopen Editor Pill when editor is collapsed / focus mode */}
+      {!isEditorVisible && setIsEditorVisible && (
+        <button
+          onClick={() => {
+            setIsEditorVisible(true);
+            if (isFullscreenPreview && onToggleFullscreenPreview) {
+              onToggleFullscreenPreview();
+            }
+          }}
+          className="absolute top-4 left-4 z-40 flex items-center gap-2 px-3 py-1.5 rounded-full border border-neutral-700 bg-neutral-900/95 backdrop-blur-md text-white font-mono text-xs shadow-2xl cursor-pointer hover:bg-neutral-800 hover:border-neutral-500 transition-all group"
+          title="Show Left Editing Workspace"
+        >
+          <PanelLeftOpen size={14} className="text-cyan-400 group-hover:scale-110 transition-transform" />
+          <span className="font-semibold">Show Editor</span>
+        </button>
+      )}
+
       {/* Floating Side Toolbar */}
       <FloatingPreviewToolbar
         zoom={zoom}
@@ -103,6 +174,21 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
         deviceMode={deviceMode}
         setDeviceMode={setDeviceMode}
         onResetPosition={handleResetPosition}
+        transparencyMode={transparencyMode}
+        setTransparencyMode={setTransparencyMode}
+        panelOpacity={panelOpacity}
+        setPanelOpacity={setPanelOpacity}
+        panelBlur={panelBlur}
+        setPanelBlur={setPanelBlur}
+        panelBorderOpacity={panelBorderOpacity}
+        setPanelBorderOpacity={setPanelBorderOpacity}
+        isEditorVisible={isEditorVisible}
+        setIsEditorVisible={setIsEditorVisible}
+        isPreviewVisible={isPreviewVisible}
+        setIsPreviewVisible={setIsPreviewVisible}
+        onResetPanelSplit={onResetPanelSplit}
+        isFullscreenPreview={isFullscreenPreview}
+        onToggleFullscreenPreview={onToggleFullscreenPreview}
       />
 
       {/* Grid Overlay */}
