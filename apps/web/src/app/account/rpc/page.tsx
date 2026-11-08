@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
   Gamepad2,
@@ -42,6 +42,24 @@ interface RpcConfig {
   button2Label?: string;
   button2Url?: string;
 }
+
+const DEFAULT_RPC: RpcConfig = {
+  appId: "1523632136878559302",
+  appName: "Pixel.gg",
+  state: "Browsing Pixel.gg",
+  details: "Customizing Rich Presence",
+  largeImage: "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
+  largeImageText: "Pixel.gg Platform",
+  smallImage: "",
+  smallImageText: "",
+  button1Label: "View Profile",
+  button1Url: "https://pixel.gg",
+  button2Label: "Get PixelsRPC",
+  button2Url: "https://pixel.gg",
+  partySize: null,
+  partyMax: null,
+  startTimestamp: null,
+};
 
 const PRESETS: Record<string, Partial<RpcConfig>> = {
   pixel: {
@@ -104,23 +122,46 @@ export default function AccountRpcStudioPage() {
   const [regenerating, setRegenerating] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(885); // 14:45 initial
 
-  const [rpc, setRpc] = useState<RpcConfig>({
-    appId: "1523632136878559302",
-    appName: "Pixel.gg",
-    state: "Browsing Pixel.gg",
-    details: "Customizing Rich Presence",
-    largeImage: "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
-    largeImageText: "Pixel.gg Platform",
-    smallImage: "",
-    smallImageText: "",
-    button1Label: "View Profile",
-    button1Url: "https://pixel.gg",
-    button2Label: "Get PixelsRPC",
-    button2Url: "https://pixel.gg",
-    partySize: null,
-    partyMax: null,
-    startTimestamp: null,
+  // Track user modifications so background requests never overwrite unsaved edits
+  const isDirtyRef = useRef(false);
+  const hasLoadedRef = useRef(false);
+
+  // Synchronous initialization from localStorage prevents any UI flickering or preview switching
+  const [rpc, setRpc] = useState<RpcConfig>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const cached = localStorage.getItem("pixel_rpc_config");
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && typeof parsed === "object") {
+            return {
+              ...DEFAULT_RPC,
+              ...parsed,
+            };
+          }
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
+    return DEFAULT_RPC;
   });
+
+  // Helper to update RPC state and synchronously sync to localStorage
+  const updateRpc = (updates: Partial<RpcConfig>) => {
+    isDirtyRef.current = true;
+    setRpc((prev) => {
+      const next = { ...prev, ...updates };
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("pixel_rpc_config", JSON.stringify(next));
+        } catch {
+          // ignore storage errors
+        }
+      }
+      return next;
+    });
+  };
 
   // Real-time ticking elapsed timer for Discord preview
   useEffect(() => {
@@ -142,30 +183,54 @@ export default function AccountRpcStudioPage() {
   };
 
   useEffect(() => {
+    if (hasLoadedRef.current) return;
+    hasLoadedRef.current = true;
+
     async function loadData() {
       try {
-        // Load secure app token
-        const tokenRes = await apiFetch("/api/profile/me/token");
+        // Fetch token and existing RPC config concurrently to eliminate waterfall delays
+        const [tokenRes, rpcRes] = await Promise.all([
+          apiFetch("/api/profile/me/token"),
+          apiFetch("/api/rpc/me"),
+        ]);
+
         if (tokenRes.ok) {
           const tokenData = await tokenRes.json();
-          if (tokenData.token) setToken(tokenData.token);
+          if (tokenData?.token) setToken(tokenData.token);
         }
 
-        // Load existing RichPresence settings
-        const rpcRes = await apiFetch("/api/rpc/me");
         if (rpcRes.ok) {
           const rpcData = await rpcRes.json();
-          if (rpcData && Object.keys(rpcData).length > 0) {
-            setRpc((prev) => ({
-              ...prev,
-              ...rpcData,
-              appId: rpcData.appId || prev.appId,
-              appName: rpcData.appName || prev.appName,
-            }));
+          if (rpcData && typeof rpcData === "object" && Object.keys(rpcData).length > 0) {
+            setRpc((prev) => {
+              // If the user has made in-session changes, preserve their unsaved edits
+              if (isDirtyRef.current) {
+                return prev;
+              }
+
+              // Merge non-null and valid database fields over current state
+              const merged: RpcConfig = { ...prev };
+              for (const [key, value] of Object.entries(rpcData)) {
+                if (["id", "userId", "createdAt", "updatedAt"].includes(key)) continue;
+                if (value !== null && value !== undefined && value !== "") {
+                  (merged as Record<string, unknown>)[key] = value;
+                }
+              }
+
+              // Persist clean merged configuration to cache
+              if (typeof window !== "undefined") {
+                try {
+                  localStorage.setItem("pixel_rpc_config", JSON.stringify(merged));
+                } catch {
+                  // ignore storage errors
+                }
+              }
+              return merged;
+            });
           }
         }
       } catch (err) {
-        console.error("[RPC Studio] Failed to load config:", err);
+        console.error("[RPC Studio] Error loading config:", err);
       }
     }
     loadData();
@@ -217,6 +282,14 @@ export default function AccountRpcStudioPage() {
       });
 
       if (res.ok) {
+        isDirtyRef.current = false;
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem("pixel_rpc_config", JSON.stringify(payload));
+          } catch {
+            // ignore storage errors
+          }
+        }
         setSavedSuccess(true);
         setTimeout(() => setSavedSuccess(false), 3500);
       } else {
@@ -266,10 +339,7 @@ export default function AccountRpcStudioPage() {
   const applyPreset = (key: string) => {
     const preset = PRESETS[key];
     if (preset) {
-      setRpc((prev) => ({
-        ...prev,
-        ...preset,
-      }));
+      updateRpc(preset);
     }
   };
 
@@ -504,7 +574,7 @@ export default function AccountRpcStudioPage() {
                   <input
                     type="text"
                     value={rpc.appName || ""}
-                    onChange={(e) => setRpc({ ...rpc, appName: e.target.value })}
+                    onChange={(e) => updateRpc({ appName: e.target.value })}
                     placeholder="Pixel.gg / Custom Game"
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
@@ -517,7 +587,7 @@ export default function AccountRpcStudioPage() {
                   <input
                     type="text"
                     value={rpc.appId || ""}
-                    onChange={(e) => setRpc({ ...rpc, appId: e.target.value })}
+                    onChange={(e) => updateRpc({ appId: e.target.value })}
                     placeholder="1523632136878559302"
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
@@ -532,7 +602,7 @@ export default function AccountRpcStudioPage() {
                   <input
                     type="text"
                     value={rpc.details || ""}
-                    onChange={(e) => setRpc({ ...rpc, details: e.target.value })}
+                    onChange={(e) => updateRpc({ details: e.target.value })}
                     placeholder="e.g. In Competitive Match"
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
@@ -545,7 +615,7 @@ export default function AccountRpcStudioPage() {
                   <input
                     type="text"
                     value={rpc.state || ""}
-                    onChange={(e) => setRpc({ ...rpc, state: e.target.value })}
+                    onChange={(e) => updateRpc({ state: e.target.value })}
                     placeholder="e.g. Score: 12 - 4 (Ranked)"
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
@@ -565,8 +635,7 @@ export default function AccountRpcStudioPage() {
                       min="0"
                       value={rpc.partySize ?? ""}
                       onChange={(e) =>
-                        setRpc({
-                          ...rpc,
+                        updateRpc({
                           partySize: e.target.value === "" ? null : parseInt(e.target.value, 10),
                         })
                       }
@@ -579,8 +648,7 @@ export default function AccountRpcStudioPage() {
                       min="1"
                       value={rpc.partyMax ?? ""}
                       onChange={(e) =>
-                        setRpc({
-                          ...rpc,
+                        updateRpc({
                           partyMax: e.target.value === "" ? null : parseInt(e.target.value, 10),
                         })
                       }
@@ -599,9 +667,9 @@ export default function AccountRpcStudioPage() {
                     value={rpc.startTimestamp ? "custom" : "elapsed"}
                     onChange={(e) => {
                       if (e.target.value === "elapsed") {
-                        setRpc({ ...rpc, startTimestamp: null });
+                        updateRpc({ startTimestamp: null });
                       } else {
-                        setRpc({ ...rpc, startTimestamp: new Date().toISOString() });
+                        updateRpc({ startTimestamp: new Date().toISOString() });
                       }
                     }}
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white focus:outline-none transition-colors"
@@ -630,7 +698,7 @@ export default function AccountRpcStudioPage() {
                   <input
                     type="text"
                     value={rpc.largeImage || ""}
-                    onChange={(e) => setRpc({ ...rpc, largeImage: e.target.value })}
+                    onChange={(e) => updateRpc({ largeImage: e.target.value })}
                     placeholder="https://..."
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
@@ -643,7 +711,7 @@ export default function AccountRpcStudioPage() {
                   <input
                     type="text"
                     value={rpc.largeImageText || ""}
-                    onChange={(e) => setRpc({ ...rpc, largeImageText: e.target.value })}
+                    onChange={(e) => updateRpc({ largeImageText: e.target.value })}
                     placeholder="e.g. Level 100 Boss"
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
@@ -656,7 +724,7 @@ export default function AccountRpcStudioPage() {
                   <input
                     type="text"
                     value={rpc.smallImage || ""}
-                    onChange={(e) => setRpc({ ...rpc, smallImage: e.target.value })}
+                    onChange={(e) => updateRpc({ smallImage: e.target.value })}
                     placeholder="https://..."
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
@@ -669,7 +737,7 @@ export default function AccountRpcStudioPage() {
                   <input
                     type="text"
                     value={rpc.smallImageText || ""}
-                    onChange={(e) => setRpc({ ...rpc, smallImageText: e.target.value })}
+                    onChange={(e) => updateRpc({ smallImageText: e.target.value })}
                     placeholder="e.g. Verified Pro"
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
@@ -699,7 +767,7 @@ export default function AccountRpcStudioPage() {
                     <input
                       type="text"
                       value={rpc.button1Label || ""}
-                      onChange={(e) => setRpc({ ...rpc, button1Label: e.target.value })}
+                      onChange={(e) => updateRpc({ button1Label: e.target.value })}
                       placeholder="e.g. View Profile"
                       className="w-full bg-[#050505] border border-[#222222] rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-white"
                     />
@@ -709,7 +777,7 @@ export default function AccountRpcStudioPage() {
                     <input
                       type="text"
                       value={rpc.button1Url || ""}
-                      onChange={(e) => setRpc({ ...rpc, button1Url: e.target.value })}
+                      onChange={(e) => updateRpc({ button1Url: e.target.value })}
                       placeholder="https://pixel.gg/username"
                       className="w-full bg-[#050505] border border-[#222222] rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-white"
                     />
@@ -728,7 +796,7 @@ export default function AccountRpcStudioPage() {
                     <input
                       type="text"
                       value={rpc.button2Label || ""}
-                      onChange={(e) => setRpc({ ...rpc, button2Label: e.target.value })}
+                      onChange={(e) => updateRpc({ button2Label: e.target.value })}
                       placeholder="e.g. Join Discord"
                       className="w-full bg-[#050505] border border-[#222222] rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-white"
                     />
@@ -738,7 +806,7 @@ export default function AccountRpcStudioPage() {
                     <input
                       type="text"
                       value={rpc.button2Url || ""}
-                      onChange={(e) => setRpc({ ...rpc, button2Url: e.target.value })}
+                      onChange={(e) => updateRpc({ button2Url: e.target.value })}
                       placeholder="https://discord.gg/..."
                       className="w-full bg-[#050505] border border-[#222222] rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-white"
                     />
@@ -873,4 +941,3 @@ export default function AccountRpcStudioPage() {
     </AccountLayout>
   );
 }
-
