@@ -1,0 +1,46 @@
+order,row,column,id,name,tile_png,transparent_png,confidence
+1,1,1,snapchat,Snapchat,tiles/01-snapchat.png,transparent-png/snapchat.png,visual-identification
+2,1,2,youtube,YouTube,tiles/02-youtube.png,transparent-png/youtube.png,visual-identification
+3,1,3,discord,Discord,tiles/03-discord.png,transparent-png/discord.png,visual-identification
+4,1,4,spotify,Spotify,tiles/04-spotify.png,transparent-png/spotify.png,visual-identification
+5,1,5,instagram,Instagram,tiles/05-instagram.png,transparent-png/instagram.png,visual-identification
+6,1,6,x,X,tiles/06-x.png,transparent-png/x.png,visual-identification
+7,1,7,tiktok,TikTok,tiles/07-tiktok.png,transparent-png/tiktok.png,visual-identification
+8,1,8,telegram,Telegram,tiles/08-telegram.png,transparent-png/telegram.png,visual-identification
+9,1,9,soundcloud,SoundCloud,tiles/09-soundcloud.png,transparent-png/soundcloud.png,visual-identification
+10,1,10,paypal,PayPal,tiles/10-paypal.png,transparent-png/paypal.png,visual-identification
+11,1,11,github,GitHub,tiles/11-github.png,transparent-png/github.png,visual-identification
+12,1,12,roblox,Roblox,tiles/12-roblox.png,transparent-png/roblox.png,visual-identification
+13,2,1,cash-app,Cash App,tiles/13-cash-app.png,transparent-png/cash-app.png,visual-identification
+14,2,2,venmo,Venmo,tiles/14-venmo.png,transparent-png/venmo.png,visual-identification
+15,2,3,playstation,PlayStation,tiles/15-playstation.png,transparent-png/playstation.png,visual-identification
+16,2,4,xbox,Xbox,tiles/16-xbox.png,transparent-png/xbox.png,visual-identification
+17,2,5,apple-music,Apple Music,tiles/17-apple-music.png,transparent-png/apple-music.png,visual-identification
+18,2,6,gitlab,GitLab,tiles/18-gitlab.png,transparent-png/gitlab.png,visual-identification
+19,2,7,twitch,Twitch,tiles/19-twitch.png,transparent-png/twitch.png,visual-identification
+20,2,8,reddit,Reddit,tiles/20-reddit.png,transparent-png/reddit.png,visual-identification
+21,2,9,vk,VK,tiles/21-vk.png,transparent-png/vk.png,visual-identification
+22,2,10,tellonym,Tellonym,tiles/22-tellonym.png,transparent-png/tellonym.png,visual-identification
+23,2,11,bluesky,Bluesky,tiles/23-bluesky.png,transparent-png/bluesky.png,visual-identification
+24,2,12,unknown-dark-n-mark,Unidentified dark N-mark (possibly NameMC or OnlyFans),tiles/24-unknown-dark-n-mark.png,transparent-png/unknown-dark-n-mark.png,low
+25,3,1,keybase,Keybase,tiles/25-keybase.png,transparent-png/keybase.png,visual-identification
+26,3,2,linkedin,LinkedIn,tiles/26-linkedin.png,transparent-png/linkedin.png,visual-identification
+27,3,3,steam,Steam,tiles/27-steam.png,transparent-png/steam.png,visual-identification
+28,3,4,kick,Kick,tiles/28-kick.png,transparent-png/kick.png,visual-identification
+29,3,5,pinterest,Pinterest,tiles/29-pinterest.png,transparent-png/pinterest.png,visual-identification
+30,3,6,lastfm,Last.fm,tiles/30-lastfm.png,transparent-png/lastfm.png,visual-identification
+31,3,7,stats-fm,stats.fm,tiles/31-stats-fm.png,transparent-png/stats-fm.png,visual-identification
+32,3,8,payhip,Payhip,tiles/32-payhip.png,transparent-png/payhip.png,visual-identification
+33,3,9,buy-me-a-coffee,Buy Me a Coffee,tiles/33-buy-me-a-coffee.png,transparent-png/buy-me-a-coffee.png,visual-identification
+34,3,10,ko-fi,Ko-fi,tiles/34-ko-fi.png,transparent-png/ko-fi.png,visual-identification
+35,3,11,facebook,Facebook,tiles/35-facebook.png,transparent-png/facebook.png,visual-identification
+36,3,12,threads,Threads,tiles/36-threads.png,transparent-png/threads.png,visual-identification
+37,4,1,patreon,Patreon,tiles/37-patreon.png,transparent-png/patreon.png,visual-identification
+38,4,2,signal,Signal,tiles/38-signal.png,transparent-png/signal.png,visual-identification
+39,4,3,bitcoin,Bitcoin,tiles/39-bitcoin.png,transparent-png/bitcoin.png,visual-identification
+40,4,4,ethereum,Ethereum,tiles/40-ethereum.png,transparent-png/ethereum.png,visual-identification
+41,4,5,litecoin,Litecoin,tiles/41-litecoin.png,transparent-png/litecoin.png,visual-identification
+42,4,6,solana,Solana,tiles/42-solana.png,transparent-png/solana.png,visual-identification
+43,4,7,xrp,XRP,tiles/43-xrp.png,transparent-png/xrp.png,visual-identification
+44,4,8,monero,Monero,tiles/44-monero.png,transparent-png/monero.png,visual-identification
+45,4,9,email,Email,tiles/45-email.png,transparent-png/email.png,visual-identification

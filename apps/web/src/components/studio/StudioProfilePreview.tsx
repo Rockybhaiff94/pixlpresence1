@@ -14,6 +14,7 @@ import { ProfileDesignConfig } from "@/types/studio";
 import { ensureFontLoaded } from "./fonts";
 import { scopeAndSanitizeCss } from "./cssUtils";
 import { ParticlesCanvas } from "./ParticlesCanvas";
+import { PlatformIcon } from "@/components/links/PlatformIcons";
 
 export interface PreviewData {
   username: string;
@@ -605,7 +606,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
                     .map((link) => (
                       <div
                         key={link.id}
-                        className="px-3.5 py-1.5 border text-xs font-mono flex items-center gap-1.5 transition-all"
+                        className="px-3 py-1.5 border text-xs font-mono flex items-center gap-2 transition-all"
                         style={{
                           borderRadius:
                             socials.style === "circle" || socials.style === "pill"
@@ -627,6 +628,10 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
                               : "#d4d4d8",
                         }}
                       >
+                        <PlatformIcon
+                          id={(link as any).icon || link.label}
+                          className="w-4 h-4 shrink-0"
+                        />
                         <span style={{ fontSize: `${socials.iconSize}px` }}>{link.label}</span>
                         <ExternalLink size={11} className="opacity-60" />
                       </div>

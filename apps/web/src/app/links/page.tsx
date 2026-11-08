@@ -185,28 +185,31 @@ export default function LinksPage() {
       </div>
 
       {/* Main Guns.lol-Style Social Selection Panel */}
-      <div className="p-6 sm:p-8 rounded-2xl bg-[#0e0e10] border border-[#222225] space-y-6 shadow-xl">
-        <div className="space-y-1 text-left">
-          <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-            Link your social media profiles.
+      <div className="p-6 sm:p-8 rounded-2xl bg-[#0c0c0e] border border-[#1e1e22] space-y-6 shadow-2xl">
+        <div className="space-y-1.5 text-left">
+          <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+            <span className="p-2 rounded-xl bg-[#17171a] border border-[#26262b] text-neutral-300">
+              <Link2 className="w-5 h-5" />
+            </span>
+            <span>Link your social media profiles.</span>
           </h2>
-          <p className="text-xs sm:text-sm text-neutral-400">
+          <p className="text-xs sm:text-sm text-neutral-400 pl-1">
             Pick a social media to add to your profile.
           </p>
         </div>
 
         {/* 45-Platform Icon Grid */}
-        <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-2.5 sm:gap-3 pt-2">
+        <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-2 sm:gap-3 pt-2">
           {PLATFORMS.filter((p) => p.id !== "globe").map((platform) => (
             <button
               key={platform.id}
               onClick={() => openPlatformModal(platform)}
               title={platform.name}
-              className="w-full aspect-square rounded-xl bg-[#171719] border border-[#242427] hover:border-neutral-400 hover:bg-[#1f1f23] transition-all duration-150 flex items-center justify-center p-3 cursor-pointer group shadow-sm hover:scale-105 active:scale-95 focus:outline-none focus:ring-1 focus:ring-white"
+              className="w-full aspect-square rounded-2xl bg-[#141416] border border-[#222226] hover:border-neutral-400 hover:bg-[#1c1c20] transition-all duration-150 flex items-center justify-center p-2.5 sm:p-3 cursor-pointer group shadow-sm hover:scale-105 active:scale-95 focus:outline-none focus:ring-1 focus:ring-white"
             >
               <PlatformIcon
                 id={platform.id}
-                className="w-6 h-6 group-hover:scale-110 transition-transform duration-150"
+                className="w-6 h-6 sm:w-7 sm:h-7 group-hover:scale-110 transition-transform duration-150"
                 color={platform.brandColor}
               />
             </button>
@@ -215,11 +218,16 @@ export default function LinksPage() {
 
         {/* Prominent Horizontal "Add Custom URL" Button */}
         <button
-          onClick={() => openPlatformModal(PLATFORMS[PLATFORMS.length - 1])}
-          className="w-full py-3.5 px-4 rounded-xl bg-[#171719] border border-[#242427] hover:border-neutral-400 hover:bg-[#1f1f23] transition-all flex items-center justify-center gap-2.5 text-xs font-semibold text-neutral-300 hover:text-white shadow-sm cursor-pointer active:scale-[0.99] focus:outline-none"
+          onClick={() => openPlatformModal(PLATFORMS.find((p) => p.id === "globe") || PLATFORMS[PLATFORMS.length - 1])}
+          className="w-full sm:max-w-md p-3.5 rounded-2xl bg-[#141416] border border-[#222226] hover:border-neutral-400 hover:bg-[#1c1c20] transition-all flex items-center gap-3.5 text-left cursor-pointer group focus:outline-none"
         >
-          <Globe size={16} className="text-neutral-400 group-hover:text-white" />
-          <span>Add Custom URL</span>
+          <div className="w-10 h-10 rounded-xl bg-[#1e1e22] border border-[#2c2c32] flex items-center justify-center shrink-0 text-neutral-400 group-hover:text-white group-hover:border-neutral-400 transition-colors">
+            <Globe className="w-5 h-5" />
+          </div>
+          <div className="space-y-0.5">
+            <div className="text-sm font-semibold text-white">Add Custom URL</div>
+            <div className="text-xs text-neutral-400">Use your own URL and choose an icon to match.</div>
+          </div>
         </button>
       </div>
 
