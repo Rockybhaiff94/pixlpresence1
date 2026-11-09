@@ -33,6 +33,7 @@ model User {
   identities    UserIdentity[]
   viewedProfiles ProfileView[] @relation("UserViewedProfiles")
   appToken      String?   @unique
+  rpcDevices    RpcDeviceAuthorization[]
 }
 
 model UserIdentity {
@@ -259,3 +260,24 @@ model SynchronizationEvent {
   createdAt      DateTime  @default(now())
   processedAt    DateTime?
 }
+
+model RpcDeviceAuthorization {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash       String    @unique // SHA-256 hash of temporary code e.g. "ABCD-1234"
+  status         String    @default("PENDING") // PENDING, CONSUMED, REVOKED, EXPIRED
+  expiresAt      DateTime
+  deviceToken    String?   @unique // Cryptographic revocable device credential
+  deviceName     String?   // User-friendly name e.g. "Windows Desktop"
+  deviceMetadata String?   // OS, Discord client branch, client IP
+  createdAt      DateTime  @default(now())
+  consumedAt     DateTime?
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+
+  @@index([userId])
+  @@index([status])
+  @@index([expiresAt])
+}
+

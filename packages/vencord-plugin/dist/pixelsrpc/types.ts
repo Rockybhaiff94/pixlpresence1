@@ -34,6 +34,7 @@ export interface ConnectionState {
     lastError: string | null;
     retryCount: number;
     activeTitle: string | null;
+    linkedUsername: string | null;
 }
 
 export interface DiscordActivity {
@@ -60,4 +61,3 @@ export interface DiscordActivity {
         button_urls: string[];
     };
 }
-

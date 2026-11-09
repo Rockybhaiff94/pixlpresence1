@@ -6,22 +6,27 @@ import { StatusCard } from "./StatusCard";
 interface SettingsAboutProps {
     state: ConnectionState;
     tokenConfigured: boolean;
+    linkedUsername?: string | null;
     apiUrl: string;
     onSync: () => void;
-    onReconnect: () => void;
     onClear: () => void;
+    onLinkAccount: (code: string) => Promise<void>;
+    onDisconnectAccount: () => Promise<void>;
 }
 
 export const SettingsAbout: React.FC<SettingsAboutProps> = ({
     state,
     tokenConfigured,
+    linkedUsername,
     apiUrl,
     onSync,
-    onReconnect,
-    onClear
+    onClear,
+    onLinkAccount,
+    onDisconnectAccount
 }) => {
     const handleOpenDashboard = () => {
-        window.open("https://pixlpresence1-web.vercel.app/account/rpc", "_blank");
+        const url = apiUrl ? `${apiUrl}/account/rpc` : "https://pixlpresence1-web.vercel.app/account/rpc";
+        window.open(url, "_blank");
     };
 
     return React.createElement(
@@ -31,31 +36,22 @@ export const SettingsAbout: React.FC<SettingsAboutProps> = ({
         React.createElement(StatusCard, {
             state,
             tokenConfigured,
+            linkedUsername,
             apiUrl
         }),
         React.createElement(ActionControls, {
+            isConnected: tokenConfigured,
+            isSyncing: state.status === "connecting",
             onSync,
-            onReconnect,
             onClear,
             onOpenDashboard: handleOpenDashboard,
-            isSyncing: state.status === "connecting"
+            onLinkAccount,
+            onDisconnectAccount
         }),
         React.createElement(
             Forms.FormText,
             { type: "description", style: { fontSize: "12px", color: "var(--text-muted, #949ba4)" } },
-            "Configure your presence and copy your App Token at ",
-            React.createElement(
-                "a",
-                {
-                    href: "https://pixlpresence1-web.vercel.app/account/rpc",
-                    target: "_blank",
-                    rel: "noopener noreferrer",
-                    style: { color: "var(--text-link, #00a8fc)", textDecoration: "underline" }
-                },
-                "pixlpresence1-web.vercel.app/account/rpc"
-            ),
-            ". PixelsRPC securely connects directly to your backend and updates your local Discord client without modifying external clients."
+            "PixelsRPC links your Discord client directly to your PIXEL.GG profile using secure, revocable device credentials. No standalone background desktop apps required."
         )
     );
 };
-

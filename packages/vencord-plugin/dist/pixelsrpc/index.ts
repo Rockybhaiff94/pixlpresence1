@@ -17,7 +17,8 @@ let state: ConnectionState = {
     lastSync: null,
     lastError: null,
     retryCount: 0,
-    activeTitle: null
+    activeTitle: null,
+    linkedUsername: null
 };
 
 // UI subscriber callback for re-rendering SettingsAbout
@@ -38,6 +39,11 @@ function logDebug(message: string, ...args: any[]) {
 
 function getDispatcher() {
     return FluxDispatcher ?? findByProps("dispatch", "isDispatching");
+}
+
+function getActiveToken(): string {
+    const store = settings.store;
+    return (store.deviceToken || store.token || "").trim();
 }
 
 export function clearActivity() {
@@ -167,29 +173,110 @@ export function applyActivity(rpc: RpcResponse) {
     logDebug("Updated local Discord presence:", activity);
 }
 
+export async function linkDeviceAccount(code: string): Promise<void> {
+    const store = settings.store;
+    const apiUrl = (store.apiUrl || "https://pixlpresence1-web.vercel.app").trim().replace(/\/+$/, "");
+
+    updateState({ status: "connecting", lastError: null });
+
+    const response = await fetch(`${apiUrl}/api/rpc/device/verify`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json"
+        },
+        body: JSON.stringify({
+            code: code.trim().toUpperCase(),
+            clientName: "Vencord Discord Client",
+            platform: "Windows / Vencord"
+        })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+        updateState({
+            status: "error",
+            lastError: data.error || "Failed to link account."
+        });
+        throw new Error(data.error || "Failed to link account.");
+    }
+
+    // Persist device token and linked username
+    store.deviceToken = data.deviceToken;
+    store.linkedUsername = data.username;
+
+    updateState({
+        status: "connected",
+        linkedUsername: data.username,
+        lastError: null,
+        retryCount: 0
+    });
+
+    logDebug(`Account successfully linked as @${data.username}`);
+
+    // Immediately fetch presence
+    await fetchAndSync();
+}
+
+export async function disconnectDeviceAccount(): Promise<void> {
+    const store = settings.store;
+    const token = getActiveToken();
+    const apiUrl = (store.apiUrl || "https://pixlpresence1-web.vercel.app").trim().replace(/\/+$/, "");
+
+    if (token) {
+        try {
+            await fetch(`${apiUrl}/api/rpc/device/revoke`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json"
+                }
+            });
+        } catch {
+            // Ignore network errors on logout
+        }
+    }
+
+    store.deviceToken = "";
+    store.linkedUsername = "";
+    store.token = "";
+
+    clearActivity();
+
+    updateState({
+        status: "disconnected",
+        linkedUsername: null,
+        lastError: null,
+        activeTitle: null
+    });
+
+    logDebug("Device unlinked successfully.");
+}
+
 export async function fetchAndSync(): Promise<void> {
     const store = settings.store;
-    const token = (store.token || "").trim();
+    const token = getActiveToken();
     const apiUrl = (store.apiUrl || "https://pixlpresence1-web.vercel.app").trim().replace(/\/+$/, "");
 
     if (!token) {
         clearActivity();
         updateState({
             status: "disconnected",
-            lastError: "Token not configured"
+            linkedUsername: null,
+            lastError: null
         });
         return;
     }
 
-    // Abort prior request if still pending
     if (activeAbortController) {
         activeAbortController.abort();
     }
     activeAbortController = new AbortController();
 
-    updateState({ status: "connecting" });
-
     try {
+        updateState({ status: "connecting" });
+
         const response = await fetch(`${apiUrl}/api/rpc/me`, {
             method: "GET",
             headers: {
@@ -199,62 +286,55 @@ export async function fetchAndSync(): Promise<void> {
             signal: activeAbortController.signal
         });
 
-        if (response.status === 401 || response.status === 403) {
+        if (response.status === 401) {
             clearActivity();
             updateState({
                 status: "unauthorized",
-                lastError: "Unauthorized (check your App Token)",
-                retryCount: 0
+                lastError: "Session expired or token invalid. Please re-link your account."
             });
-            console.warn("[PixelsRPC] Unauthorized: App Token is invalid or expired. Please update it in Vencord settings.");
             return;
         }
 
         if (response.status === 429) {
             updateState({
                 status: "rate_limited",
-                lastError: "Rate limited by server"
+                lastError: "Rate limit reached. Backing off..."
             });
             scheduleNextSync(true);
             return;
         }
 
         if (!response.ok) {
-            throw new Error(`Server returned status ${response.status}`);
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
         const data: RpcResponse = await response.json();
+
         applyActivity(data);
 
         updateState({
             status: "connected",
             lastSync: new Date(),
             lastError: null,
-            retryCount: 0
+            retryCount: 0,
+            linkedUsername: store.linkedUsername || null
         });
 
         scheduleNextSync(false);
     } catch (err: any) {
-        if (err?.name === "AbortError") {
-            logDebug("Fetch request was aborted.");
-            return;
-        }
+        if (err.name === "AbortError") return;
 
-        const errorMessage = err?.message || "Network request failed";
+        console.error("[PixelsRPC] Sync failed:", err);
         updateState({
             status: "error",
-            lastError: errorMessage,
-            retryCount: state.retryCount + 1
+            lastError: err.message || "Failed to sync"
         });
 
-        logDebug("Sync error:", errorMessage);
         scheduleNextSync(true);
-    } finally {
-        activeAbortController = null;
     }
 }
 
-function scheduleNextSync(isRetry: boolean) {
+function scheduleNextSync(isError: boolean) {
     if (syncTimeoutId) {
         clearTimeout(syncTimeoutId);
         syncTimeoutId = null;
@@ -263,10 +343,11 @@ function scheduleNextSync(isRetry: boolean) {
     const intervalSec = Math.max(5, settings.store.refreshInterval || 15);
     let delayMs = intervalSec * 1000;
 
-    if (isRetry) {
-        // Exponential backoff: min 5s, max 300s, with jitter
-        const backoffSec = Math.min(300, Math.pow(2, state.retryCount) * 5);
-        const jitter = Math.random() * 2000;
+    if (isError) {
+        state.retryCount += 1;
+        // Exponential backoff: 5s, 10s, 20s, 40s, max 60s
+        const backoffSec = Math.min(60, 5 * Math.pow(2, state.retryCount - 1));
+        const jitter = Math.floor(Math.random() * 2000);
         delayMs = backoffSec * 1000 + jitter;
         logDebug(`Scheduling retry in ${Math.round(delayMs / 1000)}s (attempt ${state.retryCount})`);
     }
@@ -287,17 +368,17 @@ function SettingsAboutWrapper() {
     }, []);
 
     const store = settings.store;
+    const tokenConfigured = Boolean(getActiveToken());
 
     return React.createElement(SettingsAbout, {
         state,
-        tokenConfigured: Boolean((store.token || "").trim()),
+        tokenConfigured,
+        linkedUsername: store.linkedUsername || state.linkedUsername,
         apiUrl: store.apiUrl || "https://pixlpresence1-web.vercel.app",
         onSync: () => fetchAndSync(),
-        onReconnect: () => {
-            updateState({ retryCount: 0 });
-            fetchAndSync();
-        },
-        onClear: () => clearActivity()
+        onClear: () => clearActivity(),
+        onLinkAccount: (code: string) => linkDeviceAccount(code),
+        onDisconnectAccount: () => disconnectDeviceAccount()
     });
 }
 
@@ -311,14 +392,26 @@ export default definePlugin({
         }
     ],
 
+    // Disabled by default after installation as requested in specifications
+    default: false,
+
     settings,
     settingsAboutComponent: SettingsAboutWrapper,
 
     start() {
         logDebug("Plugin starting...");
 
-        // Initial fetch
-        fetchAndSync();
+        // Only start network polling if account is linked or token is present
+        if (getActiveToken()) {
+            fetchAndSync();
+        } else {
+            updateState({
+                status: "disconnected",
+                linkedUsername: null,
+                lastError: null
+            });
+            logDebug("Plugin enabled, awaiting account linking before sync.");
+        }
 
         console.log("[PixelsRPC] Plugin started successfully.");
     },
@@ -347,4 +440,3 @@ export default definePlugin({
         console.log("[PixelsRPC] Plugin stopped and Rich Presence cleared.");
     }
 });
-

@@ -33,10 +33,32 @@ const requireAuth = async (req: any, res: any, next: any) => {
       req.user = user;
       return next();
     }
+
+    const deviceAuth = await prisma.rpcDeviceAuthorization.findUnique({
+      where: { deviceToken: token },
+      include: { user: true },
+    });
+
+    if (deviceAuth && deviceAuth.status === 'CONSUMED' && deviceAuth.user) {
+      req.user = deviceAuth.user;
+      return next();
+    }
   }
 
   return res.status(401).json({ error: 'Unauthorized. Please sign in.' });
 };
+
+// RPC config retrieval endpoint for Vencord plugin compatibility
+accountRouter.get('/rpc', requireAuth, async (req: any, res) => {
+  try {
+    const rpc = await prisma.richPresence.findUnique({
+      where: { userId: req.user.id },
+    });
+    res.json(rpc || {});
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch RPC configuration' });
+  }
+});
 
 // Reserved usernames that cannot be claimed
 const RESERVED_USERNAMES = new Set([

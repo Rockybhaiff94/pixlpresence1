@@ -126,6 +126,21 @@ export default function AccountRpcStudioPage() {
   const [regenerating, setRegenerating] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(885); // 14:45 initial
 
+  // Roblox-Style Quick Device Authorization Linking State
+  const [linkingSession, setLinkingSession] = useState<{
+    code: string;
+    codeId: string;
+    expiresAt: string;
+    timeLeft: number;
+  } | null>(null);
+  const [linkingStatus, setLinkingStatus] = useState<"IDLE" | "PENDING" | "CONSUMED" | "EXPIRED">("IDLE");
+  const [linkedDevices, setLinkedDevices] = useState<
+    { id: string; deviceName: string; consumedAt: string; lastUsedAt: string }[]
+  >([]);
+  const [isGeneratingCode, setIsGeneratingCode] = useState(false);
+  const [copiedInstallCmd, setCopiedInstallCmd] = useState(false);
+  const [cancelingCode, setCancelingCode] = useState(false);
+
   // Track user modifications so background requests never overwrite unsaved edits
   const isDirtyRef = useRef(false);
   const hasLoadedRef = useRef(false);
@@ -236,9 +251,120 @@ export default function AccountRpcStudioPage() {
       } catch (err) {
         console.error("[RPC Studio] Error loading config:", err);
       }
+      fetchLinkedDevices();
     }
     loadData();
   }, []);
+
+  const fetchLinkedDevices = async () => {
+    try {
+      const res = await apiFetch("/api/rpc/device/list");
+      if (res.ok) {
+        const list = await res.json();
+        if (Array.isArray(list)) setLinkedDevices(list);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  // Countdown timer & live status polling for device linking code
+  useEffect(() => {
+    if (!linkingSession || linkingStatus !== "PENDING") return;
+
+    const timer = setInterval(() => {
+      setLinkingSession((prev) => {
+        if (!prev) return null;
+        if (prev.timeLeft <= 1) {
+          setLinkingStatus("EXPIRED");
+          return null;
+        }
+        return { ...prev, timeLeft: prev.timeLeft - 1 };
+      });
+    }, 1000);
+
+    // Poll backend every 2.5s to check if plugin verified the code
+    const poller = setInterval(async () => {
+      if (!linkingSession?.codeId) return;
+      try {
+        const res = await apiFetch(`/api/rpc/device/status?codeId=${linkingSession.codeId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === "CONSUMED") {
+            setLinkingStatus("CONSUMED");
+            setLinkingSession(null);
+            fetchLinkedDevices();
+          } else if (data.status === "EXPIRED" || data.status === "REVOKED") {
+            setLinkingStatus("EXPIRED");
+            setLinkingSession(null);
+          }
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }, 2500);
+
+    return () => {
+      clearInterval(timer);
+      clearInterval(poller);
+    };
+  }, [linkingSession?.codeId, linkingStatus]);
+
+  const handleGenerateLinkingCode = async () => {
+    setIsGeneratingCode(true);
+    setLinkingStatus("PENDING");
+    try {
+      const res = await apiFetch("/api/rpc/device/authorize", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        setLinkingSession({
+          code: data.code,
+          codeId: data.codeId,
+          expiresAt: data.expiresAt,
+          timeLeft: data.expiresInSeconds || 120,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to generate device linking code", err);
+    } finally {
+      setIsGeneratingCode(false);
+    }
+  };
+
+  const handleCancelLinking = async () => {
+    setCancelingCode(true);
+    try {
+      await apiFetch("/api/rpc/device/revoke", { method: "POST" });
+      setLinkingSession(null);
+      setLinkingStatus("IDLE");
+    } finally {
+      setCancelingCode(false);
+    }
+  };
+
+  const handleUnlinkDevice = async (deviceId: string) => {
+    if (!confirm("Unlink this device from your Rich Presence?")) return;
+    try {
+      await apiFetch("/api/rpc/device/revoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceId }),
+      });
+      fetchLinkedDevices();
+    } catch (err) {
+      console.error("Failed to unlink device", err);
+    }
+  };
+
+  const installCommand = `irm ${
+    typeof window !== "undefined" ? window.location.origin : "https://pixlpresence1-web.vercel.app"
+  }/install.ps1 | iex`;
+
+  const handleCopyInstallCmd = () => {
+    navigator.clipboard.writeText(installCommand);
+    setCopiedInstallCmd(true);
+    setTimeout(() => setCopiedInstallCmd(false), 2000);
+  };
 
   const handleCopyToken = () => {
     if (!token) return;
@@ -418,113 +544,250 @@ export default function AccountRpcStudioPage() {
           </Link>
         </div>
 
-        {/* Vencord Plugin Integration Card */}
-        <div className="bg-[#0c0c0c] border border-[#222222] rounded-2xl p-6 relative overflow-hidden space-y-6">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-            <div className="space-y-1.5">
-              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded bg-[#181818] border border-[#2c2c2c] text-[10px] text-neutral-400 uppercase tracking-widest">
-                <Plug size={12} className="text-[#d71920]" /> Vencord Plugin Token
+        {/* 1. ONE-CLICK POWERSHELL INSTALLER BANNER */}
+        <div className="bg-[#09090c] border border-[#222228] rounded-2xl p-6 relative overflow-hidden space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded bg-[#141418] border border-[#272730] text-[10px] text-neutral-400 uppercase tracking-widest">
+                <Code2 size={12} className="text-[#d71920]" /> One-Click PowerShell Installer
               </div>
               <h2 className="text-base font-bold text-white tracking-wide">
-                Private PixelsRPC Application Token
+                Install PixelsRPC with Vencord via PowerShell CLI
+              </h2>
+              <p className="text-xs text-neutral-400 max-w-xl">
+                Automatically detects Discord, builds Vencord with PixelsRPC included, and injects it in a single command. Zero manual compiling.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="solid-white"
+                onClick={handleCopyInstallCmd}
+                className="text-xs flex items-center gap-2 px-4 py-2"
+              >
+                {copiedInstallCmd ? <Check size={14} className="text-black" /> : <Copy size={14} className="text-black" />}
+                {copiedInstallCmd ? "COMMAND COPIED!" : "COPY INSTALL COMMAND"}
+              </Button>
+            </div>
+          </div>
+
+          {/* Terminal Command Code Box */}
+          <div className="flex items-center justify-between bg-[#040405] border border-[#1e1e24] rounded-xl px-4 py-3 text-xs font-mono text-neutral-300 overflow-x-auto">
+            <span className="text-neutral-500 mr-2 select-none">&gt;</span>
+            <span className="text-emerald-400 flex-1 truncate font-semibold">{installCommand}</span>
+            <button
+              onClick={handleCopyInstallCmd}
+              className="text-neutral-500 hover:text-white transition-colors ml-4 text-[11px] uppercase tracking-wider"
+            >
+              {copiedInstallCmd ? "[COPIED]" : "[COPY]"}
+            </button>
+          </div>
+        </div>
+
+        {/* 2. ROBLOX-STYLE QUICK ACCOUNT LINKING (DEVICE CODE AUTHORIZATION) */}
+        <div className="bg-[#0c0c0e] border border-[#222228] rounded-2xl p-6 relative overflow-hidden space-y-6">
+          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 pb-6 border-b border-[#1c1c22]">
+            <div className="space-y-1.5">
+              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded bg-[#18181f] border border-[#2c2c36] text-[10px] text-neutral-400 uppercase tracking-widest">
+                <ShieldCheck size={12} className="text-emerald-400" /> Device Authorization
+              </div>
+              <h2 className="text-lg font-bold text-white tracking-wide">
+                Quick Discord Account Linking
               </h2>
               <p className="text-xs text-neutral-400 max-w-xl leading-relaxed">
-                Provide this private credential to your local PixelsRPC Vencord plugin. Presence updates stream securely into Discord without a third-party desktop app.
+                Link your Discord Vencord plugin instantly without manually copying permanent secrets. Enter the temporary single-use code in Discord Settings → Plugins → PixelsRPC.
               </p>
             </div>
 
-            {/* Token Action Strip */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-              <div className="relative flex items-center bg-[#050505] border border-[#262626] rounded-xl px-3.5 py-2 text-xs text-neutral-300 min-w-[260px]">
-                <span className="truncate flex-1 font-mono tracking-wider">
-                  {token
-                    ? showToken
-                      ? token
-                      : `${token.slice(0, 8)}••••••••••••••••••••••••••••••••`
-                    : "Fetching token..."}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowToken(!showToken)}
-                  className="ml-2 text-neutral-500 hover:text-white transition-colors"
-                  title={showToken ? "Hide token" : "Show token"}
+            {/* Quick Link Action Area */}
+            <div className="flex flex-col items-end gap-3 w-full lg:w-auto">
+              {!linkingSession && linkingStatus !== "CONSUMED" && (
+                <Button
+                  onClick={handleGenerateLinkingCode}
+                  disabled={isGeneratingCode}
+                  variant="solid-white"
+                  className="px-6 py-2.5 text-xs font-bold tracking-wider flex items-center gap-2"
                 >
-                  {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
+                  {isGeneratingCode ? <RefreshCw className="animate-spin" size={14} /> : <Plug size={14} />}
+                  {isGeneratingCode ? "GENERATING CODE..." : "GENERATE LINKING CODE"}
+                </Button>
+              )}
+
+              {linkingSession && (
+                <div className="flex items-center gap-3">
+                  <Button
+                    onClick={handleCancelLinking}
+                    disabled={cancelingCode}
+                    variant="outline"
+                    className="text-xs px-3 py-1.5 text-neutral-400 hover:text-red-400"
+                  >
+                    {cancelingCode ? "CANCELING..." : "CANCEL LINKING"}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Live Linking Display Window */}
+          {linkingSession && (
+            <div className="p-6 rounded-xl bg-[#070709] border border-neutral-700 space-y-4 text-center max-w-md mx-auto animate-fade-in">
+              <span className="text-[10px] text-neutral-400 uppercase tracking-widest font-semibold block">
+                ENTER THIS CODE IN DISCORD
+              </span>
+
+              {/* Huge Monospace Code Display */}
+              <div className="py-2 px-4 rounded-xl bg-[#101015] border border-neutral-600 inline-block">
+                <span className="text-3xl sm:text-4xl font-extrabold tracking-widest text-white font-mono select-all">
+                  {linkingSession.code}
+                </span>
               </div>
 
-              <Button
-                variant="outline"
-                onClick={handleCopyToken}
-                className="text-xs flex items-center justify-center gap-1.5"
-              >
-                {copiedToken ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
-                {copiedToken ? "COPIED" : "COPY TOKEN"}
-              </Button>
+              {/* Expiration Timer & Telemetry Indicator */}
+              <div className="flex items-center justify-center gap-2 text-xs font-mono">
+                <Clock size={13} className="text-amber-400 animate-pulse" />
+                <span className="text-neutral-400">
+                  Expires in:{" "}
+                  <strong className="text-amber-300">
+                    {Math.floor(linkingSession.timeLeft / 60)}:
+                    {(linkingSession.timeLeft % 60).toString().padStart(2, "0")}
+                  </strong>
+                </span>
+              </div>
 
+              <div className="flex items-center justify-center gap-2 text-[11px] text-neutral-500">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                <span>Waiting for Vencord plugin to submit code...</span>
+              </div>
+            </div>
+          )}
+
+          {linkingStatus === "CONSUMED" && (
+            <div className="p-6 rounded-xl bg-emerald-950/20 border border-emerald-500/40 text-center max-w-md mx-auto space-y-2 animate-fade-in">
+              <CheckCircle2 size={32} className="mx-auto text-emerald-400" />
+              <p className="text-white font-bold text-sm">Discord Device Linked Successfully!</p>
+              <p className="text-neutral-400 text-xs">
+                Your Vencord plugin is authenticated. Rich Presence is now streaming directly into Discord.
+              </p>
+              <div className="pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setLinkingStatus("IDLE")}
+                  className="text-xs px-4 py-1.5"
+                >
+                  DISMISS
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {linkingStatus === "EXPIRED" && (
+            <div className="p-5 rounded-xl bg-amber-950/20 border border-amber-500/40 text-center max-w-md mx-auto space-y-2 animate-fade-in">
+              <p className="text-amber-300 font-bold text-xs uppercase tracking-wider">
+                Linking Code Expired
+              </p>
+              <p className="text-neutral-400 text-[11px]">
+                The previous code expired after 2 minutes for security. Generate a new code when ready.
+              </p>
               <Button
-                variant="outline"
-                onClick={handleRegenerateToken}
-                disabled={regenerating}
-                title="Regenerate token (Revokes old sessions)"
-                className="text-xs flex items-center justify-center gap-1"
+                variant="solid-white"
+                onClick={handleGenerateLinkingCode}
+                className="text-xs px-4 py-1.5 mt-2"
               >
-                <RefreshCw size={13} className={regenerating ? "animate-spin" : ""} />
-                {regenerating ? "..." : "RESET"}
+                GENERATE NEW CODE
               </Button>
             </div>
+          )}
+
+          {/* Connected Devices List */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between text-xs text-neutral-400">
+              <span className="font-semibold uppercase tracking-wider text-[11px] text-white">
+                AUTHORIZED DEVICES ({linkedDevices.length})
+              </span>
+              <button
+                onClick={fetchLinkedDevices}
+                className="hover:text-white transition-colors flex items-center gap-1 text-[11px]"
+              >
+                <RefreshCw size={11} /> Refresh
+              </button>
+            </div>
+
+            {linkedDevices.length === 0 ? (
+              <div className="p-4 rounded-xl bg-[#08080a] border border-[#1a1a20] text-center text-xs text-neutral-500">
+                No Discord clients currently linked. Use the code above to link your Vencord client.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {linkedDevices.map((dev) => (
+                  <div
+                    key={dev.id}
+                    className="p-3.5 rounded-xl bg-[#0e0e12] border border-[#222228] flex items-center justify-between text-xs"
+                  >
+                    <div className="space-y-0.5">
+                      <p className="text-white font-semibold flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                        {dev.deviceName || "Vencord Discord Client"}
+                      </p>
+                      <p className="text-[10px] text-neutral-500">
+                        Linked {new Date(dev.consumedAt).toLocaleDateString()} &bull; Active recently
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => handleUnlinkDevice(dev.id)}
+                      className="px-2.5 py-1 rounded bg-[#181820] hover:bg-red-950/40 text-neutral-400 hover:text-red-400 border border-[#282830] hover:border-red-500/40 text-[11px] transition-colors cursor-pointer"
+                    >
+                      Unlink
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* 3-Step Installation Guide */}
-          <div className="pt-5 border-t border-[#1a1a1a] grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-            <div className="p-4 rounded-xl bg-[#080808] border border-[#1a1a1a] space-y-1.5">
-              <span className="text-[10px] text-[#d71920] font-bold tracking-widest">[STEP 01]</span>
-              <p className="font-semibold text-white">Install Vencord</p>
-              <p className="text-neutral-500 text-[11px] leading-relaxed">
-                Ensure <strong className="text-neutral-300">Vencord</strong> is installed on your Discord desktop client.
-              </p>
+          {/* 3. ADVANCED / MANUAL APP TOKEN DRAWER */}
+          <div className="pt-4 border-t border-[#1a1a20] space-y-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-[11px] text-neutral-400 uppercase tracking-wider font-semibold">
+                ADVANCED // MANUAL APP TOKEN (LEGACY FALLBACK)
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={handleCopyToken}
+                  className="text-[11px] py-1 px-3 flex items-center gap-1.5"
+                >
+                  {copiedToken ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+                  {copiedToken ? "COPIED" : "COPY TOKEN"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleRegenerateToken}
+                  disabled={regenerating}
+                  className="text-[11px] py-1 px-2.5 text-neutral-400 hover:text-white"
+                >
+                  <RefreshCw size={11} className={regenerating ? "animate-spin" : ""} />
+                  {regenerating ? "..." : "RESET"}
+                </Button>
+              </div>
             </div>
 
-            <div className="p-4 rounded-xl bg-[#080808] border border-[#1a1a1a] space-y-1.5">
-              <span className="text-[10px] text-[#d71920] font-bold tracking-widest">[STEP 02]</span>
-              <p className="font-semibold text-white">Add PixelsRPC</p>
-              <p className="text-neutral-500 text-[11px] leading-relaxed">
-                Copy the console snippet or download <code className="text-neutral-300">PixelsRPC.vencord.js</code> into userplugins.
-              </p>
+            <div className="flex items-center justify-between bg-[#060608] border border-[#1e1e24] rounded-xl px-3.5 py-2 text-xs text-neutral-400 font-mono">
+              <span className="truncate">
+                {token
+                  ? showToken
+                    ? token
+                    : `${token.slice(0, 8)}••••••••••••••••••••••••••••••••`
+                  : "Fetching token..."}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowToken(!showToken)}
+                className="text-neutral-500 hover:text-white transition-colors ml-3 text-[11px]"
+              >
+                {showToken ? "[HIDE]" : "[SHOW]"}
+              </button>
             </div>
-
-            <div className="p-4 rounded-xl bg-[#080808] border border-[#1a1a1a] space-y-1.5">
-              <span className="text-[10px] text-[#d71920] font-bold tracking-widest">[STEP 03]</span>
-              <p className="font-semibold text-white">Sync Rich Presence</p>
-              <p className="text-neutral-500 text-[11px] leading-relaxed">
-                Paste your private App Token. Any edits made here will stream automatically.
-              </p>
-            </div>
-          </div>
-
-          {/* Quick Action Buttons */}
-          <div className="flex flex-wrap items-center gap-3 pt-2">
-            <Button
-              variant="outline"
-              onClick={handleCopySnippet}
-              className="text-[11px] flex items-center gap-1.5"
-            >
-              {copiedSnippet ? <Check size={13} className="text-green-400" /> : <Code2 size={13} />}
-              {copiedSnippet ? "SNIPPET COPIED!" : "COPY VENCORD CONSOLE SNIPPET"}
-            </Button>
-
-            <Button
-              variant="outline"
-              onClick={handleDownloadPlugin}
-              className="text-[11px] flex items-center gap-1.5"
-            >
-              <Download size={13} />
-              DOWNLOAD PIXELSRPC.JS
-            </Button>
-
-            <span className="text-[11px] text-neutral-500 flex items-center gap-1.5 sm:ml-auto">
-              <ShieldCheck size={13} className="text-green-500" /> Web-First &bull; Zero external executable binaries required
-            </span>
           </div>
         </div>
 
