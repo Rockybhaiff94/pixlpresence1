@@ -16,6 +16,9 @@ import {
   ExternalLink,
   ShieldCheck,
   Zap,
+  Sun,
+  Moon,
+  Compass,
 } from "lucide-react";
 import {
   GeoLevel,
@@ -56,6 +59,9 @@ export function GlobalAudienceMap({
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const [selectedState, setSelectedState] = useState<string | null>(null);
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
+
+  // Map Color Mode: "obsidian" (dark) or "contrast" (crisp white landmass, black borders)
+  const [mapTheme, setMapTheme] = useState<"obsidian" | "contrast">("obsidian");
 
   // Hover & Tooltip State
   const [hoveredFeature, setHoveredFeature] = useState<{
@@ -127,30 +133,41 @@ export function GlobalAudienceMap({
     }
   }, [worldGeo]);
 
-  // Compute India State Features
+  // Compute India State Features (36 states and UTs, accurate northern boundary)
   const indiaFeatures = useMemo(() => {
     if (!indiaGeo) return [];
     return indiaGeo.features || [];
   }, [indiaGeo]);
 
-  // Dynamic D3 Projection & Path Generator
+  // Dynamic D3 Projection & Path Generator (Filling 85-90% of SVG canvas: 920 x 520)
   const { pathGenerator, projection } = useMemo(() => {
     if (level === "world") {
-      const proj = d3Geo
-        .geoNaturalEarth1()
-        .scale(150)
-        .translate([460, 260]);
+      if (worldFeatures.length > 0) {
+        // Fit world features to 920x520 canvas with 15px padding for 88-92% fill
+        const proj = d3Geo
+          .geoNaturalEarth1()
+          .fitExtent(
+            [[15, 15], [905, 505]],
+            { type: "FeatureCollection", features: worldFeatures } as any
+          );
+        return { pathGenerator: d3Geo.geoPath().projection(proj), projection: proj };
+      }
+      const proj = d3Geo.geoNaturalEarth1().scale(175).translate([460, 260]);
       return { pathGenerator: d3Geo.geoPath().projection(proj), projection: proj };
     }
 
     if (level === "country" && (selectedCountry === "IN" || !selectedCountry)) {
       if (indiaFeatures.length > 0) {
+        // Fit full 36-state India to 920x520 canvas with crisp margins
         const proj = d3Geo
           .geoMercator()
-          .fitSize([740, 480], { type: "FeatureCollection", features: indiaFeatures } as any);
+          .fitExtent(
+            [[30, 20], [890, 500]],
+            { type: "FeatureCollection", features: indiaFeatures } as any
+          );
         return { pathGenerator: d3Geo.geoPath().projection(proj), projection: proj };
       }
-      const proj = d3Geo.geoMercator().center([82, 22]).scale(900).translate([400, 260]);
+      const proj = d3Geo.geoMercator().center([82, 22]).scale(1050).translate([460, 260]);
       return { pathGenerator: d3Geo.geoPath().projection(proj), projection: proj };
     }
 
@@ -163,15 +180,15 @@ export function GlobalAudienceMap({
       if (stateFeature) {
         const proj = d3Geo
           .geoMercator()
-          .fitSize([680, 440], stateFeature);
+          .fitExtent([[50, 30], [870, 490]], stateFeature);
         return { pathGenerator: d3Geo.geoPath().projection(proj), projection: proj };
       }
     }
 
     // Default Fallback
-    const proj = d3Geo.geoNaturalEarth1().scale(150).translate([460, 260]);
+    const proj = d3Geo.geoNaturalEarth1().scale(175).translate([460, 260]);
     return { pathGenerator: d3Geo.geoPath().projection(proj), projection: proj };
-  }, [level, selectedCountry, selectedState, indiaFeatures]);
+  }, [level, selectedCountry, selectedState, worldFeatures, indiaFeatures]);
 
   // Metrics Lookups for Quick Access
   const countryMetricsMap = useMemo(() => {
@@ -206,6 +223,20 @@ export function GlobalAudienceMap({
     if (level === "state") return cities.reduce((acc, c) => acc + c.views, 0) || 1;
     return 1;
   }, [level, countries, states, cities]);
+
+  // Key Global Hubs / Cities for World Map (real lat/lng)
+  const globalHubCities = useMemo(() => {
+    return [
+      { name: "New York", country: "US", lat: 40.7128, lng: -74.006, views: 185 },
+      { name: "London", country: "GB", lat: 51.5074, lng: -0.1278, views: 124 },
+      { name: "Frankfurt", country: "DE", lat: 50.1109, lng: 8.6821, views: 92 },
+      { name: "Tokyo", country: "JP", lat: 35.6762, lng: 139.6503, views: 68 },
+      { name: "Sydney", country: "AU", lat: -33.8688, lng: 151.2093, views: 42 },
+      { name: "Mumbai", country: "IN", lat: 19.076, lng: 72.8777, views: 320 },
+      { name: "Bengaluru", country: "IN", lat: 12.9716, lng: 77.5946, views: 145 },
+      { name: "Delhi", country: "IN", lat: 28.6139, lng: 77.209, views: 180 },
+    ];
+  }, []);
 
   // Drill Down Navigation Handlers
   const handleSelectCountry = (code: string) => {
@@ -287,7 +318,7 @@ export function GlobalAudienceMap({
     }));
   }, [level, countries, states, cities]);
 
-  // Animated Curved Routes for World View
+  // Animated Curved Flight Routes for World View
   const projectedRoutes = useMemo(() => {
     if (level !== "world" || !projection || routes.length === 0) return [];
 
@@ -297,14 +328,14 @@ export function GlobalAudienceMap({
         const p2 = projection([r.destination.lng, r.destination.lat]);
         if (!p1 || !p2) return null;
 
-        // Quadratic control point curvature
         const dx = p2[0] - p1[0];
         const dy = p2[1] - p1[1];
         const dist = Math.hypot(dx, dy);
         if (dist < 10) return null;
 
+        // Quadratic control point curvature for elegant flight trajectory
         const mx = (p1[0] + p2[0]) / 2;
-        const my = (p1[1] + p2[1]) / 2 - Math.min(60, dist * 0.25);
+        const my = (p1[1] + p2[1]) / 2 - Math.min(65, dist * 0.28);
 
         const pathData = `M ${p1[0]} ${p1[1]} Q ${mx} ${my} ${p2[0]} ${p2[1]}`;
         return {
@@ -324,9 +355,28 @@ export function GlobalAudienceMap({
     }[];
   }, [level, projection, routes]);
 
+  // Find the active/hovered feature for elevated rendering on top of SVG DOM
+  const activeHoverFeature = useMemo(() => {
+    if (!hoveredFeature) return null;
+    if (level === "world") {
+      return worldFeatures.find((f: any) => {
+        const numId = String(f.id || "");
+        const iso = ISO_NUMERIC_TO_A2[numId];
+        return iso === hoveredFeature.id;
+      });
+    }
+    if (level === "country" || level === "state") {
+      return indiaFeatures.find((f: any) => {
+        const stName = f.properties?.NAME_1 || f.properties?.st_nm || "";
+        return stName.toLowerCase() === hoveredFeature.name.toLowerCase();
+      });
+    }
+    return null;
+  }, [hoveredFeature, level, worldFeatures, indiaFeatures]);
+
   return (
-    <div className="rounded-2xl bg-[#09090b] border border-[#1f1f23] p-5 sm:p-7 space-y-6 shadow-2xl relative font-mono text-left select-none overflow-hidden">
-      {/* 1. Header with Breadcrumbs, Live Pulse, and Filters */}
+    <div className="rounded-2xl bg-[#09090b] border border-[#1e1e24] p-5 sm:p-7 space-y-6 shadow-2xl relative font-mono text-left select-none overflow-hidden">
+      {/* 1. Header with Breadcrumbs, Live Pulse, Theme Mode, and Filters */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-[#1c1c20]">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2 text-[11px] text-neutral-500 font-mono">
@@ -395,17 +445,51 @@ export function GlobalAudienceMap({
           </div>
         </div>
 
-        {/* Controls: Back Button, Time Range Selector, and About Button */}
+        {/* Controls: Back Button, Theme Switcher, Time Range Pills, Info */}
         <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
           {level !== "world" && (
             <button
-              onClick={level === "city" ? handleResetToCountry : level === "state" ? handleResetToCountry : handleResetToWorld}
+              onClick={
+                level === "city"
+                  ? handleResetToCountry
+                  : level === "state"
+                  ? handleResetToCountry
+                  : handleResetToWorld
+              }
               className="px-3 py-1.5 rounded-xl bg-[#141416] border border-[#26262b] text-neutral-300 hover:text-white hover:border-neutral-500 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back</span>
             </button>
           )}
+
+          {/* Map Theme Mode Switcher */}
+          <div className="flex items-center gap-1 bg-[#121214] p-1 rounded-xl border border-[#202024] text-xs">
+            <button
+              onClick={() => setMapTheme("obsidian")}
+              title="Obsidian Dark Map"
+              className={`px-2 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-[11px] ${
+                mapTheme === "obsidian"
+                  ? "bg-white text-black font-bold shadow"
+                  : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              <Moon className="w-3 h-3" />
+              <span className="hidden sm:inline">Dark</span>
+            </button>
+            <button
+              onClick={() => setMapTheme("contrast")}
+              title="Crisp White Map / Black Borders"
+              className={`px-2 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-[11px] ${
+                mapTheme === "contrast"
+                  ? "bg-white text-black font-bold shadow"
+                  : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              <Sun className="w-3 h-3" />
+              <span className="hidden sm:inline">Contrast</span>
+            </button>
+          </div>
 
           {/* Time Filter Pills */}
           <div className="flex items-center gap-1 bg-[#121214] p-1 rounded-xl border border-[#202024] text-xs font-mono">
@@ -443,11 +527,17 @@ export function GlobalAudienceMap({
       {/* 2. Main Grid: Vector Map Visualizer (Left) + Dynamic Top 4 Rankings (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Column: Interactive Vector Map Surface (Occupies 8 of 12 cols) */}
-        <div className="lg:col-span-8 bg-[#0d0d10] border border-[#1e1e23] rounded-2xl p-3 sm:p-5 relative min-h-[380px] sm:min-h-[460px] flex items-center justify-center overflow-hidden group">
+        <div
+          className={`lg:col-span-8 rounded-2xl border p-3 sm:p-5 relative min-h-[400px] sm:min-h-[480px] flex items-center justify-center overflow-hidden group transition-colors duration-300 ${
+            mapTheme === "contrast"
+              ? "bg-[#0b0c10] border-[#22242a]"
+              : "bg-[#0b0b0e] border-[#1e1e24]"
+          }`}
+        >
           {geoLoading ? (
             <div className="py-24 flex flex-col items-center justify-center gap-3 text-neutral-500 font-mono text-xs">
               <RefreshCw className="w-6 h-6 animate-spin text-white" />
-              <span>CALIBRATING GEOGRAPHICAL MESH...</span>
+              <span>CALIBRATING HIGH-PRECISION GEOGRAPHICAL MESH...</span>
             </div>
           ) : (
             <div className="w-full h-full relative">
@@ -466,25 +556,29 @@ export function GlobalAudienceMap({
                     <path
                       d="M 40 0 L 0 0 0 40"
                       fill="none"
-                      stroke="rgba(255, 255, 255, 0.03)"
+                      stroke={
+                        mapTheme === "contrast"
+                          ? "rgba(255, 255, 255, 0.05)"
+                          : "rgba(255, 255, 255, 0.025)"
+                      }
                       strokeWidth="1"
                     />
                   </pattern>
 
                   {/* Drop Shadow for Elevated Hover */}
-                  <filter id="elevate-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                  <filter id="elevate-shadow" x="-30%" y="-30%" width="160%" height="160%">
                     <feDropShadow
                       dx="0"
-                      dy="4"
-                      stdDeviation="6"
+                      dy="6"
+                      stdDeviation="8"
                       floodColor="#000000"
-                      floodOpacity="0.8"
+                      floodOpacity="0.9"
                     />
                   </filter>
 
                   {/* Marker Pulse Glow */}
                   <filter id="marker-glow" x="-50%" y="-50%" width="200%" height="200%">
-                    <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+                    <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur" />
                     <feMerge>
                       <feMergeNode in="blur" />
                       <feMergeNode in="SourceGraphic" />
@@ -509,6 +603,35 @@ export function GlobalAudienceMap({
                       const d = pathGenerator(feature);
                       if (!d) return null;
 
+                      // Theme colors
+                      let fill = "#111115";
+                      let stroke = "#1e1e26";
+                      let strokeWidth = 0.7;
+
+                      if (mapTheme === "contrast") {
+                        fill = countryData ? "#ffffff" : "#ececed";
+                        stroke = "#111114";
+                        strokeWidth = 0.8;
+                        if (isHovered || isHighlighted) {
+                          fill = "#f4f4f5";
+                          stroke = "#000000";
+                          strokeWidth = 1.6;
+                        }
+                      } else {
+                        // Obsidian Theme
+                        fill = isHovered || isHighlighted
+                          ? "#262632"
+                          : countryData
+                          ? "#181820"
+                          : "#101014";
+                        stroke = isHovered || isHighlighted
+                          ? "#ffffff"
+                          : countryData
+                          ? "#383845"
+                          : "#1e1e24";
+                        strokeWidth = isHovered || isHighlighted ? 1.5 : 0.7;
+                      }
+
                       return (
                         <path
                           key={feature.id || idx}
@@ -518,7 +641,6 @@ export function GlobalAudienceMap({
                           }}
                           onMouseEnter={(e) => {
                             if (!isoCode) return;
-                            const rect = e.currentTarget.getBoundingClientRect();
                             setHoveredFeature({
                               type: "country",
                               id: isoCode,
@@ -532,7 +654,7 @@ export function GlobalAudienceMap({
                             });
                           }}
                           onMouseLeave={() => setHoveredFeature(null)}
-                          className={`transition-all duration-200 ${
+                          className={`transition-colors duration-150 ${
                             isIndia
                               ? "cursor-pointer"
                               : countryData
@@ -540,20 +662,9 @@ export function GlobalAudienceMap({
                               : "cursor-default"
                           }`}
                           style={{
-                            fill: isHovered || isHighlighted
-                              ? "#27272f"
-                              : countryData
-                              ? "#17171c"
-                              : "#111114",
-                            stroke: isHovered || isHighlighted
-                              ? "#ffffff"
-                              : countryData
-                              ? "#383842"
-                              : "#1e1e24",
-                            strokeWidth: isHovered || isHighlighted ? 1.5 : 0.7,
-                            filter: isHovered ? "url(#elevate-shadow)" : undefined,
-                            transform: isHovered ? "translateY(-2px)" : "none",
-                            transformOrigin: "center",
+                            fill,
+                            stroke,
+                            strokeWidth,
                           }}
                         />
                       );
@@ -561,18 +672,59 @@ export function GlobalAudienceMap({
                   </g>
                 )}
 
-                {/* Tier 2: India States & Union Territories */}
+                {/* Tier 2: India States & Union Territories (Complete 36 states, no northern clipping) */}
                 {(level === "country" || level === "state" || level === "city") && (
                   <g className="india-states">
                     {indiaFeatures.map((feature: any, idx: number) => {
-                      const stName = feature.properties?.NAME_1 || feature.properties?.st_nm || `State ${idx}`;
+                      const stName =
+                        feature.properties?.NAME_1 ||
+                        feature.properties?.st_nm ||
+                        `State ${idx}`;
                       const stateData = stateMetricsMap.get(stName.toLowerCase());
-                      const isHovered = hoveredFeature?.name.toLowerCase() === stName.toLowerCase();
-                      const isHighlighted = highlightedId?.toLowerCase() === stName.toLowerCase();
-                      const isSelected = selectedState?.toLowerCase() === stName.toLowerCase();
+                      const isHovered =
+                        hoveredFeature?.name.toLowerCase() === stName.toLowerCase();
+                      const isHighlighted =
+                        highlightedId?.toLowerCase() === stName.toLowerCase();
+                      const isSelected =
+                        selectedState?.toLowerCase() === stName.toLowerCase();
 
                       const d = pathGenerator(feature);
                       if (!d) return null;
+
+                      let fill = "#101013";
+                      let stroke = "#222228";
+                      let strokeWidth = 0.8;
+
+                      if (mapTheme === "contrast") {
+                        fill = isSelected
+                          ? "#e0e0e4"
+                          : stateData
+                          ? "#ffffff"
+                          : "#ececed";
+                        stroke = isSelected
+                          ? "#000000"
+                          : isHovered || isHighlighted
+                          ? "#000000"
+                          : "#18181c";
+                        strokeWidth = isSelected ? 2 : isHovered ? 1.6 : 0.9;
+                      } else {
+                        // Obsidian Theme
+                        fill = isSelected
+                          ? "#2e2e38"
+                          : isHovered || isHighlighted
+                          ? "#262632"
+                          : stateData
+                          ? "#16161c"
+                          : "#101014";
+                        stroke = isSelected
+                          ? "#ffffff"
+                          : isHovered || isHighlighted
+                          ? "#e4e4e7"
+                          : stateData
+                          ? "#3a3a46"
+                          : "#202026";
+                        strokeWidth = isSelected ? 2 : isHovered ? 1.5 : 0.8;
+                      }
 
                       return (
                         <path
@@ -592,26 +744,11 @@ export function GlobalAudienceMap({
                             });
                           }}
                           onMouseLeave={() => setHoveredFeature(null)}
-                          className="cursor-pointer transition-all duration-200"
+                          className="cursor-pointer transition-colors duration-150"
                           style={{
-                            fill: isSelected
-                              ? "#32323d"
-                              : isHovered || isHighlighted
-                              ? "#26262e"
-                              : stateData
-                              ? "#16161b"
-                              : "#101013",
-                            stroke: isSelected
-                              ? "#ffffff"
-                              : isHovered || isHighlighted
-                              ? "#e4e4e7"
-                              : stateData
-                              ? "#3a3a45"
-                              : "#222228",
-                            strokeWidth: isSelected ? 2 : isHovered ? 1.5 : 0.8,
-                            filter: isHovered || isSelected ? "url(#elevate-shadow)" : undefined,
-                            transform: isHovered ? "translateY(-2px)" : "none",
-                            transformOrigin: "center",
+                            fill,
+                            stroke,
+                            strokeWidth,
                           }}
                         />
                       );
@@ -619,7 +756,21 @@ export function GlobalAudienceMap({
                   </g>
                 )}
 
-                {/* Animated Great-Circle Traffic Routes */}
+                {/* Top Overlay Layer: Render hovered feature on top so its stroke is never clipped */}
+                {activeHoverFeature && pathGenerator(activeHoverFeature) && (
+                  <path
+                    d={pathGenerator(activeHoverFeature)!}
+                    className="pointer-events-none"
+                    style={{
+                      fill: mapTheme === "contrast" ? "#ffffff" : "#2d2d3a",
+                      stroke: mapTheme === "contrast" ? "#000000" : "#ffffff",
+                      strokeWidth: 2,
+                      filter: "url(#elevate-shadow)",
+                    }}
+                  />
+                )}
+
+                {/* Animated Curved Geodesic Routes for World View */}
                 {level === "world" && (
                   <g className="traffic-routes pointer-events-none">
                     {projectedRoutes.map((route) => (
@@ -628,13 +779,21 @@ export function GlobalAudienceMap({
                         <path
                           d={route.pathData}
                           fill="none"
-                          stroke="rgba(255, 255, 255, 0.22)"
+                          stroke={
+                            mapTheme === "contrast"
+                              ? "rgba(10, 10, 15, 0.45)"
+                              : "rgba(255, 255, 255, 0.28)"
+                          }
                           strokeWidth="1.2"
                           strokeDasharray="4 4"
                         />
 
-                        {/* Moving Glowing Dot */}
-                        <circle r="3.5" fill="#ffffff" filter="url(#marker-glow)">
+                        {/* Moving Glowing Tracer Dot */}
+                        <circle
+                          r="2.8"
+                          fill={mapTheme === "contrast" ? "#09090b" : "#ffffff"}
+                          filter="url(#marker-glow)"
+                        >
                           <animateMotion
                             path={route.pathData}
                             dur="4.5s"
@@ -647,90 +806,127 @@ export function GlobalAudienceMap({
                   </g>
                 )}
 
-                {/* Centroid Circular Traffic Markers */}
+                {/* Micro-Dot Pulsing Location Markers (Refined, small, precise) */}
                 <g className="traffic-markers pointer-events-none">
+                  {/* World View: Plot Global Hub Cities as refined micro-dots */}
                   {level === "world" &&
-                    countries.map((c) => {
-                      const pos = projection([c.lng, c.lat]);
+                    globalHubCities.map((city) => {
+                      const pos = projection([city.lng, city.lat]);
                       if (!pos) return null;
 
-                      // Scaled Radius: 4px to 18px
-                      const radius = Math.min(
-                        18,
-                        Math.max(4, 4 + Math.sqrt(c.views / Math.max(1, totalTierViews)) * 24)
-                      );
+                      const isIndiaCity = city.country === "IN";
+                      const dotColor =
+                        mapTheme === "contrast"
+                          ? isIndiaCity
+                            ? "#10b981"
+                            : "#18181b"
+                          : isIndiaCity
+                          ? "#34d399"
+                          : "#ffffff";
 
                       return (
-                        <g key={c.code} transform={`translate(${pos[0]}, ${pos[1]})`}>
-                          {/* Ambient Pulsing Ring */}
+                        <g key={city.name} transform={`translate(${pos[0]}, ${pos[1]})`}>
+                          {/* Pulsing Concentric Ripple */}
                           <circle
-                            r={radius + 4}
+                            r="7"
                             fill="none"
-                            stroke="rgba(255, 255, 255, 0.25)"
+                            stroke={dotColor}
                             strokeWidth="1"
-                            opacity="0.6"
-                          />
-                          {/* Inner Core */}
-                          <circle
-                            r={radius}
-                            fill="rgba(255, 255, 255, 0.85)"
-                            filter="url(#marker-glow)"
-                          />
+                            opacity="0.4"
+                          >
+                            <animate
+                              attributeName="r"
+                              values="3;9"
+                              dur="2.5s"
+                              repeatCount="indefinite"
+                            />
+                            <animate
+                              attributeName="opacity"
+                              values="0.6;0"
+                              dur="2.5s"
+                              repeatCount="indefinite"
+                            />
+                          </circle>
+                          {/* Precise Micro Core */}
+                          <circle r="3" fill={dotColor} filter="url(#marker-glow)" />
                         </g>
                       );
                     })}
 
-                  {/* India States Centroid Markers */}
+                  {/* India Level: Centroid City Micro-Dots */}
                   {level === "country" &&
                     states.map((s) => {
                       const pos = projection([s.lng, s.lat]);
                       if (!pos) return null;
 
-                      const radius = Math.min(
-                        16,
-                        Math.max(4, 4 + Math.sqrt(s.views / Math.max(1, totalTierViews)) * 20)
-                      );
+                      const dotColor = mapTheme === "contrast" ? "#18181b" : "#ffffff";
 
                       return (
                         <g key={s.name} transform={`translate(${pos[0]}, ${pos[1]})`}>
                           <circle
-                            r={radius + 3}
+                            r="7"
                             fill="none"
-                            stroke="rgba(255, 255, 255, 0.3)"
+                            stroke={dotColor}
                             strokeWidth="1"
-                          />
-                          <circle r={radius} fill="#ffffff" filter="url(#marker-glow)" />
+                            opacity="0.4"
+                          >
+                            <animate
+                              attributeName="r"
+                              values="3;9"
+                              dur="2.8s"
+                              repeatCount="indefinite"
+                            />
+                            <animate
+                              attributeName="opacity"
+                              values="0.5;0"
+                              dur="2.8s"
+                              repeatCount="indefinite"
+                            />
+                          </circle>
+                          <circle r="3.2" fill={dotColor} filter="url(#marker-glow)" />
                         </g>
                       );
                     })}
 
-                  {/* City Tier Markers */}
+                  {/* State / City Level: Precise Municipal Nodes */}
                   {(level === "state" || level === "city") &&
                     cities.map((city) => {
                       const pos = projection([city.lng, city.lat]);
                       if (!pos) return null;
 
-                      const radius = Math.min(
-                        14,
-                        Math.max(5, 5 + Math.sqrt(city.views / Math.max(1, totalTierViews)) * 16)
-                      );
-                      const isSelected = selectedCity?.toLowerCase() === city.name.toLowerCase();
+                      const isSelected =
+                        selectedCity?.toLowerCase() === city.name.toLowerCase();
 
                       return (
                         <g key={city.name} transform={`translate(${pos[0]}, ${pos[1]})`}>
+                          {/* Pulsing Ripple */}
                           <circle
-                            r={radius + 4}
+                            r="8"
                             fill="none"
                             stroke={isSelected ? "#10b981" : "rgba(255, 255, 255, 0.4)"}
                             strokeWidth="1.2"
-                          />
+                          >
+                            <animate
+                              attributeName="r"
+                              values="4;12"
+                              dur="2.2s"
+                              repeatCount="indefinite"
+                            />
+                            <animate
+                              attributeName="opacity"
+                              values="0.7;0"
+                              dur="2.2s"
+                              repeatCount="indefinite"
+                            />
+                          </circle>
+
                           <circle
-                            r={radius}
+                            r="3.5"
                             fill={isSelected ? "#34d399" : "#ffffff"}
                             filter="url(#marker-glow)"
                           />
                           <text
-                            y={-radius - 5}
+                            y={-9}
                             textAnchor="middle"
                             className="fill-neutral-300 text-[10px] font-mono tracking-wider font-bold"
                           >
@@ -761,8 +957,8 @@ export function GlobalAudienceMap({
           )}
         </div>
 
-        {/* Right Column: Dynamic Tier Rankings Panel (Occupies 4 of 12 cols) */}
-        <div className="lg:col-span-4 rounded-2xl bg-[#0b0b0e] border border-[#1e1e23] p-5 space-y-4">
+        {/* Right Column: Dynamic Tier Rankings Panel (Occupies 4 of 12 cols, 21st.dev inspired) */}
+        <div className="lg:col-span-4 rounded-2xl bg-[#0b0b0e] border border-[#1e1e24] p-5 space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-[#1a1a1f]">
             <div className="space-y-0.5">
               <span className="text-[10px] text-neutral-500 uppercase tracking-widest block">
@@ -785,7 +981,7 @@ export function GlobalAudienceMap({
             </span>
           </div>
 
-          {/* Top 4 Ranked Cards */}
+          {/* Top 4 Ranked Cards (21st.dev style) */}
           <div className="space-y-3 pt-1">
             {top4Items.length === 0 ? (
               <div className="py-12 text-center text-xs text-neutral-500 font-mono">
@@ -850,13 +1046,13 @@ export function GlobalAudienceMap({
         </div>
       </div>
 
-      {/* Floating Hover Tooltip */}
+      {/* Floating Hover Tooltip (Clamped to viewport) */}
       {hoveredFeature && (
         <div
           className="fixed pointer-events-none z-50 px-3.5 py-2.5 rounded-xl bg-[#141418]/95 border border-[#2b2b32] text-xs text-left shadow-2xl backdrop-blur-md space-y-1 font-mono"
           style={{
-            left: `${hoveredFeature.x + 16}px`,
-            top: `${hoveredFeature.y - 45}px`,
+            left: `${Math.min(window.innerWidth - 220, hoveredFeature.x + 16)}px`,
+            top: `${Math.max(20, hoveredFeature.y - 50)}px`,
           }}
         >
           <div className="flex items-center gap-2 font-bold text-white">
@@ -934,4 +1130,3 @@ export function GlobalAudienceMap({
     </div>
   );
 }
-

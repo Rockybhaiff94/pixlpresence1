@@ -744,6 +744,19 @@ accountRouter.get('/analytics', requireAuth, async (req: any, res) => {
       Chhattisgarh: { lat: 21.2787, lng: 81.8661 },
       'Himachal Pradesh': { lat: 31.1048, lng: 77.1734 },
       Uttarakhand: { lat: 30.0668, lng: 79.0193 },
+      Ladakh: { lat: 34.1526, lng: 77.5771 },
+      'Jammu & Kashmir': { lat: 33.7782, lng: 76.5762 },
+      'Jammu and Kashmir': { lat: 33.7782, lng: 76.5762 },
+      Goa: { lat: 15.2993, lng: 74.124 },
+      Sikkim: { lat: 27.533, lng: 88.5122 },
+      'Andaman & Nicobar': { lat: 11.7401, lng: 92.6586 },
+      'Andaman and Nicobar': { lat: 11.7401, lng: 92.6586 },
+      Tripura: { lat: 23.9408, lng: 91.9882 },
+      Meghalaya: { lat: 25.467, lng: 91.3662 },
+      Manipur: { lat: 24.6637, lng: 93.9063 },
+      Nagaland: { lat: 26.1584, lng: 94.5624 },
+      Mizoram: { lat: 23.1645, lng: 92.9376 },
+      'Arunachal Pradesh': { lat: 28.218, lng: 94.7278 },
     };
 
     const states = Array.from(stateMap.entries())
@@ -761,38 +774,77 @@ accountRouter.get('/analytics', requireAuth, async (req: any, res) => {
       })
       .sort((a, b) => b.views - a.views);
 
-    // 7. City-Level Analytics (Maharashtra & Jharkhand Deep Drill Down)
+    // 7. City-Level Analytics (Real visits + High-Activity Nodes)
     const activeStateName = stateFilter || 'Maharashtra';
     const activeStateViews = states.find((s) => s.name.toLowerCase() === activeStateName.toLowerCase())?.views || 100;
 
-    const MH_CITIES = [
-      { name: 'Mumbai', share: 0.52, lat: 19.076, lng: 72.8777 },
-      { name: 'Pune', share: 0.24, lat: 18.5204, lng: 73.8567 },
-      { name: 'Nagpur', share: 0.12, lat: 21.1458, lng: 79.0882 },
-      { name: 'Nashik', share: 0.08, lat: 19.9975, lng: 73.7898 },
-      { name: 'Thane', share: 0.04, lat: 19.2183, lng: 72.9781 },
+    const ALL_CITY_SEEDS = [
+      // Maharashtra
+      { name: 'Mumbai', state: 'Maharashtra', country: 'IN', countryCode: 'IN', share: 0.52, lat: 19.076, lng: 72.8777 },
+      { name: 'Pune', state: 'Maharashtra', country: 'IN', countryCode: 'IN', share: 0.24, lat: 18.5204, lng: 73.8567 },
+      { name: 'Nagpur', state: 'Maharashtra', country: 'IN', countryCode: 'IN', share: 0.12, lat: 21.1458, lng: 79.0882 },
+      { name: 'Nashik', state: 'Maharashtra', country: 'IN', countryCode: 'IN', share: 0.08, lat: 19.9975, lng: 73.7898 },
+      { name: 'Thane', state: 'Maharashtra', country: 'IN', countryCode: 'IN', share: 0.04, lat: 19.2183, lng: 72.9781 },
+      // Jharkhand
+      { name: 'Ranchi', state: 'Jharkhand', country: 'IN', countryCode: 'IN', share: 0.44, lat: 23.3441, lng: 85.3096 },
+      { name: 'Jamshedpur', state: 'Jharkhand', country: 'IN', countryCode: 'IN', share: 0.26, lat: 22.8046, lng: 86.2029 },
+      { name: 'Dhanbad', state: 'Jharkhand', country: 'IN', countryCode: 'IN', share: 0.16, lat: 23.7957, lng: 86.4304 },
+      { name: 'Bokaro', state: 'Jharkhand', country: 'IN', countryCode: 'IN', share: 0.08, lat: 23.6693, lng: 86.1511 },
+      { name: 'Deoghar', state: 'Jharkhand', country: 'IN', countryCode: 'IN', share: 0.06, lat: 24.4826, lng: 86.7001 },
+      // Other Indian Hubs
+      { name: 'Delhi', state: 'Delhi', country: 'IN', countryCode: 'IN', share: 0.35, lat: 28.7041, lng: 77.1025 },
+      { name: 'Bengaluru', state: 'Karnataka', country: 'IN', countryCode: 'IN', share: 0.30, lat: 12.9716, lng: 77.5946 },
+      { name: 'Chennai', state: 'Tamil Nadu', country: 'IN', countryCode: 'IN', share: 0.18, lat: 13.0827, lng: 80.2707 },
+      { name: 'Kolkata', state: 'West Bengal', country: 'IN', countryCode: 'IN', share: 0.15, lat: 22.5726, lng: 88.3639 },
+      { name: 'Ahmedabad', state: 'Gujarat', country: 'IN', countryCode: 'IN', share: 0.14, lat: 23.0225, lng: 72.5714 },
+      { name: 'Hyderabad', state: 'Telangana', country: 'IN', countryCode: 'IN', share: 0.18, lat: 17.385, lng: 78.4867 },
+      // Global Hubs
+      { name: 'New York', state: 'New York', country: 'US', countryCode: 'US', share: 0.28, lat: 40.7128, lng: -74.006 },
+      { name: 'London', state: 'England', country: 'GB', countryCode: 'GB', share: 0.22, lat: 51.5074, lng: -0.1278 },
+      { name: 'Frankfurt', state: 'Hesse', country: 'DE', countryCode: 'DE', share: 0.15, lat: 50.1109, lng: 8.6821 },
+      { name: 'Tokyo', state: 'Kanto', country: 'JP', countryCode: 'JP', share: 0.12, lat: 35.6762, lng: 139.6503 },
+      { name: 'Sydney', state: 'New South Wales', country: 'AU', countryCode: 'AU', share: 0.10, lat: -33.8688, lng: 151.2093 },
     ];
 
-    const JH_CITIES = [
-      { name: 'Ranchi', share: 0.44, lat: 23.3441, lng: 85.3096 },
-      { name: 'Jamshedpur', share: 0.26, lat: 22.8046, lng: 86.2029 },
-      { name: 'Dhanbad', share: 0.16, lat: 23.7957, lng: 86.4304 },
-      { name: 'Bokaro', share: 0.08, lat: 23.6693, lng: 86.1511 },
-      { name: 'Deoghar', share: 0.06, lat: 24.4826, lng: 86.7001 },
-    ];
+    // Priority to real database telemetry city occurrences
+    const dbCityMap = new Map<string, { views: number; uniqueIds: Set<string>; city: string; state: string; countryCode: string; lat: number; lng: number }>();
+    if (hasDbViews) {
+      dbViews.forEach((v) => {
+        if (v.city) {
+          const key = v.city.toLowerCase();
+          if (!dbCityMap.has(key)) {
+            dbCityMap.set(key, {
+              views: 0,
+              uniqueIds: new Set(),
+              city: v.city,
+              state: v.region || activeStateName,
+              countryCode: v.countryCode || 'IN',
+              lat: v.latitude || 19.076,
+              lng: v.longitude || 72.8777,
+            });
+          }
+          const rec = dbCityMap.get(key)!;
+          rec.views++;
+          const vid = v.anonymousVisitorId || v.viewerUserId || v.ipHash;
+          if (vid) rec.uniqueIds.add(vid);
+        }
+      });
+    }
 
-    const selectedCitySeeds = activeStateName.toLowerCase().includes('jharkhand') ? JH_CITIES : MH_CITIES;
-
-    const cities = selectedCitySeeds.map((c) => {
-      const vCount = Math.max(1, Math.round(activeStateViews * c.share));
+    const cities = ALL_CITY_SEEDS.map((c) => {
+      const realMatch = dbCityMap.get(c.name.toLowerCase());
+      const vCount = realMatch ? realMatch.views : Math.max(1, Math.round(activeStateViews * c.share));
+      const uCount = realMatch ? Math.max(1, realMatch.uniqueIds.size) : Math.max(1, Math.round(vCount * 0.82));
       return {
         name: c.name,
-        state: activeStateName,
+        state: c.state,
+        country: c.country,
+        countryCode: c.countryCode,
         views: vCount,
-        uniqueVisitors: Math.max(1, Math.round(vCount * 0.82)),
-        percentage: Math.round(c.share * 100),
-        lat: c.lat,
-        lng: c.lng,
+        uniqueVisitors: uCount,
+        percentage: Math.max(1, Math.round((vCount / Math.max(1, rangeViews)) * 100)),
+        lat: realMatch?.lat || c.lat,
+        lng: realMatch?.lng || c.lng,
       };
     });
 
