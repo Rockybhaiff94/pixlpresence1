@@ -19,6 +19,14 @@ import {
   Flame,
   LayoutTemplate,
   CheckCircle2,
+  Tv,
+  Headphones,
+  Trophy,
+  Play,
+  RotateCcw,
+  ExternalLink,
+  User as UserIcon,
+  Radio,
 } from "lucide-react";
 import { AccountLayout } from "@/components/account/AccountLayout";
 import { Button } from "@/components/nothing/Button";
@@ -27,8 +35,11 @@ import { apiFetch } from "@/lib/api";
 interface RpcConfig {
   appId?: string;
   appName?: string;
+  activityType?: "streaming" | "playing" | "listening" | "watching" | "competing";
+  streamUrl?: string;
   state?: string;
   details?: string;
+  useProfileAvatar?: boolean;
   largeImage?: string;
   largeImageText?: string;
   smallImage?: string;
@@ -37,8 +48,10 @@ interface RpcConfig {
   endTimestamp?: string | null;
   partySize?: number | null;
   partyMax?: number | null;
+  button1Enabled?: boolean;
   button1Label?: string;
   button1Url?: string;
+  button2Enabled?: boolean;
   button2Label?: string;
   button2Url?: string;
   showProfileRpc?: boolean;
@@ -48,16 +61,21 @@ interface RpcConfig {
 const DEFAULT_RPC: RpcConfig = {
   appId: "1523632136878559302",
   appName: "Pixel.gg",
-  state: "Browsing Pixel.gg",
-  details: "Customizing Rich Presence",
-  largeImage: "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
-  largeImageText: "Pixel.gg Platform",
-  smallImage: "",
-  smallImageText: "",
-  button1Label: "View Profile",
+  activityType: "streaming",
+  streamUrl: "https://twitch.tv/pixelgg",
+  state: "Discover my personal page on PIXEL.GG.",
+  details: "Welcome to my profile!",
+  useProfileAvatar: true,
+  largeImage: "",
+  largeImageText: "PIXEL.GG Platform",
+  smallImage: "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
+  smallImageText: "PIXEL.GG",
+  button1Enabled: true,
+  button1Label: "View My Page",
   button1Url: "https://pixel.gg",
-  button2Label: "Get PixelsRPC",
-  button2Url: "https://pixel.gg",
+  button2Enabled: true,
+  button2Label: "Get Your Own Page",
+  button2Url: "https://pixel.gg/register",
   showProfileRpc: true,
   enableDiscordRpc: true,
   partySize: null,
@@ -125,6 +143,12 @@ export default function AccountRpcStudioPage() {
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(885); // 14:45 initial
+  const [currentUser, setCurrentUser] = useState<{
+    id?: string;
+    username?: string;
+    avatar?: string;
+    globalName?: string;
+  } | null>(null);
 
   // Roblox-Style Quick Device Authorization Linking State Machine
   type LinkingState =
@@ -198,6 +222,35 @@ export default function AccountRpcStudioPage() {
     });
   };
 
+  // Restore official personalized PIXEL.GG defaults
+  const handleRestoreDefaults = () => {
+    if (!confirm("Reset your Rich Presence to official PIXEL.GG default settings?")) return;
+    const username = currentUser?.username || "user";
+    const origin = typeof window !== "undefined" ? window.location.origin : "https://pixlpresence1-web.vercel.app";
+    const userAvatar = currentUser?.avatar || "";
+
+    const restored: RpcConfig = {
+      ...DEFAULT_RPC,
+      activityType: "streaming",
+      streamUrl: `https://twitch.tv/${username}`,
+      details: "Welcome to my profile!",
+      state: "Discover my personal page on PIXEL.GG.",
+      useProfileAvatar: true,
+      largeImage: userAvatar || DEFAULT_RPC.largeImage,
+      largeImageText: `@${username} on PIXEL.GG`,
+      smallImage: "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
+      smallImageText: "PIXEL.GG",
+      button1Enabled: true,
+      button1Label: "View My Page",
+      button1Url: `${origin}/${username}`,
+      button2Enabled: true,
+      button2Label: "Get Your Own Page",
+      button2Url: `${origin}/register`,
+    };
+
+    updateRpc(restored);
+  };
+
   // Real-time ticking elapsed timer for Discord preview
   useEffect(() => {
     const timer = setInterval(() => {
@@ -223,10 +276,11 @@ export default function AccountRpcStudioPage() {
 
     async function loadData() {
       try {
-        // Fetch token and existing RPC config concurrently to eliminate waterfall delays
-        const [tokenRes, rpcRes] = await Promise.all([
+        // Fetch token, RPC config, and user profile concurrently
+        const [tokenRes, rpcRes, accountRes] = await Promise.all([
           apiFetch("/api/profile/me/token"),
           apiFetch("/api/rpc/me"),
+          apiFetch("/api/account"),
         ]);
 
         if (tokenRes.ok) {
@@ -234,16 +288,19 @@ export default function AccountRpcStudioPage() {
           if (tokenData?.token) setToken(tokenData.token);
         }
 
+        if (accountRes.ok) {
+          const accountData = await accountRes.json();
+          if (accountData?.user) {
+            setCurrentUser(accountData.user);
+          }
+        }
+
         if (rpcRes.ok) {
           const rpcData = await rpcRes.json();
           if (rpcData && typeof rpcData === "object" && Object.keys(rpcData).length > 0) {
             setRpc((prev) => {
-              // If the user has made in-session changes, preserve their unsaved edits
-              if (isDirtyRef.current) {
-                return prev;
-              }
+              if (isDirtyRef.current) return prev;
 
-              // Merge non-null and valid database fields over current state
               const merged: RpcConfig = { ...prev };
               for (const [key, value] of Object.entries(rpcData)) {
                 if (["id", "userId", "createdAt", "updatedAt"].includes(key)) continue;
@@ -252,12 +309,11 @@ export default function AccountRpcStudioPage() {
                 }
               }
 
-              // Persist clean merged configuration to cache
               if (typeof window !== "undefined") {
                 try {
                   localStorage.setItem("pixel_rpc_config", JSON.stringify(merged));
                 } catch {
-                  // ignore storage errors
+                  // ignore
                 }
               }
               return merged;
@@ -1060,15 +1116,16 @@ export default function AccountRpcStudioPage() {
               </div>
             </div>
 
-            {/* Section 1: Application Identity */}
-            <div className="p-6 bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl space-y-4">
+            {/* Section 1: Application Identity & Activity Type Customization */}
+            <div className="p-6 bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl space-y-5">
               <div className="flex items-center justify-between border-b border-[#181818] pb-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <span className="text-[#d71920]">[01]</span> APPLICATION IDENTITY
+                  <span className="text-[#d71920]">[01]</span> APPLICATION & ACTIVITY TYPE
                 </h3>
-                <span className="text-[10px] text-neutral-500 uppercase">CORE DISCORD ATTRIBUTES</span>
+                <span className="text-[10px] text-neutral-500 uppercase">DISCORD GATEWAY SPEC</span>
               </div>
 
+              {/* Core App Information */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
@@ -1097,29 +1154,100 @@ export default function AccountRpcStudioPage() {
                 </div>
               </div>
 
+              {/* Activity Type Selector */}
+              <div className="space-y-2 pt-2 border-t border-[#181818]">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-semibold text-neutral-400 uppercase">
+                    Activity Type (Discord Status Badge)
+                  </label>
+                  <span className="text-[10px] text-purple-400 font-mono">DEFAULT: STREAMING</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {[
+                    { id: "streaming", label: "Streaming", desc: "Type 1 (Twitch / Live)", icon: Tv, badge: "PURPLE BADGE" },
+                    { id: "playing", label: "Playing", desc: "Type 0 (Game / App)", icon: Play, badge: "GREEN BADGE" },
+                    { id: "listening", label: "Listening", desc: "Type 2 (Music / Audio)", icon: Headphones, badge: "SPOTIFY STYLE" },
+                    { id: "watching", label: "Watching", desc: "Type 3 (Video / Stream)", icon: Eye, badge: "MEDIA STYLE" },
+                    { id: "competing", label: "Competing", desc: "Type 5 (Tournament)", icon: Trophy, badge: "ARENA STYLE" },
+                  ].map((item) => {
+                    const active = (rpc.activityType || "streaming") === item.id;
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => updateRpc({ activityType: item.id as any })}
+                        className={`p-3 rounded-xl border text-left transition-all ${
+                          active
+                            ? item.id === "streaming"
+                              ? "bg-purple-950/30 border-purple-500 text-white shadow-lg shadow-purple-950/50"
+                              : "bg-[#141419] border-white text-white shadow-lg"
+                            : "bg-[#050505] border-[#222222] text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <Icon size={14} className={active ? (item.id === "streaming" ? "text-purple-400" : "text-white") : "text-neutral-500"} />
+                          <span className="text-xs font-bold">{item.label}</span>
+                        </div>
+                        <p className="text-[10px] text-neutral-500 truncate">{item.desc}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Streaming Broadcast URL (Required for Type 1) */}
+              {(rpc.activityType || "streaming") === "streaming" && (
+                <div className="p-3.5 rounded-xl bg-purple-950/20 border border-purple-500/30 space-y-2 animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-semibold text-purple-300 uppercase flex items-center gap-1.5">
+                      <Tv size={12} className="text-purple-400" /> Streaming Broadcast URL
+                    </label>
+                    <span className="text-[10px] text-purple-400 font-mono">TWITCH / YOUTUBE URL</span>
+                  </div>
+                  <input
+                    type="url"
+                    value={rpc.streamUrl || ""}
+                    onChange={(e) => updateRpc({ streamUrl: e.target.value })}
+                    placeholder={`https://twitch.tv/${currentUser?.username || "pixelgg"}`}
+                    className="w-full bg-[#050505] border border-purple-500/40 focus:border-purple-400 rounded-lg p-2.5 text-xs text-white placeholder-purple-300/40 focus:outline-none transition-colors"
+                  />
+                  <p className="text-[10px] text-neutral-400">
+                    Discord Gateway requires a valid stream URL (e.g. Twitch or YouTube Live) to broadcast the purple Streaming indicator.
+                  </p>
+                </div>
+              )}
+
+              {/* Activity Details & State */}
               <div className="space-y-4 pt-1">
                 <div>
-                  <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
-                    Details Line (Top Line)
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[11px] font-semibold text-neutral-400 uppercase">
+                      Details Line (Top Line)
+                    </label>
+                    <span className="text-[10px] text-neutral-500 font-mono">DEFAULT: Welcome to my profile!</span>
+                  </div>
                   <input
                     type="text"
                     value={rpc.details || ""}
                     onChange={(e) => updateRpc({ details: e.target.value })}
-                    placeholder="e.g. In Competitive Match"
+                    placeholder="Welcome to my profile!"
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
-                    State Line (Bottom Line)
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[11px] font-semibold text-neutral-400 uppercase">
+                      State Line (Bottom Line)
+                    </label>
+                    <span className="text-[10px] text-neutral-500 font-mono">DEFAULT: Discover my personal page on PIXEL.GG.</span>
+                  </div>
                   <input
                     type="text"
                     value={rpc.state || ""}
                     onChange={(e) => updateRpc({ state: e.target.value })}
-                    placeholder="e.g. Score: 12 - 4 (Ranked)"
+                    placeholder="Discover my personal page on PIXEL.GG."
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
                 </div>
@@ -1184,42 +1312,116 @@ export default function AccountRpcStudioPage() {
               </div>
             </div>
 
-            {/* Section 2: Visual Assets & Badges */}
+            {/* Section 2: Visual Assets & Profile Picture Integration */}
             <div className="p-6 bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl space-y-4">
               <div className="flex items-center justify-between border-b border-[#181818] pb-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <span className="text-[#d71920]">[02]</span> VISUAL ASSETS & BADGES
+                  <span className="text-[#d71920]">[02]</span> VISUAL ASSETS & PROFILE PICTURE
                 </h3>
-                <span className="text-[10px] text-neutral-500 uppercase">IMAGES & TOOLTIPS</span>
+                <span className="text-[10px] text-neutral-500 uppercase">AUTOMATIC PFP & BRANDING</span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
-                    Large Image URL
-                  </label>
-                  <input
-                    type="text"
-                    value={rpc.largeImage || ""}
-                    onChange={(e) => updateRpc({ largeImage: e.target.value })}
-                    placeholder="https://..."
-                    className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
-                  />
+              {/* Automatic Profile Picture Integration Box */}
+              <div className="p-4 rounded-xl bg-[#08080a] border border-[#222228] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-white uppercase tracking-wider">
+                        Use PIXEL.GG Profile Picture as Large Image
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-semibold">
+                        AUTOMATIC
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-neutral-400">
+                      Syncs directly with your authenticated PIXEL.GG avatar. Updates in Discord when you change your profile picture.
+                    </p>
+                  </div>
+
+                  {/* Toggle Switch */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = rpc.useProfileAvatar === false ? true : false;
+                      updateRpc({
+                        useProfileAvatar: next,
+                        largeImage: next ? (currentUser?.avatar || rpc.largeImage) : rpc.largeImage,
+                      });
+                    }}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      rpc.useProfileAvatar !== false ? "bg-white" : "bg-[#222222]"
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
+                        rpc.useProfileAvatar !== false ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
-                    Large Image Tooltip Text
-                  </label>
-                  <input
-                    type="text"
-                    value={rpc.largeImageText || ""}
-                    onChange={(e) => updateRpc({ largeImageText: e.target.value })}
-                    placeholder="e.g. Level 100 Boss"
-                    className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
-                  />
-                </div>
+                {rpc.useProfileAvatar !== false && (
+                  <div className="flex items-center gap-3 pt-2 border-t border-[#1a1a20]">
+                    <div className="w-10 h-10 rounded-full bg-[#18181f] border border-[#33333f] overflow-hidden shrink-0">
+                      {currentUser?.avatar || rpc.largeImage ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={currentUser?.avatar || rpc.largeImage || ""}
+                          alt="Profile Avatar"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-xs text-neutral-500 font-mono">
+                          {currentUser?.username?.[0]?.toUpperCase() || "P"}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-xs">
+                      <p className="text-white font-medium flex items-center gap-1.5">
+                        <CheckCircle2 size={13} className="text-emerald-400" />
+                        Synced as @{currentUser?.username || "user"}
+                      </p>
+                      <p className="text-[10px] text-neutral-500">
+                        Compatible with Discord Rich Presence asset specifications.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
 
+              {/* Custom Large Image (Only if Auto-Avatar is turned off) */}
+              {rpc.useProfileAvatar === false && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fade-in pt-1">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
+                      Custom Large Image URL
+                    </label>
+                    <input
+                      type="text"
+                      value={rpc.largeImage || ""}
+                      onChange={(e) => updateRpc({ largeImage: e.target.value })}
+                      placeholder="https://..."
+                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
+                      Large Image Tooltip Text
+                    </label>
+                    <input
+                      type="text"
+                      value={rpc.largeImageText || ""}
+                      onChange={(e) => updateRpc({ largeImageText: e.target.value })}
+                      placeholder="e.g. PIXEL.GG Pro"
+                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Small Image (Branding Badge) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                 <div>
                   <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
                     Small Image URL (Badge)
@@ -1241,29 +1443,52 @@ export default function AccountRpcStudioPage() {
                     type="text"
                     value={rpc.smallImageText || ""}
                     onChange={(e) => updateRpc({ smallImageText: e.target.value })}
-                    placeholder="e.g. Verified Pro"
+                    placeholder="PIXEL.GG"
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
                 </div>
               </div>
             </div>
 
-            {/* Section 3: Profile Action Buttons */}
+            {/* Section 3: Profile Action Buttons with Restore Defaults */}
             <div className="p-6 bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl space-y-4">
-              <div className="flex items-center justify-between border-b border-[#181818] pb-3">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <span className="text-[#d71920]">[03]</span> INTERACTIVE PROFILE BUTTONS
-                </h3>
-                <span className="text-[10px] text-neutral-500 uppercase">DISCORD CTA LINKS</span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#181818] pb-3">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span className="text-[#d71920]">[03]</span> DEFAULT PROMOTIONAL BUTTONS
+                  </h3>
+                  <span className="text-[10px] text-neutral-500 uppercase">
+                    DISCORD PROFILE CTA LINKS (MAX 2)
+                  </span>
+                </div>
+
+                {/* Restore Defaults Action */}
+                <button
+                  type="button"
+                  onClick={handleRestoreDefaults}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#141418] hover:bg-[#1e1e24] border border-[#282832] text-xs text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                >
+                  <RotateCcw size={12} className="text-neutral-400" />
+                  RESTORE DEFAULTS
+                </button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Button 1 */}
+                {/* Button 1: View My Page */}
                 <div className="p-4 rounded-xl bg-[#080808] border border-[#1a1a1a] space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">
-                      PRIMARY BUTTON [01]
+                      PRIMARY BUTTON [01] &bull; PROFILE CTA
                     </span>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-neutral-400 hover:text-white">
+                      <input
+                        type="checkbox"
+                        checked={rpc.button1Enabled !== false}
+                        onChange={(e) => updateRpc({ button1Enabled: e.target.checked })}
+                        className="rounded border-neutral-700 bg-neutral-900 text-white focus:ring-0"
+                      />
+                      <span>{rpc.button1Enabled !== false ? "ENABLED" : "DISABLED"}</span>
+                    </label>
                   </div>
                   <div>
                     <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Label</label>
@@ -1271,28 +1496,37 @@ export default function AccountRpcStudioPage() {
                       type="text"
                       value={rpc.button1Label || ""}
                       onChange={(e) => updateRpc({ button1Label: e.target.value })}
-                      placeholder="e.g. View Profile"
+                      placeholder="View My Page"
                       className="w-full bg-[#050505] border border-[#222222] rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-white"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Destination URL</label>
+                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Destination URL (Public Profile)</label>
                     <input
                       type="text"
                       value={rpc.button1Url || ""}
                       onChange={(e) => updateRpc({ button1Url: e.target.value })}
-                      placeholder="https://pixel.gg/username"
+                      placeholder={`https://pixel.gg/${currentUser?.username || "username"}`}
                       className="w-full bg-[#050505] border border-[#222222] rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-white"
                     />
                   </div>
                 </div>
 
-                {/* Button 2 */}
+                {/* Button 2: Get Your Own Page */}
                 <div className="p-4 rounded-xl bg-[#080808] border border-[#1a1a1a] space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">
-                      SECONDARY BUTTON [02]
+                      SECONDARY BUTTON [02] &bull; PROMOTIONAL CTA
                     </span>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-neutral-400 hover:text-white">
+                      <input
+                        type="checkbox"
+                        checked={rpc.button2Enabled !== false}
+                        onChange={(e) => updateRpc({ button2Enabled: e.target.checked })}
+                        className="rounded border-neutral-700 bg-neutral-900 text-white focus:ring-0"
+                      />
+                      <span>{rpc.button2Enabled !== false ? "ENABLED" : "DISABLED"}</span>
+                    </label>
                   </div>
                   <div>
                     <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Label</label>
@@ -1300,17 +1534,17 @@ export default function AccountRpcStudioPage() {
                       type="text"
                       value={rpc.button2Label || ""}
                       onChange={(e) => updateRpc({ button2Label: e.target.value })}
-                      placeholder="e.g. Join Discord"
+                      placeholder="Get Your Own Page"
                       className="w-full bg-[#050505] border border-[#222222] rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-white"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Destination URL</label>
+                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Destination URL (Registration / Creation)</label>
                     <input
                       type="text"
                       value={rpc.button2Url || ""}
                       onChange={(e) => updateRpc({ button2Url: e.target.value })}
-                      placeholder="https://discord.gg/..."
+                      placeholder="https://pixel.gg/register"
                       className="w-full bg-[#050505] border border-[#222222] rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-white"
                     />
                   </div>
@@ -1331,10 +1565,27 @@ export default function AccountRpcStudioPage() {
 
             {/* Native Discord Presence Box */}
             <div className="bg-[#1e1f22] rounded-2xl shadow-2xl overflow-hidden border border-[#2b2d31] font-sans text-neutral-200">
-              {/* Card Header Bar */}
-              <div className="bg-[#111214] px-5 py-3 flex items-center justify-between border-b border-[#2b2d31]">
-                <span className="text-[#949ba4] font-bold text-[11px] uppercase tracking-wider">
-                  PLAYING A GAME
+              {/* Card Header Bar dynamically matching Discord activity type */}
+              <div
+                className={`px-5 py-3 flex items-center justify-between border-b transition-colors ${
+                  (rpc.activityType || "streaming") === "streaming"
+                    ? "bg-[#181124] border-purple-900/40 text-purple-300"
+                    : "bg-[#111214] border-[#2b2d31] text-[#949ba4]"
+                }`}
+              >
+                <span className="font-bold text-[11px] uppercase tracking-wider flex items-center gap-2">
+                  {(rpc.activityType || "streaming") === "streaming" && (
+                    <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+                  )}
+                  {(rpc.activityType || "streaming") === "streaming"
+                    ? "STREAMING ON TWITCH"
+                    : rpc.activityType === "listening"
+                    ? "LISTENING TO SPOTIFY"
+                    : rpc.activityType === "watching"
+                    ? "WATCHING"
+                    : rpc.activityType === "competing"
+                    ? "COMPETING IN"
+                    : "PLAYING A GAME"}
                 </span>
                 <span className="text-[10px] text-[#80848e] font-mono">via PixelsRPC</span>
               </div>
@@ -1344,11 +1595,12 @@ export default function AccountRpcStudioPage() {
                 {/* Visual Asset Containers */}
                 <div className="relative shrink-0">
                   <div className="w-20 h-20 rounded-2xl bg-[#2b2d31] overflow-hidden flex items-center justify-center border border-white/5">
-                    {rpc.largeImage ? (
+                    {/* Render resolved avatar if auto-sync is on, or custom large image */}
+                    {(rpc.useProfileAvatar !== false ? (currentUser?.avatar || rpc.largeImage) : rpc.largeImage) ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img
-                        src={rpc.largeImage}
-                        alt={rpc.largeImageText || "Large asset"}
+                        src={(rpc.useProfileAvatar !== false ? (currentUser?.avatar || rpc.largeImage) : rpc.largeImage) || ""}
+                        alt={rpc.largeImageText || "Profile asset"}
                         title={rpc.largeImageText}
                         className="w-full h-full object-cover"
                         onError={(e) => {
@@ -1401,10 +1653,10 @@ export default function AccountRpcStudioPage() {
                 </div>
               </div>
 
-              {/* Discord Action Buttons */}
-              {(rpc.button1Label || rpc.button2Label) && (
+              {/* Discord Action Buttons (Enforcing max 2 buttons and independent toggle) */}
+              {((rpc.button1Enabled !== false && rpc.button1Label) || (rpc.button2Enabled !== false && rpc.button2Label)) && (
                 <div className="px-5 pb-5 space-y-2">
-                  {rpc.button1Label && (
+                  {rpc.button1Enabled !== false && rpc.button1Label && (
                     <a
                       href={rpc.button1Url || "#"}
                       target="_blank"
@@ -1414,7 +1666,7 @@ export default function AccountRpcStudioPage() {
                       {rpc.button1Label}
                     </a>
                   )}
-                  {rpc.button2Label && (
+                  {rpc.button2Enabled !== false && rpc.button2Label && (
                     <a
                       href={rpc.button2Url || "#"}
                       target="_blank"

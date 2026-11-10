@@ -2,11 +2,45 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { prisma } from '@discord-rpc/database';
 import { io } from '../index'; // Import the socket io instance
+import { resolveDiscordAvatarUrl } from '../auth';
 
 export const rpcRouter = Router();
 
 // In-memory rate limiting map for device verification attempts
 const verifyAttempts = new Map<string, { count: number; resetAt: number }>();
+
+export function getDefaultRpcConfig(user: {
+  id: string;
+  username: string;
+  discordId?: string | null;
+  avatar?: string | null;
+  profile?: { avatarUrl?: string | null } | null;
+}) {
+  const frontendUrl = (process.env.FRONTEND_URL || 'https://pixlpresence1-web.vercel.app').replace(/\/+$/, '');
+  const resolvedAvatar = resolveDiscordAvatarUrl(user.discordId, user.avatar || user.profile?.avatarUrl);
+
+  return {
+    appName: 'Pixel.gg',
+    appId: '1523632136878559302',
+    activityType: 'streaming',
+    streamUrl: `https://twitch.tv/${user.username || 'pixelgg'}`,
+    details: 'Welcome to my profile!',
+    state: 'Discover my personal page on PIXEL.GG.',
+    useProfileAvatar: true,
+    largeImage: resolvedAvatar,
+    largeImageText: `@${user.username || 'User'} on PIXEL.GG`,
+    smallImage: 'https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png',
+    smallImageText: 'PIXEL.GG',
+    button1Enabled: true,
+    button1Label: 'View My Page',
+    button1Url: `${frontendUrl}/${user.username}`,
+    button2Enabled: true,
+    button2Label: 'Get Your Own Page',
+    button2Url: `${frontendUrl}/register`,
+    showProfileRpc: true,
+    enableDiscordRpc: true,
+  };
+}
 
 function checkVerifyRateLimit(ip: string): boolean {
   const now = Date.now();
@@ -233,6 +267,28 @@ rpcRouter.post('/device/verify', async (req: any, res) => {
       linkedAt: updated.consumedAt,
     });
 
+    // Initialize default Rich Presence if user does not have one yet
+    try {
+      const existingRpc = await prisma.richPresence.findUnique({
+        where: { userId: deviceAuth.userId },
+      });
+      if (!existingRpc) {
+        const userWithProfile = await prisma.user.findUnique({
+          where: { id: deviceAuth.userId },
+          include: { profile: true },
+        });
+        const defaults = getDefaultRpcConfig(userWithProfile || deviceAuth.user);
+        await prisma.richPresence.create({
+          data: {
+            ...defaults,
+            userId: deviceAuth.userId,
+          },
+        });
+      }
+    } catch (rpcInitErr) {
+      console.warn('[Device Verify] Default RPC initialization notice:', rpcInitErr);
+    }
+
     res.json({
       success: true,
       deviceToken,
@@ -335,11 +391,46 @@ rpcRouter.get('/device/list', requireAuth, async (req: any, res) => {
 // Get RPC Config (Supports both /api/rpc/me and /api/account/rpc)
 rpcRouter.get('/me', requireAuth, async (req: any, res) => {
   try {
-    const rpc = await prisma.richPresence.findUnique({
+    const userWithProfile = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: { profile: true },
+    });
+    const currentUser = userWithProfile || req.user;
+    const resolvedAvatar = resolveDiscordAvatarUrl(
+      currentUser.discordId,
+      currentUser.avatar || currentUser.profile?.avatarUrl
+    );
+
+    let rpc = await prisma.richPresence.findUnique({
       where: { userId: req.user.id },
     });
-    res.json(rpc || {});
+
+    // If first-time user without RPC record, initialize complete default configuration
+    if (!rpc) {
+      const defaults = getDefaultRpcConfig(currentUser);
+      rpc = await prisma.richPresence.create({
+        data: {
+          ...defaults,
+          userId: req.user.id,
+        },
+      });
+    }
+
+    const responseData: any = { ...rpc };
+
+    // Dynamic profile avatar resolution:
+    // If useProfileAvatar is active (or enabled by default), dynamic avatar overrides largeImage
+    if (responseData.useProfileAvatar !== false) {
+      responseData.largeImage = resolvedAvatar;
+    }
+
+    // Attach user profile metadata for client convenience
+    responseData.username = currentUser.username;
+    responseData.userAvatar = resolvedAvatar;
+
+    res.json(responseData);
   } catch (err) {
+    console.error('[RPC Me Error]:', err);
     res.status(500).json({ error: 'Failed to fetch RPC' });
   }
 });
@@ -348,6 +439,13 @@ rpcRouter.get('/me', requireAuth, async (req: any, res) => {
 rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
   try {
     const data = { ...req.body };
+    delete data.id;
+    delete data.userId;
+    delete data.createdAt;
+    delete data.updatedAt;
+    delete data.username;
+    delete data.userAvatar;
+
     if (data.show_profile_rpc !== undefined && data.showProfileRpc === undefined) {
       data.showProfileRpc = Boolean(data.show_profile_rpc);
       delete data.show_profile_rpc;
@@ -357,22 +455,44 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
       delete data.enable_discord_rpc;
     }
 
+    // Parse boolean toggles
+    if (data.useProfileAvatar !== undefined) data.useProfileAvatar = Boolean(data.useProfileAvatar);
+    if (data.button1Enabled !== undefined) data.button1Enabled = Boolean(data.button1Enabled);
+    if (data.button2Enabled !== undefined) data.button2Enabled = Boolean(data.button2Enabled);
+
     const rpc = await prisma.richPresence.upsert({
       where: { userId: req.user.id },
       update: data,
       create: { ...data, userId: req.user.id },
     });
 
+    const userWithProfile = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: { profile: true },
+    });
+    const currentUser = userWithProfile || req.user;
+    const resolvedAvatar = resolveDiscordAvatarUrl(
+      currentUser.discordId,
+      currentUser.avatar || currentUser.profile?.avatarUrl
+    );
+
+    const fullPayload: any = { ...rpc };
+    if (fullPayload.useProfileAvatar !== false) {
+      fullPayload.largeImage = resolvedAvatar;
+    }
+    fullPayload.username = currentUser.username;
+
     // Emit a Socket.io event to notify active desktop/browser clients
     const rpcRecord = rpc as typeof rpc & { enableDiscordRpc?: boolean; showProfileRpc?: boolean };
     if (rpcRecord.enableDiscordRpc === false) {
-      io.to(`user_${req.user.id}`).emit('rpc_update', { ...rpc, enabled: false, enableDiscordRpc: false });
+      io.to(`user_${req.user.id}`).emit('rpc_update', { ...fullPayload, enabled: false, enableDiscordRpc: false });
     } else {
-      io.to(`user_${req.user.id}`).emit('rpc_update', rpc);
+      io.to(`user_${req.user.id}`).emit('rpc_update', fullPayload);
     }
 
-    res.json(rpc);
+    res.json(fullPayload);
   } catch (err) {
+    console.error('[RPC Update Error]:', err);
     res.status(500).json({ error: 'Failed to update RPC' });
   }
 });

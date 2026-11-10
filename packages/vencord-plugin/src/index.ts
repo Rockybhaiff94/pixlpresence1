@@ -61,16 +61,58 @@ export function clearActivity() {
     logDebug("Local activity cleared.");
 }
 
+function resolveActivityType(rawType: string | number | null | undefined): { type: number; defaultName: string } {
+    if (typeof rawType === "number") {
+        switch (rawType) {
+            case 0: return { type: 0, defaultName: "Pixel.gg" };
+            case 1: return { type: 1, defaultName: "Twitch" };
+            case 2: return { type: 2, defaultName: "Spotify" };
+            case 3: return { type: 3, defaultName: "YouTube" };
+            case 5: return { type: 5, defaultName: "Arena" };
+            default: return { type: 1, defaultName: "Twitch" }; // Default to Streaming
+        }
+    }
+    const str = String(rawType || "streaming").toLowerCase().trim();
+    switch (str) {
+        case "playing":
+        case "0":
+            return { type: 0, defaultName: "Pixel.gg" };
+        case "listening":
+        case "2":
+            return { type: 2, defaultName: "Spotify" };
+        case "watching":
+        case "3":
+            return { type: 3, defaultName: "YouTube" };
+        case "competing":
+        case "5":
+            return { type: 5, defaultName: "Arena" };
+        case "streaming":
+        case "1":
+        default:
+            return { type: 1, defaultName: "Twitch" }; // Default to Streaming
+    }
+}
+
 function buildDiscordActivity(rpc: RpcResponse): DiscordActivity {
     const store = settings.store;
     const appId = (rpc.appId || "").trim() || DEFAULT_APP_ID;
     const appName = (rpc.appName || "").trim() || store.fallbackAppName || "Pixel.gg";
 
+    const resolvedType = resolveActivityType(rpc.activityType);
+
     const activity: DiscordActivity = {
         application_id: appId,
         name: appName,
-        type: 0 // Playing
+        type: resolvedType.type
     };
+
+    // Discord requires a valid stream URL for type: 1 (Streaming)
+    if (activity.type === 1) {
+        const streamUrl = (rpc.streamUrl || "").trim();
+        activity.url = (streamUrl.startsWith("http://") || streamUrl.startsWith("https://"))
+            ? streamUrl
+            : `https://twitch.tv/${rpc.username || "pixelgg"}`;
+    }
 
     if (rpc.state && rpc.state.trim()) {
         activity.state = rpc.state.trim();
@@ -103,11 +145,14 @@ function buildDiscordActivity(rpc: RpcResponse): DiscordActivity {
         const labels: string[] = [];
         const urls: string[] = [];
 
-        if (rpc.button1Label && rpc.button1Url) {
+        // Button 1: Enabled by default, validates label and destination URL
+        if (rpc.button1Enabled !== false && rpc.button1Label && rpc.button1Url) {
             labels.push(rpc.button1Label.trim());
             urls.push(rpc.button1Url.trim());
         }
-        if (rpc.button2Label && rpc.button2Url) {
+
+        // Button 2: Enabled by default, enforces Discord max 2 buttons limit
+        if (rpc.button2Enabled !== false && rpc.button2Label && rpc.button2Url && labels.length < 2) {
             labels.push(rpc.button2Label.trim());
             urls.push(rpc.button2Url.trim());
         }

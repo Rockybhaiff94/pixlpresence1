@@ -178,8 +178,11 @@ model RichPresence {
   
   appName         String?
   appId           String?
+  activityType    String?  @default("streaming")
+  streamUrl       String?
   state           String?
   details         String?
+  useProfileAvatar Boolean? @default(true)
   largeImage      String?
   smallImage      String?
   largeImageText  String?
@@ -189,8 +192,10 @@ model RichPresence {
   partySize       Int?
   partyMax        Int?
   
+  button1Enabled  Boolean? @default(true)
   button1Label    String?
   button1Url      String?
+  button2Enabled  Boolean? @default(true)
   button2Label    String?
   button2Url      String?
   
