@@ -241,3 +241,4 @@ it('Generates compliant Discord activity payload for Streaming with Twitch/YouTu
 console.log('------------------------------------------------------------');
 console.log(`Results: ${passedTests} / ${totalTests} tests passed`);
 console.log('------------------------------------------------------------');
+

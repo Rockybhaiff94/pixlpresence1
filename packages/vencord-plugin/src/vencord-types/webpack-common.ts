@@ -87,5 +87,10 @@ export const Forms = {
 
 export const Text = (props: any) => React.createElement("span", props);
 
+export const ApplicationAssetUtils = {
+    fetchAssetIds: (async () => []) as (applicationId: string, keys: string[]) => Promise<string[]>,
+    getAssetImage: (() => "") as (applicationId: string, assetId: string, size?: number) => string,
+};
+
 export { React };
 

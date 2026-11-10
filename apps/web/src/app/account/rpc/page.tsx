@@ -27,10 +27,15 @@ import {
   ExternalLink,
   User as UserIcon,
   Radio,
+  UploadCloud,
+  Move,
+  Crop,
+  Image as ImageIcon,
 } from "lucide-react";
 import { AccountLayout } from "@/components/account/AccountLayout";
 import { Button } from "@/components/nothing/Button";
 import { apiFetch } from "@/lib/api";
+import { ImageCustomizerModal, CropData } from "@/components/rpc/ImageCustomizerModal";
 
 interface RpcConfig {
   appId?: string;
@@ -42,8 +47,10 @@ interface RpcConfig {
   useProfileAvatar?: boolean;
   largeImage?: string;
   largeImageText?: string;
+  largeImageCrop?: string | null;
   smallImage?: string;
   smallImageText?: string;
+  smallImageCrop?: string | null;
   startTimestamp?: string | null;
   endTimestamp?: string | null;
   partySize?: number | null;
@@ -68,14 +75,16 @@ const DEFAULT_RPC: RpcConfig = {
   useProfileAvatar: true,
   largeImage: "",
   largeImageText: "PIXEL.GG Platform",
+  largeImageCrop: null,
   smallImage: "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
   smallImageText: "PIXEL.GG",
+  smallImageCrop: null,
   button1Enabled: true,
-  button1Label: "View My Page",
+  button1Label: "View Profile",
   button1Url: "https://pixel.gg",
   button2Enabled: true,
-  button2Label: "Get Your Own Page",
-  button2Url: "https://pixel.gg/register",
+  button2Label: "Get PixelsRPC",
+  button2Url: "https://pixel.gg/rpc",
   showProfileRpc: true,
   enableDiscordRpc: true,
   partySize: null,
@@ -222,6 +231,40 @@ export default function AccountRpcStudioPage() {
     });
   };
 
+  // Image Customizer Modal State
+  const [customizerOpen, setCustomizerOpen] = useState(false);
+  const [customizerSlot, setCustomizerSlot] = useState<"largeImage" | "smallImage">("largeImage");
+
+  const parseCrop = (cropStr?: string | null): CropData | null => {
+    if (!cropStr) return null;
+    try {
+      const parsed = JSON.parse(cropStr);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const openCustomizer = (slot: "largeImage" | "smallImage") => {
+    setCustomizerSlot(slot);
+    setCustomizerOpen(true);
+  };
+
+  const handleCustomizerApply = (url: string, crop: CropData) => {
+    if (customizerSlot === "largeImage") {
+      updateRpc({
+        largeImage: url,
+        largeImageCrop: JSON.stringify(crop),
+        useProfileAvatar: false, // User explicitly set a custom large image
+      });
+    } else {
+      updateRpc({
+        smallImage: url,
+        smallImageCrop: JSON.stringify(crop),
+      });
+    }
+  };
+
   // Restore official personalized PIXEL.GG defaults
   const handleRestoreDefaults = () => {
     if (!confirm("Reset your Rich Presence to official PIXEL.GG default settings?")) return;
@@ -238,14 +281,16 @@ export default function AccountRpcStudioPage() {
       useProfileAvatar: true,
       largeImage: userAvatar || DEFAULT_RPC.largeImage,
       largeImageText: `@${username} on PIXEL.GG`,
+      largeImageCrop: null,
       smallImage: "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
       smallImageText: "PIXEL.GG",
+      smallImageCrop: null,
       button1Enabled: true,
-      button1Label: "View My Page",
+      button1Label: "View Profile",
       button1Url: `${origin}/${username}`,
       button2Enabled: true,
-      button2Label: "Get Your Own Page",
-      button2Url: `${origin}/register`,
+      button2Label: "Get PixelsRPC",
+      button2Url: `${origin}/rpc`,
     };
 
     updateRpc(restored);
@@ -1313,12 +1358,16 @@ export default function AccountRpcStudioPage() {
             </div>
 
             {/* Section 2: Visual Assets & Profile Picture Integration */}
-            <div className="p-6 bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl space-y-4">
+            <div className="p-6 bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl space-y-5">
               <div className="flex items-center justify-between border-b border-[#181818] pb-3">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <span className="text-[#d71920]">[02]</span> VISUAL ASSETS & PROFILE PICTURE
-                </h3>
-                <span className="text-[10px] text-neutral-500 uppercase">AUTOMATIC PFP & BRANDING</span>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span className="text-[#d71920]">[02]</span> VISUAL ASSETS & CUSTOM IMAGES
+                  </h3>
+                  <span className="text-[10px] text-neutral-500 uppercase">
+                    PFP AUTO-SYNC, CUSTOM UPLOADS & ANIMATED GIFS (UP TO 2MB)
+                  </span>
+                </div>
               </div>
 
               {/* Automatic Profile Picture Integration Box */}
@@ -1334,7 +1383,7 @@ export default function AccountRpcStudioPage() {
                       </span>
                     </div>
                     <p className="text-[11px] text-neutral-400">
-                      Syncs directly with your authenticated PIXEL.GG avatar. Updates in Discord when you change your profile picture.
+                      Syncs directly with your authenticated PIXEL.GG avatar. Updates in Discord automatically.
                     </p>
                   </div>
 
@@ -1389,17 +1438,92 @@ export default function AccountRpcStudioPage() {
                 )}
               </div>
 
-              {/* Custom Large Image (Only if Auto-Avatar is turned off) */}
-              {rpc.useProfileAvatar === false && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fade-in pt-1">
+              {/* Large Activity Image Upload & Customization */}
+              <div className="p-4 rounded-xl bg-[#080808] border border-[#1a1a1a] space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#181818] pb-2.5">
+                  <div>
+                    <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                      <ImageIcon size={13} className="text-neutral-300" /> LARGE ACTIVITY IMAGE
+                    </span>
+                    <span className="text-[10px] text-neutral-500">
+                      Custom wallpaper, art, avatar, or animated GIF
+                    </span>
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => openCustomizer("largeImage")}
+                    className="text-xs px-3 py-1.5 flex items-center gap-1.5 bg-[#141414] hover:bg-[#202020] text-white border-[#2a2a2a]"
+                  >
+                    <UploadCloud size={13} /> Upload & Crop Image / GIF
+                  </Button>
+                </div>
+
+                {rpc.largeImage && (
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-[#050505] border border-[#1f1f1f]">
+                    <div className="w-14 h-14 rounded-xl bg-[#141414] overflow-hidden border border-[#2b2d31] shrink-0 relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={rpc.largeImage}
+                        alt="Large Asset"
+                        className="w-full h-full object-cover"
+                        style={(() => {
+                          const crop = parseCrop(rpc.largeImageCrop);
+                          return crop
+                            ? {
+                                transform: `scale(${crop.zoom}) translate(${crop.offsetX * 0.25}px, ${crop.offsetY * 0.25}px)`,
+                                transformOrigin: "center center",
+                              }
+                            : undefined;
+                        })()}
+                      />
+                    </div>
+
+                    <div className="flex-1 min-w-0 text-xs space-y-1">
+                      <p className="text-white font-medium truncate">{rpc.largeImage}</p>
+                      <div className="flex items-center gap-2">
+                        {rpc.largeImage.toLowerCase().includes(".gif") && (
+                          <span className="px-1.5 py-0.5 rounded bg-purple-950/60 border border-purple-500/40 text-[9px] text-purple-300 font-bold">
+                            ANIMATED GIF
+                          </span>
+                        )}
+                        <span className="text-[10px] text-neutral-500">
+                          Zoom: {Math.round((parseCrop(rpc.largeImageCrop)?.zoom || 1) * 100)}%
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => openCustomizer("largeImage")}
+                        className="px-2.5 py-1.5 rounded-lg bg-[#181818] hover:bg-[#242424] text-xs text-white border border-[#282828] flex items-center gap-1"
+                        title="Reopen Crop & Zoom Editor"
+                      >
+                        <Crop size={12} /> Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateRpc({ largeImage: "", largeImageCrop: null, useProfileAvatar: true })}
+                        className="px-2.5 py-1.5 rounded-lg bg-red-950/30 hover:bg-red-900/50 text-xs text-red-300 border border-red-800/30"
+                        title="Reset to Profile Avatar"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                   <div>
                     <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
-                      Custom Large Image URL
+                      Direct Image URL
                     </label>
                     <input
                       type="text"
                       value={rpc.largeImage || ""}
-                      onChange={(e) => updateRpc({ largeImage: e.target.value })}
+                      onChange={(e) => updateRpc({ largeImage: e.target.value, useProfileAvatar: false })}
                       placeholder="https://..."
                       className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                     />
@@ -1418,34 +1542,127 @@ export default function AccountRpcStudioPage() {
                     />
                   </div>
                 </div>
-              )}
+              </div>
 
-              {/* Small Image (Branding Badge) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                <div>
-                  <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
-                    Small Image URL (Badge)
-                  </label>
-                  <input
-                    type="text"
-                    value={rpc.smallImage || ""}
-                    onChange={(e) => updateRpc({ smallImage: e.target.value })}
-                    placeholder="https://..."
-                    className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
-                  />
+              {/* Small Activity Icon Upload & Customization */}
+              <div className="p-4 rounded-xl bg-[#080808] border border-[#1a1a1a] space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#181818] pb-2.5">
+                  <div>
+                    <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                      <ImageIcon size={13} className="text-neutral-300" /> SMALL ACTIVITY ICON (BADGE)
+                    </span>
+                    <span className="text-[10px] text-neutral-500">
+                      Corner icon badge, mini branding, or animated status
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateRpc({
+                          smallImage:
+                            "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
+                          smallImageText: "PIXEL.GG",
+                          smallImageCrop: null,
+                        })
+                      }
+                      className="text-[10px] text-neutral-400 hover:text-white px-2 py-1 rounded bg-[#141414] border border-[#242424]"
+                    >
+                      Default Pixels Icon
+                    </button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => openCustomizer("smallImage")}
+                      className="text-xs px-3 py-1.5 flex items-center gap-1.5 bg-[#141414] hover:bg-[#202020] text-white border-[#2a2a2a]"
+                    >
+                      <UploadCloud size={13} /> Upload & Crop Icon / GIF
+                    </Button>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
-                    Small Image Tooltip Text
-                  </label>
-                  <input
-                    type="text"
-                    value={rpc.smallImageText || ""}
-                    onChange={(e) => updateRpc({ smallImageText: e.target.value })}
-                    placeholder="PIXEL.GG"
-                    className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
-                  />
+                {rpc.smallImage && (
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-[#050505] border border-[#1f1f1f]">
+                    <div className="w-10 h-10 rounded-full bg-[#141414] overflow-hidden border border-[#2b2d31] shrink-0 relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={rpc.smallImage}
+                        alt="Small Icon Asset"
+                        className="w-full h-full object-cover"
+                        style={(() => {
+                          const crop = parseCrop(rpc.smallImageCrop);
+                          return crop
+                            ? {
+                                transform: `scale(${crop.zoom}) translate(${crop.offsetX * 0.25}px, ${crop.offsetY * 0.25}px)`,
+                                transformOrigin: "center center",
+                              }
+                            : undefined;
+                        })()}
+                      />
+                    </div>
+
+                    <div className="flex-1 min-w-0 text-xs space-y-1">
+                      <p className="text-white font-medium truncate">{rpc.smallImage}</p>
+                      <div className="flex items-center gap-2">
+                        {rpc.smallImage.toLowerCase().includes(".gif") && (
+                          <span className="px-1.5 py-0.5 rounded bg-purple-950/60 border border-purple-500/40 text-[9px] text-purple-300 font-bold">
+                            ANIMATED GIF
+                          </span>
+                        )}
+                        <span className="text-[10px] text-neutral-500">
+                          Zoom: {Math.round((parseCrop(rpc.smallImageCrop)?.zoom || 1) * 100)}%
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => openCustomizer("smallImage")}
+                        className="px-2.5 py-1.5 rounded-lg bg-[#181818] hover:bg-[#242424] text-xs text-white border border-[#282828] flex items-center gap-1"
+                        title="Reopen Crop & Zoom Editor"
+                      >
+                        <Crop size={12} /> Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateRpc({ smallImage: "", smallImageCrop: null })}
+                        className="px-2.5 py-1.5 rounded-lg bg-red-950/30 hover:bg-red-900/50 text-xs text-red-300 border border-red-800/30"
+                        title="Remove Icon"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
+                      Small Image URL (Badge)
+                    </label>
+                    <input
+                      type="text"
+                      value={rpc.smallImage || ""}
+                      onChange={(e) => updateRpc({ smallImage: e.target.value })}
+                      placeholder="https://..."
+                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
+                      Small Image Tooltip Text
+                    </label>
+                    <input
+                      type="text"
+                      value={rpc.smallImageText || ""}
+                      onChange={(e) => updateRpc({ smallImageText: e.target.value })}
+                      placeholder="PIXEL.GG"
+                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1474,7 +1691,7 @@ export default function AccountRpcStudioPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Button 1: View My Page */}
+                {/* Button 1: View Profile */}
                 <div className="p-4 rounded-xl bg-[#080808] border border-[#1a1a1a] space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">
@@ -1496,7 +1713,7 @@ export default function AccountRpcStudioPage() {
                       type="text"
                       value={rpc.button1Label || ""}
                       onChange={(e) => updateRpc({ button1Label: e.target.value })}
-                      placeholder="View My Page"
+                      placeholder="View Profile"
                       className="w-full bg-[#050505] border border-[#222222] rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-white"
                     />
                   </div>
@@ -1512,7 +1729,7 @@ export default function AccountRpcStudioPage() {
                   </div>
                 </div>
 
-                {/* Button 2: Get Your Own Page */}
+                {/* Button 2: Get PixelsRPC */}
                 <div className="p-4 rounded-xl bg-[#080808] border border-[#1a1a1a] space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">
@@ -1534,17 +1751,17 @@ export default function AccountRpcStudioPage() {
                       type="text"
                       value={rpc.button2Label || ""}
                       onChange={(e) => updateRpc({ button2Label: e.target.value })}
-                      placeholder="Get Your Own Page"
+                      placeholder="Get PixelsRPC"
                       className="w-full bg-[#050505] border border-[#222222] rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-white"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Destination URL (Registration / Creation)</label>
+                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Destination URL (Public PixelsRPC Homepage)</label>
                     <input
                       type="text"
                       value={rpc.button2Url || ""}
                       onChange={(e) => updateRpc({ button2Url: e.target.value })}
-                      placeholder="https://pixel.gg/register"
+                      placeholder="https://pixel.gg/rpc"
                       className="w-full bg-[#050505] border border-[#222222] rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-white"
                     />
                   </div>
@@ -1578,14 +1795,14 @@ export default function AccountRpcStudioPage() {
                     <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
                   )}
                   {(rpc.activityType || "streaming") === "streaming"
-                    ? "STREAMING ON TWITCH"
+                    ? `STREAMING ${rpc.appName || "TWITCH"}`
                     : rpc.activityType === "listening"
-                    ? "LISTENING TO SPOTIFY"
+                    ? `LISTENING TO ${rpc.appName || "SPOTIFY"}`
                     : rpc.activityType === "watching"
-                    ? "WATCHING"
+                    ? `WATCHING ${rpc.appName || "YOUTUBE"}`
                     : rpc.activityType === "competing"
-                    ? "COMPETING IN"
-                    : "PLAYING A GAME"}
+                    ? `COMPETING IN ${rpc.appName || "ARENA"}`
+                    : `PLAYING ${rpc.appName || "A GAME"}`}
                 </span>
                 <span className="text-[10px] text-[#80848e] font-mono">via PixelsRPC</span>
               </div>
@@ -1594,8 +1811,8 @@ export default function AccountRpcStudioPage() {
               <div className="p-5 flex gap-4">
                 {/* Visual Asset Containers */}
                 <div className="relative shrink-0">
-                  <div className="w-20 h-20 rounded-2xl bg-[#2b2d31] overflow-hidden flex items-center justify-center border border-white/5">
-                    {/* Render resolved avatar if auto-sync is on, or custom large image */}
+                  <div className="w-20 h-20 rounded-2xl bg-[#2b2d31] overflow-hidden flex items-center justify-center border border-white/5 relative">
+                    {/* Render resolved avatar if auto-sync is on, or custom large image with crop */}
                     {(rpc.useProfileAvatar !== false ? (currentUser?.avatar || rpc.largeImage) : rpc.largeImage) ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img
@@ -1603,6 +1820,15 @@ export default function AccountRpcStudioPage() {
                         alt={rpc.largeImageText || "Profile asset"}
                         title={rpc.largeImageText}
                         className="w-full h-full object-cover"
+                        style={(() => {
+                          const crop = parseCrop(rpc.largeImageCrop);
+                          return crop && rpc.useProfileAvatar === false
+                            ? {
+                                transform: `scale(${crop.zoom}) translate(${crop.offsetX * 0.25}px, ${crop.offsetY * 0.25}px)`,
+                                transformOrigin: "center center",
+                              }
+                            : undefined;
+                        })()}
                         onError={(e) => {
                           (e.target as HTMLElement).style.display = "none";
                         }}
@@ -1614,13 +1840,22 @@ export default function AccountRpcStudioPage() {
 
                   {rpc.smallImage && (
                     <div className="absolute -bottom-1.5 -right-1.5 w-7 h-7 rounded-full bg-[#1e1f22] p-[2px]">
-                      <div className="w-full h-full rounded-full bg-[#2b2d31] overflow-hidden flex items-center justify-center">
+                      <div className="w-full h-full rounded-full bg-[#2b2d31] overflow-hidden flex items-center justify-center relative">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={rpc.smallImage}
                           alt={rpc.smallImageText || "Small asset"}
                           title={rpc.smallImageText}
                           className="w-full h-full object-cover"
+                          style={(() => {
+                            const crop = parseCrop(rpc.smallImageCrop);
+                            return crop
+                              ? {
+                                  transform: `scale(${crop.zoom}) translate(${crop.offsetX * 0.25}px, ${crop.offsetY * 0.25}px)`,
+                                  transformOrigin: "center center",
+                                }
+                              : undefined;
+                          })()}
                           onError={(e) => {
                             (e.target as HTMLElement).style.display = "none";
                           }}
@@ -1693,6 +1928,23 @@ export default function AccountRpcStudioPage() {
           </div>
         </div>
       </div>
+
+      {/* Interactive Image & Animated GIF Customizer Modal */}
+      <ImageCustomizerModal
+        isOpen={customizerOpen}
+        onClose={() => setCustomizerOpen(false)}
+        targetSlot={customizerSlot}
+        currentUrl={customizerSlot === "largeImage" ? rpc.largeImage : rpc.smallImage}
+        currentCrop={parseCrop(customizerSlot === "largeImage" ? rpc.largeImageCrop : rpc.smallImageCrop)}
+        onApply={handleCustomizerApply}
+        onRemove={() => {
+          if (customizerSlot === "largeImage") {
+            updateRpc({ largeImage: "", largeImageCrop: null, useProfileAvatar: true });
+          } else {
+            updateRpc({ smallImage: "", smallImageCrop: null });
+          }
+        }}
+      />
     </AccountLayout>
   );
 }

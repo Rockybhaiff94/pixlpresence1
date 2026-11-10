@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { prisma } from '@discord-rpc/database';
 import { io } from '../index'; // Import the socket io instance
 import { resolveDiscordAvatarUrl } from '../auth';
@@ -29,14 +31,16 @@ export function getDefaultRpcConfig(user: {
     useProfileAvatar: true,
     largeImage: resolvedAvatar,
     largeImageText: `@${user.username || 'User'} on PIXEL.GG`,
+    largeImageCrop: null,
     smallImage: 'https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png',
     smallImageText: 'PIXEL.GG',
+    smallImageCrop: null,
     button1Enabled: true,
-    button1Label: 'View My Page',
+    button1Label: 'View Profile',
     button1Url: `${frontendUrl}/${user.username}`,
     button2Enabled: true,
-    button2Label: 'Get Your Own Page',
-    button2Url: `${frontendUrl}/register`,
+    button2Label: 'Get PixelsRPC',
+    button2Url: `${frontendUrl}/rpc`,
     showProfileRpc: true,
     enableDiscordRpc: true,
   };
@@ -418,6 +422,22 @@ rpcRouter.get('/me', requireAuth, async (req: any, res) => {
 
     const responseData: any = { ...rpc };
 
+    const frontendUrl = (process.env.FRONTEND_URL || 'https://pixlpresence1-web.vercel.app').replace(/\/+$/, '');
+
+    // Normalize default buttons to user's existing public profile and public RPC page
+    if (!responseData.button1Label || responseData.button1Label === 'View My Page') {
+      responseData.button1Label = 'View Profile';
+    }
+    if (!responseData.button1Url || responseData.button1Url.includes('/register')) {
+      responseData.button1Url = `${frontendUrl}/${currentUser.username}`;
+    }
+    if (!responseData.button2Label || responseData.button2Label === 'Get Your Own Page') {
+      responseData.button2Label = 'Get PixelsRPC';
+    }
+    if (!responseData.button2Url || responseData.button2Url.endsWith('/register')) {
+      responseData.button2Url = `${frontendUrl}/rpc`;
+    }
+
     // Dynamic profile avatar resolution:
     // If useProfileAvatar is active (or enabled by default), dynamic avatar overrides largeImage
     if (responseData.useProfileAvatar !== false) {
@@ -494,6 +514,280 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
   } catch (err) {
     console.error('[RPC Update Error]:', err);
     res.status(500).json({ error: 'Failed to update RPC' });
+  }
+});
+
+// ============================================================================
+// CUSTOM IMAGE UPLOAD & ASSET MANAGEMENT PIPELINE
+// ============================================================================
+
+export function validateImageBuffer(buffer: Buffer): {
+  valid: boolean;
+  mimeType: string;
+  isAnimated: boolean;
+  ext: string;
+  error?: string;
+} {
+  if (!buffer || buffer.length < 8) {
+    return { valid: false, mimeType: '', isAnimated: false, ext: '', error: 'File is too small to be a valid image.' };
+  }
+
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return { valid: true, mimeType: 'image/png', isAnimated: false, ext: 'png' };
+  }
+
+  // JPEG: FF D8 FF
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return { valid: true, mimeType: 'image/jpeg', isAnimated: false, ext: 'jpg' };
+  }
+
+  // GIF: GIF87a or GIF89a (47 49 46 38 37 61 / 47 49 46 38 39 61)
+  if (
+    buffer[0] === 0x47 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x38 &&
+    (buffer[4] === 0x37 || buffer[4] === 0x39) &&
+    buffer[5] === 0x61
+  ) {
+    // Detect whether GIF has multiple frames (animation)
+    let frameCount = 0;
+    for (let i = 0; i < buffer.length - 3; i++) {
+      if (buffer[i] === 0x21 && buffer[i + 1] === 0xf9 && buffer[i + 2] === 0x04) {
+        frameCount++;
+        if (frameCount > 1) break;
+      }
+    }
+    return { valid: true, mimeType: 'image/gif', isAnimated: frameCount > 1, ext: 'gif' };
+  }
+
+  // WEBP: RIFF....WEBP (52 49 46 46 .... 57 45 42 50)
+  if (
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 &&
+    buffer.length >= 12 &&
+    buffer[8] === 0x57 &&
+    buffer[9] === 0x45 &&
+    buffer[10] === 0x42 &&
+    buffer[11] === 0x50
+  ) {
+    const isAnimWebp = buffer.indexOf('ANIM') !== -1;
+    return { valid: true, mimeType: 'image/webp', isAnimated: isAnimWebp, ext: 'webp' };
+  }
+
+  return {
+    valid: false,
+    mimeType: '',
+    isAnimated: false,
+    ext: '',
+    error: 'Unsupported image format. Please upload a valid PNG, JPG, JPEG, WEBP, or GIF file.',
+  };
+}
+
+/**
+ * POST /api/rpc/upload
+ * Handles custom image and animated GIF uploads for Large Activity Image & Small Icon slots.
+ * Features:
+ * - Content-based magic-byte validation (PNG, JPEG, GIF, WEBP)
+ * - Strict 2 MB limit for animated GIFs
+ * - 10 MB limit for static images
+ * - Image transformation coordinate & zoom persistence
+ * - Discord CDN / public URL generation
+ */
+rpcRouter.post('/upload', requireAuth, async (req: any, res) => {
+  try {
+    const { file, fileName, targetSlot, cropData } = req.body || {};
+
+    if (!file || typeof file !== 'string') {
+      return res.status(400).json({ error: 'No image data provided. Please provide a base64 encoded image or data URL.' });
+    }
+
+    // Extract raw base64 buffer
+    let rawBase64 = file;
+    if (file.includes(';base64,')) {
+      rawBase64 = file.split(';base64,')[1];
+    }
+
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(rawBase64, 'base64');
+    } catch {
+      return res.status(400).json({ error: 'Invalid base64 image data encoding.' });
+    }
+
+    // Validate file content via magic bytes
+    const validation = validateImageBuffer(buffer);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error || 'Invalid image file content.' });
+    }
+
+    // Enforce 2 MB limit for GIFs
+    const MAX_GIF_BYTES = 2 * 1024 * 1024; // 2,097,152 bytes (~2 MB)
+    const MAX_STATIC_BYTES = 10 * 1024 * 1024; // 10 MB
+
+    if (validation.mimeType === 'image/gif') {
+      if (buffer.length > MAX_GIF_BYTES) {
+        return res.status(400).json({
+          error: `GIF animation exceeds the 2 MB maximum size limit. Uploaded file size is ${(buffer.length / (1024 * 1024)).toFixed(2)} MB.`,
+          fileSize: buffer.length,
+          maxAllowed: MAX_GIF_BYTES,
+        });
+      }
+    } else {
+      if (buffer.length > MAX_STATIC_BYTES) {
+        return res.status(400).json({
+          error: `Image file exceeds the 10 MB maximum size limit. Uploaded file size is ${(buffer.length / (1024 * 1024)).toFixed(2)} MB.`,
+          fileSize: buffer.length,
+          maxAllowed: MAX_STATIC_BYTES,
+        });
+      }
+    }
+
+    // Save to disk in uploads/rpc/
+    const uploadsDir = path.resolve(__dirname, '../../uploads/rpc');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    const uniqueId = crypto.randomBytes(6).toString('hex');
+    const safeExt = validation.ext;
+    const storedFileName = `px_rpc_${req.user.id}_${Date.now()}_${uniqueId}.${safeExt}`;
+    const filePath = path.join(uploadsDir, storedFileName);
+
+    await fs.promises.writeFile(filePath, buffer);
+
+    // Compute public URL
+    const frontendOrApi = (process.env.NEXT_PUBLIC_API_URL || process.env.INTERNAL_API_URL || '').replace(/\/+$/, '');
+    let baseUrl = frontendOrApi;
+    if (!baseUrl) {
+      baseUrl = `${req.protocol}://${req.get('host')}`;
+    }
+    const publicUrl = `${baseUrl}/uploads/rpc/${storedFileName}`;
+
+    // Extract crop & transformation metadata if provided
+    const crop = typeof cropData === 'object' && cropData !== null ? cropData : {};
+    const cropX = typeof crop.cropX === 'number' ? crop.cropX : 0;
+    const cropY = typeof crop.cropY === 'number' ? crop.cropY : 0;
+    const cropWidth = typeof crop.cropWidth === 'number' ? crop.cropWidth : null;
+    const cropHeight = typeof crop.cropHeight === 'number' ? crop.cropHeight : null;
+    const zoom = typeof crop.zoom === 'number' ? crop.zoom : 1;
+    const offsetX = typeof crop.offsetX === 'number' ? crop.offsetX : 0;
+    const offsetY = typeof crop.offsetY === 'number' ? crop.offsetY : 0;
+
+    // Persist asset in database
+    const asset = await prisma.uploadedAsset.create({
+      data: {
+        userId: req.user.id,
+        originalUrl: publicUrl,
+        processedUrl: publicUrl,
+        fileName: (fileName || storedFileName).slice(0, 120),
+        fileSize: buffer.length,
+        mimeType: validation.mimeType,
+        isAnimated: validation.isAnimated,
+        cropX,
+        cropY,
+        cropWidth,
+        cropHeight,
+        zoom,
+        offsetX,
+        offsetY,
+        targetSlot: targetSlot === 'smallImage' ? 'smallImage' : 'largeImage',
+      },
+    });
+
+    res.json({
+      success: true,
+      assetId: asset.id,
+      url: publicUrl,
+      fileName: asset.fileName,
+      fileSize: asset.fileSize,
+      mimeType: asset.mimeType,
+      isAnimated: asset.isAnimated,
+      cropData: {
+        cropX,
+        cropY,
+        cropWidth,
+        cropHeight,
+        zoom,
+        offsetX,
+        offsetY,
+      },
+      message: `${validation.isAnimated ? 'Animated GIF' : 'Image'} uploaded successfully!`,
+    });
+  } catch (err: any) {
+    console.error('[RPC Upload Error]:', err);
+    res.status(500).json({ error: err.message || 'Failed to process image upload' });
+  }
+});
+
+/**
+ * GET /api/rpc/assets
+ * Lists all custom uploaded assets for the authenticated user.
+ */
+rpcRouter.get('/assets', requireAuth, async (req: any, res) => {
+  try {
+    const assets = await prisma.uploadedAsset.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    res.json(assets);
+  } catch (err) {
+    console.error('[RPC Assets Error]:', err);
+    res.status(500).json({ error: 'Failed to retrieve uploaded assets' });
+  }
+});
+
+/**
+ * DELETE /api/rpc/assets/:id
+ * Removes an uploaded asset and unlinks the local file if present.
+ */
+rpcRouter.delete('/assets/:id', requireAuth, async (req: any, res) => {
+  try {
+    const asset = await prisma.uploadedAsset.findFirst({
+      where: {
+        id: req.params.id,
+        userId: req.user.id,
+      },
+    });
+
+    if (!asset) {
+      return res.status(404).json({ error: 'Asset not found or unauthorized' });
+    }
+
+    // Attempt to unlink local file
+    try {
+      const fileName = asset.originalUrl.split('/').pop();
+      if (fileName) {
+        const filePath = path.resolve(__dirname, '../../uploads/rpc', fileName);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      }
+    } catch (fsErr) {
+      console.warn('[Asset Delete Notice] Local file removal:', fsErr);
+    }
+
+    await prisma.uploadedAsset.delete({
+      where: { id: asset.id },
+    });
+
+    res.json({ success: true, message: 'Asset deleted successfully' });
+  } catch (err) {
+    console.error('[RPC Asset Delete Error]:', err);
+    res.status(500).json({ error: 'Failed to delete asset' });
   }
 });
 

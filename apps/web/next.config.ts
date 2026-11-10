@@ -32,11 +32,6 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
-        source: "/rpc",
-        destination: "/account/rpc",
-        permanent: true,
-      },
-      {
         source: "/dashboard/rpc",
         destination: "/account/rpc",
         permanent: true,
@@ -82,6 +77,10 @@ const nextConfig: NextConfig = {
       {
         source: "/api/:path*",
         destination: `${apiUrl}/api/:path*`,
+      },
+      {
+        source: "/uploads/:path*",
+        destination: `${apiUrl}/uploads/:path*`,
       },
     ];
   },

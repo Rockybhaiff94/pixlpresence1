@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 dotenv.config({ path: path.resolve(__dirname, '../../packages/database/prisma/.env') });
 dotenv.config();
@@ -66,7 +67,15 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(express.json());
+const uploadsDir = path.resolve(__dirname, '../uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+const rpcUploadsDir = path.join(uploadsDir, 'rpc');
+if (!fs.existsSync(rpcUploadsDir)) fs.mkdirSync(rpcUploadsDir, { recursive: true });
+
+app.use('/uploads', express.static(uploadsDir));
+
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // Setup Session Store with Prisma
 app.use(

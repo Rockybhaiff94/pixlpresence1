@@ -34,6 +34,7 @@ model User {
   viewedProfiles ProfileView[] @relation("UserViewedProfiles")
   appToken      String?   @unique
   rpcDevices    RpcDeviceAuthorization[]
+  uploadedAssets UploadedAsset[]
 }
 
 model UserIdentity {
@@ -187,6 +188,8 @@ model RichPresence {
   smallImage      String?
   largeImageText  String?
   smallImageText  String?
+  largeImageCrop  String?
+  smallImageCrop  String?
   startTimestamp  DateTime?
   endTimestamp    DateTime?
   partySize       Int?
@@ -204,6 +207,36 @@ model RichPresence {
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+model UploadedAsset {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  originalUrl   String
+  processedUrl  String?
+  fileName      String
+  fileSize      Int
+  mimeType      String
+  width         Int?
+  height        Int?
+  isAnimated    Boolean   @default(false)
+  
+  // Crop & Transform configuration
+  cropX         Float?    @default(0)
+  cropY         Float?    @default(0)
+  cropWidth     Float?
+  cropHeight    Float?
+  zoom          Float?    @default(1)
+  offsetX       Float?    @default(0)
+  offsetY       Float?    @default(0)
+  
+  targetSlot    String?   // "largeImage" | "smallImage"
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([targetSlot])
 }
 
 model ActivityTemplate {

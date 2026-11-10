@@ -52,7 +52,7 @@ export function resolveDiscordAvatarUrl(discordId: string | null | undefined, av
 
   // Discord 32-character hex avatar hash (e.g. "a_..." or "1a2b...")
   const isAnimated = avatar.startsWith('a_');
-  const ext = isAnimated ? 'gif' : 'webp';
+  const ext = isAnimated ? 'gif' : 'png';
   return `https://cdn.discordapp.com/avatars/${discordId}/${avatar}.${ext}?size=256`;
 }
 

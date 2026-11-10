@@ -1,5 +1,5 @@
 import definePlugin from "@utils/types";
-import { FluxDispatcher, React } from "@webpack/common";
+import { ApplicationAssetUtils, FluxDispatcher, React } from "@webpack/common";
 import { findByProps } from "@webpack";
 import { settings } from "./settings";
 import { SettingsAbout } from "./components/SettingsAbout";
@@ -93,7 +93,34 @@ function resolveActivityType(rawType: string | number | null | undefined): { typ
     }
 }
 
-function buildDiscordActivity(rpc: RpcResponse): DiscordActivity {
+const assetResolutionCache = new Map<string, string>();
+
+async function resolveDiscordAsset(appId: string, assetInput: string | null | undefined): Promise<string | undefined> {
+    if (!assetInput || !assetInput.trim()) return undefined;
+    const raw = assetInput.trim();
+    const cacheKey = `${appId}:${raw}`;
+    if (assetResolutionCache.has(cacheKey)) {
+        return assetResolutionCache.get(cacheKey);
+    }
+
+    try {
+        if (ApplicationAssetUtils && typeof ApplicationAssetUtils.fetchAssetIds === "function") {
+            const resolvedList = await ApplicationAssetUtils.fetchAssetIds(appId, [raw]);
+            if (Array.isArray(resolvedList) && resolvedList[0]) {
+                const assetId = resolvedList[0];
+                assetResolutionCache.set(cacheKey, assetId);
+                return assetId;
+            }
+        }
+    } catch (e) {
+        logDebug("Asset resolution via ApplicationAssetUtils failed for:", raw, e);
+    }
+
+    // Fallback: If Discord's proxy or Developer Portal doesn't return an ID, return raw
+    return raw;
+}
+
+async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> {
     const store = settings.store;
     const appId = (rpc.appId || "").trim() || DEFAULT_APP_ID;
     const appName = (rpc.appName || "").trim() || store.fallbackAppName || "Pixel.gg";
@@ -115,18 +142,32 @@ function buildDiscordActivity(rpc: RpcResponse): DiscordActivity {
     }
 
     if (rpc.state && rpc.state.trim()) {
-        activity.state = rpc.state.trim();
+        activity.state = rpc.state.trim().slice(0, 128);
     }
     if (rpc.details && rpc.details.trim()) {
-        activity.details = rpc.details.trim();
+        activity.details = rpc.details.trim().slice(0, 128);
     }
 
-    if (rpc.largeImage || rpc.smallImage) {
+    // Resolve Large Image and Small Icon with Discord Asset system
+    const hasLarge = Boolean(rpc.largeImage && rpc.largeImage.trim());
+    const hasSmall = Boolean(rpc.smallImage && rpc.smallImage.trim());
+
+    if (hasLarge || hasSmall) {
         activity.assets = {};
-        if (rpc.largeImage) activity.assets.large_image = rpc.largeImage.trim();
-        if (rpc.largeImageText) activity.assets.large_text = rpc.largeImageText.trim();
-        if (rpc.smallImage) activity.assets.small_image = rpc.smallImage.trim();
-        if (rpc.smallImageText) activity.assets.small_text = rpc.smallImageText.trim();
+        if (hasLarge && rpc.largeImage) {
+            const resolvedLarge = await resolveDiscordAsset(appId, rpc.largeImage.trim());
+            if (resolvedLarge) activity.assets.large_image = resolvedLarge;
+            if (rpc.largeImageText && rpc.largeImageText.trim()) {
+                activity.assets.large_text = rpc.largeImageText.trim().slice(0, 128);
+            }
+        }
+        if (hasSmall && rpc.smallImage) {
+            const resolvedSmall = await resolveDiscordAsset(appId, rpc.smallImage.trim());
+            if (resolvedSmall) activity.assets.small_image = resolvedSmall;
+            if (rpc.smallImageText && rpc.smallImageText.trim()) {
+                activity.assets.small_text = rpc.smallImageText.trim().slice(0, 128);
+            }
+        }
     }
 
     if (store.showTimestamps && (rpc.startTimestamp || rpc.endTimestamp)) {
@@ -145,15 +186,17 @@ function buildDiscordActivity(rpc: RpcResponse): DiscordActivity {
         const labels: string[] = [];
         const urls: string[] = [];
 
-        // Button 1: Enabled by default, validates label and destination URL
-        if (rpc.button1Enabled !== false && rpc.button1Label && rpc.button1Url) {
-            labels.push(rpc.button1Label.trim());
+        // Button 1: Default 'View Profile', user's public profile page
+        if (rpc.button1Enabled !== false && rpc.button1Url) {
+            const label = (rpc.button1Label || "View Profile").trim().slice(0, 32);
+            labels.push(label);
             urls.push(rpc.button1Url.trim());
         }
 
-        // Button 2: Enabled by default, enforces Discord max 2 buttons limit
-        if (rpc.button2Enabled !== false && rpc.button2Label && rpc.button2Url && labels.length < 2) {
-            labels.push(rpc.button2Label.trim());
+        // Button 2: Default 'Get PixelsRPC', public PixelsRPC homepage
+        if (rpc.button2Enabled !== false && rpc.button2Url && labels.length < 2) {
+            const label = (rpc.button2Label || "Get PixelsRPC").trim().slice(0, 32);
+            labels.push(label);
             urls.push(rpc.button2Url.trim());
         }
 
@@ -172,7 +215,7 @@ function buildDiscordActivity(rpc: RpcResponse): DiscordActivity {
     return activity;
 }
 
-export function applyActivity(rpc: RpcResponse) {
+export async function applyActivity(rpc: RpcResponse) {
     if (
         !settings.store.activityVisibility ||
         rpc.enableDiscordRpc === false ||
@@ -192,7 +235,7 @@ export function applyActivity(rpc: RpcResponse) {
         return;
     }
 
-    const activity = buildDiscordActivity(rpc);
+    const activity = await buildDiscordActivity(rpc);
     const hash = JSON.stringify(activity);
 
     // Prevent redundant Flux dispatches if payload hasn't changed
@@ -410,7 +453,7 @@ export async function fetchAndSync(): Promise<void> {
 
         const data: RpcResponse = await response.json();
 
-        applyActivity(data);
+        await applyActivity(data);
 
         updateState({
             status: "connected",

@@ -11,6 +11,8 @@ export interface RpcResponse {
     smallImage?: string | null;
     largeImageText?: string | null;
     smallImageText?: string | null;
+    largeImageCrop?: string | null;
+    smallImageCrop?: string | null;
     startTimestamp?: string | number | Date | null;
     endTimestamp?: string | number | Date | null;
     partySize?: number | null;
