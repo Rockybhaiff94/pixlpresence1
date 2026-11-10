@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { prisma } from '@discord-rpc/database';
 import { recordSyncEvent } from '../utils/sync';
 import { resolveTelemetry } from '../utils/geo';
-import { viewRateLimiter } from '../index';
+import { viewRateLimiter } from '../rateLimiter';
 
 export const profileRouter = Router();
 

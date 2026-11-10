@@ -3,7 +3,8 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { prisma } from '@discord-rpc/database';
-import { io, uploadRateLimiter } from '../index'; // Import socket io and rate limiters
+import { io } from '../index'; // Import socket io
+import { uploadRateLimiter } from '../rateLimiter'; // Import upload rate limiter
 import { resolveDiscordAvatarUrl } from '../auth';
 
 export const rpcRouter = Router();

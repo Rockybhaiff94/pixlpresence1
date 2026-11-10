@@ -4,7 +4,7 @@ import { prisma } from '@discord-rpc/database';
 import { Router } from 'express';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { authRateLimiter } from './index';
+import { authRateLimiter } from './rateLimiter';
 
 function cleanEnv(val: string | undefined, fallback: string): string {
   if (!val) return fallback;
