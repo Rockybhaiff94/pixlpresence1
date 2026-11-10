@@ -1,4 +1,5 @@
-import { Button, React, TextInput } from "@webpack/common";
+import { Button } from "@components/Button";
+import { React } from "@webpack/common";
 
 interface ActionControlsProps {
     isConnected: boolean;
@@ -115,8 +116,8 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
                 React.createElement(
                     Button,
                     {
-                        size: Button.Sizes.SMALL,
-                        color: Button.Colors.BRAND,
+                        variant: "primary",
+                        size: "small",
                         disabled: isLinking || !code.trim(),
                         onClick: handleLink
                     },
@@ -141,9 +142,8 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
                 React.createElement(
                     Button,
                     {
-                        size: Button.Sizes.TINY,
-                        color: Button.Colors.PRIMARY,
-                        look: Button.Looks.LINK,
+                        variant: "link",
+                        size: "xs",
                         onClick: onOpenDashboard
                     },
                     "Open PIXEL.GG to generate linking code →"
@@ -167,8 +167,8 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
         React.createElement(
             Button,
             {
-                size: Button.Sizes.SMALL,
-                color: Button.Colors.BRAND,
+                variant: "primary",
+                size: "small",
                 disabled: isSyncing,
                 onClick: onSync
             },
@@ -177,9 +177,8 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
         React.createElement(
             Button,
             {
-                size: Button.Sizes.SMALL,
-                color: Button.Colors.RED,
-                look: Button.Looks.OUTLINED,
+                variant: "dangerSecondary",
+                size: "small",
                 onClick: onClear
             },
             "Clear Presence"
@@ -187,8 +186,8 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
         React.createElement(
             Button,
             {
-                size: Button.Sizes.SMALL,
-                color: Button.Colors.PRIMARY,
+                variant: "secondary",
+                size: "small",
                 onClick: onOpenDashboard
             },
             "Open Studio"
@@ -196,10 +195,10 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
         React.createElement(
             Button,
             {
-                size: Button.Sizes.SMALL,
-                color: Button.Colors.RED,
-                look: Button.Looks.LINK,
-                onClick: onDisconnectAccount
+                variant: "link",
+                size: "small",
+                onClick: onDisconnectAccount,
+                style: { color: "var(--status-danger, #f23f43)" }
             },
             "Disconnect Account"
         )

@@ -14,6 +14,8 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
+      "@components": ["./src/vencord-types/components"],
+      "@components/*": ["./src/vencord-types/*"],
       "@utils/*": ["./src/vencord-types/*"],
       "@api/*": ["./src/vencord-types/*"],
       "@webpack/common": ["./src/vencord-types/webpack-common"],
@@ -22,4 +24,3 @@
   },
   "include": ["src/**/*"]
 }
-

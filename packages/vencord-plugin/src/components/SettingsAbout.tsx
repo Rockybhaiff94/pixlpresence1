@@ -1,4 +1,6 @@
-import { Forms, React } from "@webpack/common";
+import { Heading } from "@components/Heading";
+import { Paragraph } from "@components/Paragraph";
+import { React } from "@webpack/common";
 import { ConnectionState } from "../types";
 import { ActionControls } from "./ActionControls";
 import { StatusCard } from "./StatusCard";
@@ -32,7 +34,7 @@ export const SettingsAbout: React.FC<SettingsAboutProps> = ({
     return React.createElement(
         "div",
         { style: { marginTop: "16px", marginBottom: "8px" } },
-        React.createElement(Forms.FormTitle, { tag: "h5" }, "PixelsRPC Connection"),
+        React.createElement(Heading, { tag: "h5", style: { marginBottom: "8px" } }, "PixelsRPC Connection"),
         React.createElement(StatusCard, {
             state,
             tokenConfigured,
@@ -49,8 +51,8 @@ export const SettingsAbout: React.FC<SettingsAboutProps> = ({
             onDisconnectAccount
         }),
         React.createElement(
-            Forms.FormText,
-            { type: "description", style: { fontSize: "12px", color: "var(--text-muted, #949ba4)" } },
+            Paragraph,
+            { style: { fontSize: "12px", color: "var(--text-muted, #949ba4)", marginTop: "8px" } },
             "PixelsRPC links your Discord client directly to your PIXEL.GG profile using secure, revocable device credentials. No standalone background desktop apps required."
         )
     );

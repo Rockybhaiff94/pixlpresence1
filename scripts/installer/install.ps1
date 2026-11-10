@@ -30,15 +30,27 @@ $RemoteCmdUrl = "https://raw.githubusercontent.com/Rockybhaiff94/pixlpresence1/m
 
 Write-Host " [PIXEL.GG] Fetching latest installer package..." -ForegroundColor Cyan
 
+$downloaded = $false
 try {
-    Invoke-RestMethod -Uri $RemoteScriptUrl -OutFile $ScriptDest
-    Invoke-RestMethod -Uri $RemoteCmdUrl -OutFile $CmdDest
+    Invoke-RestMethod -Uri $RemoteScriptUrl -OutFile $ScriptDest -TimeoutSec 10
+    Invoke-RestMethod -Uri $RemoteCmdUrl -OutFile $CmdDest -TimeoutSec 10
+    $downloaded = $true
 } catch {
-    Write-Host " [!] Could not fetch from GitHub, falling back to local workspace payload..." -ForegroundColor Yellow
-    $LocalScript = Join-Path $PSScriptRoot "pixelsrpc.ps1"
-    if (Test-Path $LocalScript) {
-        Copy-Item -Path $LocalScript -Destination $ScriptDest -Force
+    Write-Host " [!] Remote fetch timed out, checking local workspace payload..." -ForegroundColor Yellow
+    if ($PSScriptRoot) {
+        $LocalScript = Join-Path $PSScriptRoot "pixelsrpc.ps1"
+        $LocalCmd = Join-Path $PSScriptRoot "pixelsrpc.cmd"
+        if (Test-Path $LocalScript) {
+            Copy-Item -Path $LocalScript -Destination $ScriptDest -Force
+            if (Test-Path $LocalCmd) { Copy-Item -Path $LocalCmd -Destination $CmdDest -Force }
+            $downloaded = $true
+        }
     }
+}
+
+if (-not (Test-Path $ScriptDest)) {
+    Write-Host " [x] Failed to obtain installer script." -ForegroundColor Red
+    exit 1
 }
 
 # Add to user PATH if not present
