@@ -16,6 +16,8 @@ if (process.env.NODE_ENV === 'production' && !process.env.FRONTEND_URL?.trim()) 
 
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import session from 'express-session';
 import passport from 'passport';
 import { PrismaSessionStore } from '@quixo3/prisma-session-store';
@@ -56,26 +58,124 @@ const PORT = process.env.PORT || 3001;
 
 app.set('trust proxy', 1);
 
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests from web app, discord desktop/web clients, or curl/no-origin
-    if (!origin || origin === 'null' || origin.includes('discord.com') || origin.includes('localhost') || (process.env.FRONTEND_URL && origin.includes(process.env.FRONTEND_URL))) {
-      return callback(null, true);
+// Standard HTTP Security Headers via Helmet
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // Preserves client-rendered rich studio styles & Next.js rewrites
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    frameguard: { action: 'sameorigin' },
+    dnsPrefetchControl: { allow: false },
+    hsts:
+      process.env.NODE_ENV === 'production'
+        ? { maxAge: 31536000, includeSubDomains: true, preload: true }
+        : false,
+    noSniff: true,
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  })
+);
+
+// Explicit Origin Whitelist for CORS
+const allowedOrigins = [
+  'https://pixlpresence1-web.vercel.app',
+  'https://pixel.gg',
+  'https://www.pixel.gg',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
+];
+if (process.env.FRONTEND_URL) {
+  try {
+    const parsed = new URL(process.env.FRONTEND_URL);
+    if (!allowedOrigins.includes(parsed.origin)) {
+      allowedOrigins.push(parsed.origin);
     }
-    return callback(null, true);
-  },
-  credentials: true
-}));
+  } catch (_) {}
+}
+
+const isOriginAllowed = (origin: string | undefined): boolean => {
+  if (!origin || origin === 'null') return true; // Non-browser tools, curl, CLI, electron file://
+  if (allowedOrigins.includes(origin)) return true;
+  if (/^https:\/\/([a-zA-Z0-9-]+\.)?pixel\.gg$/.test(origin)) return true;
+  if (/^https:\/\/([a-zA-Z0-9-]+\.)?vercel\.app$/.test(origin)) return true;
+  if (/^https:\/\/([a-zA-Z0-9-]+\.)?discord\.com$/.test(origin)) return true;
+  return false;
+};
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (isOriginAllowed(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error('Cross-Origin Request Blocked: Origin unauthorized by policy.'));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Cookie'],
+    exposedHeaders: ['Set-Cookie', 'Retry-After'],
+  })
+);
+
+// Global API Rate Limiter (300 requests / 15 minutes per IP)
+export const globalApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again later.' },
+});
+
+// Authentication Rate Limiter (15 attempts / 15 minutes per IP)
+export const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many authentication attempts. Please wait 15 minutes before trying again.' },
+});
+
+// File Upload Rate Limiter (30 uploads / hour per IP)
+export const uploadRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Upload limit exceeded. Maximum 30 uploads per hour.' },
+});
+
+// Profile View Telemetry Rate Limiter (60 requests / minute per IP)
+export const viewRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Rate limit exceeded for profile telemetry.' },
+});
 
 const uploadsDir = path.resolve(__dirname, '../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 const rpcUploadsDir = path.join(uploadsDir, 'rpc');
 if (!fs.existsSync(rpcUploadsDir)) fs.mkdirSync(rpcUploadsDir, { recursive: true });
 
-app.use('/uploads', express.static(uploadsDir));
+// Hardened Static File Serving for Uploads
+app.use(
+  '/uploads',
+  express.static(uploadsDir, {
+    dotfiles: 'ignore',
+    setHeaders: (res) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+    },
+  })
+);
 
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+app.use('/api', globalApiLimiter);
 
 // Setup Session Store with Prisma
 app.use(

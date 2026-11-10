@@ -6,6 +6,7 @@ import { KeyRound, Mail, ShieldAlert, CheckCircle2, ArrowRight } from "lucide-re
 import { Navbar } from "@/components/nothing/Navbar";
 import { Footer } from "@/components/nothing/Footer";
 import { Button } from "@/components/nothing/Button";
+import { apiFetch } from "@/lib/api";
 
 interface RecoveryOption {
   id: string;
@@ -42,14 +43,27 @@ export default function RecoveryPage() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [serverMessage, setServerMessage] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const res = await apiFetch("/api/auth/recovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier: email }),
+      });
+      const data = await res.json();
+      setServerMessage(data.message || "Recovery instructions dispatched.");
       setSubmitted(true);
-    }, 700);
+    } catch {
+      setServerMessage("We have received your recovery request. If an account matches, instructions will be delivered.");
+      setSubmitted(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -77,7 +91,7 @@ export default function RecoveryPage() {
               <div className="space-y-1">
                 <h3 className="font-bold text-lg text-white">RESTORATION INITIATED</h3>
                 <p className="text-xs text-neutral-400 font-sans leading-relaxed">
-                  We have dispatched recovery instructions to <strong className="text-white">{email}</strong>. Please check your inbox and spam folder.
+                  {serverMessage || `We have dispatched recovery instructions to ${email}. Please check your inbox and spam folder.`}
                 </p>
               </div>
               <Button variant="solid-white" href="/login" className="text-xs">

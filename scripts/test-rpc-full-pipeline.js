@@ -3,7 +3,7 @@
  * Comprehensive automated verification test suite for PixelsRPC:
  * 1. Avatar URL resolution (.png for static, .gif for animated)
  * 2. Magic byte image validation (PNG, JPEG, GIF, WEBP, fake files)
- * 3. File size limits (GIF max 2MB, Static max 10MB)
+ * 3. File size limits (GIF max 5MB, Static max 10MB)
  * 4. Button 1 profile link generation (View Profile -> ${domain}/${username})
  * 5. Button 2 public homepage link generation (Get PixelsRPC -> ${domain}/rpc)
  * 6. Dynamic multi-user profile isolation (userA vs userB)
@@ -149,15 +149,15 @@ runTest("Magic bytes rejects fake/corrupt executable or text disguised as image"
 });
 
 // ---------------------------------------------------------------------------
-// 3. File Size Validation (GIF <= 2MB, Static <= 10MB)
+// 3. File Size Validation (GIF <= 5MB, Static <= 10MB)
 // ---------------------------------------------------------------------------
 function validateFileSize(mimeType, sizeInBytes) {
   const MAX_STATIC_SIZE = 10 * 1024 * 1024; // 10 MB
-  const MAX_GIF_SIZE = 2 * 1024 * 1024;    // 2 MB
+  const MAX_GIF_SIZE = 5 * 1024 * 1024;    // 5 MB
 
   if (mimeType === "image/gif") {
     if (sizeInBytes > MAX_GIF_SIZE) {
-      return { allowed: false, error: "Animated GIF exceeds the 2 MB maximum size limit." };
+      return { allowed: false, error: "Animated GIF exceeds the 5 MB maximum size limit." };
     }
   } else {
     if (sizeInBytes > MAX_STATIC_SIZE) {
@@ -167,15 +167,15 @@ function validateFileSize(mimeType, sizeInBytes) {
   return { allowed: true };
 }
 
-runTest("GIF size validator rejects GIF larger than 2 MB", () => {
-  const oversizedGif = 2.5 * 1024 * 1024;
+runTest("GIF size validator rejects GIF larger than 5 MB", () => {
+  const oversizedGif = 5.5 * 1024 * 1024;
   const res = validateFileSize("image/gif", oversizedGif);
   assert.strictEqual(res.allowed, false);
-  assert.ok(res.error.includes("2 MB"));
+  assert.ok(res.error.includes("5 MB"));
 });
 
-runTest("GIF size validator accepts GIF under 2 MB", () => {
-  const validGif = 1.8 * 1024 * 1024;
+runTest("GIF size validator accepts GIF under 5 MB", () => {
+  const validGif = 4.2 * 1024 * 1024;
   const res = validateFileSize("image/gif", validGif);
   assert.strictEqual(res.allowed, true);
 });
@@ -262,3 +262,4 @@ console.log("=======================================================\n");
 if (failed > 0) {
   process.exit(1);
 }
+

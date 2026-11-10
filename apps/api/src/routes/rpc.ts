@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { prisma } from '@discord-rpc/database';
-import { io } from '../index'; // Import the socket io instance
+import { io, uploadRateLimiter } from '../index'; // Import socket io and rate limiters
 import { resolveDiscordAvatarUrl } from '../auth';
 
 export const rpcRouter = Router();
@@ -601,12 +601,12 @@ export function validateImageBuffer(buffer: Buffer): {
  * Handles custom image and animated GIF uploads for Large Activity Image & Small Icon slots.
  * Features:
  * - Content-based magic-byte validation (PNG, JPEG, GIF, WEBP)
- * - Strict 2 MB limit for animated GIFs
+ * - Strict 5 MB limit for animated GIFs
  * - 10 MB limit for static images
  * - Image transformation coordinate & zoom persistence
  * - Discord CDN / public URL generation
  */
-rpcRouter.post('/upload', requireAuth, async (req: any, res) => {
+rpcRouter.post('/upload', requireAuth, uploadRateLimiter, async (req: any, res) => {
   try {
     const { file, fileName, targetSlot, cropData } = req.body || {};
 
@@ -633,14 +633,14 @@ rpcRouter.post('/upload', requireAuth, async (req: any, res) => {
       return res.status(400).json({ error: validation.error || 'Invalid image file content.' });
     }
 
-    // Enforce 2 MB limit for GIFs
-    const MAX_GIF_BYTES = 2 * 1024 * 1024; // 2,097,152 bytes (~2 MB)
+    // Enforce 5 MB limit for GIFs
+    const MAX_GIF_BYTES = 5 * 1024 * 1024; // 5,242,880 bytes (~5 MB)
     const MAX_STATIC_BYTES = 10 * 1024 * 1024; // 10 MB
 
     if (validation.mimeType === 'image/gif') {
       if (buffer.length > MAX_GIF_BYTES) {
         return res.status(400).json({
-          error: `GIF animation exceeds the 2 MB maximum size limit. Uploaded file size is ${(buffer.length / (1024 * 1024)).toFixed(2)} MB.`,
+          error: `GIF animation exceeds the 5 MB maximum size limit. Uploaded file size is ${(buffer.length / (1024 * 1024)).toFixed(2)} MB.`,
           fileSize: buffer.length,
           maxAllowed: MAX_GIF_BYTES,
         });

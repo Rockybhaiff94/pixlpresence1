@@ -42,8 +42,8 @@ adminRouter.get('/stats', async (req: any, res) => {
 // Get Paginated Users
 adminRouter.get('/users', async (req: any, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit) || 20), 100);
     const skip = (page - 1) * limit;
 
     const users = await prisma.user.findMany({
@@ -77,12 +77,16 @@ adminRouter.patch('/users/:id', async (req: any, res) => {
     const { badges, nitroStatus, premiumStatus, role } = req.body;
     const userId = req.params.id;
 
+    if (role !== undefined && role !== 'USER' && role !== 'ADMIN') {
+      return res.status(400).json({ error: 'Invalid role. Allowed values: USER, ADMIN' });
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: {
-        badges: badges !== undefined ? badges : undefined,
-        nitroStatus: nitroStatus !== undefined ? nitroStatus : undefined,
-        premiumStatus: premiumStatus !== undefined ? premiumStatus : undefined,
+        badges: badges !== undefined ? (typeof badges === 'string' ? badges : JSON.stringify(badges)) : undefined,
+        nitroStatus: nitroStatus !== undefined ? Number(nitroStatus) : undefined,
+        premiumStatus: premiumStatus !== undefined ? Boolean(premiumStatus) : undefined,
         role: role !== undefined ? role : undefined,
       }
     });

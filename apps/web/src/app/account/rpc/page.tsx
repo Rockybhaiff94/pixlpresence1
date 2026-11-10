@@ -1365,7 +1365,7 @@ export default function AccountRpcStudioPage() {
                     <span className="text-[#d71920]">[02]</span> VISUAL ASSETS & CUSTOM IMAGES
                   </h3>
                   <span className="text-[10px] text-neutral-500 uppercase">
-                    PFP AUTO-SYNC, CUSTOM UPLOADS & ANIMATED GIFS (UP TO 2MB)
+                    PFP AUTO-SYNC, CUSTOM UPLOADS & ANIMATED GIFS (UP TO 5MB)
                   </span>
                 </div>
               </div>

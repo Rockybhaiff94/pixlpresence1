@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { prisma } from '@discord-rpc/database';
 import { recordSyncEvent } from '../utils/sync';
 import { resolveTelemetry } from '../utils/geo';
+import { viewRateLimiter } from '../index';
 
 export const profileRouter = Router();
 
@@ -157,7 +158,7 @@ profileRouter.get('/by-discord/:discordId', async (req: any, res) => {
 const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 // Track Profile View with Deduplication, Bot Filtering & Owner Exemption
-profileRouter.post('/u/:username/view', async (req: any, res) => {
+profileRouter.post('/u/:username/view', viewRateLimiter, async (req: any, res) => {
   try {
     const rawUsername = req.params.username;
     const userAgent = req.headers['user-agent'] || '';
@@ -468,14 +469,28 @@ profileRouter.patch('/me/status', requireAuth, async (req: any, res) => {
   }
 });
 
-// Manage Links
+// Manage Links (IDOR-protected: validates caller profile ownership)
 profileRouter.post('/me/links', requireAuth, async (req: any, res) => {
   try {
     const profile = await prisma.profile.findUnique({ where: { userId: req.user.id } });
     if (!profile) return res.status(404).json({ error: 'Profile not found' });
-    
+
+    const { url, label, icon, color, animation, visibility, order } = req.body || {};
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'Valid URL is required' });
+    }
+
     const link = await prisma.link.create({
-      data: { ...req.body, profileId: profile.id }
+      data: {
+        profileId: profile.id,
+        url: url.trim().slice(0, 500),
+        label: typeof label === 'string' ? label.trim().slice(0, 60) : 'Link',
+        icon: typeof icon === 'string' ? icon.trim().slice(0, 60) : null,
+        color: typeof color === 'string' ? color.trim().slice(0, 30) : null,
+        animation: typeof animation === 'string' ? animation.trim().slice(0, 30) : null,
+        visibility: visibility !== undefined ? Boolean(visibility) : true,
+        order: typeof order === 'number' ? order : 0,
+      },
     });
     res.json(link);
   } catch (err) {
@@ -485,8 +500,23 @@ profileRouter.post('/me/links', requireAuth, async (req: any, res) => {
 
 profileRouter.delete('/me/links/:id', requireAuth, async (req: any, res) => {
   try {
-    await prisma.link.delete({ where: { id: req.params.id } });
-    res.json({ success: true });
+    const profile = await prisma.profile.findUnique({ where: { userId: req.user.id } });
+    if (!profile) return res.status(404).json({ error: 'Profile not found' });
+
+    // Enforce strict ownership check
+    const existing = await prisma.link.findFirst({
+      where: {
+        id: req.params.id,
+        profileId: profile.id,
+      },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Link not found or unauthorized' });
+    }
+
+    await prisma.link.delete({ where: { id: existing.id } });
+    res.json({ success: true, message: 'Link deleted' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete link' });
   }
@@ -494,9 +524,34 @@ profileRouter.delete('/me/links/:id', requireAuth, async (req: any, res) => {
 
 profileRouter.patch('/me/links/:id', requireAuth, async (req: any, res) => {
   try {
+    const profile = await prisma.profile.findUnique({ where: { userId: req.user.id } });
+    if (!profile) return res.status(404).json({ error: 'Profile not found' });
+
+    // Enforce strict ownership check
+    const existing = await prisma.link.findFirst({
+      where: {
+        id: req.params.id,
+        profileId: profile.id,
+      },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Link not found or unauthorized' });
+    }
+
+    const { url, label, icon, color, animation, visibility, order } = req.body || {};
+    const safeData: any = {};
+    if (url !== undefined) safeData.url = String(url).trim().slice(0, 500);
+    if (label !== undefined) safeData.label = String(label).trim().slice(0, 60);
+    if (icon !== undefined) safeData.icon = icon ? String(icon).trim().slice(0, 60) : null;
+    if (color !== undefined) safeData.color = color ? String(color).trim().slice(0, 30) : null;
+    if (animation !== undefined) safeData.animation = animation ? String(animation).trim().slice(0, 30) : null;
+    if (visibility !== undefined) safeData.visibility = Boolean(visibility);
+    if (order !== undefined && typeof order === 'number') safeData.order = order;
+
     const link = await prisma.link.update({
-      where: { id: req.params.id },
-      data: req.body,
+      where: { id: existing.id },
+      data: safeData,
     });
     res.json(link);
   } catch (err) {
@@ -504,14 +559,30 @@ profileRouter.patch('/me/links/:id', requireAuth, async (req: any, res) => {
   }
 });
 
-// Manage Buttons
+// Manage Buttons (IDOR-protected: validates caller profile ownership)
 profileRouter.post('/me/buttons', requireAuth, async (req: any, res) => {
   try {
     const profile = await prisma.profile.findUnique({ where: { userId: req.user.id } });
     if (!profile) return res.status(404).json({ error: 'Profile not found' });
-    
+
+    const { title, subtitle, url, icon, gradient, animation, hoverEffect, openInNewTab, order } = req.body || {};
+    if (!title || !url) {
+      return res.status(400).json({ error: 'Title and URL are required' });
+    }
+
     const button = await prisma.button.create({
-      data: { ...req.body, profileId: profile.id }
+      data: {
+        profileId: profile.id,
+        title: String(title).trim().slice(0, 80),
+        subtitle: subtitle ? String(subtitle).trim().slice(0, 120) : null,
+        url: String(url).trim().slice(0, 500),
+        icon: icon ? String(icon).trim().slice(0, 60) : null,
+        gradient: gradient ? String(gradient).trim().slice(0, 60) : null,
+        animation: animation ? String(animation).trim().slice(0, 40) : null,
+        hoverEffect: hoverEffect ? String(hoverEffect).trim().slice(0, 40) : null,
+        openInNewTab: openInNewTab !== undefined ? Boolean(openInNewTab) : true,
+        order: typeof order === 'number' ? order : 0,
+      },
     });
     res.json(button);
   } catch (err) {
@@ -521,9 +592,62 @@ profileRouter.post('/me/buttons', requireAuth, async (req: any, res) => {
 
 profileRouter.delete('/me/buttons/:id', requireAuth, async (req: any, res) => {
   try {
-    await prisma.button.delete({ where: { id: req.params.id } });
-    res.json({ success: true });
+    const profile = await prisma.profile.findUnique({ where: { userId: req.user.id } });
+    if (!profile) return res.status(404).json({ error: 'Profile not found' });
+
+    // Enforce strict ownership check
+    const existing = await prisma.button.findFirst({
+      where: {
+        id: req.params.id,
+        profileId: profile.id,
+      },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Button not found or unauthorized' });
+    }
+
+    await prisma.button.delete({ where: { id: existing.id } });
+    res.json({ success: true, message: 'Button deleted' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete button' });
+  }
+});
+
+profileRouter.patch('/me/buttons/:id', requireAuth, async (req: any, res) => {
+  try {
+    const profile = await prisma.profile.findUnique({ where: { userId: req.user.id } });
+    if (!profile) return res.status(404).json({ error: 'Profile not found' });
+
+    const existing = await prisma.button.findFirst({
+      where: {
+        id: req.params.id,
+        profileId: profile.id,
+      },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Button not found or unauthorized' });
+    }
+
+    const { title, subtitle, url, icon, gradient, animation, hoverEffect, openInNewTab, order } = req.body || {};
+    const safeData: any = {};
+    if (title !== undefined) safeData.title = String(title).trim().slice(0, 80);
+    if (subtitle !== undefined) safeData.subtitle = subtitle ? String(subtitle).trim().slice(0, 120) : null;
+    if (url !== undefined) safeData.url = String(url).trim().slice(0, 500);
+    if (icon !== undefined) safeData.icon = icon ? String(icon).trim().slice(0, 60) : null;
+    if (gradient !== undefined) safeData.gradient = gradient ? String(gradient).trim().slice(0, 60) : null;
+    if (animation !== undefined) safeData.animation = animation ? String(animation).trim().slice(0, 40) : null;
+    if (hoverEffect !== undefined) safeData.hoverEffect = hoverEffect ? String(hoverEffect).trim().slice(0, 40) : null;
+    if (openInNewTab !== undefined) safeData.openInNewTab = Boolean(openInNewTab);
+    if (order !== undefined && typeof order === 'number') safeData.order = order;
+
+    const button = await prisma.button.update({
+      where: { id: existing.id },
+      data: safeData,
+    });
+    res.json(button);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update button' });
   }
 });

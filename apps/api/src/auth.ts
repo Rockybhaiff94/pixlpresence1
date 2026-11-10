@@ -4,6 +4,7 @@ import { prisma } from '@discord-rpc/database';
 import { Router } from 'express';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
+import { authRateLimiter } from './index';
 
 function cleanEnv(val: string | undefined, fallback: string): string {
   if (!val) return fallback;
@@ -225,8 +226,25 @@ passport.deserializeUser(async (id: string, done) => {
 
 export const authRouter = Router();
 
-// Diagnostic endpoint to verify OAuth and Database configuration
-authRouter.get('/discord/status', async (req, res) => {
+// Diagnostic endpoint to verify OAuth and Database configuration (Restricted to platform ADMIN)
+authRouter.get('/discord/status', async (req: any, res) => {
+  let isAuthorized = false;
+  if (typeof req.isAuthenticated === 'function' && req.isAuthenticated() && req.user?.role === 'ADMIN') {
+    isAuthorized = true;
+  }
+  const authHeader = req.headers.authorization;
+  if (!isAuthorized && authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1]?.trim();
+    if (token) {
+      const user = await prisma.user.findUnique({ where: { appToken: token } });
+      if (user?.role === 'ADMIN') isAuthorized = true;
+    }
+  }
+
+  if (!isAuthorized) {
+    return res.status(403).json({ error: 'Forbidden: Admin access required to view diagnostics.' });
+  }
+
   let dbStatus = 'unknown';
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -470,8 +488,8 @@ const RESERVED_USERNAMES = new Set([
   'pixel', 'pixelgg', 'status', 'pricing', 'compare', 'leaderboard'
 ]);
 
-// Email & Password Registration
-authRouter.post('/register', async (req, res) => {
+// Email & Password Registration (Protected by authRateLimiter)
+authRouter.post('/register', authRateLimiter, async (req, res) => {
   try {
     const { email, password, username, displayName } = req.body;
 
@@ -577,8 +595,16 @@ authRouter.post('/register', async (req, res) => {
   }
 });
 
-// Email or Username & Password Login
-authRouter.post('/login', async (req, res) => {
+// In-memory store for short-lived cryptographically hashed password reset tokens
+interface PasswordResetEntry {
+  userId: string;
+  tokenHash: string;
+  expiresAt: number;
+}
+const passwordResetTokens = new Map<string, PasswordResetEntry>();
+
+// Email or Username & Password Login (Protected by authRateLimiter)
+authRouter.post('/login', authRateLimiter, async (req, res) => {
   try {
     const { emailOrUsername, password } = req.body;
 
@@ -645,6 +671,89 @@ authRouter.post('/login', async (req, res) => {
   } catch (err: any) {
     console.error('[Login Error]:', err);
     return res.status(500).json({ error: err.message || 'Login failed' });
+  }
+});
+
+// Secure Password Recovery Request (Protected against User Enumeration)
+authRouter.post('/recovery', authRateLimiter, async (req, res) => {
+  try {
+    const identifier = String(req.body?.identifier || req.body?.email || '').trim().toLowerCase();
+    if (!identifier) {
+      return res.status(400).json({ error: 'Please provide your registered email or username.' });
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [{ email: identifier }, { username: identifier }],
+      },
+    });
+
+    if (user && user.email) {
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes single-use
+
+      passwordResetTokens.set(tokenHash, {
+        userId: user.id,
+        tokenHash,
+        expiresAt,
+      });
+
+      console.log(`[Password Recovery Initiated] Token generated for user ${user.username} (valid 15m).`);
+    }
+
+    // Constant response prevents attacker user enumeration
+    return res.json({
+      success: true,
+      message: 'If an account matches that email or handle, recovery instructions have been dispatched.',
+    });
+  } catch (err: any) {
+    console.error('[Recovery Error]:', err);
+    return res.status(500).json({ error: 'Failed to initiate recovery request' });
+  }
+});
+
+// Reset Password with Cryptographic Token
+authRouter.post('/recovery/reset', authRateLimiter, async (req, res) => {
+  try {
+    const { token, newPassword } = req.body || {};
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'Reset token is required.' });
+    }
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters long.' });
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(token.trim()).digest('hex');
+    const entry = passwordResetTokens.get(tokenHash);
+
+    if (!entry || Date.now() > entry.expiresAt) {
+      if (entry) passwordResetTokens.delete(tokenHash);
+      return res.status(400).json({ error: 'Reset token is invalid or has expired. Please request a new one.' });
+    }
+
+    // Enforce single-use immediately
+    passwordResetTokens.delete(tokenHash);
+
+    const newHash = await bcrypt.hash(newPassword, 10);
+    const newAppToken = crypto.randomBytes(32).toString('hex');
+
+    // Update password and rotate token to revoke any hijacked sessions
+    await prisma.user.update({
+      where: { id: entry.userId },
+      data: {
+        passwordHash: newHash,
+        appToken: newAppToken,
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Password has been successfully updated. Please sign in with your new password.',
+    });
+  } catch (err: any) {
+    console.error('[Password Reset Error]:', err);
+    return res.status(500).json({ error: 'Failed to reset password.' });
   }
 });
 

@@ -309,7 +309,7 @@ export default function PixelsRpcPublicPage() {
                 {
                   icon: ImageIcon,
                   title: "Custom Image & Animated GIF Uploads",
-                  desc: "Upload custom PNG, JPG, WEBP, and animated GIFs up to 2MB. Use our interactive editor to crop, zoom in/out, and reposition your artwork.",
+                  desc: "Upload custom PNG, JPG, WEBP, and animated GIFs up to 5MB. Use our interactive editor to crop, zoom in/out, and reposition your artwork.",
                 },
                 {
                   icon: Tv,
