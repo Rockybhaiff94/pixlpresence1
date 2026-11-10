@@ -126,20 +126,36 @@ export default function AccountRpcStudioPage() {
   const [regenerating, setRegenerating] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(885); // 14:45 initial
 
-  // Roblox-Style Quick Device Authorization Linking State
-  const [linkingSession, setLinkingSession] = useState<{
+  // Roblox-Style Quick Device Authorization Linking State Machine
+  type LinkingState =
+    | "idle"
+    | "generating"
+    | "waiting"
+    | "verifying"
+    | "linked"
+    | "expired"
+    | "failed"
+    | "cancelled";
+
+  const [linkingState, setLinkingState] = useState<LinkingState>("idle");
+  const [currentSession, setCurrentSession] = useState<{
+    sessionId: string;
     code: string;
     codeId: string;
     expiresAt: string;
-    timeLeft: number;
+    expiresAtMs: number;
   } | null>(null);
-  const [linkingStatus, setLinkingStatus] = useState<"IDLE" | "PENDING" | "CONSUMED" | "EXPIRED">("IDLE");
+  const [timeLeft, setTimeLeft] = useState(0);
   const [linkedDevices, setLinkedDevices] = useState<
     { id: string; deviceName: string; consumedAt: string; lastUsedAt: string }[]
   >([]);
-  const [isGeneratingCode, setIsGeneratingCode] = useState(false);
   const [copiedInstallCmd, setCopiedInstallCmd] = useState(false);
-  const [cancelingCode, setCancelingCode] = useState(false);
+
+  // Monotonic session tracking & in-flight abort refs to completely eliminate UI flickering
+  const activeSessionIdRef = useRef<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Track user modifications so background requests never overwrite unsaved edits
   const isDirtyRef = useRef(false);
@@ -268,77 +284,173 @@ export default function AccountRpcStudioPage() {
     }
   };
 
-  // Countdown timer & live status polling for device linking code
+  // Helper to completely purge active timers and abort in-flight requests
+  const clearSessionPointers = () => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    if (pollingTimerRef.current) {
+      clearInterval(pollingTimerRef.current);
+      pollingTimerRef.current = null;
+    }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  };
+
+  // Synchronize expiration timer accurately on tab focus / visibility change
   useEffect(() => {
-    if (!linkingSession || linkingStatus !== "PENDING") return;
-
-    const timer = setInterval(() => {
-      setLinkingSession((prev) => {
-        if (!prev) return null;
-        if (prev.timeLeft <= 1) {
-          setLinkingStatus("EXPIRED");
-          return null;
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === "visible" && currentSession && linkingState === "waiting") {
+        const remaining = Math.max(0, Math.floor((currentSession.expiresAtMs - Date.now()) / 1000));
+        setTimeLeft(remaining);
+        if (remaining <= 0) {
+          clearSessionPointers();
+          setLinkingState("expired");
+          setCurrentSession(null);
         }
-        return { ...prev, timeLeft: prev.timeLeft - 1 };
-      });
-    }, 1000);
-
-    // Poll backend every 2.5s to check if plugin verified the code
-    const poller = setInterval(async () => {
-      if (!linkingSession?.codeId) return;
-      try {
-        const res = await apiFetch(`/api/rpc/device/status?codeId=${linkingSession.codeId}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.status === "CONSUMED") {
-            setLinkingStatus("CONSUMED");
-            setLinkingSession(null);
-            fetchLinkedDevices();
-          } else if (data.status === "EXPIRED" || data.status === "REVOKED") {
-            setLinkingStatus("EXPIRED");
-            setLinkingSession(null);
-          }
-        }
-      } catch {
-        // ignore polling errors
       }
-    }, 2500);
-
-    return () => {
-      clearInterval(timer);
-      clearInterval(poller);
     };
-  }, [linkingSession?.codeId, linkingStatus]);
+
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+    };
+  }, [currentSession, linkingState]);
+
+  // Clean up on component unmount
+  useEffect(() => {
+    return () => {
+      clearSessionPointers();
+    };
+  }, []);
 
   const handleGenerateLinkingCode = async () => {
-    setIsGeneratingCode(true);
-    setLinkingStatus("PENDING");
+    // 1. Immediately invalidate previous session and kill timers / pending requests
+    clearSessionPointers();
+    const newSessionId = `rpc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    activeSessionIdRef.current = newSessionId;
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    // Reset session view and enter single 'generating' state
+    setCurrentSession(null);
+    setTimeLeft(0);
+    setLinkingState("generating");
+
     try {
-      const res = await apiFetch("/api/rpc/device/authorize", { method: "POST" });
-      if (res.ok) {
-        const data = await res.json();
-        setLinkingSession({
-          code: data.code,
-          codeId: data.codeId,
-          expiresAt: data.expiresAt,
-          timeLeft: data.expiresInSeconds || 120,
-        });
+      const res = await apiFetch("/api/rpc/device/authorize", {
+        method: "POST",
+        signal: controller.signal,
+      });
+
+      // Disregard if a newer session was triggered or component unmounted
+      if (activeSessionIdRef.current !== newSessionId || controller.signal.aborted) {
+        return;
       }
-    } catch (err) {
-      console.error("Failed to generate device linking code", err);
-    } finally {
-      setIsGeneratingCode(false);
+
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      if (activeSessionIdRef.current !== newSessionId || controller.signal.aborted) {
+        return;
+      }
+
+      const expiresAtMs = new Date(data.expiresAt).getTime();
+      const initialRemaining = Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000));
+
+      if (initialRemaining <= 0) {
+        setLinkingState("expired");
+        return;
+      }
+
+      const sessionData = {
+        sessionId: newSessionId,
+        code: data.code,
+        codeId: data.codeId,
+        expiresAt: data.expiresAt,
+        expiresAtMs,
+      };
+
+      setCurrentSession(sessionData);
+      setTimeLeft(initialRemaining);
+      setLinkingState("waiting");
+
+      // Start countdown timer tied strictly to newSessionId
+      countdownTimerRef.current = setInterval(() => {
+        if (activeSessionIdRef.current !== newSessionId) return;
+        const currentRemaining = Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000));
+        setTimeLeft(currentRemaining);
+        if (currentRemaining <= 0) {
+          clearSessionPointers();
+          if (activeSessionIdRef.current === newSessionId) {
+            setLinkingState("expired");
+            setCurrentSession(null);
+          }
+        }
+      }, 1000);
+
+      // Start live status poller tied strictly to newSessionId
+      pollingTimerRef.current = setInterval(async () => {
+        if (activeSessionIdRef.current !== newSessionId || controller.signal.aborted) return;
+        try {
+          const pollRes = await apiFetch(`/api/rpc/device/status?codeId=${data.codeId}`, {
+            signal: controller.signal,
+          });
+
+          // Disregard if session was invalidated while polling was in-flight
+          if (activeSessionIdRef.current !== newSessionId || controller.signal.aborted) return;
+
+          if (pollRes.ok) {
+            const pollData = await pollRes.json();
+            if (activeSessionIdRef.current !== newSessionId) return;
+
+            if (pollData.status === "CONSUMED") {
+              clearSessionPointers();
+              setLinkingState("linked");
+              setCurrentSession(null);
+              fetchLinkedDevices();
+            } else if (pollData.status === "EXPIRED" || pollData.status === "REVOKED") {
+              clearSessionPointers();
+              setLinkingState("expired");
+              setCurrentSession(null);
+            }
+          }
+        } catch (pollErr: any) {
+          if (pollErr?.name === "AbortError" || activeSessionIdRef.current !== newSessionId) return;
+          // Ignore transient polling network hiccups
+        }
+      }, 2000);
+
+    } catch (err: any) {
+      if (controller.signal.aborted || activeSessionIdRef.current !== newSessionId) {
+        return;
+      }
+      console.error("[RPC Studio] Failed to generate device linking code:", err);
+      setLinkingState("failed");
     }
   };
 
   const handleCancelLinking = async () => {
-    setCancelingCode(true);
+    clearSessionPointers();
+    activeSessionIdRef.current = null;
+    setCurrentSession(null);
+    setTimeLeft(0);
+    setLinkingState("cancelled");
+
     try {
       await apiFetch("/api/rpc/device/revoke", { method: "POST" });
-      setLinkingSession(null);
-      setLinkingStatus("IDLE");
+    } catch {
+      // ignore
     } finally {
-      setCancelingCode(false);
+      setLinkingState("idle");
     }
   };
 
@@ -599,37 +711,46 @@ export default function AccountRpcStudioPage() {
               </p>
             </div>
 
-            {/* Quick Link Action Area */}
+            {/* Quick Link Action Button based on strict single state */}
             <div className="flex flex-col items-end gap-3 w-full lg:w-auto">
-              {!linkingSession && linkingStatus !== "CONSUMED" && (
+              {(linkingState === "idle" || linkingState === "cancelled") && (
                 <Button
                   onClick={handleGenerateLinkingCode}
-                  disabled={isGeneratingCode}
                   variant="solid-white"
                   className="px-6 py-2.5 text-xs font-bold tracking-wider flex items-center gap-2"
                 >
-                  {isGeneratingCode ? <RefreshCw className="animate-spin" size={14} /> : <Plug size={14} />}
-                  {isGeneratingCode ? "GENERATING CODE..." : "GENERATE LINKING CODE"}
+                  <Plug size={14} />
+                  GENERATE LINKING CODE
                 </Button>
               )}
 
-              {linkingSession && (
+              {linkingState === "generating" && (
+                <Button
+                  disabled
+                  variant="solid-white"
+                  className="px-6 py-2.5 text-xs font-bold tracking-wider flex items-center gap-2"
+                >
+                  <RefreshCw className="animate-spin" size={14} />
+                  GENERATING CODE...
+                </Button>
+              )}
+
+              {(linkingState === "waiting" || linkingState === "verifying") && (
                 <div className="flex items-center gap-3">
                   <Button
                     onClick={handleCancelLinking}
-                    disabled={cancelingCode}
                     variant="outline"
                     className="text-xs px-3 py-1.5 text-neutral-400 hover:text-red-400"
                   >
-                    {cancelingCode ? "CANCELING..." : "CANCEL LINKING"}
+                    CANCEL LINKING
                   </Button>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Live Linking Display Window */}
-          {linkingSession && (
+          {/* 1. Live Linking Code Display Window */}
+          {(linkingState === "waiting" || linkingState === "verifying") && currentSession && (
             <div className="p-6 rounded-xl bg-[#070709] border border-neutral-700 space-y-4 text-center max-w-md mx-auto animate-fade-in">
               <span className="text-[10px] text-neutral-400 uppercase tracking-widest font-semibold block">
                 ENTER THIS CODE IN DISCORD
@@ -638,7 +759,7 @@ export default function AccountRpcStudioPage() {
               {/* Huge Monospace Code Display */}
               <div className="py-2 px-4 rounded-xl bg-[#101015] border border-neutral-600 inline-block">
                 <span className="text-3xl sm:text-4xl font-extrabold tracking-widest text-white font-mono select-all">
-                  {linkingSession.code}
+                  {currentSession.code}
                 </span>
               </div>
 
@@ -648,20 +769,25 @@ export default function AccountRpcStudioPage() {
                 <span className="text-neutral-400">
                   Expires in:{" "}
                   <strong className="text-amber-300">
-                    {Math.floor(linkingSession.timeLeft / 60)}:
-                    {(linkingSession.timeLeft % 60).toString().padStart(2, "0")}
+                    {Math.floor(timeLeft / 60)}:
+                    {(timeLeft % 60).toString().padStart(2, "0")}
                   </strong>
                 </span>
               </div>
 
               <div className="flex items-center justify-center gap-2 text-[11px] text-neutral-500">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                <span>Waiting for Vencord plugin to submit code...</span>
+                <span>
+                  {linkingState === "verifying"
+                    ? "Verifying code with Discord client..."
+                    : "Waiting for Vencord plugin to submit code..."}
+                </span>
               </div>
             </div>
           )}
 
-          {linkingStatus === "CONSUMED" && (
+          {/* 2. Linked Success Banner */}
+          {linkingState === "linked" && (
             <div className="p-6 rounded-xl bg-emerald-950/20 border border-emerald-500/40 text-center max-w-md mx-auto space-y-2 animate-fade-in">
               <CheckCircle2 size={32} className="mx-auto text-emerald-400" />
               <p className="text-white font-bold text-sm">Discord Device Linked Successfully!</p>
@@ -671,7 +797,7 @@ export default function AccountRpcStudioPage() {
               <div className="pt-2">
                 <Button
                   variant="outline"
-                  onClick={() => setLinkingStatus("IDLE")}
+                  onClick={() => setLinkingState("idle")}
                   className="text-xs px-4 py-1.5"
                 >
                   DISMISS
@@ -680,7 +806,8 @@ export default function AccountRpcStudioPage() {
             </div>
           )}
 
-          {linkingStatus === "EXPIRED" && (
+          {/* 3. Expired Banner */}
+          {linkingState === "expired" && (
             <div className="p-5 rounded-xl bg-amber-950/20 border border-amber-500/40 text-center max-w-md mx-auto space-y-2 animate-fade-in">
               <p className="text-amber-300 font-bold text-xs uppercase tracking-wider">
                 Linking Code Expired
@@ -694,6 +821,25 @@ export default function AccountRpcStudioPage() {
                 className="text-xs px-4 py-1.5 mt-2"
               >
                 GENERATE NEW CODE
+              </Button>
+            </div>
+          )}
+
+          {/* 4. Failed Banner */}
+          {linkingState === "failed" && (
+            <div className="p-5 rounded-xl bg-red-950/20 border border-red-500/40 text-center max-w-md mx-auto space-y-2 animate-fade-in">
+              <p className="text-red-300 font-bold text-xs uppercase tracking-wider">
+                Failed to Generate Linking Code
+              </p>
+              <p className="text-neutral-400 text-[11px]">
+                A network or server error occurred. Please check your connection and try again.
+              </p>
+              <Button
+                variant="solid-white"
+                onClick={handleGenerateLinkingCode}
+                className="text-xs px-4 py-1.5 mt-2"
+              >
+                RETRY
               </Button>
             </div>
           )}

@@ -175,48 +175,103 @@ export function applyActivity(rpc: RpcResponse) {
 
 export async function linkDeviceAccount(code: string): Promise<void> {
     const store = settings.store;
-    const apiUrl = (store.apiUrl || "https://pixlpresence1-web.vercel.app").trim().replace(/\/+$/, "");
+    const configuredApiUrl = (store.apiUrl || "https://pixlpresence1-web.vercel.app").trim().replace(/\/+$/, "");
+
+    // Fallback URLs to protect against domain-level network issues or CORS/CSP blocks
+    const candidateUrls = [configuredApiUrl];
+    if (configuredApiUrl.includes("pixlpresence1-web.vercel.app")) {
+        candidateUrls.push("https://pixelgg-api.onrender.com");
+    } else if (configuredApiUrl.includes("pixelgg-api.onrender.com")) {
+        candidateUrls.push("https://pixlpresence1-web.vercel.app");
+    }
 
     updateState({ status: "connecting", lastError: null });
 
-    const response = await fetch(`${apiUrl}/api/rpc/device/verify`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json"
-        },
-        body: JSON.stringify({
-            code: code.trim().toUpperCase(),
-            clientName: "Vencord Discord Client",
-            platform: "Windows / Vencord"
-        })
-    });
+    let lastErrorMsg = "Failed to link account.";
+    let isConnected = false;
 
-    const data = await response.json();
+    for (const baseUrl of candidateUrls) {
+        try {
+            logDebug(`Connecting to authorization endpoint at: ${baseUrl}/api/rpc/device/verify`);
+            const response = await fetch(`${baseUrl}/api/rpc/device/verify`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Accept: "application/json"
+                },
+                body: JSON.stringify({
+                    code: code.trim().toUpperCase(),
+                    clientName: "Vencord Discord Client",
+                    platform: "Windows / Vencord"
+                })
+            });
 
-    if (!response.ok || !data.success) {
-        updateState({
-            status: "error",
-            lastError: data.error || "Failed to link account."
-        });
-        throw new Error(data.error || "Failed to link account.");
+            const data = await response.json().catch(() => null);
+
+            if (!response.ok || !data?.success) {
+                if (data?.error) {
+                    lastErrorMsg = data.error;
+                } else if (response.status === 400) {
+                    lastErrorMsg = "Invalid or expired linking code. Please generate a fresh code in your web dashboard.";
+                } else if (response.status === 401 || response.status === 403) {
+                    lastErrorMsg = "Authorization rejected. Please check your account status.";
+                } else if (response.status === 404) {
+                    lastErrorMsg = "Device verification endpoint not found. Please verify your API URL in settings.";
+                } else if (response.status === 429) {
+                    lastErrorMsg = "Too many verification attempts. Please wait 30 seconds before trying again.";
+                } else if (response.status >= 500) {
+                    lastErrorMsg = "PIXEL.GG servers are temporarily unavailable. Please try again shortly.";
+                } else {
+                    lastErrorMsg = `Verification failed (HTTP ${response.status}).`;
+                }
+
+                // If server responded with a definitive business error (e.g. invalid code), do not try fallback
+                updateState({
+                    status: "error",
+                    lastError: lastErrorMsg
+                });
+                throw new Error(lastErrorMsg);
+            }
+
+            // Successfully authenticated
+            store.deviceToken = data.deviceToken;
+            store.linkedUsername = data.username;
+
+            // If primary URL failed but fallback succeeded, save working URL
+            if (baseUrl !== configuredApiUrl) {
+                store.apiUrl = baseUrl;
+            }
+
+            updateState({
+                status: "connected",
+                linkedUsername: data.username,
+                lastError: null,
+                retryCount: 0
+            });
+
+            logDebug(`Account successfully linked as @${data.username}`);
+            isConnected = true;
+
+            // Immediately fetch presence
+            await fetchAndSync();
+            break;
+        } catch (err: any) {
+            // If it's an explicit business error thrown above, re-throw immediately
+            if (err.message && !err.message.includes("Failed to fetch") && !err.message.includes("NetworkError")) {
+                throw err;
+            }
+            logDebug(`Network error attempting ${baseUrl}:`, err);
+            lastErrorMsg = "Network connection failed (Failed to fetch). Discord may be blocking requests via CSP, or PIXEL.GG is unreachable. Please verify your connection.";
+        }
     }
 
-    // Persist device token and linked username
-    store.deviceToken = data.deviceToken;
-    store.linkedUsername = data.username;
-
-    updateState({
-        status: "connected",
-        linkedUsername: data.username,
-        lastError: null,
-        retryCount: 0
-    });
-
-    logDebug(`Account successfully linked as @${data.username}`);
-
-    // Immediately fetch presence
-    await fetchAndSync();
+    if (!isConnected) {
+        updateState({
+            status: "error",
+            lastError: lastErrorMsg
+        });
+        throw new Error(lastErrorMsg);
+    }
 }
 
 export async function disconnectDeviceAccount(): Promise<void> {

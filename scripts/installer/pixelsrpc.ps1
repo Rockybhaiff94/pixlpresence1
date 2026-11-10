@@ -331,6 +331,7 @@ function Integrate-PixelsRpcPlugin {
             "index.ts",
             "settings.ts",
             "types.ts",
+            "native.ts",
             "styles.css",
             "components/StatusCard.tsx",
             "components/ActionControls.tsx",
@@ -378,6 +379,27 @@ function Integrate-PixelsRpcPlugin {
         exit 1
     }
     Write-Preflight "Plugin imports validated" "pass"
+
+    # Whitelist PixelsRPC domains in Vencord Content Security Policy (CSP)
+    $cspPath = Join-Path $VENCORD_DIR "src\main\csp\index.ts"
+    if (Test-Path $cspPath) {
+        $cspText = Get-Content $cspPath -Raw
+        if ($cspText -notmatch "pixlpresence1-web\.vercel\.app") {
+            $policySnippet = @'
+    // PIXEL.GG & PixelsRPC endpoints (Web dashboard, API & assets)
+    "pixlpresence1-web.vercel.app": ImageAndCssSrc,
+    "pixelgg-api.onrender.com": ImageAndCssSrc,
+    "*.pixel.gg": ImageAndCssSrc,
+    "pixel.gg": ImageAndCssSrc,
+};
+'@
+            $cspText = $cspText -replace '\};\s*$', $policySnippet
+            Set-Content -Path $cspPath -Value $cspText -Encoding UTF8
+            Write-Preflight "Vencord CSP whitelisted for PIXEL.GG" "pass"
+        } else {
+            Write-Preflight "Vencord CSP whitelisted for PIXEL.GG" "pass"
+        }
+    }
 }
 
 # 7. Install Dependencies and Build Vencord with PixelsRPC

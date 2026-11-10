@@ -19,7 +19,8 @@
       "@utils/*": ["./src/vencord-types/*"],
       "@api/*": ["./src/vencord-types/*"],
       "@webpack/common": ["./src/vencord-types/webpack-common"],
-      "@webpack": ["./src/vencord-types/webpack"]
+      "@webpack": ["./src/vencord-types/webpack"],
+      "@main/csp": ["./src/vencord-types/main-csp"]
     }
   },
   "include": ["src/**/*"]
