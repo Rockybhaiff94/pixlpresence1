@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     PixelsRPC CLI — Native Vencord & Discord Rich Presence Manager for PIXEL.GG
 .DESCRIPTION

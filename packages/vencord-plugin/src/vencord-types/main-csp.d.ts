@@ -8,3 +8,4 @@ export declare const ImageAndCssSrc: string[];
 export declare const ImageScriptsAndCssSrc: string[];
 
 export declare const CspPolicies: PolicyMap;
+
