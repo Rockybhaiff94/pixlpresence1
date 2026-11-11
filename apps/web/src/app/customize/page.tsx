@@ -21,6 +21,8 @@ import { ResizableDivider } from "@/components/studio/ResizableDivider";
 import { ParticlesCanvas } from "@/components/studio/ParticlesCanvas";
 import { ClassicCustomizer } from "@/components/studio/ClassicCustomizer";
 import { StudioTemplatePreset } from "@/components/studio/templates";
+import { StudioFloatingDock, DockPosition, ToolSelection } from "@/components/studio/StudioFloatingDock";
+import { StudioContextualSettingsPanel } from "@/components/studio/StudioContextualSettingsPanel";
 import {
   AlertCircle,
   CheckCircle2,
@@ -78,6 +80,30 @@ export default function CustomizePage() {
   const [zoom, setZoom] = useState<number>(100);
   const [mobileView, setMobileView] = useState<"edit" | "preview">("edit");
   const workspaceContainerRef = useRef<HTMLDivElement>(null);
+
+  // Adaptive Floating Dock & Contextual Settings Panel State
+  const [dockPosition, setDockPosition] = useState<DockPosition>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("pixel_studio_dock_position");
+        if (saved === "bottom" || saved === "top" || saved === "left" || saved === "right") {
+          return saved as DockPosition;
+        }
+      } catch {}
+    }
+    return "bottom";
+  });
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+
+  const handleSelectTool = (tool: ToolSelection) => {
+    if (tool.type === "category") {
+      setActiveCategory(tool.id as StudioTab);
+      setCurrentView("categories");
+    } else {
+      setCurrentView(tool.id as StudioView);
+    }
+    setIsSettingsOpen(true);
+  };
 
   // Restore Workspace Preferences from localStorage
   useEffect(() => {
@@ -678,7 +704,10 @@ export default function CustomizePage() {
         {/* Top Area: Compact Horizontal Navigation Toolbar */}
         <StudioTopBar
           currentView={currentView}
-          setCurrentView={setCurrentView}
+          setCurrentView={(v) => {
+            setCurrentView(v);
+            setIsSettingsOpen(true);
+          }}
           deviceMode={deviceMode}
           setDeviceMode={setDeviceMode}
           canUndo={historyIdx > 0}
@@ -751,198 +780,140 @@ export default function CustomizePage() {
             />
           </div>
         ) : (
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            {/* Mobile Screen Segmented Tab Switcher (< 1024px) */}
-            <div className="lg:hidden flex items-center justify-center p-2 bg-[#0c0c0e] border-b border-[#202020] shrink-0">
-              <div className="flex items-center gap-1 bg-[#141416] p-1 rounded-xl border border-[#242426] text-xs font-mono">
-                <button
-                  onClick={() => setMobileView("edit")}
-                  className={`px-4 py-1.5 rounded-lg flex items-center gap-2 transition-colors cursor-pointer ${
-                    mobileView === "edit"
-                      ? "bg-white text-black font-bold shadow-sm"
-                      : "text-neutral-400 hover:text-white"
-                  }`}
-                >
-                  <Sliders size={13} />
-                  <span>Edit Controls</span>
-                </button>
-                <button
-                  onClick={() => setMobileView("preview")}
-                  className={`px-4 py-1.5 rounded-lg flex items-center gap-2 transition-colors cursor-pointer ${
-                    mobileView === "preview"
-                      ? "bg-white text-black font-bold shadow-sm"
-                      : "text-neutral-400 hover:text-white"
-                  }`}
-                >
-                  <Eye size={13} />
-                  <span>Live Preview</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Horizontal Visual Workspace with Dynamic Split & Passthrough Background */}
-            <div
-              ref={workspaceContainerRef}
-              style={getPassthroughBackgroundStyle()}
-              className="flex-1 flex flex-col lg:flex-row overflow-hidden relative"
-            >
-              {/* Passthrough Background Overlays (Active in Transparent / Glass / Floating modes) */}
-              {transparencyMode !== "solid" && (
-                <>
-                  {config.background.pattern === "dots" && (
-                    <div className="absolute inset-0 nt-dot-grid opacity-60 pointer-events-none z-0" />
-                  )}
-                  {config.background.pattern === "grid" && (
-                    <div
-                      className="absolute inset-0 pointer-events-none z-0 opacity-20"
-                      style={{
-                        backgroundImage:
-                          "linear-gradient(to right, #444 1px, transparent 1px), linear-gradient(to bottom, #444 1px, transparent 1px)",
-                        backgroundSize: "28px 28px",
-                      }}
-                    />
-                  )}
-                  {config.background.pattern === "scanlines" && (
-                    <div
-                      className="absolute inset-0 pointer-events-none z-0 opacity-15"
-                      style={{
-                        backgroundImage:
-                          "linear-gradient(rgba(255,255,255,0.06) 50%, transparent 50%)",
-                        backgroundSize: "100% 4px",
-                      }}
-                    />
-                  )}
-                  {config.effects.particles !== "None" && (
-                    <ParticlesCanvas
-                      effect={config.effects.particles}
-                      accentColor={config.effects.glowColor || "#ffffff"}
-                    />
-                  )}
-                </>
-              )}
-
-              {/* LEFT AREA — EDITING WORKSPACE */}
-              <div
-                style={{
-                  width: isBothPanelsVisible ? `${100 - previewWidthPct}%` : undefined,
-                }}
-                className={`h-full flex flex-col overflow-hidden relative z-10 transition-all duration-150 ${
-                  mobileView === "edit" ? "flex" : "hidden lg:flex"
-                } ${
-                  !isEditorVisible || isFullscreenPreview
-                    ? "hidden"
-                    : isBothPanelsVisible
-                    ? ""
-                    : "w-full"
-                }`}
-              >
-                <StudioLeftWorkspace
-                  currentView={currentView}
-                  setCurrentView={setCurrentView}
-                  activeCategory={activeCategory}
-                  setActiveCategory={setActiveCategory}
-                  config={config}
-                  updateConfig={updateConfigWithHistory}
-                  displayName={displayName}
-                  setDisplayName={setDisplayName}
-                  bio={bio}
-                  setBio={setBio}
-                  avatarUrl={avatarUrl}
-                  setAvatarUrl={setAvatarUrl}
-                  bannerUrl={bannerUrl}
-                  setBannerUrl={setBannerUrl}
-                  musicUrl={musicUrl}
-                  setMusicUrl={setMusicUrl}
-                  onApplyTemplatePreset={handleApplyTemplate}
-                  onToggleLayerVisibility={handleToggleLayerVisibility}
-                  onToggleLayerLock={handleToggleLayerLock}
-                  onMoveLayer={handleMoveLayer}
-                  onAddEmbed={handleAddEmbed}
-                  onAddElement={handleAddElement}
-                  selectedId={selectedCanvasId}
-                  onSelectElement={(id) => setSelectedCanvasId(id)}
-                  transparencyMode={transparencyMode}
-                  panelOpacity={panelOpacity}
-                  panelBlur={panelBlur}
-                  panelBorderOpacity={panelBorderOpacity}
-                  onCollapsePanel={() => setIsEditorVisible(false)}
-                />
-
-                {/* Floating Reopen Live Preview Button (when preview is collapsed) */}
-                {!isPreviewVisible && !isFullscreenPreview && (
-                  <button
-                    onClick={() => setIsPreviewVisible(true)}
-                    className="absolute top-4 right-4 z-40 flex items-center gap-2 px-3 py-1.5 rounded-full border border-neutral-700 bg-neutral-900/95 backdrop-blur-md text-white font-mono text-xs shadow-2xl cursor-pointer hover:bg-neutral-800 hover:border-neutral-500 transition-all group"
-                    title="Show Live Preview Canvas"
-                  >
-                    <PanelRightOpen
-                      size={14}
-                      className="text-cyan-400 group-hover:scale-110 transition-transform"
-                    />
-                    <span className="font-semibold">Show Preview</span>
-                  </button>
+          <div
+            ref={workspaceContainerRef}
+            style={getPassthroughBackgroundStyle()}
+            className="flex-1 flex flex-col min-h-0 overflow-hidden relative w-full h-full"
+          >
+            {/* Passthrough Background Overlays (Active in Transparent / Glass / Floating modes) */}
+            {transparencyMode !== "solid" && (
+              <>
+                {config.background.pattern === "dots" && (
+                  <div className="absolute inset-0 nt-dot-grid opacity-60 pointer-events-none z-0" />
                 )}
-              </div>
+                {config.background.pattern === "grid" && (
+                  <div
+                    className="absolute inset-0 pointer-events-none z-0 opacity-20"
+                    style={{
+                      backgroundImage:
+                        "linear-gradient(to right, #444 1px, transparent 1px), linear-gradient(to bottom, #444 1px, transparent 1px)",
+                      backgroundSize: "28px 28px",
+                    }}
+                  />
+                )}
+                {config.background.pattern === "scanlines" && (
+                  <div
+                    className="absolute inset-0 pointer-events-none z-0 opacity-15"
+                    style={{
+                      backgroundImage:
+                        "linear-gradient(rgba(255,255,255,0.06) 50%, transparent 50%)",
+                      backgroundSize: "100% 4px",
+                    }}
+                  />
+                )}
+                {config.effects.particles !== "None" && (
+                  <ParticlesCanvas
+                    effect={config.effects.particles}
+                    accentColor={config.effects.glowColor || "#ffffff"}
+                  />
+                )}
+              </>
+            )}
 
-              {/* DRAGGABLE RESIZABLE DIVIDER (Desktop only) */}
-              {isBothPanelsVisible && (
-                <ResizableDivider
-                  previewWidthPct={previewWidthPct}
-                  onResize={(newPct) => setPreviewWidthPct(newPct)}
-                  onReset={() => setPreviewWidthPct(40)}
-                  containerRef={workspaceContainerRef}
-                  minPct={20}
-                  maxPct={70}
-                />
-              )}
-
-              {/* RIGHT AREA — LIVE PROFILE PREVIEW */}
-              <div
-                style={{
-                  width: isBothPanelsVisible ? `${previewWidthPct}%` : undefined,
+            {/* FULL-SCREEN LIVE PROFILE PREVIEW WORKSPACE */}
+            <div className="w-full h-full flex-1 flex flex-col overflow-hidden relative z-10">
+              <StudioRightPreviewCanvas
+                deviceMode={deviceMode}
+                setDeviceMode={setDeviceMode}
+                config={config}
+                previewData={previewData}
+                activeCategory={activeCategory}
+                onSelectCategory={(cat) => {
+                  setActiveCategory(cat);
+                  setCurrentView("categories");
+                  setIsSettingsOpen(true);
                 }}
-                className={`h-full bg-[#050507] flex flex-col overflow-hidden relative z-10 transition-all duration-150 ${
-                  mobileView === "preview" ? "flex" : "hidden lg:flex"
-                } ${
-                  !isPreviewVisible ? "hidden" : isBothPanelsVisible ? "" : "w-full"
-                }`}
-              >
-                <StudioRightPreviewCanvas
-                  deviceMode={deviceMode}
-                  setDeviceMode={setDeviceMode}
-                  config={config}
-                  previewData={previewData}
-                  activeCategory={activeCategory}
-                  onSelectCategory={(cat) => {
-                    setActiveCategory(cat);
-                    setCurrentView("categories");
-                    if (mobileView === "preview") {
-                      setMobileView("edit");
-                    }
-                  }}
-                  onUpdateCanvas={handleUpdateCanvas}
-                  selectedCanvasId={selectedCanvasId}
-                  onSelectCanvasId={(id) => setSelectedCanvasId(id)}
-                  zoom={zoom}
-                  setZoom={setZoom}
-                  transparencyMode={transparencyMode}
-                  setTransparencyMode={setTransparencyMode}
-                  panelOpacity={panelOpacity}
-                  setPanelOpacity={setPanelOpacity}
-                  panelBlur={panelBlur}
-                  setPanelBlur={setPanelBlur}
-                  panelBorderOpacity={panelBorderOpacity}
-                  setPanelBorderOpacity={setPanelBorderOpacity}
-                  isEditorVisible={isEditorVisible}
-                  setIsEditorVisible={setIsEditorVisible}
-                  isPreviewVisible={isPreviewVisible}
-                  setIsPreviewVisible={setIsPreviewVisible}
-                  onResetPanelSplit={handleResetPanelSplit}
-                  isFullscreenPreview={isFullscreenPreview}
-                  onToggleFullscreenPreview={handleToggleFullscreenPreview}
-                />
-              </div>
+                onUpdateCanvas={handleUpdateCanvas}
+                selectedCanvasId={selectedCanvasId}
+                onSelectCanvasId={(id) => setSelectedCanvasId(id)}
+                zoom={zoom}
+                setZoom={setZoom}
+                transparencyMode={transparencyMode}
+                setTransparencyMode={setTransparencyMode}
+                panelOpacity={panelOpacity}
+                setPanelOpacity={setPanelOpacity}
+                panelBlur={panelBlur}
+                setPanelBlur={setPanelBlur}
+                panelBorderOpacity={panelBorderOpacity}
+                setPanelBorderOpacity={setPanelBorderOpacity}
+                isEditorVisible={isSettingsOpen}
+                setIsEditorVisible={setIsSettingsOpen}
+                isPreviewVisible={true}
+                setIsPreviewVisible={() => {}}
+                onResetPanelSplit={handleResetPanelSplit}
+                isFullscreenPreview={isFullscreenPreview}
+                onToggleFullscreenPreview={handleToggleFullscreenPreview}
+              />
             </div>
+
+            {/* STAGE TWO: CONTEXTUAL SETTINGS PANEL (SLIDES INWARD FROM DOCK) */}
+            <StudioContextualSettingsPanel
+              isOpen={isSettingsOpen}
+              onClose={() => setIsSettingsOpen(false)}
+              dockPosition={dockPosition}
+            >
+              <StudioLeftWorkspace
+                currentView={currentView}
+                setCurrentView={setCurrentView}
+                activeCategory={activeCategory}
+                setActiveCategory={setActiveCategory}
+                config={config}
+                updateConfig={updateConfigWithHistory}
+                displayName={displayName}
+                setDisplayName={setDisplayName}
+                bio={bio}
+                setBio={setBio}
+                avatarUrl={avatarUrl}
+                setAvatarUrl={setAvatarUrl}
+                bannerUrl={bannerUrl}
+                setBannerUrl={setBannerUrl}
+                musicUrl={musicUrl}
+                setMusicUrl={setMusicUrl}
+                onApplyTemplatePreset={handleApplyTemplate}
+                onToggleLayerVisibility={handleToggleLayerVisibility}
+                onToggleLayerLock={handleToggleLayerLock}
+                onMoveLayer={handleMoveLayer}
+                onAddEmbed={handleAddEmbed}
+                onAddElement={handleAddElement}
+                selectedId={selectedCanvasId}
+                onSelectElement={(id) => setSelectedCanvasId(id)}
+                transparencyMode={transparencyMode}
+                panelOpacity={panelOpacity}
+                panelBlur={panelBlur}
+                panelBorderOpacity={panelBorderOpacity}
+                isFloatingContext={true}
+                onClose={() => setIsSettingsOpen(false)}
+              />
+            </StudioContextualSettingsPanel>
+
+            {/* ADAPTIVE FLOATING NAVIGATION DOCK (STAGE ONE & COLLAPSED) */}
+            <StudioFloatingDock
+              position={dockPosition}
+              onPositionChange={(newPos) => {
+                setDockPosition(newPos);
+                if (typeof window !== "undefined") {
+                  try {
+                    localStorage.setItem("pixel_studio_dock_position", newPos);
+                  } catch {}
+                }
+              }}
+              activeCategory={activeCategory}
+              currentView={currentView}
+              isSettingsOpen={isSettingsOpen}
+              onSelectTool={handleSelectTool}
+              onCloseSettings={() => setIsSettingsOpen(false)}
+              containerRef={workspaceContainerRef}
+            />
           </div>
         )}
       </div>

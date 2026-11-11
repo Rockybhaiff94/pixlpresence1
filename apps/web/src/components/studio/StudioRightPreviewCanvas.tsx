@@ -151,23 +151,6 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
 
   return (
     <div className="relative w-full h-full flex flex-col items-center justify-start bg-[#050507] overflow-hidden select-none">
-      {/* Reopen Editor Pill when editor is collapsed / focus mode */}
-      {!isEditorVisible && setIsEditorVisible && (
-        <button
-          onClick={() => {
-            setIsEditorVisible(true);
-            if (isFullscreenPreview && onToggleFullscreenPreview) {
-              onToggleFullscreenPreview();
-            }
-          }}
-          className="absolute top-4 left-4 z-40 flex items-center gap-2 px-3 py-1.5 rounded-full border border-neutral-700 bg-neutral-900/95 backdrop-blur-md text-white font-mono text-xs shadow-2xl cursor-pointer hover:bg-neutral-800 hover:border-neutral-500 transition-all group"
-          title="Show Left Editing Workspace"
-        >
-          <PanelLeftOpen size={14} className="text-cyan-400 group-hover:scale-110 transition-transform" />
-          <span className="font-semibold">Show Editor</span>
-        </button>
-      )}
-
       {/* Floating Side Toolbar */}
       <FloatingPreviewToolbar
         zoom={zoom}

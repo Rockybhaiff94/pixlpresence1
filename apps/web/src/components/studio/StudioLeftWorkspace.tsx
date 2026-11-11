@@ -21,6 +21,7 @@ import {
   LayoutTemplate,
   FileCode,
   PanelLeftClose,
+  X,
 } from "lucide-react";
 import {
   ProfileDesignConfig,
@@ -81,6 +82,8 @@ interface StudioLeftWorkspaceProps {
   panelBlur?: number;
   panelBorderOpacity?: number;
   onCollapsePanel?: () => void;
+  isFloatingContext?: boolean;
+  onClose?: () => void;
 }
 
 export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
@@ -115,6 +118,8 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
   panelBlur = 12,
   panelBorderOpacity = 30,
   onCollapsePanel,
+  isFloatingContext = false,
+  onClose,
 }) => {
   const [cssValidation, setCssValidation] = useState<{ valid: boolean; error?: string }>({ valid: true });
   const [isBgModalOpen, setIsBgModalOpen] = useState(false);
@@ -215,98 +220,183 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
           : ""
       }`}
     >
-      {/* Top Navigation Row: Sub-Tabs & Category Bar */}
-      <div
-        style={getHeaderStyles()}
-        className="border-b border-[#202020] shrink-0 transition-colors duration-200"
-      >
-        {/* View Switcher: Categories vs Templates vs Layers */}
-        <div className="flex items-center justify-between px-4 py-2 border-b border-[#1b1b1e]">
-          <div className="flex items-center gap-1 bg-[#141416]/80 p-1 rounded-xl border border-[#242426]">
-            <button
-              onClick={() => setCurrentView("categories")}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-                currentView === "categories"
-                  ? "bg-white text-black shadow-sm"
-                  : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              <Sliders size={13} />
-              <span>Categories</span>
-            </button>
-
-            <button
-              onClick={() => setCurrentView("templates")}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-                currentView === "templates"
-                  ? "bg-white text-black shadow-sm"
-                  : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              <LayoutTemplate size={13} />
-              <span>Templates</span>
-            </button>
-
-            <button
-              onClick={() => setCurrentView("layers")}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-                currentView === "layers"
-                  ? "bg-white text-black shadow-sm"
-                  : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              <Layers size={13} />
-              <span>Layers</span>
-            </button>
+      {/* Top Navigation Row: Contextual Header in Floating Mode vs Sub-Tabs & Category Bar in Classic Mode */}
+      {isFloatingContext ? (
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#101014] shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-white">
+              {currentView === "templates" ? (
+                <LayoutTemplate size={14} />
+              ) : currentView === "layers" ? (
+                <Layers size={14} />
+              ) : (
+                React.createElement(
+                  CATEGORIES.find((c) => c.id === activeCategory)?.icon || Layout,
+                  { size: 14 }
+                )
+              )}
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5 text-[10px] text-neutral-400">
+                <span>STUDIO</span>
+                <span>/</span>
+                <span className="uppercase text-neutral-300">
+                  {currentView === "templates"
+                    ? "TEMPLATES"
+                    : currentView === "layers"
+                    ? "LAYERS"
+                    : "MODULE"}
+                </span>
+              </div>
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                {currentView === "templates"
+                  ? "Templates & Presets"
+                  : currentView === "layers"
+                  ? "Layers & Objects"
+                  : CATEGORIES.find((c) => c.id === activeCategory)?.label || "Settings"}
+              </h3>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="text-[10px] text-neutral-500 hidden sm:flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>REAL-TIME EDITING WORKSPACE</span>
+          <div className="flex items-center gap-2">
+            {/* Quick Switcher between Category / Templates / Layers */}
+            <div className="flex items-center gap-1 bg-[#1a1a20] p-0.5 rounded-lg border border-white/5">
+              <button
+                onClick={() => setCurrentView("categories")}
+                className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
+                  currentView === "categories"
+                    ? "bg-white text-black font-bold"
+                    : "text-neutral-400 hover:text-white"
+                }`}
+              >
+                Category
+              </button>
+              <button
+                onClick={() => setCurrentView("templates")}
+                className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
+                  currentView === "templates"
+                    ? "bg-white text-black font-bold"
+                    : "text-neutral-400 hover:text-white"
+                }`}
+              >
+                Templates
+              </button>
+              <button
+                onClick={() => setCurrentView("layers")}
+                className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
+                  currentView === "layers"
+                    ? "bg-white text-black font-bold"
+                    : "text-neutral-400 hover:text-white"
+                }`}
+              >
+                Layers
+              </button>
             </div>
 
-            {onCollapsePanel && (
+            {onClose && (
               <button
-                onClick={onCollapsePanel}
-                className="hidden lg:flex items-center gap-1.5 px-2 py-1 rounded-lg border border-neutral-800 bg-neutral-900/60 text-neutral-400 hover:text-white hover:border-neutral-700 transition-colors cursor-pointer text-[10px]"
-                title="Collapse Editing Workspace (Focus Live Preview)"
+                onClick={onClose}
+                className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/15 text-neutral-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                title="Close Settings Panel (Esc)"
               >
-                <PanelLeftClose size={12} />
-                <span>Collapse</span>
+                <X size={14} />
               </button>
             )}
           </div>
         </div>
+      ) : (
+        <div
+          style={getHeaderStyles()}
+          className="border-b border-[#202020] shrink-0 transition-colors duration-200"
+        >
+          {/* View Switcher: Categories vs Templates vs Layers */}
+          <div className="flex items-center justify-between px-4 py-2 border-b border-[#1b1b1e]">
+            <div className="flex items-center gap-1 bg-[#141416]/80 p-1 rounded-xl border border-[#242426]">
+              <button
+                onClick={() => setCurrentView("categories")}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  currentView === "categories"
+                    ? "bg-white text-black shadow-sm"
+                    : "text-neutral-400 hover:text-white"
+                }`}
+              >
+                <Sliders size={13} />
+                <span>Categories</span>
+              </button>
 
-        {/* 10 Category Navigation Pills (Visible when in "categories" view) */}
-        {currentView === "categories" && (
-          <div className="px-3 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth">
-            {CATEGORIES.map((cat, idx) => {
-              const Icon = cat.icon;
-              const isActive = activeCategory === cat.id;
+              <button
+                onClick={() => setCurrentView("templates")}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  currentView === "templates"
+                    ? "bg-white text-black shadow-sm"
+                    : "text-neutral-400 hover:text-white"
+                }`}
+              >
+                <LayoutTemplate size={13} />
+                <span>Templates</span>
+              </button>
 
-              return (
+              <button
+                onClick={() => setCurrentView("layers")}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  currentView === "layers"
+                    ? "bg-white text-black shadow-sm"
+                    : "text-neutral-400 hover:text-white"
+                }`}
+              >
+                <Layers size={13} />
+                <span>Layers</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="text-[10px] text-neutral-500 hidden sm:flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span>REAL-TIME EDITING WORKSPACE</span>
+              </div>
+
+              {onCollapsePanel && (
                 <button
-                  key={cat.id}
-                  onClick={() => setActiveCategory(cat.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium whitespace-nowrap transition-all cursor-pointer shrink-0 ${
-                    isActive
-                      ? "bg-neutral-800 text-white font-bold border border-neutral-700 shadow-sm"
-                      : "text-neutral-400 hover:text-white hover:bg-neutral-900 border border-transparent"
-                  }`}
+                  onClick={onCollapsePanel}
+                  className="hidden lg:flex items-center gap-1.5 px-2 py-1 rounded-lg border border-neutral-800 bg-neutral-900/60 text-neutral-400 hover:text-white hover:border-neutral-700 transition-colors cursor-pointer text-[10px]"
+                  title="Collapse Editing Workspace (Focus Live Preview)"
                 >
-                  <Icon size={13} className={isActive ? "text-white" : "text-neutral-500"} />
-                  <span>
-                    <span className="text-neutral-500 text-[10px] mr-1">{idx + 1}.</span>
-                    {cat.label}
-                  </span>
+                  <PanelLeftClose size={12} />
+                  <span>Collapse</span>
                 </button>
-              );
-            })}
+              )}
+            </div>
           </div>
-        )}
-      </div>
+
+          {/* 10 Category Navigation Pills (Visible when in "categories" view) */}
+          {currentView === "categories" && (
+            <div className="px-3 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth">
+              {CATEGORIES.map((cat, idx) => {
+                const Icon = cat.icon;
+                const isActive = activeCategory === cat.id;
+
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => setActiveCategory(cat.id)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium whitespace-nowrap transition-all cursor-pointer shrink-0 ${
+                      isActive
+                        ? "bg-neutral-800 text-white font-bold border border-neutral-700 shadow-sm"
+                        : "text-neutral-400 hover:text-white hover:bg-neutral-900 border border-transparent"
+                    }`}
+                  >
+                    <Icon size={13} className={isActive ? "text-white" : "text-neutral-500"} />
+                    <span>
+                      <span className="text-neutral-500 text-[10px] mr-1">{idx + 1}.</span>
+                      {cat.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar">
