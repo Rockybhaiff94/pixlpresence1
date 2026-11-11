@@ -15,6 +15,7 @@ import { ensureFontLoaded } from "./fonts";
 import { scopeAndSanitizeCss } from "./cssUtils";
 import { ParticlesCanvas } from "./ParticlesCanvas";
 import { PlatformIcon } from "@/components/links/PlatformIcons";
+import { DiscordRpcCard } from "./DiscordRpcCard";
 
 export interface PreviewData {
   username: string;
@@ -40,13 +41,7 @@ export interface PreviewData {
     url: string;
     visibility: boolean;
   }>;
-  discordPresence?: {
-    appName?: string | null;
-    details?: string | null;
-    state?: string | null;
-    largeImage?: string | null;
-    smallImage?: string | null;
-  } | null;
+  discordPresence?: any | null;
 }
 
 interface StudioProfilePreviewProps {
@@ -401,90 +396,13 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
                 return null;
               }
 
-              const rpc = data.discordPresence || {
-                appName: "Visual Studio Code",
-                details: "Designing Nothing OS Presence",
-                state: "Pixel.gg Studio Engine",
-                largeImage: "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
-              };
-
-              const imgSizeClass =
-                discordRpc.imageSize === "small"
-                  ? "w-10 h-10"
-                  : discordRpc.imageSize === "large"
-                  ? "w-16 h-16"
-                  : "w-12 h-12";
-
               return (
                 <div key="rpc" {...getElementSelectProps("rpc")} className="w-full">
-                  <div
-                    className="discord-rpc w-full p-4 text-left space-y-2.5 font-mono border transition-all"
-                    style={{
-                      borderRadius: `${discordRpc.borderRadius}px`,
-                      borderColor: discordRpc.customBorderColor || "#242424",
-                      backgroundColor:
-                        discordRpc.style === "glass"
-                          ? "rgba(18, 18, 18, 0.7)"
-                          : discordRpc.style === "neon"
-                          ? "#090610"
-                          : "#111111",
-                      backdropFilter: discordRpc.style === "glass" ? "blur(14px)" : undefined,
-                    }}
-                  >
-                    <div className="flex items-center justify-between text-[10px] text-neutral-400">
-                      <span className="flex items-center gap-1.5 text-white font-semibold">
-                        <Activity size={12} className="text-white" /> DISCORD RICH PRESENCE
-                      </span>
-                      {discordRpc.showTelemetryBadge && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                          LIVE TELEMETRY
-                        </span>
-                      )}
-                    </div>
-
-                    <div
-                      className={`flex ${
-                        discordRpc.imageLayout === "stacked"
-                          ? "flex-col items-start gap-2"
-                          : discordRpc.imageLayout === "right"
-                          ? "flex-row-reverse items-center justify-between gap-3"
-                          : "flex-row items-center gap-3"
-                      }`}
-                    >
-                      {discordRpc.imageLayout !== "hidden" && (
-                        <div className={`${imgSizeClass} rounded-xl bg-neutral-900 border border-neutral-700 flex items-center justify-center font-bold text-xs text-white shrink-0 overflow-hidden shadow-md`}>
-                          {rpc.largeImage ? (
-                            /* eslint-disable-next-line @next/next/no-img-element */
-                            <img
-                              src={rpc.largeImage}
-                              alt="RPC"
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <span>RPC</span>
-                          )}
-                        </div>
-                      )}
-
-                      <div className="min-w-0 text-xs truncate flex-1">
-                        <p className="text-white font-semibold truncate">
-                          {rpc.appName || "Active Discord Application"}
-                        </p>
-                        {rpc.details && (
-                          <p className="text-neutral-400 text-[11px] truncate">{rpc.details}</p>
-                        )}
-                        {rpc.state && (
-                          <p className="text-neutral-500 text-[10px] truncate">{rpc.state}</p>
-                        )}
-                        {discordRpc.showTimer && (
-                          <p className="text-neutral-400 text-[10px] font-mono pt-0.5">
-                            14:45 elapsed
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                  <DiscordRpcCard
+                    config={discordRpc}
+                    data={data.discordPresence}
+                    isInteractiveEditor={isInteractiveEditor}
+                  />
                 </div>
               );
             }

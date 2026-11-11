@@ -3,6 +3,8 @@ import { ViewTracker } from "@/components/effects/ViewTracker";
 import { ProfileClientView } from "@/components/nothing/ProfileClientView";
 import { ServiceWarmingView } from "@/components/nothing/ServiceWarmingView";
 
+export const dynamic = "force-dynamic";
+
 function getApiUrl(): string {
   const raw = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
   let trimmed = raw.trim();
@@ -157,7 +159,7 @@ async function getProfile(rawUsername: string): Promise<ProfileResult> {
   try {
     const apiUrl = getApiUrl();
     const res = await fetch(`${apiUrl}/api/profile/u/${encodeURIComponent(clean)}`, {
-      next: { revalidate: 60 },
+      cache: "no-store",
       signal: AbortSignal.timeout(8000),
     });
 
@@ -211,6 +213,7 @@ export default async function ProfilePage({
       <ViewTracker username={clean} />
       <ProfileClientView
         username={user?.username || clean}
+        discordId={user?.discordId || null}
         displayName={profile?.displayName || user?.username || clean}
         bio={profile?.bio || null}
         avatarUrl={profile?.avatarUrl || ""}

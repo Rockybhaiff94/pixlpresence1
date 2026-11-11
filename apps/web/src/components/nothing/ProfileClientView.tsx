@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import {
   Disc,
 } from "lucide-react";
+import { io } from "socket.io-client";
+import { getApiBaseUrl, apiFetch } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { ProfileDesignConfig, DEFAULT_DESIGN_CONFIG } from "@/types/studio";
 import { StudioProfilePreview } from "@/components/studio/StudioProfilePreview";
@@ -29,6 +31,7 @@ interface ProfileLink {
 
 interface ProfileClientProps {
   username: string;
+  discordId?: string | null;
   displayName: string;
   bio: string | null;
   avatarUrl: string;
@@ -43,19 +46,14 @@ interface ProfileClientProps {
   musicUrl?: string | null;
   musicTitle?: string | null;
   musicArtist?: string | null;
-  discordPresence?: {
-    appName?: string | null;
-    details?: string | null;
-    state?: string | null;
-    largeImage?: string | null;
-    smallImage?: string | null;
-  } | null;
+  discordPresence?: any | null;
   customCss?: string | null;
   designConfig?: string | null;
 }
 
 export const ProfileClientView: React.FC<ProfileClientProps> = ({
   username,
+  discordId,
   displayName,
   bio,
   avatarUrl,
@@ -76,6 +74,89 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
 }) => {
   const [entered, setEntered] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Live Discord Rich Presence state management with real-time websocket and anti-race ordering
+  const [livePresence, setLivePresence] = useState<any>(discordPresence || null);
+  const lastSequenceRef = useRef<number>(0);
+  const lastUpdatedRef = useRef<number>(0);
+
+  useEffect(() => {
+    let isMounted = true;
+    const socketUrl = getApiBaseUrl();
+    const socket = io(socketUrl, {
+      transports: ["websocket", "polling"],
+      reconnectionAttempts: 15,
+      reconnectionDelay: 2000,
+    });
+
+    const handlePresenceUpdate = (data: any) => {
+      if (!isMounted || !data) return;
+
+      // Prevent race conditions: Ignore outdated presence packets
+      if (data.sequence !== undefined && data.sequence < lastSequenceRef.current) {
+        return;
+      }
+      if (data.updatedAt !== undefined && data.updatedAt < lastUpdatedRef.current) {
+        return;
+      }
+
+      lastSequenceRef.current = data.sequence || lastSequenceRef.current;
+      lastUpdatedRef.current = data.updatedAt || Date.now();
+
+      if (data.hasActivity && data.activity && data.status !== "offline") {
+        setLivePresence({
+          ...data.activity,
+          status: data.status,
+          hasActivity: true,
+        });
+      } else {
+        // User closed game, went offline, or is idle without activity
+        setLivePresence({
+          status: data.status || "offline",
+          hasActivity: false,
+          appName: null,
+          details: null,
+          state: null,
+          largeImage: null,
+          smallImage: null,
+          timestamps: null,
+          startTimestamp: null,
+          endTimestamp: null,
+        });
+      }
+    };
+
+    socket.on("connect", () => {
+      socket.emit("subscribe_profile", { username, discordId });
+    });
+
+    socket.on("presence_sync", handlePresenceUpdate);
+    socket.on("presence_update", handlePresenceUpdate);
+
+    // Fallback polling every 6 seconds when socket is not connected
+    const pollInterval = setInterval(async () => {
+      if (!socket.connected && isMounted) {
+        try {
+          const res = await apiFetch(`/api/profile/u/${encodeURIComponent(username)}/presence`, {
+            cache: "no-store",
+          });
+          if (res.ok) {
+            const json = await res.json();
+            if (json.success && json.presence) {
+              handlePresenceUpdate(json.presence);
+            }
+          }
+        } catch (_) {}
+      }
+    }, 6000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(pollInterval);
+      socket.emit("unsubscribe_profile", { username, discordId });
+      socket.disconnect();
+    };
+  }, [username, discordId]);
 
   // Compute Active Studio Configuration with Full Legacy Backward Compatibility
   const activeConfig: ProfileDesignConfig = React.useMemo(() => {
@@ -224,7 +305,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
             views,
             buttons,
             links,
-            discordPresence,
+            discordPresence: livePresence,
           }}
           isInteractiveEditor={false}
           scopeId="profile-page-root"

@@ -6,6 +6,7 @@ import { prisma } from '@discord-rpc/database';
 import { io } from '../index'; // Import socket io
 import { uploadRateLimiter } from '../rateLimiter'; // Import upload rate limiter
 import { resolveDiscordAvatarUrl } from '../auth';
+import { presenceManager, LiveActivity } from '../services/presenceManager';
 
 export const rpcRouter = Router();
 
@@ -511,10 +512,62 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
       io.to(`user_${req.user.id}`).emit('rpc_update', fullPayload);
     }
 
+    // Synchronize live presence manager so public profile visitors get immediate update
+    if (rpcRecord.showProfileRpc !== false && (fullPayload.appName || fullPayload.details || fullPayload.state)) {
+      presenceManager.updatePresence({
+        username: currentUser.username,
+        userId: currentUser.id,
+        discordId: currentUser.discordId,
+        status: 'online',
+        hasActivity: rpcRecord.enableDiscordRpc !== false,
+        activity: rpcRecord.enableDiscordRpc !== false ? {
+          name: fullPayload.appName || 'Active Application',
+          appName: fullPayload.appName || 'Active Application',
+          type: typeof fullPayload.activityType === 'number' ? fullPayload.activityType : 0,
+          details: fullPayload.details || null,
+          state: fullPayload.state || null,
+          largeImage: fullPayload.largeImage || null,
+          smallImage: fullPayload.smallImage || null,
+          largeImageText: fullPayload.largeImageText || null,
+          smallImageText: fullPayload.smallImageText || null,
+          streamUrl: fullPayload.streamUrl || null,
+          startTimestamp: fullPayload.startTimestamp ? new Date(fullPayload.startTimestamp).toISOString() : null,
+          endTimestamp: fullPayload.endTimestamp ? new Date(fullPayload.endTimestamp).toISOString() : null,
+          party: (fullPayload.partySize && fullPayload.partyMax) ? { size: [fullPayload.partySize, fullPayload.partyMax] } : null,
+        } : null,
+        source: 'database',
+      });
+    }
+
     res.json(fullPayload);
   } catch (err) {
     console.error('[RPC Update Error]:', err);
     res.status(500).json({ error: 'Failed to update RPC' });
+  }
+});
+
+/**
+ * POST /api/rpc/presence
+ * Direct live presence synchronization endpoint for desktop app, Vencord plugin, or scripts.
+ */
+rpcRouter.post('/presence', requireAuth, async (req: any, res) => {
+  try {
+    const { activity, status, timestamp, sequence } = req.body || {};
+    const updated = presenceManager.updatePresence({
+      username: req.user.username,
+      userId: req.user.id,
+      discordId: req.user.discordId,
+      status: status || 'online',
+      hasActivity: Boolean(activity && activity.name),
+      activity: activity || null,
+      source: 'client',
+      timestamp,
+      sequence,
+    });
+    res.json({ success: true, presence: updated });
+  } catch (err) {
+    console.error('[RPC Direct Presence Error]:', err);
+    res.status(500).json({ error: 'Failed to synchronize presence' });
   }
 });
 

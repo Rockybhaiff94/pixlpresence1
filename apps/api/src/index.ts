@@ -23,6 +23,7 @@ import { PrismaSessionStore } from '@quixo3/prisma-session-store';
 import { prisma } from '@discord-rpc/database';
 import { globalApiLimiter, authRateLimiter, uploadRateLimiter, viewRateLimiter } from './rateLimiter';
 export { globalApiLimiter, authRateLimiter, uploadRateLimiter, viewRateLimiter };
+import { presenceManager } from './services/presenceManager';
 import { authRouter } from './auth';
 import { profileRouter } from './routes/profile';
 import { rpcRouter } from './routes/rpc';
@@ -32,7 +33,7 @@ import { accountRouter } from './routes/account';
 
 import { Server } from 'socket.io';
 import http from 'http';
-import { startBot, stopBot, getBotStatus } from 'bot';
+import { startBot, stopBot, getBotStatus, botEvents } from 'bot';
 
 const app = express();
 const server = http.createServer(app);
@@ -53,6 +54,75 @@ io.on('connection', (socket) => {
       socket.emit('authenticated', false);
     }
   });
+
+  // Public profile client subscribes to real-time Discord presence updates
+  socket.on('subscribe_profile', async (payload: { username?: string; discordId?: string }) => {
+    if (payload?.username) {
+      const room = `profile:${payload.username.trim().toLowerCase()}`;
+      socket.join(room);
+
+      // Immediately send current live presence upon subscription
+      try {
+        const user = await presenceManager.findUserByUsername(payload.username);
+        if (user) {
+          const currentPresence = await presenceManager.getLivePresenceForUser(user);
+          socket.emit('presence_sync', currentPresence);
+        }
+      } catch (err) {
+        console.error('[Socket Presence Sync Error]:', err);
+      }
+    }
+    if (payload?.discordId) {
+      socket.join(`profile:discord:${payload.discordId.trim()}`);
+    }
+  });
+
+  socket.on('unsubscribe_profile', (payload: { username?: string; discordId?: string }) => {
+    if (payload?.username) {
+      socket.leave(`profile:${payload.username.trim().toLowerCase()}`);
+    }
+    if (payload?.discordId) {
+      socket.leave(`profile:discord:${payload.discordId.trim()}`);
+    }
+  });
+
+  // Direct live presence push from desktop app, Vencord plugin, or client
+  socket.on('presence_push', async (payload) => {
+    if (!payload || !payload.token) return;
+    try {
+      const user = await prisma.user.findUnique({ where: { appToken: payload.token } });
+      if (!user) return;
+
+      const updated = presenceManager.updatePresence({
+        username: user.username,
+        userId: user.id,
+        discordId: user.discordId,
+        status: payload.status || 'online',
+        hasActivity: Boolean(payload.activity),
+        activity: payload.activity || null,
+        source: 'client',
+        timestamp: payload.timestamp,
+        sequence: payload.sequence,
+      });
+
+      socket.emit('presence_ack', { success: true, sequence: updated.sequence });
+    } catch (err) {
+      console.error('[Socket Presence Push Error]:', err);
+    }
+  });
+});
+
+// Bridge Discord Gateway Presence Updates into Central PresenceManager
+botEvents.on('presenceUpdate', async (oldPresence: any, newPresence: any) => {
+  try {
+    if (!newPresence || !newPresence.userId) return;
+    await presenceManager.setPresenceFromDiscord(newPresence.userId, {
+      status: newPresence.status || 'offline',
+      activities: newPresence.activities || [],
+    });
+  } catch (err) {
+    console.error('[Bot Gateway Presence Forward Error]:', err);
+  }
 });
 
 const PORT = process.env.PORT || 3001;

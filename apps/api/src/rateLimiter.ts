@@ -35,3 +35,4 @@ export const viewRateLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Rate limit exceeded for profile telemetry.' },
 });
+

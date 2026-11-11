@@ -4,6 +4,7 @@ import { prisma } from '@discord-rpc/database';
 import { recordSyncEvent } from '../utils/sync';
 import { resolveTelemetry } from '../utils/geo';
 import { viewRateLimiter } from '../rateLimiter';
+import { presenceManager } from '../services/presenceManager';
 
 export const profileRouter = Router();
 
@@ -120,14 +121,53 @@ profileRouter.get('/u/:username', async (req: any, res) => {
       safeRpc = isOwner ? rawRpc : null;
     }
 
+    // Retrieve fresh live presence from central manager / Discord
+    const livePresence = await presenceManager.getLivePresenceForUser(user as any);
+    if (livePresence.hasActivity && livePresence.activity) {
+      safeRpc = livePresence.activity;
+    } else if (livePresence.status === 'offline' || !livePresence.hasActivity) {
+      // If user is offline or has no live activity, do NOT serve a stale game snapshot
+      if (rawRpc && rawRpc.showProfileRpc !== false && rawRpc.enableDiscordRpc === false) {
+        // Only retain custom manual presence if explicitly configured as static custom presence
+        safeRpc = rawRpc;
+      } else {
+        safeRpc = null;
+      }
+    }
+
     res.json({
       user: safeUser,
       profile: user.profile,
       richPresence: safeRpc,
+      livePresence,
     });
   } catch (err) {
     console.error('[Public Profile Error]:', err);
     res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+// Dedicated Real-Time Presence Polling Endpoint (Strict No-Cache)
+profileRouter.get('/u/:username/presence', async (req: any, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+
+  try {
+    const user = await findUserByIdentifier(req.params.username);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const livePresence = await presenceManager.getLivePresenceForUser(user as any);
+    res.json({
+      success: true,
+      presence: livePresence,
+    });
+  } catch (err) {
+    console.error('[Live Presence Polling Error]:', err);
+    res.status(500).json({ error: 'Failed to fetch live presence' });
   }
 });
 

@@ -1,5 +1,8 @@
 import http from 'node:http';
+import { EventEmitter } from 'events';
 import { Client, Collection, GatewayIntentBits } from 'discord.js';
+
+export const botEvents = new EventEmitter();
 import * as dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
@@ -54,11 +57,15 @@ export async function startBot(overrideToken?: string): Promise<Client | null> {
     }
 
     try {
+      let intents = [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildMembers,
+      ];
+
       client = new Client({
-        intents: [
-          GatewayIntentBits.Guilds,
-          GatewayIntentBits.GuildMessages,
-        ],
+        intents,
       });
 
       client.commands = new Collection();
@@ -124,7 +131,21 @@ export async function startBot(overrideToken?: string): Promise<Client | null> {
         }
       }
 
-      await client.login(token);
+      try {
+        await client.login(token);
+      } catch (loginErr: any) {
+        if (loginErr?.message?.includes('disallowed intents') || loginErr?.code === 'DisallowedIntents') {
+          console.warn('[PixelBot] Privileged presence intents not enabled in Discord Developer Portal. Falling back to standard gateway intents.');
+          client.destroy();
+          client = new Client({
+            intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+          });
+          client.commands = new Collection();
+          await client.login(token);
+        } else {
+          throw loginErr;
+        }
+      }
       status = 'READY';
       console.log(`[PixelBot] Logged into Discord Gateway successfully as ${client.user?.tag}`);
       return client;

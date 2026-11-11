@@ -289,3 +289,6 @@ export const DEFAULT_DESIGN_CONFIG: ProfileDesignConfig = {
   ],
 };
 
+export type DiscordRpcConfig = ProfileDesignConfig["discordRpc"];
+
+
