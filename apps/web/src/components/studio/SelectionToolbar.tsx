@@ -16,6 +16,9 @@ import {
   AlignJustify,
   Minus,
   Plus,
+  Share2,
+  ExternalLink,
+  Layout,
 } from "lucide-react";
 
 interface SelectionToolbarProps {
@@ -41,6 +44,12 @@ interface SelectionToolbarProps {
   textAlign?: "left" | "center" | "right" | "justify";
   fontSize?: number;
   onChangeFontSize?: (delta: number) => void;
+
+  // Social-specific quick actions (Phase 6 & 8)
+  isSocial?: boolean;
+  onOpenSocialSelector?: () => void;
+  onTestLink?: () => void;
+  onArrangeRow?: () => void;
 }
 
 export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
@@ -64,6 +73,10 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
   textAlign = "center",
   fontSize,
   onChangeFontSize,
+  isSocial = false,
+  onOpenSocialSelector,
+  onTestLink,
+  onArrangeRow,
 }) => {
   const [showLockDropdown, setShowLockDropdown] = useState(false);
 
@@ -168,6 +181,47 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
                 <Plus size={9} />
               </button>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Center / Social Media Quick Actions */}
+      {isSocial && (
+        <div className="flex items-center gap-0.5 border-x border-neutral-800 px-1.5 mx-1">
+          {onOpenSocialSelector && (
+            <button
+              type="button"
+              onClick={onOpenSocialSelector}
+              title="Switch Connected Account"
+              className="px-1.5 py-1 rounded text-neutral-300 hover:text-white hover:bg-neutral-800 flex items-center gap-1 text-[10px]"
+            >
+              <Share2 size={11} className="text-sky-400" />
+              <span>Accounts</span>
+            </button>
+          )}
+
+          {onTestLink && (
+            <button
+              type="button"
+              onClick={onTestLink}
+              title="Test External Profile Link (Opens in new tab)"
+              className="px-1.5 py-1 rounded text-neutral-300 hover:text-white hover:bg-neutral-800 flex items-center gap-1 text-[10px]"
+            >
+              <ExternalLink size={11} className="text-emerald-400" />
+              <span>Test</span>
+            </button>
+          )}
+
+          {onArrangeRow && (
+            <button
+              type="button"
+              onClick={onArrangeRow}
+              title="Arrange Related Social Icons in Horizontal Row"
+              className="px-1.5 py-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 flex items-center gap-1 text-[10px]"
+            >
+              <Layout size={11} />
+              <span>Row</span>
+            </button>
           )}
         </div>
       )}

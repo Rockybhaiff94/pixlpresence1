@@ -31,6 +31,13 @@ import { scaleEmbedChildren } from "./embedScaling";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { SelectedObjectMenu } from "./SelectedObjectMenu";
 import { isTextBasedElement, resolveStyleGroup } from "./typographyEngine";
+import {
+  isSocialElement,
+  arrangeSocialElementsHorizontally,
+  arrangeSocialElementsVertically,
+  centerSocialElements,
+  sanitizeSocialUrl,
+} from "./socialsEngine";
 
 interface CanvasEngineProps {
   canvasState: CanvasEngineState;
@@ -45,6 +52,8 @@ interface CanvasEngineProps {
   gridSettings?: CanvasGridSettings;
   isPremium?: boolean;
   themeAccentColor?: string;
+  activeLinks?: Array<{ id: string; label: string; url: string; icon?: string | null; color?: string | null; visibility: boolean }>;
+  onOpenSocialSelector?: () => void;
   children: React.ReactNode;
 }
 
@@ -77,6 +86,8 @@ export function CanvasEngine({
   gridSettings = DEFAULT_GRID_SETTINGS,
   isPremium = false,
   themeAccentColor = "#ffffff",
+  activeLinks = [],
+  onOpenSocialSelector,
   children,
 }: CanvasEngineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -94,7 +105,58 @@ export function CanvasEngine({
   const selectedItem = selectedElement || selectedEmbed;
   const isSelectedEmbed = Boolean(selectedEmbed);
   const isSelectedText = Boolean(!isSelectedEmbed && selectedElement && isTextBasedElement(selectedElement.type));
+  const isSelectedSocial = Boolean(!isSelectedEmbed && selectedElement && isSocialElement(selectedElement));
   const selectedElStyle = !isSelectedEmbed ? selectedElement?.style : undefined;
+
+  const handleArrangeSocialsHorizontally = () => {
+    onUpdateCanvas((prev) => {
+      const socialEls = prev.elements.filter((el) => isSocialElement(el));
+      const targetEmbed = prev.embeds[0];
+      const parentWidth = targetEmbed ? targetEmbed.transform.width : 520;
+      const rearranged = arrangeSocialElementsHorizontally(socialEls, parentWidth, 12);
+      const rearrangedMap = new Map(rearranged.map((el) => [el.id, el]));
+      return {
+        ...prev,
+        elements: prev.elements.map((el) => rearrangedMap.get(el.id) || el),
+      };
+    });
+  };
+
+  const handleArrangeSocialsVertically = () => {
+    onUpdateCanvas((prev) => {
+      const socialEls = prev.elements.filter((el) => isSocialElement(el));
+      const rearranged = arrangeSocialElementsVertically(socialEls, 10);
+      const rearrangedMap = new Map(rearranged.map((el) => [el.id, el]));
+      return {
+        ...prev,
+        elements: prev.elements.map((el) => rearrangedMap.get(el.id) || el),
+      };
+    });
+  };
+
+  const handleCenterSocials = () => {
+    onUpdateCanvas((prev) => {
+      const socialEls = prev.elements.filter((el) => isSocialElement(el));
+      const targetEmbed = prev.embeds[0];
+      const parentWidth = targetEmbed ? targetEmbed.transform.width : 520;
+      const centered = centerSocialElements(socialEls, parentWidth);
+      const centeredMap = new Map(centered.map((el) => [el.id, el]));
+      return {
+        ...prev,
+        elements: prev.elements.map((el) => centeredMap.get(el.id) || el),
+      };
+    });
+  };
+
+  const handleTestLink = () => {
+    if (!selectedElement) return;
+    const linkId = selectedElement.props?.linkId;
+    const boundLink = linkId ? activeLinks.find((l) => l.id === linkId) : null;
+    const rawUrl = boundLink?.url || selectedElement.props?.url;
+    if (rawUrl) {
+      window.open(sanitizeSocialUrl(rawUrl), "_blank");
+    }
+  };
 
   // Close more menu and finish inline editing when selection changes
   useEffect(() => {
@@ -864,6 +926,10 @@ export function CanvasEngine({
               const next = Math.max(8, Math.min(96, current + delta));
               updateSelectedElementStyle({ fontSize: next, hasCustomTypographyOverride: true });
             }}
+            isSocial={isSelectedSocial}
+            onOpenSocialSelector={onOpenSocialSelector}
+            onTestLink={handleTestLink}
+            onArrangeRow={handleArrangeSocialsHorizontally}
           />
 
           {/* Inline Three-Dot More Options Menu (PHASE 7) */}
@@ -874,6 +940,12 @@ export function CanvasEngine({
               isPremium={isPremium}
               themeAccentColor={themeAccentColor}
               textStyleGroups={canvasState.textStyleGroups || DEFAULT_TEXT_STYLE_GROUPS}
+              allElements={canvasState.elements}
+              activeLinks={activeLinks}
+              onOpenSocialSelector={onOpenSocialSelector}
+              onArrangeSocialsHorizontally={handleArrangeSocialsHorizontally}
+              onArrangeSocialsVertically={handleArrangeSocialsVertically}
+              onCenterSocials={handleCenterSocials}
               onUpdateTransform={(t) => {
                 onUpdateCanvas((prev) => {
                   const id = selectedItem.id;

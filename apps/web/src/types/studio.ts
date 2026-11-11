@@ -159,7 +159,7 @@ export interface CanvasElementStyle {
   // Icon Customization (Free & Premium)
   iconColorMode?: "original" | "custom" | "theme";
   iconColor?: string;
-  iconVariant?: "default" | "filled" | "outline" | "minimal" | "custom";
+  iconVariant?: "default" | "filled" | "outline" | "minimal" | "custom" | "glass" | "neon" | "pill" | "circle";
   customIconUrl?: string;
 
   // Gradients & Visual Presets (Premium)

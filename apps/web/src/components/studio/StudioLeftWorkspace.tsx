@@ -74,6 +74,7 @@ interface StudioLeftWorkspaceProps {
   onMoveLayer: (layerId: string, direction: "up" | "down") => void;
   onAddEmbed?: () => void;
   onAddElement?: (type: any) => void;
+  onOpenSocialSelector?: () => void;
   onDuplicateLayer?: (layerId: string) => void;
   onDeleteLayer?: (layerId: string) => void;
   selectedId?: string | null;
@@ -112,6 +113,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
   onMoveLayer,
   onAddEmbed,
   onAddElement,
+  onOpenSocialSelector,
   onDuplicateLayer,
   onDeleteLayer,
   selectedId,
@@ -132,17 +134,17 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
     label: string;
     icon: React.ComponentType<{ size?: number; className?: string }>;
   }> = [
-    { id: "layout", label: "Layout & Structure", icon: Layout },
-    { id: "identity", label: "Profile Identity", icon: User },
-    { id: "avatar", label: "Avatar & Images", icon: ImageIcon },
-    { id: "background", label: "Backgrounds", icon: Palette },
-    { id: "typography", label: "Typography & Fonts", icon: Type },
-    { id: "rpc", label: "Discord Rich Presence", icon: Gamepad2 },
-    { id: "buttons", label: "Buttons & Socials", icon: Link2 },
-    { id: "effects", label: "Effects & Animations", icon: Sparkles },
-    { id: "css", label: "Custom CSS", icon: Code2 },
-    { id: "advanced", label: "Advanced Settings", icon: Settings },
-  ];
+      { id: "layout", label: "Layout & Structure", icon: Layout },
+      { id: "identity", label: "Profile Identity", icon: User },
+      { id: "avatar", label: "Avatar & Images", icon: ImageIcon },
+      { id: "background", label: "Backgrounds", icon: Palette },
+      { id: "typography", label: "Typography & Fonts", icon: Type },
+      { id: "rpc", label: "Discord Rich Presence", icon: Gamepad2 },
+      { id: "buttons", label: "Buttons & Socials", icon: Link2 },
+      { id: "effects", label: "Effects & Animations", icon: Sparkles },
+      { id: "css", label: "Custom CSS", icon: Code2 },
+      { id: "advanced", label: "Advanced Settings", icon: Settings },
+    ];
 
   const ACCENTS = [
     "#ffffff",
@@ -217,11 +219,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
   return (
     <div
       style={getWorkspaceStyles()}
-      className={`flex-1 flex flex-col min-h-0 text-xs font-mono text-[#ededed] select-none transition-colors duration-200 ${
-        transparencyMode === "floating"
+      className={`flex-1 flex flex-col min-h-0 text-xs font-mono text-[#ededed] select-none transition-colors duration-200 ${transparencyMode === "floating"
           ? "m-2 sm:m-3 rounded-2xl border shadow-2xl overflow-hidden"
           : ""
-      }`}
+        }`}
     >
       {/* Top Navigation Row: Contextual Header in Floating Mode vs Sub-Tabs & Category Bar in Classic Mode */}
       {isFloatingContext ? (
@@ -247,16 +248,16 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   {currentView === "templates"
                     ? "TEMPLATES"
                     : currentView === "layers"
-                    ? "LAYERS"
-                    : "MODULE"}
+                      ? "LAYERS"
+                      : "MODULE"}
                 </span>
               </div>
               <h3 className="text-xs font-bold text-white uppercase tracking-wider">
                 {currentView === "templates"
                   ? "Templates & Presets"
                   : currentView === "layers"
-                  ? "Layers & Objects"
-                  : CATEGORIES.find((c) => c.id === activeCategory)?.label || "Settings"}
+                    ? "Layers & Objects"
+                    : CATEGORIES.find((c) => c.id === activeCategory)?.label || "Settings"}
               </h3>
             </div>
           </div>
@@ -266,31 +267,28 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
             <div className="flex items-center gap-1 bg-[#1a1a20] p-0.5 rounded-lg border border-white/5">
               <button
                 onClick={() => setCurrentView("categories")}
-                className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
-                  currentView === "categories"
+                className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${currentView === "categories"
                     ? "bg-white text-black font-bold"
                     : "text-neutral-400 hover:text-white"
-                }`}
+                  }`}
               >
                 Category
               </button>
               <button
                 onClick={() => setCurrentView("templates")}
-                className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
-                  currentView === "templates"
+                className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${currentView === "templates"
                     ? "bg-white text-black font-bold"
                     : "text-neutral-400 hover:text-white"
-                }`}
+                  }`}
               >
                 Templates
               </button>
               <button
                 onClick={() => setCurrentView("layers")}
-                className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
-                  currentView === "layers"
+                className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${currentView === "layers"
                     ? "bg-white text-black font-bold"
                     : "text-neutral-400 hover:text-white"
-                }`}
+                  }`}
               >
                 Layers
               </button>
@@ -317,11 +315,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
             <div className="flex items-center gap-1 bg-[#141416]/80 p-1 rounded-xl border border-[#242426]">
               <button
                 onClick={() => setCurrentView("categories")}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-                  currentView === "categories"
+                className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${currentView === "categories"
                     ? "bg-white text-black shadow-sm"
                     : "text-neutral-400 hover:text-white"
-                }`}
+                  }`}
               >
                 <Sliders size={13} />
                 <span>Categories</span>
@@ -329,11 +326,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
 
               <button
                 onClick={() => setCurrentView("templates")}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-                  currentView === "templates"
+                className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${currentView === "templates"
                     ? "bg-white text-black shadow-sm"
                     : "text-neutral-400 hover:text-white"
-                }`}
+                  }`}
               >
                 <LayoutTemplate size={13} />
                 <span>Templates</span>
@@ -341,11 +337,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
 
               <button
                 onClick={() => setCurrentView("layers")}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-                  currentView === "layers"
+                className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${currentView === "layers"
                     ? "bg-white text-black shadow-sm"
                     : "text-neutral-400 hover:text-white"
-                }`}
+                  }`}
               >
                 <Layers size={13} />
                 <span>Layers</span>
@@ -382,11 +377,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   <button
                     key={cat.id}
                     onClick={() => setActiveCategory(cat.id)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium whitespace-nowrap transition-all cursor-pointer shrink-0 ${
-                      isActive
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium whitespace-nowrap transition-all cursor-pointer shrink-0 ${isActive
                         ? "bg-neutral-800 text-white font-bold border border-neutral-700 shadow-sm"
                         : "text-neutral-400 hover:text-white hover:bg-neutral-900 border border-transparent"
-                    }`}
+                      }`}
                   >
                     <Icon size={13} className={isActive ? "text-white" : "text-neutral-500"} />
                     <span>
@@ -421,6 +415,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
             onMoveLayer={onMoveLayer}
             onAddEmbed={onAddEmbed}
             onAddElement={onAddElement}
+            onOpenSocialSelector={onOpenSocialSelector}
             onDuplicateLayer={onDuplicateLayer}
             onDeleteLayer={onDeleteLayer}
             selectedId={selectedId}
@@ -476,21 +471,20 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                             },
                           }))
                         }
-                        className={`p-2.5 rounded-xl border text-left transition-colors cursor-pointer ${
-                          config.layout.preset === preset
+                        className={`p-2.5 rounded-xl border text-left transition-colors cursor-pointer ${config.layout.preset === preset
                             ? "border-white bg-white text-black font-bold"
                             : "border-neutral-800 bg-[#121214] text-neutral-300 hover:border-neutral-700"
-                        }`}
+                          }`}
                       >
                         <div className="capitalize text-xs">{preset}</div>
                         <div className="text-[9px] opacity-70">
                           {preset === "split"
                             ? "Two-column grid"
                             : preset === "left"
-                            ? "Left-aligned"
-                            : preset === "wide"
-                            ? "720px wide"
-                            : "Centered profile"}
+                              ? "Left-aligned"
+                              : preset === "wide"
+                                ? "720px wide"
+                                : "Centered profile"}
                         </div>
                       </button>
                     ))}
@@ -514,11 +508,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                             avatar: { ...prev.avatar, alignment: align },
                           }))
                         }
-                        className={`py-2 rounded-lg border text-center capitalize cursor-pointer transition-colors ${
-                          config.layout.alignment === align
+                        className={`py-2 rounded-lg border text-center capitalize cursor-pointer transition-colors ${config.layout.alignment === align
                             ? "border-white bg-white text-black font-bold"
                             : "border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-700"
-                        }`}
+                          }`}
                       >
                         {align}
                       </button>
@@ -712,11 +705,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                             identity: { ...prev.identity, badgeStyle: style },
                           }))
                         }
-                        className={`p-2.5 rounded-xl border text-center capitalize cursor-pointer transition-colors ${
-                          config.identity.badgeStyle === style
+                        className={`p-2.5 rounded-xl border text-center capitalize cursor-pointer transition-colors ${config.identity.badgeStyle === style
                             ? "border-white bg-white text-black font-bold"
                             : "border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-700"
-                        }`}
+                          }`}
                       >
                         {style}
                       </button>
@@ -740,11 +732,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           }))
                         }
                         style={{ backgroundColor: c }}
-                        className={`w-6 h-6 rounded-full border cursor-pointer transition-transform ${
-                          config.identity.titleColor === c
+                        className={`w-6 h-6 rounded-full border cursor-pointer transition-transform ${config.identity.titleColor === c
                             ? "ring-2 ring-white ring-offset-2 ring-offset-black scale-110"
                             : "border-neutral-700"
-                        }`}
+                          }`}
                       />
                     ))}
                     <input
@@ -817,11 +808,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                             avatar: { ...prev.avatar, shape },
                           }))
                         }
-                        className={`p-2.5 rounded-xl border text-center capitalize cursor-pointer transition-colors ${
-                          config.avatar.shape === shape
+                        className={`p-2.5 rounded-xl border text-center capitalize cursor-pointer transition-colors ${config.avatar.shape === shape
                             ? "border-white bg-white text-black font-bold"
                             : "border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-700"
-                        }`}
+                          }`}
                       >
                         {shape}
                       </button>
@@ -843,11 +833,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                               avatar: { ...prev.avatar, alignment: align },
                             }))
                           }
-                          className={`py-1.5 rounded text-xs capitalize cursor-pointer ${
-                            config.avatar.alignment === align
+                          className={`py-1.5 rounded text-xs capitalize cursor-pointer ${config.avatar.alignment === align
                               ? "bg-white text-black font-bold"
                               : "bg-black text-neutral-400 hover:text-white"
-                          }`}
+                            }`}
                         >
                           {align}
                         </button>
@@ -867,11 +856,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                               avatar: { ...prev.avatar, objectFit: fit },
                             }))
                           }
-                          className={`py-1.5 rounded text-xs capitalize cursor-pointer ${
-                            config.avatar.objectFit === fit
+                          className={`py-1.5 rounded text-xs capitalize cursor-pointer ${config.avatar.objectFit === fit
                               ? "bg-white text-black font-bold"
                               : "bg-black text-neutral-400 hover:text-white"
-                          }`}
+                            }`}
                         >
                           {fit}
                         </button>
@@ -978,9 +966,8 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                         avatar: { ...prev.avatar, glow: !prev.avatar.glow },
                       }))
                     }
-                    className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition-colors ${
-                      config.avatar.glow ? "bg-white text-black" : "bg-neutral-800 text-neutral-400"
-                    }`}
+                    className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition-colors ${config.avatar.glow ? "bg-white text-black" : "bg-neutral-800 text-neutral-400"
+                      }`}
                   >
                     {config.avatar.glow ? "ENABLED" : "DISABLED"}
                   </button>
@@ -1013,11 +1000,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                             background: { ...prev.background, type },
                           }))
                         }
-                        className={`p-2.5 rounded-xl border text-center capitalize cursor-pointer transition-colors ${
-                          config.background.type === type
+                        className={`p-2.5 rounded-xl border text-center capitalize cursor-pointer transition-colors ${config.background.type === type
                             ? "border-white bg-white text-black font-bold"
                             : "border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-700"
-                        }`}
+                          }`}
                       >
                         {type}
                       </button>
@@ -1041,11 +1027,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           }))
                         }
                         style={{ backgroundColor: c }}
-                        className={`w-6 h-6 rounded-full border cursor-pointer transition-transform ${
-                          config.background.color === c
+                        className={`w-6 h-6 rounded-full border cursor-pointer transition-transform ${config.background.color === c
                             ? "ring-2 ring-white ring-offset-2 ring-offset-black scale-110"
                             : "border-neutral-700"
-                        }`}
+                          }`}
                       />
                     ))}
                     <input
@@ -1078,11 +1063,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                             background: { ...prev.background, pattern: pat },
                           }))
                         }
-                        className={`py-2 rounded-lg border text-center capitalize cursor-pointer transition-colors ${
-                          config.background.pattern === pat
+                        className={`py-2 rounded-lg border text-center capitalize cursor-pointer transition-colors ${config.background.pattern === pat
                             ? "border-white bg-white text-black font-bold"
                             : "border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-700"
-                        }`}
+                          }`}
                       >
                         {pat}
                       </button>
@@ -1317,11 +1301,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                       <div className="flex items-center gap-2">
                         <span className="text-white font-bold text-xs">Website Profile RPC</span>
                         <span
-                          className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${
-                            config.discordRpc.showProfileRpc
+                          className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${config.discordRpc.showProfileRpc
                               ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
                               : "bg-neutral-800 text-neutral-400"
-                          }`}
+                            }`}
                         >
                           {config.discordRpc.showProfileRpc ? "VISIBLE" : "HIDDEN"}
                         </span>
@@ -1344,11 +1327,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           };
                         })
                       }
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
-                        config.discordRpc.showProfileRpc
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors ${config.discordRpc.showProfileRpc
                           ? "bg-white text-black hover:bg-neutral-200"
                           : "bg-neutral-800 text-neutral-400 hover:text-white"
-                      }`}
+                        }`}
                     >
                       {config.discordRpc.showProfileRpc ? "ENABLED" : "DISABLED"}
                     </button>
@@ -1360,11 +1342,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                       <div className="flex items-center gap-2">
                         <span className="text-white font-bold text-xs">Discord RPC (PixelsRPC)</span>
                         <span
-                          className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${
-                            config.discordRpc.enableDiscordRpc
+                          className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${config.discordRpc.enableDiscordRpc
                               ? "bg-blue-500/20 text-blue-400 border border-blue-500/40"
                               : "bg-neutral-800 text-neutral-400"
-                          }`}
+                            }`}
                         >
                           {config.discordRpc.enableDiscordRpc ? "PUBLISHING" : "STOPPED"}
                         </span>
@@ -1384,11 +1365,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           },
                         }))
                       }
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
-                        config.discordRpc.enableDiscordRpc
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors ${config.discordRpc.enableDiscordRpc
                           ? "bg-white text-black hover:bg-neutral-200"
                           : "bg-neutral-800 text-neutral-400 hover:text-white"
-                      }`}
+                        }`}
                     >
                       {config.discordRpc.enableDiscordRpc ? "ENABLED" : "DISABLED"}
                     </button>
@@ -1402,10 +1382,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                         {config.discordRpc.showProfileRpc && config.discordRpc.enableDiscordRpc
                           ? "Visible on website & published to Discord"
                           : config.discordRpc.showProfileRpc && !config.discordRpc.enableDiscordRpc
-                          ? "Visible only on website"
-                          : !config.discordRpc.showProfileRpc && config.discordRpc.enableDiscordRpc
-                          ? "Published to Discord, hidden on website"
-                          : "Hidden in both destinations"}
+                            ? "Visible only on website"
+                            : !config.discordRpc.showProfileRpc && config.discordRpc.enableDiscordRpc
+                              ? "Published to Discord, hidden on website"
+                              : "Hidden in both destinations"}
                       </strong>
                     </span>
                     <a
@@ -1433,11 +1413,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                             discordRpc: { ...prev.discordRpc, style },
                           }))
                         }
-                        className={`py-2 rounded-xl border text-center capitalize cursor-pointer transition-colors ${
-                          config.discordRpc.style === style
+                        className={`py-2 rounded-xl border text-center capitalize cursor-pointer transition-colors ${config.discordRpc.style === style
                             ? "border-white bg-white text-black font-bold"
                             : "border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-700"
-                        }`}
+                          }`}
                       >
                         {style}
                       </button>
@@ -1459,11 +1438,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                               discordRpc: { ...prev.discordRpc, imageLayout: layout },
                             }))
                           }
-                          className={`py-1.5 rounded text-xs capitalize cursor-pointer ${
-                            config.discordRpc.imageLayout === layout
+                          className={`py-1.5 rounded text-xs capitalize cursor-pointer ${config.discordRpc.imageLayout === layout
                               ? "bg-white text-black font-bold"
                               : "bg-black text-neutral-400 hover:text-white"
-                          }`}
+                            }`}
                         >
                           {layout}
                         </button>
@@ -1483,11 +1461,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                               discordRpc: { ...prev.discordRpc, imageSize: size },
                             }))
                           }
-                          className={`py-1.5 rounded text-xs capitalize cursor-pointer ${
-                            config.discordRpc.imageSize === size
+                          className={`py-1.5 rounded text-xs capitalize cursor-pointer ${config.discordRpc.imageSize === size
                               ? "bg-white text-black font-bold"
                               : "bg-black text-neutral-400 hover:text-white"
-                          }`}
+                            }`}
                         >
                           {size}
                         </button>
@@ -1513,11 +1490,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           },
                         }))
                       }
-                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${
-                        config.discordRpc.showTelemetryBadge
+                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${config.discordRpc.showTelemetryBadge
                           ? "bg-white text-black"
                           : "bg-neutral-800 text-neutral-400"
-                      }`}
+                        }`}
                     >
                       {config.discordRpc.showTelemetryBadge ? "ON" : "OFF"}
                     </button>
@@ -1538,11 +1514,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           },
                         }))
                       }
-                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${
-                        config.discordRpc.showTimer
+                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${config.discordRpc.showTimer
                           ? "bg-white text-black"
                           : "bg-neutral-800 text-neutral-400"
-                      }`}
+                        }`}
                     >
                       {config.discordRpc.showTimer ? "ON" : "OFF"}
                     </button>
@@ -1585,11 +1560,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                             buttons: { ...prev.buttons, variant },
                           }))
                         }
-                        className={`p-2.5 rounded-xl border text-center capitalize cursor-pointer transition-colors ${
-                          config.buttons.variant === variant
+                        className={`p-2.5 rounded-xl border text-center capitalize cursor-pointer transition-colors ${config.buttons.variant === variant
                             ? "border-white bg-white text-black font-bold"
                             : "border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-700"
-                        }`}
+                          }`}
                       >
                         {variant.replace("-", " ")}
                       </button>
@@ -1613,11 +1587,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                               socials: { ...prev.socials, style },
                             }))
                           }
-                          className={`py-2 rounded-xl border text-center capitalize cursor-pointer transition-colors ${
-                            config.socials.style === style
+                          className={`py-2 rounded-xl border text-center capitalize cursor-pointer transition-colors ${config.socials.style === style
                               ? "border-white bg-white text-black font-bold"
                               : "border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-700"
-                          }`}
+                            }`}
                         >
                           {style}
                         </button>
@@ -1699,11 +1672,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                               effects: { ...prev.effects, particles: effect },
                             }))
                           }
-                          className={`p-2.5 rounded-xl border text-center capitalize cursor-pointer transition-colors ${
-                            config.effects.particles === effect
+                          className={`p-2.5 rounded-xl border text-center capitalize cursor-pointer transition-colors ${config.effects.particles === effect
                               ? "border-white bg-white text-black font-bold"
                               : "border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-700"
-                          }`}
+                            }`}
                         >
                           {effect}
                         </button>
@@ -1744,11 +1716,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           effects: { ...prev.effects, glassmorphism: !prev.effects.glassmorphism },
                         }))
                       }
-                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${
-                        config.effects.glassmorphism
+                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${config.effects.glassmorphism
                           ? "bg-white text-black"
                           : "bg-neutral-800 text-neutral-400"
-                      }`}
+                        }`}
                     >
                       {config.effects.glassmorphism ? "ON" : "OFF"}
                     </button>
@@ -1766,11 +1737,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           effects: { ...prev.effects, ambientGlow: !prev.effects.ambientGlow },
                         }))
                       }
-                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${
-                        config.effects.ambientGlow
+                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${config.effects.ambientGlow
                           ? "bg-white text-black"
                           : "bg-neutral-800 text-neutral-400"
-                      }`}
+                        }`}
                     >
                       {config.effects.ambientGlow ? "ON" : "OFF"}
                     </button>
@@ -1788,11 +1758,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           effects: { ...prev.effects, tiltEffect: !prev.effects.tiltEffect },
                         }))
                       }
-                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${
-                        config.effects.tiltEffect
+                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${config.effects.tiltEffect
                           ? "bg-white text-black"
                           : "bg-neutral-800 text-neutral-400"
-                      }`}
+                        }`}
                     >
                       {config.effects.tiltEffect ? "ON" : "OFF"}
                     </button>
@@ -1810,11 +1779,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           effects: { ...prev.effects, scanlines: !prev.effects.scanlines },
                         }))
                       }
-                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${
-                        config.effects.scanlines
+                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${config.effects.scanlines
                           ? "bg-white text-black"
                           : "bg-neutral-800 text-neutral-400"
-                      }`}
+                        }`}
                     >
                       {config.effects.scanlines ? "ON" : "OFF"}
                     </button>
@@ -1951,19 +1919,18 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                             },
                           }))
                         }
-                        className={`p-2.5 rounded-lg border text-left transition-all ${
-                          (config.advanced?.embedScaling || "hybrid") === mode
+                        className={`p-2.5 rounded-lg border text-left transition-all ${(config.advanced?.embedScaling || "hybrid") === mode
                             ? "border-sky-500 bg-sky-950/30 text-white"
                             : "border-neutral-800 bg-neutral-900/60 text-neutral-400 hover:text-white"
-                        }`}
+                          }`}
                       >
                         <div className="font-bold text-[11px] capitalize">{mode}</div>
                         <div className="text-[9px] text-neutral-500 mt-1">
                           {mode === "hybrid"
                             ? "Proportional then adaptive (Recommended)"
                             : mode === "proportional"
-                            ? "Scales all children uniformly"
-                            : "Clamps and wraps inside bounds"}
+                              ? "Scales all children uniformly"
+                              : "Clamps and wraps inside bounds"}
                         </div>
                       </button>
                     ))}
@@ -1993,11 +1960,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           },
                         }))
                       }
-                      className={`px-3 py-1 rounded text-xs font-bold transition-colors ${
-                        (config.advanced?.precisionModifierEnabled ?? true)
+                      className={`px-3 py-1 rounded text-xs font-bold transition-colors ${(config.advanced?.precisionModifierEnabled ?? true)
                           ? "bg-amber-400 text-black"
                           : "bg-neutral-800 text-neutral-400"
-                      }`}
+                        }`}
                     >
                       {(config.advanced?.precisionModifierEnabled ?? true) ? "ENABLED" : "DISABLED"}
                     </button>
@@ -2083,11 +2049,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           },
                         }))
                       }
-                      className={`p-2.5 rounded-lg border text-left transition-colors ${
-                        config.advanced?.gridSettings?.showGrid
+                      className={`p-2.5 rounded-lg border text-left transition-colors ${config.advanced?.gridSettings?.showGrid
                           ? "border-cyan-500 bg-cyan-950/30 text-cyan-200"
                           : "border-neutral-800 bg-neutral-900/60 text-neutral-400"
-                      }`}
+                        }`}
                     >
                       <div className="font-bold text-[11px]">Show Visual Grid</div>
                       <div className="text-[9px] text-neutral-500">
@@ -2110,11 +2075,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           },
                         }))
                       }
-                      className={`p-2.5 rounded-lg border text-left transition-colors ${
-                        (config.advanced?.gridSettings?.snapToGrid ?? true)
+                      className={`p-2.5 rounded-lg border text-left transition-colors ${(config.advanced?.gridSettings?.snapToGrid ?? true)
                           ? "border-cyan-500 bg-cyan-950/30 text-cyan-200"
                           : "border-neutral-800 bg-neutral-900/60 text-neutral-400"
-                      }`}
+                        }`}
                     >
                       <div className="font-bold text-[11px]">Snap to Grid</div>
                       <div className="text-[9px] text-neutral-500">
@@ -2137,11 +2101,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           },
                         }))
                       }
-                      className={`p-2.5 rounded-lg border text-left transition-colors ${
-                        (config.advanced?.gridSettings?.smartGuides ?? true)
+                      className={`p-2.5 rounded-lg border text-left transition-colors ${(config.advanced?.gridSettings?.smartGuides ?? true)
                           ? "border-cyan-500 bg-cyan-950/30 text-cyan-200"
                           : "border-neutral-800 bg-neutral-900/60 text-neutral-400"
-                      }`}
+                        }`}
                     >
                       <div className="font-bold text-[11px]">Smart Guides</div>
                       <div className="text-[9px] text-neutral-500">Center & edge lines</div>
@@ -2162,11 +2125,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           },
                         }))
                       }
-                      className={`p-2.5 rounded-lg border text-left transition-colors ${
-                        (config.advanced?.gridSettings?.snapToElements ?? true)
+                      className={`p-2.5 rounded-lg border text-left transition-colors ${(config.advanced?.gridSettings?.snapToElements ?? true)
                           ? "border-cyan-500 bg-cyan-950/30 text-cyan-200"
                           : "border-neutral-800 bg-neutral-900/60 text-neutral-400"
-                      }`}
+                        }`}
                     >
                       <div className="font-bold text-[11px]">Snap to Elements</div>
                       <div className="text-[9px] text-neutral-500">Align with siblings</div>
@@ -2253,11 +2215,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           },
                         }))
                       }
-                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${
-                        config.advanced?.wireframeMode
+                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${config.advanced?.wireframeMode
                           ? "bg-white text-black"
                           : "bg-neutral-800 text-neutral-400"
-                      }`}
+                        }`}
                     >
                       {config.advanced?.wireframeMode ? "ON" : "OFF"}
                     </button>
@@ -2279,11 +2240,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           },
                         }))
                       }
-                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${
-                        config.advanced?.watermark
+                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${config.advanced?.watermark
                           ? "bg-white text-black"
                           : "bg-neutral-800 text-neutral-400"
-                      }`}
+                        }`}
                     >
                       {config.advanced?.watermark ? "ON" : "OFF"}
                     </button>

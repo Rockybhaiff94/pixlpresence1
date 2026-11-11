@@ -18,6 +18,7 @@ interface StudioRightPreviewCanvasProps {
   onUpdateCanvas?: (updater: (prev: CanvasEngineState) => CanvasEngineState) => void;
   selectedCanvasId?: string | null;
   onSelectCanvasId?: (id: string | null) => void;
+  onOpenSocialSelector?: () => void;
 
   // Workspace controls & preferences
   zoom?: number;
@@ -52,6 +53,7 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
   onUpdateCanvas,
   selectedCanvasId,
   onSelectCanvasId,
+  onOpenSocialSelector,
   zoom: externalZoom,
   setZoom: externalSetZoom,
   transparencyMode = "solid",
@@ -238,6 +240,8 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
                   gridSettings={config.advanced?.gridSettings || DEFAULT_GRID_SETTINGS}
                   isPremium={isPremium}
                   themeAccentColor={config.identity?.titleColor || "#ffffff"}
+                  activeLinks={previewData.links}
+                  onOpenSocialSelector={onOpenSocialSelector}
                   onUndo={onUndo}
                   onRedo={onRedo}
                   onSelectElement={(id) => {

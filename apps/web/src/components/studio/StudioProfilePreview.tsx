@@ -44,6 +44,9 @@ export interface PreviewData {
     label: string;
     url: string;
     visibility: boolean;
+    icon?: string | null;
+    color?: string | null;
+    order?: number;
   }>;
   discordPresence?: any | null;
 }

@@ -17,6 +17,7 @@ import {
   Image as ImageIcon,
   Minus,
   Box,
+  Share2,
 } from "lucide-react";
 import { ProfileDesignConfig, StudioLayer, StudioTab } from "@/types/studio";
 
@@ -30,6 +31,7 @@ interface StudioLayerManagerProps {
   onDeleteLayer?: (layerId: string) => void;
   onAddEmbed?: () => void;
   onAddElement?: (type: any) => void;
+  onOpenSocialSelector?: () => void;
   selectedId?: string | null;
   onSelectElement?: (id: string) => void;
 }
@@ -44,6 +46,7 @@ export const StudioLayerManager: React.FC<StudioLayerManagerProps> = ({
   onDeleteLayer,
   onAddEmbed,
   onAddElement,
+  onOpenSocialSelector,
   selectedId,
   onSelectElement,
 }) => {
@@ -127,6 +130,16 @@ export const StudioLayerManager: React.FC<StudioLayerManagerProps> = ({
                 <Minus size={13} />
                 Add Divider
               </button>
+              {onOpenSocialSelector && (
+                <button
+                  type="button"
+                  onClick={onOpenSocialSelector}
+                  className="px-2.5 py-1.5 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-300 font-bold text-[10px] hover:bg-sky-500/20 hover:border-sky-500/50 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <Share2 size={13} />
+                  Add Social
+                </button>
+              )}
             </>
           )}
         </div>

@@ -12,6 +12,11 @@ import { PlatformIcon } from "@/components/links/PlatformIcons";
 import { computeElementEffects } from "./effectsRenderer";
 import { RichTextRenderer } from "./richTextRenderer";
 import {
+  sanitizeSocialUrl,
+  resolvePlatformDef,
+  extractSocialHandle,
+} from "./socialsEngine";
+import {
   ExternalLink,
   Sparkles,
   User,
@@ -100,8 +105,8 @@ export function CanvasObjectRenderer({
     const outlineClasses = isSelected
       ? "ring-2 ring-sky-400"
       : isInteractive
-      ? "hover:ring-1 hover:ring-white/40"
-      : "";
+        ? "hover:ring-1 hover:ring-white/40"
+        : "";
 
     // Helper for all text-based elements supporting typography, Markdown, and direct inline editing
     const renderEditableTextNode = (
@@ -191,13 +196,12 @@ export function CanvasObjectRenderer({
           ) : (
             <div
               style={typographyStyle}
-              className={`w-full select-none ${
-                el.style?.textOverflow === "truncate"
+              className={`w-full select-none ${el.style?.textOverflow === "truncate"
                   ? "truncate"
                   : el.style?.textOverflow === "hidden"
-                  ? "overflow-hidden"
-                  : "break-words"
-              }`}
+                    ? "overflow-hidden"
+                    : "break-words"
+                }`}
             >
               <RichTextRenderer
                 content={rawText}
@@ -232,9 +236,8 @@ export function CanvasObjectRenderer({
                 width: `${transform.width}px`,
                 height: `${transform.height}px`,
                 borderRadius: el.style?.borderRadius ? `${el.style.borderRadius}px` : radius,
-                border: `${el.style?.borderWidth ?? config.avatar.borderWidth}px solid ${
-                  el.style?.borderColor || config.avatar.borderColor || "#ffffff"
-                }`,
+                border: `${el.style?.borderWidth ?? config.avatar.borderWidth}px solid ${el.style?.borderColor || config.avatar.borderColor || "#ffffff"
+                  }`,
                 boxShadow: config.avatar.glow
                   ? `0 0 24px ${config.avatar.glowColor || "#ffffff"}50`
                   : undefined,
@@ -381,7 +384,11 @@ export function CanvasObjectRenderer({
       }
 
       case "socials": {
-        const socialLinks = links.filter((l) => l.visibility);
+        let socialLinks = links.filter((l) => l.visibility);
+        if (Array.isArray(el.props?.selectedLinkIds) && el.props.selectedLinkIds.length > 0) {
+          socialLinks = socialLinks.filter((l) => el.props?.selectedLinkIds.includes(l.id));
+        }
+
         if (socialLinks.length === 0 && !isInteractive) return null;
 
         return (
@@ -394,10 +401,12 @@ export function CanvasObjectRenderer({
           >
             {(socialLinks.length > 0
               ? socialLinks
-              : [{ id: "l1", label: "Discord", url: "https://discord.gg" }]
+              : [{ id: "l1", label: "Discord", url: "https://discord.gg", icon: "discord", color: "#5865F2", visibility: true }]
             ).map((link) => {
+              const platform = resolvePlatformDef((link as any).icon, link.label);
+              const destinationUrl = sanitizeSocialUrl(link.url);
               const iconSrc = el.style?.customIconUrl;
-              const iconColor = effects.resolvedIconColor;
+              const iconColor = effects.resolvedIconColor || (link as any).color || platform.brandColor;
               const iconVariant = el.style?.iconVariant || "default";
 
               let variantClasses = "bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white";
@@ -407,17 +416,22 @@ export function CanvasObjectRenderer({
                 variantClasses = "bg-transparent border border-neutral-700 text-neutral-200 hover:text-white";
               } else if (iconVariant === "filled") {
                 variantClasses = "bg-white text-black font-bold";
+              } else if (iconVariant === "glass") {
+                variantClasses = "bg-white/5 backdrop-blur-md border border-white/10 text-white";
+              } else if (iconVariant === "neon") {
+                variantClasses = "bg-neutral-950 border border-current text-white shadow-lg";
               }
 
               return (
                 <a
                   key={link.id}
-                  href={isInteractive ? "#" : link.url}
+                  href={isInteractive ? "#" : destinationUrl}
                   target={isInteractive ? undefined : "_blank"}
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   onClick={(e) => {
                     if (isInteractive) e.preventDefault();
                   }}
+                  title={link.label || platform.name}
                   className={`p-2.5 rounded-xl transition-all shadow flex items-center justify-center ${variantClasses}`}
                   style={{
                     boxShadow: effects.boxShadow,
@@ -429,7 +443,7 @@ export function CanvasObjectRenderer({
                     <img src={iconSrc} alt={link.label} className="w-4 h-4 object-contain" />
                   ) : (
                     <PlatformIcon
-                      id={link.label.toLowerCase()}
+                      id={platform.id}
                       color={iconColor}
                       className="w-4 h-4"
                     />
@@ -437,6 +451,162 @@ export function CanvasObjectRenderer({
                 </a>
               );
             })}
+          </div>
+        );
+      }
+
+      case "socialIcon": {
+        const linkId = el.props?.linkId;
+        const boundLink = linkId ? links.find((l) => l.id === linkId) : null;
+        const isDisconnected = Boolean(linkId && !boundLink);
+
+        // On published profile, omit if strictly bound to deleted/hidden link
+        if (!isInteractive && linkId && (!boundLink || boundLink.visibility === false)) {
+          return null;
+        }
+
+        const platformId = boundLink?.icon || el.props?.platform || "globe";
+        const platform = resolvePlatformDef(platformId, boundLink?.label || el.props?.label);
+        const destinationUrl = sanitizeSocialUrl(boundLink?.url || el.props?.url || "#");
+        const iconSrc = el.style?.customIconUrl;
+        const iconColor = effects.resolvedIconColor || boundLink?.color || platform.brandColor;
+        const iconVariant = el.style?.iconVariant || "default";
+
+        let variantClasses = "bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white";
+        if (iconVariant === "minimal") {
+          variantClasses = "bg-transparent border-0 text-neutral-300 hover:text-white";
+        } else if (iconVariant === "outline") {
+          variantClasses = "bg-transparent border border-neutral-700 text-neutral-200 hover:text-white";
+        } else if (iconVariant === "filled") {
+          variantClasses = "bg-white text-black font-bold";
+        } else if (iconVariant === "glass") {
+          variantClasses = "bg-white/5 backdrop-blur-md border border-white/10 text-white";
+        } else if (iconVariant === "neon") {
+          variantClasses = "bg-neutral-950 border border-current text-white shadow-lg";
+        }
+
+        return (
+          <div
+            key={el.id}
+            onClick={handleClick}
+            onPointerDown={handlePointerDown}
+            style={baseWrapperStyle}
+            className={`inline-flex items-center justify-center ${outlineClasses}`}
+          >
+            <a
+              href={isInteractive ? "#" : destinationUrl}
+              target={isInteractive ? undefined : "_blank"}
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                if (isInteractive) e.preventDefault();
+              }}
+              title={isInteractive ? `${platform.name}: ${el.props?.handle || destinationUrl}` : platform.name}
+              className={`w-full h-full transition-all shadow flex items-center justify-center relative group ${variantClasses}`}
+              style={{
+                boxShadow: effects.boxShadow,
+                borderColor: el.style?.borderColor,
+                borderRadius: el.style?.borderRadius !== undefined ? `${el.style.borderRadius}px` : "12px",
+                color: iconColor,
+              }}
+            >
+              {iconSrc ? (
+                <img src={iconSrc} alt={platform.name} className="w-1/2 h-1/2 object-contain" />
+              ) : (
+                <PlatformIcon
+                  id={platform.id}
+                  color={iconColor}
+                  className="w-1/2 h-1/2 max-w-[24px] max-h-[24px]"
+                />
+              )}
+
+              {/* In Editor: Disconnected Warning Indicator */}
+              {isInteractive && isDisconnected && (
+                <div
+                  title="Linked account disconnected or deleted"
+                  className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full bg-amber-500 border border-black flex items-center justify-center text-[8px] font-bold text-black"
+                >
+                  !
+                </div>
+              )}
+            </a>
+          </div>
+        );
+      }
+
+      case "linkedAccount": {
+        const linkId = el.props?.linkId;
+        const boundLink = linkId ? links.find((l) => l.id === linkId) : null;
+        const isDisconnected = Boolean(linkId && !boundLink);
+
+        if (!isInteractive && linkId && (!boundLink || boundLink.visibility === false)) {
+          return null;
+        }
+
+        const platformId = boundLink?.icon || el.props?.platform || "globe";
+        const platform = resolvePlatformDef(platformId, boundLink?.label || el.props?.label);
+        const destinationUrl = sanitizeSocialUrl(boundLink?.url || el.props?.url || "#");
+        const handle =
+          el.props?.handle ||
+          (boundLink ? extractSocialHandle(boundLink.url, platform.id, boundLink.label) : "@account");
+        const iconColor = effects.resolvedIconColor || boundLink?.color || platform.brandColor;
+        const iconVariant = el.style?.iconVariant || "default";
+
+        let variantClasses = "bg-neutral-900/90 border border-neutral-800 text-neutral-300 hover:text-white";
+        if (iconVariant === "minimal") {
+          variantClasses = "bg-transparent border-0 text-neutral-300 hover:text-white";
+        } else if (iconVariant === "outline") {
+          variantClasses = "bg-transparent border border-neutral-700 text-neutral-200 hover:text-white";
+        } else if (iconVariant === "filled") {
+          variantClasses = "bg-white text-black font-bold";
+        } else if (iconVariant === "glass") {
+          variantClasses = "bg-white/5 backdrop-blur-md border border-white/10 text-white";
+        }
+
+        return (
+          <div
+            key={el.id}
+            onClick={handleClick}
+            onPointerDown={handlePointerDown}
+            style={baseWrapperStyle}
+            className={`inline-flex items-center justify-center ${outlineClasses}`}
+          >
+            <a
+              href={isInteractive ? "#" : destinationUrl}
+              target={isInteractive ? undefined : "_blank"}
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                if (isInteractive) e.preventDefault();
+              }}
+              className={`w-full h-full px-3 py-1.5 transition-all shadow flex items-center justify-between gap-2 relative ${variantClasses}`}
+              style={{
+                boxShadow: effects.boxShadow,
+                borderColor: el.style?.borderColor,
+                borderRadius: el.style?.borderRadius !== undefined ? `${el.style.borderRadius}px` : "12px",
+              }}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <PlatformIcon
+                  id={platform.id}
+                  color={iconColor}
+                  className="w-4 h-4 shrink-0"
+                />
+                <span className="text-xs font-bold text-white truncate">
+                  {el.props?.label || platform.name}
+                </span>
+              </div>
+              <span className="text-[11px] text-neutral-400 font-mono truncate max-w-[120px]">
+                {handle}
+              </span>
+
+              {isInteractive && isDisconnected && (
+                <div
+                  title="Linked account disconnected or deleted"
+                  className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full bg-amber-500 border border-black flex items-center justify-center text-[8px] font-bold text-black"
+                >
+                  !
+                </div>
+              )}
+            </a>
           </div>
         );
       }
@@ -577,13 +747,12 @@ export function CanvasObjectRenderer({
               transition: effects.transition || "all 0.15s ease",
               cursor: isInteractive ? "pointer" : "default",
             }}
-            className={`space-y-4 ${
-              isSelectedEmbed
+            className={`space-y-4 ${isSelectedEmbed
                 ? "ring-2 ring-amber-400"
                 : isInteractive
-                ? "hover:ring-1 hover:ring-white/30"
-                : ""
-            }`}
+                  ? "hover:ring-1 hover:ring-white/30"
+                  : ""
+              }`}
           >
             {/* Embed Header Label in Studio Mode */}
             {isInteractive && (

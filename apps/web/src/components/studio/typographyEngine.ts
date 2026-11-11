@@ -175,3 +175,4 @@ export function extractStyleDefinition(style?: CanvasElementStyle): TextStyleDef
     opacity: style?.opacity,
   };
 }
+

@@ -55,6 +55,13 @@ import {
   resolveStyleGroup,
   extractStyleDefinition,
 } from "./typographyEngine";
+import { PlatformIcon } from "@/components/links/PlatformIcons";
+import {
+  resolvePlatformDef,
+  extractSocialHandle,
+  sanitizeSocialUrl,
+  isSocialElement,
+} from "./socialsEngine";
 
 interface SelectedObjectMenuProps {
   item: CanvasEmbed | CanvasElement;
@@ -69,6 +76,12 @@ interface SelectedObjectMenuProps {
   onUpdateStyleGroup?: (groupId: TextStyleGroupId, def: TextStyleDefinition) => void;
   onResetElementTypography?: (elementId: string) => void;
   onApplyGroupToMatchingElements?: (groupId: TextStyleGroupId) => void;
+  allElements?: CanvasElement[];
+  activeLinks?: Array<{ id: string; label: string; url: string; icon?: string | null; color?: string | null; visibility: boolean }>;
+  onOpenSocialSelector?: () => void;
+  onArrangeSocialsHorizontally?: () => void;
+  onArrangeSocialsVertically?: () => void;
+  onCenterSocials?: () => void;
   onClose: () => void;
 }
 
@@ -105,6 +118,12 @@ export const SelectedObjectMenu: React.FC<SelectedObjectMenuProps> = ({
   onUpdateStyleGroup,
   onResetElementTypography,
   onApplyGroupToMatchingElements,
+  allElements = [],
+  activeLinks = [],
+  onOpenSocialSelector,
+  onArrangeSocialsHorizontally,
+  onArrangeSocialsVertically,
+  onCenterSocials,
   onClose,
 }) => {
   const elementType = !isEmbed ? (item as CanvasElement).type : null;
@@ -114,6 +133,7 @@ export const SelectedObjectMenu: React.FC<SelectedObjectMenuProps> = ({
     !isEmbed &&
     (elementType === "socials" ||
       elementType === "socialIcon" ||
+      elementType === "linkedAccount" ||
       elementType === "bottomIcon");
 
   const [activeTab, setActiveTab] = useState<TabType>(
@@ -717,6 +737,158 @@ export const SelectedObjectMenu: React.FC<SelectedObjectMenuProps> = ({
                   onChange={(e) => onUpdateStyle({ iconColor: e.target.value })}
                   className="flex-1 bg-neutral-800 border border-neutral-700 rounded px-2 py-1 text-xs text-white font-mono uppercase focus:outline-none"
                 />
+              </div>
+            </div>
+          )}
+
+          {/* Bound Account Information */}
+          {Boolean((elementType === "socialIcon" || elementType === "linkedAccount") && props?.linkId) && (() => {
+            const bound = activeLinks.find((l) => l.id === props.linkId);
+            const isDisconnected = !bound;
+            const platform = resolvePlatformDef(bound?.icon || props.platform, bound?.label || props.label);
+            const targetUrl = bound?.url || props.url || "#";
+            const handle = props.handle || (bound ? extractSocialHandle(bound.url, platform.id, bound.label) : "@account");
+
+            return (
+              <div className="p-3 rounded-xl bg-neutral-900/90 border border-neutral-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-neutral-400">Linked Account</span>
+                  {isDisconnected ? (
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+                      Disconnected
+                    </span>
+                  ) : (
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                      Connected
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2.5 bg-black/40 p-2 rounded-lg border border-neutral-800/80">
+                  <div className="w-8 h-8 rounded-lg bg-neutral-900 flex items-center justify-center shrink-0 border border-neutral-800">
+                    <PlatformIcon id={platform.id} color={bound?.color || platform.brandColor} className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-bold text-white truncate">{props.label || platform.name}</div>
+                    <div className="text-[10px] text-neutral-400 font-mono truncate">{handle}</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 pt-1">
+                  {onOpenSocialSelector && (
+                    <button
+                      type="button"
+                      onClick={onOpenSocialSelector}
+                      className="flex-1 py-1 px-2 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[10px] font-bold transition-colors cursor-pointer text-center"
+                    >
+                      Switch Account
+                    </button>
+                  )}
+                  {targetUrl && targetUrl !== "#" && (
+                    <button
+                      type="button"
+                      onClick={() => window.open(sanitizeSocialUrl(targetUrl), "_blank")}
+                      className="py-1 px-2 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[10px] font-bold transition-colors cursor-pointer"
+                    >
+                      Test Link ↗
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Icon Variant */}
+          <div className="p-2.5 rounded-xl bg-neutral-900/80 border border-neutral-800 space-y-1.5">
+            <span className="text-[10px] uppercase font-bold text-neutral-400">Icon Variant</span>
+            <div className="grid grid-cols-3 gap-1">
+              {([
+                { id: "default", label: "Default" },
+                { id: "minimal", label: "Minimal" },
+                { id: "outline", label: "Outline" },
+                { id: "filled", label: "Filled" },
+                { id: "glass", label: "Glass" },
+                { id: "neon", label: "Neon" },
+              ] as const).map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => onUpdateStyle({ iconVariant: v.id })}
+                  className={`py-1 rounded text-center text-[10px] transition-colors ${
+                    (style.iconVariant || "default") === v.id
+                      ? "bg-white text-black font-bold"
+                      : "bg-neutral-800 text-neutral-400 hover:text-white"
+                  }`}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Border Radius */}
+          <div className="p-2.5 rounded-xl bg-neutral-900/80 border border-neutral-800 space-y-1.5">
+            <div className="flex items-center justify-between text-[10px]">
+              <span className="uppercase font-bold text-neutral-400">Corner Shape</span>
+              <span className="text-white font-mono">{style.borderRadius ?? 12}px</span>
+            </div>
+            <div className="grid grid-cols-4 gap-1">
+              {[
+                { label: "Square", val: 0 },
+                { label: "Smooth", val: 8 },
+                { label: "Round", val: 16 },
+                { label: "Pill", val: 9999 },
+              ].map((c) => (
+                <button
+                  key={c.label}
+                  type="button"
+                  onClick={() => onUpdateStyle({ borderRadius: c.val })}
+                  className={`py-1 rounded text-center text-[10px] transition-colors ${
+                    (style.borderRadius ?? 12) === c.val
+                      ? "bg-white text-black font-bold"
+                      : "bg-neutral-800 text-neutral-400 hover:text-white"
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Smart Arrangement Quick Actions */}
+          {isIconElement && allElements.filter((el) => isSocialElement(el)).length > 1 && (
+            <div className="p-2.5 rounded-xl bg-neutral-900/80 border border-neutral-800 space-y-2">
+              <span className="text-[10px] uppercase font-bold text-neutral-400">
+                Social Group Arrangement ({allElements.filter((el) => isSocialElement(el)).length} Icons)
+              </span>
+              <div className="grid grid-cols-3 gap-1">
+                {onArrangeSocialsHorizontally && (
+                  <button
+                    type="button"
+                    onClick={onArrangeSocialsHorizontally}
+                    className="py-1 px-1.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[10px] font-bold transition-colors cursor-pointer text-center"
+                  >
+                    Row Layout
+                  </button>
+                )}
+                {onArrangeSocialsVertically && (
+                  <button
+                    type="button"
+                    onClick={onArrangeSocialsVertically}
+                    className="py-1 px-1.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[10px] font-bold transition-colors cursor-pointer text-center"
+                  >
+                    Column Layout
+                  </button>
+                )}
+                {onCenterSocials && (
+                  <button
+                    type="button"
+                    onClick={onCenterSocials}
+                    className="py-1 px-1.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[10px] font-bold transition-colors cursor-pointer text-center"
+                  >
+                    Center Align
+                  </button>
+                )}
               </div>
             </div>
           )}

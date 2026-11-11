@@ -16,6 +16,14 @@ import {
   CanvasElementType,
 } from "@/types/studio";
 import { getInheritedTextStyle, isTextBasedElement } from "@/components/studio/typographyEngine";
+import { SocialAccountSelectorModal } from "@/components/studio/SocialAccountSelectorModal";
+import {
+  LinkedAccountReference,
+  extractSocialHandle,
+  resolvePlatformDef,
+  sanitizeSocialUrl,
+  isSocialElement,
+} from "@/components/studio/socialsEngine";
 import { StudioTopBar, DeviceMode, StudioView } from "@/components/studio/StudioTopBar";
 import { StudioLeftWorkspace } from "@/components/studio/StudioLeftWorkspace";
 import { StudioRightPreviewCanvas } from "@/components/studio/StudioRightPreviewCanvas";
@@ -201,14 +209,9 @@ export default function CustomizePage() {
       gradient?: string | null;
     }>
   >([]);
-  const [links, setLinks] = useState<
-    Array<{
-      id: string;
-      label: string;
-      url: string;
-      visibility: boolean;
-    }>
-  >([]);
+  const [links, setLinks] = useState<LinkedAccountReference[]>([]);
+  const [isSocialModalOpen, setIsSocialModalOpen] = useState(false);
+  const [refreshingAccounts, setRefreshingAccounts] = useState(false);
   const [discordPresence, setDiscordPresence] = useState<{
     appName?: string | null;
     details?: string | null;
@@ -405,7 +408,211 @@ export default function CustomizePage() {
     setMsg({ text: "Added new customizable embed.", type: "success" });
   };
 
+  const refreshProfileLinks = useCallback(async () => {
+    try {
+      setRefreshingAccounts(true);
+      const res = await apiFetch("/api/profile/me");
+      if (res.ok) {
+        const p = await res.json();
+        setLinks(p.links || []);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setRefreshingAccounts(false);
+    }
+  }, []);
+
+  // Auto-refresh linked accounts when window regains focus (e.g. returning from /links)
+  useEffect(() => {
+    const handleFocus = () => {
+      refreshProfileLinks();
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [refreshProfileLinks]);
+
+  const handleNavigateToLinks = () => {
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.setItem("pixel_studio_draft_state", JSON.stringify(config));
+      }
+    } catch {
+      // ignore
+    }
+    if (isDirty) {
+      executeSave(false);
+    }
+    window.open("/links", "_blank");
+  };
+
+  const handleAddSocialIcon = (account: LinkedAccountReference) => {
+    const platform = resolvePlatformDef(account.icon, account.label);
+    const handle = extractSocialHandle(account.url, platform.id, account.label);
+
+    updateConfigWithHistory((prev) => {
+      const currentCanvas = prev.canvas || createDefaultCanvasState(prev);
+      const newId = `social_${account.id}_${Date.now()}`;
+      const targetEmbed = currentCanvas.embeds[0];
+
+      // Calculate safe position inside target embed
+      const existingSocials = currentCanvas.elements.filter((el) => isSocialElement(el));
+      const startX =
+        existingSocials.length > 0
+          ? (existingSocials[existingSocials.length - 1].transform.x + 56) % 360
+          : 20;
+
+      const newEl: CanvasElement = {
+        id: newId,
+        type: "socialIcon",
+        name: `${account.label || platform.name} Icon`,
+        parentEmbedId: targetEmbed ? targetEmbed.id : null,
+        transform: {
+          x: startX,
+          y: 40,
+          width: 44,
+          height: 44,
+          rotation: 0,
+          zIndex: currentCanvas.elements.length + 2,
+        },
+        props: {
+          linkId: account.id,
+          platform: account.icon || platform.id,
+          label: account.label,
+          url: account.url,
+          handle,
+        },
+        style: {
+          borderRadius: 12,
+          iconVariant: "default",
+          iconColorMode: "original",
+          iconColor: account.color || platform.brandColor,
+        },
+        isVisible: true,
+        isLocked: false,
+      };
+
+      setSelectedCanvasId(newId);
+      return {
+        ...prev,
+        canvas: {
+          ...currentCanvas,
+          elements: [...currentCanvas.elements, newEl],
+          selectedId: newId,
+          selectedIds: [newId],
+        },
+      };
+    });
+    setMsg({ text: `Added ${account.label} icon to embed.`, type: "success" });
+  };
+
+  const handleAddSocialPill = (account: LinkedAccountReference) => {
+    const platform = resolvePlatformDef(account.icon, account.label);
+    const handle = extractSocialHandle(account.url, platform.id, account.label);
+
+    updateConfigWithHistory((prev) => {
+      const currentCanvas = prev.canvas || createDefaultCanvasState(prev);
+      const newId = `linked_${account.id}_${Date.now()}`;
+      const targetEmbed = currentCanvas.embeds[0];
+
+      const newEl: CanvasElement = {
+        id: newId,
+        type: "linkedAccount",
+        name: `${account.label || platform.name} Pill`,
+        parentEmbedId: targetEmbed ? targetEmbed.id : null,
+        transform: {
+          x: 20,
+          y: 60,
+          width: 220,
+          height: 38,
+          rotation: 0,
+          zIndex: currentCanvas.elements.length + 2,
+        },
+        props: {
+          linkId: account.id,
+          platform: account.icon || platform.id,
+          label: account.label,
+          url: account.url,
+          handle,
+        },
+        style: {
+          borderRadius: 14,
+          iconVariant: "default",
+          iconColorMode: "original",
+          iconColor: account.color || platform.brandColor,
+        },
+        isVisible: true,
+        isLocked: false,
+      };
+
+      setSelectedCanvasId(newId);
+      return {
+        ...prev,
+        canvas: {
+          ...currentCanvas,
+          elements: [...currentCanvas.elements, newEl],
+          selectedId: newId,
+          selectedIds: [newId],
+        },
+      };
+    });
+    setMsg({ text: `Added ${account.label} pill to embed.`, type: "success" });
+  };
+
+  const handleAddAllSocialBar = () => {
+    updateConfigWithHistory((prev) => {
+      const currentCanvas = prev.canvas || createDefaultCanvasState(prev);
+      const newId = `socials_${Date.now()}`;
+      const targetEmbed = currentCanvas.embeds[0];
+
+      // Replace existing generic socials bar if any
+      const filteredElements = currentCanvas.elements.filter((el) => el.type !== "socials");
+
+      const newEl: CanvasElement = {
+        id: newId,
+        type: "socials",
+        name: "Social Media Group",
+        parentEmbedId: targetEmbed ? targetEmbed.id : null,
+        transform: {
+          x: 0,
+          y: 80,
+          width: (prev.layout.maxWidth || 580) - 60,
+          height: 48,
+          rotation: 0,
+          zIndex: currentCanvas.elements.length + 2,
+        },
+        props: {
+          selectedLinkIds: links.map((l) => l.id),
+        },
+        style: {
+          borderRadius: 16,
+          iconVariant: "default",
+          iconColorMode: "original",
+        },
+        isVisible: true,
+        isLocked: false,
+      };
+
+      setSelectedCanvasId(newId);
+      return {
+        ...prev,
+        canvas: {
+          ...currentCanvas,
+          elements: [...filteredElements, newEl],
+          selectedId: newId,
+          selectedIds: [newId],
+        },
+      };
+    });
+    setMsg({ text: "Added unified social bar with all connected accounts.", type: "success" });
+  };
+
   const handleAddElement = (type: CanvasElementType) => {
+    if (type === "socialIcon" || type === "socials" || type === "linkedAccount") {
+      setIsSocialModalOpen(true);
+      return;
+    }
+
     updateConfigWithHistory((prev) => {
       const currentCanvas = prev.canvas || createDefaultCanvasState(prev);
       const newId = `${type}_${Date.now()}`;
@@ -853,6 +1060,7 @@ export default function CustomizePage() {
                 onUpdateCanvas={handleUpdateCanvas}
                 selectedCanvasId={selectedCanvasId}
                 onSelectCanvasId={(id) => setSelectedCanvasId(id)}
+                onOpenSocialSelector={() => setIsSocialModalOpen(true)}
                 zoom={zoom}
                 setZoom={setZoom}
                 transparencyMode={transparencyMode}
@@ -905,6 +1113,7 @@ export default function CustomizePage() {
                 onMoveLayer={handleMoveLayer}
                 onAddEmbed={handleAddEmbed}
                 onAddElement={handleAddElement}
+                onOpenSocialSelector={() => setIsSocialModalOpen(true)}
                 selectedId={selectedCanvasId}
                 onSelectElement={(id) => setSelectedCanvasId(id)}
                 transparencyMode={transparencyMode}
@@ -937,6 +1146,24 @@ export default function CustomizePage() {
           </div>
         )}
       </div>
+
+      {/* Social Media Linked Account Selection Modal */}
+      <SocialAccountSelectorModal
+        isOpen={isSocialModalOpen}
+        onClose={() => setIsSocialModalOpen(false)}
+        linkedAccounts={links}
+        existingElementLinkIds={
+          (config.canvas?.elements || [])
+            .map((el) => el.props?.linkId)
+            .filter(Boolean) as string[]
+        }
+        onAddAccountAsIcon={handleAddSocialIcon}
+        onAddAccountAsPill={handleAddSocialPill}
+        onAddAllAsSocialBar={handleAddAllSocialBar}
+        onRefreshAccounts={refreshProfileLinks}
+        onNavigateToLinksPage={handleNavigateToLinks}
+        refreshing={refreshingAccounts}
+      />
     </AccountLayout>
   );
 }
