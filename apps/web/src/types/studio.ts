@@ -403,6 +403,7 @@ export interface ProfileDesignConfig {
     showProfileRpc?: boolean; // Independent control: visible on website profile
     enableDiscordRpc?: boolean; // Independent control: published to Discord via PixelsRPC
     customBorderColor?: string;
+    customLayout?: RpcCustomLayout;
   };
   buttons: {
     variant: ButtonVariant;
@@ -776,6 +777,89 @@ export const DEFAULT_DESIGN_CONFIG: ProfileDesignConfig = {
     { id: "badges", type: "badges", label: "Custom Elements / Badges", visible: true, locked: false },
   ],
 };
+
+// ==========================================
+// PREMIUM DISCORD RICH PRESENCE CUSTOMIZER (PROMPT 6)
+// ==========================================
+export type RpcInternalElementType =
+  | "artworkLarge"
+  | "artworkSmall"
+  | "headerStatus"
+  | "gameTitle"
+  | "activityDetails"
+  | "activityState"
+  | "partyInfo"
+  | "timestamps"
+  | "actionButtons"
+  | "telemetryBadge";
+
+export interface RpcLayoutElement {
+  id: string;
+  type: RpcInternalElementType;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  zIndex: number;
+  visible: boolean;
+  locked?: boolean;
+  style?: {
+    fontFamily?: string;
+    fontSize?: number;
+    fontWeight?: number;
+    color?: string;
+    letterSpacing?: number;
+    lineHeight?: number;
+    textAlign?: "left" | "center" | "right";
+    textTransform?: "none" | "uppercase" | "lowercase" | "capitalize";
+    textShadow?: string;
+    textGlow?: string;
+    borderRadius?: number;
+    borderWidth?: number;
+    borderColor?: string;
+    backgroundColor?: string;
+    boxShadow?: string;
+    opacity?: number;
+    aspectRatio?: "square" | "16/9" | "auto";
+    imageFit?: "cover" | "contain";
+  };
+  props?: {
+    presentationOverride?: string;
+    showTimer?: boolean;
+    showIcon?: boolean;
+    button1Label?: string;
+    button1Url?: string;
+    button2Label?: string;
+    button2Url?: string;
+    [key: string]: any;
+  };
+}
+
+export type RpcPresetId =
+  | "classic"
+  | "artwork-focus"
+  | "minimal"
+  | "editorial"
+  | "cyber-neon"
+  | "custom";
+
+export interface RpcCustomLayout {
+  enabled: boolean;
+  preset?: RpcPresetId;
+  cardStyle?: {
+    backgroundColor?: string;
+    borderColor?: string;
+    borderWidth?: number;
+    borderRadius?: number;
+    boxShadow?: string;
+    backdropBlur?: number;
+    padding?: number;
+    width?: number;
+    height?: number;
+  };
+  elements: RpcLayoutElement[];
+}
 
 export type DiscordRpcConfig = ProfileDesignConfig["discordRpc"];
 

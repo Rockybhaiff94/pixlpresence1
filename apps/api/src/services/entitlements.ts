@@ -19,6 +19,7 @@ export interface UserCapabilities {
   allowRepositionLikeButton: boolean;
   allowAdvancedEffects: boolean;
   allowCustomIconDesigns: boolean;
+  allowCustomRpcLayout: boolean;
   tier: "FREE" | "PREMIUM" | "NITRO" | "ADMIN";
 }
 
@@ -47,6 +48,7 @@ export function getUserCapabilities(user: {
       allowRepositionLikeButton: true,
       allowAdvancedEffects: true,
       allowCustomIconDesigns: true,
+      allowCustomRpcLayout: true,
       tier: "ADMIN",
     };
   }
@@ -67,6 +69,7 @@ export function getUserCapabilities(user: {
       allowRepositionLikeButton: true,
       allowAdvancedEffects: true,
       allowCustomIconDesigns: true,
+      allowCustomRpcLayout: true,
       tier: isNitro ? "NITRO" : "PREMIUM",
     };
   }
@@ -87,6 +90,7 @@ export function getUserCapabilities(user: {
     allowRepositionLikeButton: false,
     allowAdvancedEffects: false,
     allowCustomIconDesigns: false,
+    allowCustomRpcLayout: false,
     tier: "FREE",
   };
 }
@@ -161,6 +165,16 @@ export function validateProfileCapabilities(
           error: "Custom icon uploads and alternative icon styles are exclusive Premium features.",
         };
       }
+    }
+  }
+
+  // Validate Discord RPC Custom Layout (Premium restriction)
+  if (!capabilities.allowCustomRpcLayout) {
+    if (designConfig.discordRpc?.customLayout?.enabled) {
+      return {
+        valid: false,
+        error: "Custom Discord Rich Presence card layouts and internal element positioning are exclusive Premium features. Standard accounts display the default Discord presentation.",
+      };
     }
   }
 

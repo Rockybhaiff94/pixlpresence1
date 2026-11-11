@@ -82,6 +82,7 @@ interface SelectedObjectMenuProps {
   onArrangeSocialsHorizontally?: () => void;
   onArrangeSocialsVertically?: () => void;
   onCenterSocials?: () => void;
+  onOpenRpcCustomizer?: () => void;
   onClose: () => void;
 }
 
@@ -124,6 +125,7 @@ export const SelectedObjectMenu: React.FC<SelectedObjectMenuProps> = ({
   onArrangeSocialsHorizontally,
   onArrangeSocialsVertically,
   onCenterSocials,
+  onOpenRpcCustomizer,
   onClose,
 }) => {
   const elementType = !isEmbed ? (item as CanvasElement).type : null;
@@ -548,13 +550,28 @@ export const SelectedObjectMenu: React.FC<SelectedObjectMenuProps> = ({
       {/* TAB: CONTENT (With Discord Markdown Helpers) */}
       {activeTab === "content" && !isEmbed && (
         <div className="space-y-3">
-          {isDynamicRpc ? (
-            <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/40 text-neutral-300 space-y-1.5 text-[11px]">
-              <p className="font-bold text-purple-300">Dynamic Discord Rich Presence</p>
+          {elementType === "rpc" || isDynamicRpc ? (
+            <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/40 text-neutral-300 space-y-2 text-[11px]">
+              <div className="flex items-center justify-between">
+                <p className="font-bold text-purple-300">Discord Rich Presence Card</p>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold uppercase">
+                  Level 2
+                </span>
+              </div>
               <p className="text-[10px] text-neutral-400">
-                This text component is dynamically synchronized with your live Discord activity.
-                To customize Rich Presence overlays, please open the dedicated PixelsRPC Customizer.
+                This component is synchronized with your live Discord activity telemetry.
+                Premium members can independently position, resize, style, and override text for every internal element inside this card.
               </p>
+              {onOpenRpcCustomizer && (
+                <button
+                  type="button"
+                  onClick={onOpenRpcCustomizer}
+                  className="w-full mt-1.5 py-2 px-3 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all"
+                >
+                  <Sparkles size={12} />
+                  <span>Open Rich Presence Designer</span>
+                </button>
+              )}
             </div>
           ) : (
             <>

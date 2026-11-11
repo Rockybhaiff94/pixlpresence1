@@ -54,6 +54,7 @@ interface CanvasEngineProps {
   themeAccentColor?: string;
   activeLinks?: Array<{ id: string; label: string; url: string; icon?: string | null; color?: string | null; visibility: boolean }>;
   onOpenSocialSelector?: () => void;
+  onOpenRpcCustomizer?: () => void;
   children: React.ReactNode;
 }
 
@@ -88,6 +89,7 @@ export function CanvasEngine({
   themeAccentColor = "#ffffff",
   activeLinks = [],
   onOpenSocialSelector,
+  onOpenRpcCustomizer,
   children,
 }: CanvasEngineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -106,6 +108,7 @@ export function CanvasEngine({
   const isSelectedEmbed = Boolean(selectedEmbed);
   const isSelectedText = Boolean(!isSelectedEmbed && selectedElement && isTextBasedElement(selectedElement.type));
   const isSelectedSocial = Boolean(!isSelectedEmbed && selectedElement && isSocialElement(selectedElement));
+  const isSelectedRpc = Boolean(!isSelectedEmbed && selectedElement && selectedElement.type === "rpc");
   const selectedElStyle = !isSelectedEmbed ? selectedElement?.style : undefined;
 
   const handleArrangeSocialsHorizontally = () => {
@@ -930,6 +933,8 @@ export function CanvasEngine({
             onOpenSocialSelector={onOpenSocialSelector}
             onTestLink={handleTestLink}
             onArrangeRow={handleArrangeSocialsHorizontally}
+            isRpc={isSelectedRpc}
+            onOpenRpcCustomizer={onOpenRpcCustomizer}
           />
 
           {/* Inline Three-Dot More Options Menu (PHASE 7) */}
@@ -946,6 +951,7 @@ export function CanvasEngine({
               onArrangeSocialsHorizontally={handleArrangeSocialsHorizontally}
               onArrangeSocialsVertically={handleArrangeSocialsVertically}
               onCenterSocials={handleCenterSocials}
+              onOpenRpcCustomizer={onOpenRpcCustomizer}
               onUpdateTransform={(t) => {
                 onUpdateCanvas((prev) => {
                   const id = selectedItem.id;

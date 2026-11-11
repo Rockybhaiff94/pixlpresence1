@@ -19,6 +19,7 @@ import {
   Share2,
   ExternalLink,
   Layout,
+  Sparkles,
 } from "lucide-react";
 
 interface SelectionToolbarProps {
@@ -32,6 +33,10 @@ interface SelectionToolbarProps {
   onDelete: () => void;
   onToggleMoreMenu: () => void;
   isMoreMenuOpen: boolean;
+
+  // Rich Presence quick actions (Phase 9 / Prompt 6)
+  isRpc?: boolean;
+  onOpenRpcCustomizer?: () => void;
 
   // Text-specific quick actions (Phase 6)
   isText?: boolean;
@@ -73,6 +78,10 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
   textAlign = "center",
   fontSize,
   onChangeFontSize,
+  // Rich Presence quick actions
+  isRpc = false,
+  onOpenRpcCustomizer,
+
   isSocial = false,
   onOpenSocialSelector,
   onTestLink,
@@ -90,16 +99,29 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
       <div className="flex items-center gap-1.5 min-w-0 pr-2">
         <span
           className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-            isEmbed ? "bg-amber-400" : isText ? "bg-emerald-400" : "bg-sky-400"
+            isEmbed ? "bg-amber-400" : isRpc ? "bg-purple-400" : isText ? "bg-emerald-400" : "bg-sky-400"
           }`}
         />
         <span className="font-bold text-neutral-200 truncate max-w-[120px]">
           {title}
         </span>
         <span className="text-[9px] px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-400 border border-neutral-700 uppercase shrink-0">
-          {isEmbed ? "Embed" : isText ? "Text" : "Element"}
+          {isEmbed ? "Embed" : isRpc ? "RPC Card" : isText ? "Text" : "Element"}
         </span>
       </div>
+
+      {/* RPC Quick Action */}
+      {isRpc && onOpenRpcCustomizer && (
+        <button
+          type="button"
+          onClick={onOpenRpcCustomizer}
+          title="Open Premium Rich Presence Customizer"
+          className="px-2 py-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 flex items-center gap-1 font-bold text-[10px] cursor-pointer shrink-0"
+        >
+          <Sparkles size={11} className="text-purple-400" />
+          <span>Customize RPC</span>
+        </button>
+      )}
 
       {/* Center / Text Quick Actions */}
       {isText && (

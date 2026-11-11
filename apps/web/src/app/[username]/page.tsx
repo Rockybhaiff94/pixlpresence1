@@ -231,6 +231,7 @@ export default async function ProfilePage({
         discordPresence={richPresence || null}
         customCss={profile?.customCss || null}
         designConfig={profile?.designConfig || null}
+        isPremium={Boolean((user as any)?.premiumStatus || (user as any)?.role === "ADMIN")}
       />
     </>
   );

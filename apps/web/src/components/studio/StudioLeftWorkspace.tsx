@@ -75,6 +75,7 @@ interface StudioLeftWorkspaceProps {
   onAddEmbed?: () => void;
   onAddElement?: (type: any) => void;
   onOpenSocialSelector?: () => void;
+  onOpenRpcCustomizer?: () => void;
   onDuplicateLayer?: (layerId: string) => void;
   onDeleteLayer?: (layerId: string) => void;
   selectedId?: string | null;
@@ -114,6 +115,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
   onAddEmbed,
   onAddElement,
   onOpenSocialSelector,
+  onOpenRpcCustomizer,
   onDuplicateLayer,
   onDeleteLayer,
   selectedId,
@@ -1287,6 +1289,32 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   <p className="text-neutral-400 text-[11px] pt-0.5">
                     Configure independent website visibility vs Discord publishing, card styling, and telemetry.
                   </p>
+                </div>
+
+                {/* Level 2 Visual Customizer Banner (Phase 9 / Prompt 6) */}
+                <div className="p-4 rounded-xl border border-purple-500/40 bg-gradient-to-br from-purple-950/40 via-purple-900/10 to-indigo-950/20 space-y-3 shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Sparkles size={16} className="text-purple-400" />
+                      <span className="text-xs font-bold text-white uppercase tracking-wider">
+                        Level 2 Visual Designer
+                      </span>
+                    </div>
+                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold uppercase">
+                      Premium
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-300 leading-relaxed">
+                    Independently select, reposition, resize, and style artwork, status titles, game details, telemetry badges, and buttons inside the Discord Rich Presence card.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onOpenRpcCustomizer}
+                    className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer"
+                  >
+                    <Gamepad2 size={14} />
+                    <span>Open Rich Presence Customizer</span>
+                  </button>
                 </div>
 
                 {/* INDEPENDENT VISIBILITY CONTROLS MATRIX */}

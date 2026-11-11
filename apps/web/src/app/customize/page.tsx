@@ -14,9 +14,11 @@ import {
   CanvasEmbed,
   CanvasElement,
   CanvasElementType,
+  RpcCustomLayout,
 } from "@/types/studio";
 import { getInheritedTextStyle, isTextBasedElement } from "@/components/studio/typographyEngine";
 import { SocialAccountSelectorModal } from "@/components/studio/SocialAccountSelectorModal";
+import { DiscordRpcCustomizerModal } from "@/components/studio/DiscordRpcCustomizerModal";
 import {
   LinkedAccountReference,
   extractSocialHandle,
@@ -211,6 +213,7 @@ export default function CustomizePage() {
   >([]);
   const [links, setLinks] = useState<LinkedAccountReference[]>([]);
   const [isSocialModalOpen, setIsSocialModalOpen] = useState(false);
+  const [isRpcModalOpen, setIsRpcModalOpen] = useState(false);
   const [refreshingAccounts, setRefreshingAccounts] = useState(false);
   const [discordPresence, setDiscordPresence] = useState<{
     appName?: string | null;
@@ -1061,6 +1064,7 @@ export default function CustomizePage() {
                 selectedCanvasId={selectedCanvasId}
                 onSelectCanvasId={(id) => setSelectedCanvasId(id)}
                 onOpenSocialSelector={() => setIsSocialModalOpen(true)}
+                onOpenRpcCustomizer={() => setIsRpcModalOpen(true)}
                 zoom={zoom}
                 setZoom={setZoom}
                 transparencyMode={transparencyMode}
@@ -1114,6 +1118,7 @@ export default function CustomizePage() {
                 onAddEmbed={handleAddEmbed}
                 onAddElement={handleAddElement}
                 onOpenSocialSelector={() => setIsSocialModalOpen(true)}
+                onOpenRpcCustomizer={() => setIsRpcModalOpen(true)}
                 selectedId={selectedCanvasId}
                 onSelectElement={(id) => setSelectedCanvasId(id)}
                 transparencyMode={transparencyMode}
@@ -1163,6 +1168,28 @@ export default function CustomizePage() {
         onRefreshAccounts={refreshProfileLinks}
         onNavigateToLinksPage={handleNavigateToLinks}
         refreshing={refreshingAccounts}
+      />
+
+      {/* Discord Rich Presence Customizer Modal (Premium Level 2) */}
+      <DiscordRpcCustomizerModal
+        isOpen={isRpcModalOpen}
+        onClose={() => setIsRpcModalOpen(false)}
+        currentLayout={config.discordRpc?.customLayout}
+        liveData={discordPresence}
+        isPremium={Boolean(user?.premiumStatus || (user as any)?.role === "ADMIN")}
+        onSaveLayout={(newLayout: RpcCustomLayout) => {
+          setConfig((prev) => ({
+            ...prev,
+            discordRpc: {
+              ...prev.discordRpc,
+              customLayout: newLayout,
+            },
+          }));
+          setMsg({ text: "Discord Rich Presence custom layout updated!", type: "success" });
+        }}
+        onOpenUpgradeModal={() => {
+          window.location.href = "/pricing";
+        }}
       />
     </AccountLayout>
   );

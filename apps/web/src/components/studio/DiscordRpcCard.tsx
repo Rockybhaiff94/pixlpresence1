@@ -3,6 +3,10 @@
 import React, { useState, useEffect } from "react";
 import { Activity, Radio, Music, Tv, Swords, ExternalLink } from "lucide-react";
 import { DiscordRpcConfig } from "@/types/studio";
+import {
+  resolveRpcElementText,
+  isRpcElementDataAvailable,
+} from "./rpcPresets";
 
 export interface DiscordRpcData {
   appName?: string | null;
@@ -42,12 +46,14 @@ interface DiscordRpcCardProps {
   config: DiscordRpcConfig;
   data?: DiscordRpcData | null;
   isInteractiveEditor?: boolean;
+  isPremium?: boolean;
 }
 
 export function DiscordRpcCard({
   config,
   data,
   isInteractiveEditor = false,
+  isPremium = false,
 }: DiscordRpcCardProps) {
   const [elapsed, setElapsed] = useState<string>("");
 
@@ -176,7 +182,215 @@ export function DiscordRpcCard({
     );
   }
 
-  // Active Rich Presence Display
+  // Active Custom Layout Rich Presence Display (Exclusive Premium Tier)
+  if (config.customLayout?.enabled && isPremium) {
+    const layout = config.customLayout;
+    const cardStyle = layout.cardStyle;
+    const borderRadius =
+      cardStyle?.borderRadius !== undefined ? cardStyle.borderRadius : config.borderRadius;
+    const borderColor = cardStyle?.borderColor || config.customBorderColor || "#27272a";
+    const backgroundColor =
+      cardStyle?.backgroundColor ||
+      (config.style === "glass"
+        ? "rgba(18, 18, 18, 0.7)"
+        : config.style === "neon"
+        ? "#090610"
+        : "#111111");
+
+    // Filter elements that are marked visible AND have valid data available
+    const activeElements = layout.elements.filter(
+      (el) => el.visible && isRpcElementDataAvailable(el, rpc)
+    );
+
+    const dynamicHeight = Math.max(
+      cardStyle?.height || 160,
+      ...activeElements.map((el) => el.y + (el.height || 20) + 16)
+    );
+
+    return (
+      <div
+        className="discord-rpc custom-rpc-card w-full relative transition-all overflow-hidden select-none"
+        style={{
+          minHeight: `${dynamicHeight}px`,
+          backgroundColor,
+          borderColor,
+          borderRadius: `${borderRadius}px`,
+          borderWidth: `${cardStyle?.borderWidth ?? 1}px`,
+          boxShadow: cardStyle?.boxShadow,
+          backdropFilter: cardStyle?.backdropBlur ? `blur(${cardStyle.backdropBlur}px)` : undefined,
+        }}
+      >
+        {activeElements.map((el) => {
+          const textVal = resolveRpcElementText(el, rpc);
+
+          return (
+            <div
+              key={el.id}
+              style={{
+                position: "absolute",
+                left: `${el.x}px`,
+                top: `${el.y}px`,
+                width: `${el.width}px`,
+                maxWidth: `calc(100% - ${el.x}px - 8px)`,
+                height: `${el.height}px`,
+                zIndex: el.zIndex || 2,
+              }}
+              className="pointer-events-auto"
+            >
+              {el.type === "headerStatus" && (
+                <div
+                  style={{
+                    fontSize: `${el.style?.fontSize || 10}px`,
+                    fontWeight: el.style?.fontWeight || 700,
+                    color: el.style?.color || "#ffffff",
+                    textAlign: el.style?.textAlign || "left",
+                    fontFamily: el.style?.fontFamily || "Space Grotesk",
+                  }}
+                  className="w-full h-full flex items-center gap-1.5 uppercase tracking-wide truncate"
+                >
+                  {el.props?.showIcon !== false && (
+                    <Radio size={12} className="text-purple-400 animate-pulse shrink-0" />
+                  )}
+                  <span className="truncate">{textVal}</span>
+                </div>
+              )}
+
+              {el.type === "telemetryBadge" && (
+                <div
+                  style={{
+                    fontSize: `${el.style?.fontSize || 9}px`,
+                    fontWeight: el.style?.fontWeight || 600,
+                    color: el.style?.color || "#d4d4d8",
+                    backgroundColor: el.style?.backgroundColor || "#18181b",
+                    borderRadius: `${el.style?.borderRadius || 6}px`,
+                  }}
+                  className="w-full h-full flex items-center justify-center gap-1 border border-neutral-700/60 uppercase"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                  <span className="truncate">LIVE TELEMETRY</span>
+                </div>
+              )}
+
+              {el.type === "artworkLarge" && (
+                <div
+                  style={{
+                    borderRadius: `${el.style?.borderRadius || 14}px`,
+                    borderColor: el.style?.borderColor || "#27272a",
+                    borderWidth: `${el.style?.borderWidth ?? 1}px`,
+                    boxShadow: el.style?.boxShadow || "0 4px 12px rgba(0,0,0,0.5)",
+                  }}
+                  className="w-full h-full bg-neutral-900 overflow-hidden flex items-center justify-center font-bold text-xs text-white"
+                >
+                  {rpc.largeImage ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={rpc.largeImage}
+                      alt={rpc.largeImageText || "Large Artwork"}
+                      className={`w-full h-full ${
+                        el.style?.imageFit === "contain" ? "object-contain" : "object-cover"
+                      }`}
+                    />
+                  ) : (
+                    <span>RPC</span>
+                  )}
+                </div>
+              )}
+
+              {el.type === "artworkSmall" && (
+                <div
+                  style={{
+                    borderRadius: `${el.style?.borderRadius || 9999}px`,
+                    borderColor: el.style?.borderColor || "#111111",
+                    borderWidth: `${el.style?.borderWidth ?? 2}px`,
+                  }}
+                  className="w-full h-full bg-[#111111] overflow-hidden flex items-center justify-center shadow"
+                >
+                  {rpc.smallImage ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={rpc.smallImage}
+                      alt={rpc.smallImageText || "Small Artwork"}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-emerald-500 rounded-full" />
+                  )}
+                </div>
+              )}
+
+              {(el.type === "gameTitle" ||
+                el.type === "activityDetails" ||
+                el.type === "activityState" ||
+                el.type === "partyInfo") && (
+                <div
+                  style={{
+                    fontFamily: el.style?.fontFamily || "Inter",
+                    fontSize: `${el.style?.fontSize || 12}px`,
+                    fontWeight: el.style?.fontWeight || 400,
+                    color: el.style?.color || "#ffffff",
+                    textAlign: el.style?.textAlign || "left",
+                    letterSpacing: el.style?.letterSpacing ? `${el.style.letterSpacing}px` : undefined,
+                  }}
+                  className="w-full h-full flex items-center truncate"
+                >
+                  <span className="truncate">{textVal}</span>
+                </div>
+              )}
+
+              {el.type === "timestamps" && (
+                <div
+                  style={{
+                    fontFamily: el.style?.fontFamily || "monospace",
+                    fontSize: `${el.style?.fontSize || 10}px`,
+                    fontWeight: el.style?.fontWeight || 400,
+                    color: el.style?.color || "#a1a1aa",
+                    textAlign: el.style?.textAlign || "left",
+                  }}
+                  className="w-full h-full flex items-center truncate"
+                >
+                  <span className="truncate">{elapsed || "00:01 elapsed"}</span>
+                </div>
+              )}
+
+              {el.type === "actionButtons" && (
+                <div className="w-full h-full flex flex-wrap gap-2 items-center">
+                  {buttons.length > 0 ? (
+                    buttons.map((btn, idx) => (
+                      <a
+                        key={idx}
+                        href={btn.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-[10px] text-neutral-300 hover:text-white transition-colors flex items-center gap-1 font-mono"
+                      >
+                        <span className="truncate">{btn.label}</span>
+                        <ExternalLink size={9} className="opacity-60 shrink-0" />
+                      </a>
+                    ))
+                  ) : (
+                    isInteractiveEditor && (
+                      <>
+                        <div className="px-2.5 py-1 rounded-lg bg-neutral-900 border border-neutral-800 text-[10px] text-white font-mono flex items-center gap-1 shadow">
+                          <span>View Profile</span>
+                          <ExternalLink size={9} />
+                        </div>
+                        <div className="px-2.5 py-1 rounded-lg bg-neutral-900 border border-neutral-800 text-[10px] text-white font-mono flex items-center gap-1 shadow">
+                          <span>Get PixelsRPC</span>
+                          <ExternalLink size={9} />
+                        </div>
+                      </>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // Active Standard Rich Presence Display
   return (
     <div
       className="discord-rpc w-full p-4 text-left space-y-2.5 font-mono border transition-all"

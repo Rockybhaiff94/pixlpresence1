@@ -35,6 +35,7 @@ interface CanvasObjectRendererProps {
   config: ProfileDesignConfig;
   data: PreviewData;
   isInteractive?: boolean;
+  isPremium?: boolean;
   selectedId?: string | null;
   inlineEditingId?: string | null;
   onSelectElement?: (id: string) => void;
@@ -50,6 +51,7 @@ export function CanvasObjectRenderer({
   config,
   data,
   isInteractive = false,
+  isPremium = false,
   selectedId,
   inlineEditingId,
   onSelectElement,
@@ -338,6 +340,7 @@ export function CanvasObjectRenderer({
               config={config.discordRpc}
               data={discordPresence}
               isInteractiveEditor={isInteractive}
+              isPremium={isPremium || data?.isPremium}
             />
           </div>
         );

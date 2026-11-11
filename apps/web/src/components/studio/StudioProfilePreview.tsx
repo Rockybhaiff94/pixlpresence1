@@ -49,12 +49,14 @@ export interface PreviewData {
     order?: number;
   }>;
   discordPresence?: any | null;
+  isPremium?: boolean;
 }
 
 interface StudioProfilePreviewProps {
   config: ProfileDesignConfig;
   data: PreviewData;
   isInteractiveEditor?: boolean;
+  isPremium?: boolean;
   activeElementId?: string;
   inlineEditingId?: string | null;
   onSelectElement?: (elementId: string) => void;
@@ -67,6 +69,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
   config,
   data,
   isInteractiveEditor = false,
+  isPremium = false,
   activeElementId,
   inlineEditingId,
   onSelectElement,
@@ -74,6 +77,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
   onUpdateElementProps,
   scopeId = "profile-preview-root",
 }) => {
+  const isPremiumUser = Boolean(isPremium || data.isPremium);
   const {
     layout,
     identity,
@@ -279,6 +283,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
           config={config}
           data={data}
           isInteractive={isInteractiveEditor}
+          isPremium={isPremiumUser}
           selectedId={activeElementId}
           inlineEditingId={inlineEditingId}
           onSelectElement={onSelectElement}
@@ -493,6 +498,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
                     config={discordRpc}
                     data={data.discordPresence}
                     isInteractiveEditor={isInteractiveEditor}
+                    isPremium={isPremiumUser}
                   />
                 </div>
               );

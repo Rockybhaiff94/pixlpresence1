@@ -51,6 +51,7 @@ interface ProfileClientProps {
   discordPresence?: any | null;
   customCss?: string | null;
   designConfig?: string | null;
+  isPremium?: boolean;
 }
 
 export const ProfileClientView: React.FC<ProfileClientProps> = ({
@@ -74,6 +75,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
   discordPresence,
   customCss,
   designConfig,
+  isPremium = false,
 }) => {
   const [entered, setEntered] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -351,8 +353,10 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
             buttons,
             links,
             discordPresence: livePresence,
+            isPremium,
           }}
           isInteractiveEditor={false}
+          isPremium={isPremium}
           scopeId="profile-page-root"
         />
       </div>
