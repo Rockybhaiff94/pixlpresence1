@@ -34,7 +34,6 @@ import { ParticlesCanvas } from "@/components/studio/ParticlesCanvas";
 import { ClassicCustomizer } from "@/components/studio/ClassicCustomizer";
 import { StudioTemplatePreset } from "@/components/studio/templates";
 import { StudioFloatingDock, DockPosition, ToolSelection } from "@/components/studio/StudioFloatingDock";
-import { StudioContextualSettingsPanel } from "@/components/studio/StudioContextualSettingsPanel";
 import {
   AlertCircle,
   CheckCircle2,
@@ -98,7 +97,7 @@ export default function CustomizePage() {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("pixel_studio_dock_position");
-        if (saved === "bottom" || saved === "top" || saved === "left" || saved === "right") {
+        if (saved === "bottom" || saved === "top" || saved === "left" || saved === "right" || saved === "float") {
           return saved as DockPosition;
         }
       } catch {}
@@ -1088,11 +1087,28 @@ export default function CustomizePage() {
               />
             </div>
 
-            {/* STAGE TWO: CONTEXTUAL SETTINGS PANEL (SLIDES INWARD FROM DOCK) */}
-            <StudioContextualSettingsPanel
-              isOpen={isSettingsOpen}
-              onClose={() => setIsSettingsOpen(false)}
-              dockPosition={dockPosition}
+            {/* UNIFIED ADAPTIVE FLOATING DOCK & APP DIRECTORY (MODES A, B, C) */}
+            <StudioFloatingDock
+              position={dockPosition}
+              onPositionChange={(newPos) => {
+                setDockPosition(newPos);
+                if (typeof window !== "undefined") {
+                  try {
+                    localStorage.setItem("pixel_studio_dock_position", newPos);
+                  } catch {}
+                }
+              }}
+              activeCategory={activeCategory}
+              currentView={currentView}
+              isSettingsOpen={isSettingsOpen}
+              onSelectTool={handleSelectTool}
+              onCloseSettings={() => setIsSettingsOpen(false)}
+              containerRef={workspaceContainerRef}
+              themeAccentColor={config.identity?.titleColor || "#ffffff"}
+              onAddEmbed={handleAddEmbed}
+              onAddElement={handleAddElement}
+              onOpenSocialSelector={() => setIsSocialModalOpen(true)}
+              onOpenRpcCustomizer={() => setIsRpcModalOpen(true)}
             >
               <StudioLeftWorkspace
                 currentView={currentView}
@@ -1128,26 +1144,7 @@ export default function CustomizePage() {
                 isFloatingContext={true}
                 onClose={() => setIsSettingsOpen(false)}
               />
-            </StudioContextualSettingsPanel>
-
-            {/* ADAPTIVE FLOATING NAVIGATION DOCK (STAGE ONE & COLLAPSED) */}
-            <StudioFloatingDock
-              position={dockPosition}
-              onPositionChange={(newPos) => {
-                setDockPosition(newPos);
-                if (typeof window !== "undefined") {
-                  try {
-                    localStorage.setItem("pixel_studio_dock_position", newPos);
-                  } catch {}
-                }
-              }}
-              activeCategory={activeCategory}
-              currentView={currentView}
-              isSettingsOpen={isSettingsOpen}
-              onSelectTool={handleSelectTool}
-              onCloseSettings={() => setIsSettingsOpen(false)}
-              containerRef={workspaceContainerRef}
-            />
+            </StudioFloatingDock>
           </div>
         )}
       </div>

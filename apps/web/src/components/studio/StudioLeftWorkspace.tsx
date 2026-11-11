@@ -24,6 +24,7 @@ import {
   X,
   Grid,
   Command,
+  ArrowLeft,
 } from "lucide-react";
 import {
   ProfileDesignConfig,
@@ -80,6 +81,7 @@ interface StudioLeftWorkspaceProps {
   onDeleteLayer?: (layerId: string) => void;
   selectedId?: string | null;
   onSelectElement?: (id: string) => void;
+  onBack?: () => void;
 
   // Workspace Appearance & Transparency
   transparencyMode?: WorkspaceTransparencyMode;
@@ -120,6 +122,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
   onDeleteLayer,
   selectedId,
   onSelectElement,
+  onBack,
   transparencyMode = "solid",
   panelOpacity = 85,
   panelBlur = 12,
@@ -230,6 +233,17 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
       {isFloatingContext ? (
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#101014] shrink-0">
           <div className="flex items-center gap-2.5">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-neutral-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5 text-[11px] font-bold border border-white/10"
+                title="Back to App Directory"
+              >
+                <ArrowLeft size={12} />
+                <span>Directory</span>
+              </button>
+            )}
             <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-white">
               {currentView === "templates" ? (
                 <LayoutTemplate size={14} />

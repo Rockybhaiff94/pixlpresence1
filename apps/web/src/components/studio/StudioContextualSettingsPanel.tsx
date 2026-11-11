@@ -57,6 +57,13 @@ export const StudioContextualSettingsPanel: React.FC<StudioContextualSettingsPan
           animate: { opacity: 1, x: 0, scale: 1 },
           exit: { opacity: 0, x: 25, scale: 0.97 },
         };
+      case "float":
+      default:
+        return {
+          initial: { opacity: 0, y: 25, scale: 0.97 },
+          animate: { opacity: 1, y: 0, scale: 1 },
+          exit: { opacity: 0, y: 15, scale: 0.97 },
+        };
     }
   };
 
@@ -71,6 +78,9 @@ export const StudioContextualSettingsPanel: React.FC<StudioContextualSettingsPan
         return "left-18 sm:left-24 top-1/2 -translate-y-1/2";
       case "right":
         return "right-18 sm:right-24 top-1/2 -translate-y-1/2";
+      case "float":
+      default:
+        return "bottom-20 sm:bottom-24 left-1/2 -translate-x-1/2";
     }
   };
 
