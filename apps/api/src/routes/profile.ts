@@ -5,6 +5,7 @@ import { recordSyncEvent } from '../utils/sync';
 import { resolveTelemetry } from '../utils/geo';
 import { viewRateLimiter } from '../rateLimiter';
 import { presenceManager } from '../services/presenceManager';
+import { getUserCapabilities, validateProfileCapabilities } from '../services/entitlements';
 
 export const profileRouter = Router();
 
@@ -439,6 +440,20 @@ function sanitizeCustomCss(rawCss: string | undefined | null): string {
     .trim();
 }
 
+// Get current user studio capabilities & entitlements (Phase 9)
+profileRouter.get('/capabilities', requireAuth, async (req: any, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { role: true, premiumStatus: true, nitroStatus: true },
+    });
+    const caps = getUserCapabilities(user || req.user);
+    res.json(caps);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch user capabilities' });
+  }
+});
+
 // Update Profile
 profileRouter.patch('/me', requireAuth, async (req: any, res) => {
   try {
@@ -455,6 +470,23 @@ profileRouter.patch('/me', requireAuth, async (req: any, res) => {
 
     if (data.customCss !== undefined) {
       data.customCss = sanitizeCustomCss(data.customCss);
+    }
+
+    // Validate capabilities / entitlements
+    const caps = getUserCapabilities(req.user);
+    if (data.designConfig !== undefined) {
+      let parsedCfg = data.designConfig;
+      if (typeof parsedCfg === 'string') {
+        try {
+          parsedCfg = JSON.parse(parsedCfg);
+        } catch {
+          // ignore
+        }
+      }
+      const capValidation = validateProfileCapabilities(parsedCfg, caps);
+      if (!capValidation.valid) {
+        return res.status(403).json({ error: capValidation.error });
+      }
     }
 
     if (data.designConfig !== undefined && typeof data.designConfig === 'object') {

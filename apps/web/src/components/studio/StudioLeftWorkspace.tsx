@@ -43,6 +43,7 @@ import { validateCss } from "./cssUtils";
 import { StudioTemplateManager } from "./StudioTemplateManager";
 import { StudioLayerManager } from "./StudioLayerManager";
 import { StudioTemplatePreset } from "./templates";
+import { BackgroundCustomizerModal } from "./BackgroundCustomizerModal";
 
 export type StudioView = "categories" | "templates" | "layers";
 
@@ -67,6 +68,12 @@ interface StudioLeftWorkspaceProps {
   onToggleLayerVisibility: (layerId: string) => void;
   onToggleLayerLock: (layerId: string) => void;
   onMoveLayer: (layerId: string, direction: "up" | "down") => void;
+  onAddEmbed?: () => void;
+  onAddElement?: (type: "text" | "image" | "shape" | "divider") => void;
+  onDuplicateLayer?: (layerId: string) => void;
+  onDeleteLayer?: (layerId: string) => void;
+  selectedId?: string | null;
+  onSelectElement?: (id: string) => void;
 
   // Workspace Appearance & Transparency
   transparencyMode?: WorkspaceTransparencyMode;
@@ -97,6 +104,12 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
   onToggleLayerVisibility,
   onToggleLayerLock,
   onMoveLayer,
+  onAddEmbed,
+  onAddElement,
+  onDuplicateLayer,
+  onDeleteLayer,
+  selectedId,
+  onSelectElement,
   transparencyMode = "solid",
   panelOpacity = 85,
   panelBlur = 12,
@@ -104,6 +117,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
   onCollapsePanel,
 }) => {
   const [cssValidation, setCssValidation] = useState<{ valid: boolean; error?: string }>({ valid: true });
+  const [isBgModalOpen, setIsBgModalOpen] = useState(false);
 
   const CATEGORIES: Array<{
     id: StudioTab;
@@ -312,6 +326,12 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
             onToggleLayerVisibility={onToggleLayerVisibility}
             onToggleLayerLock={onToggleLayerLock}
             onMoveLayer={onMoveLayer}
+            onAddEmbed={onAddEmbed}
+            onAddElement={onAddElement}
+            onDuplicateLayer={onDuplicateLayer}
+            onDeleteLayer={onDeleteLayer}
+            selectedId={selectedId}
+            onSelectElement={onSelectElement}
             onSelectCategory={(cat) => {
               setActiveCategory(cat);
               setCurrentView("categories");
@@ -977,13 +997,24 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   </div>
                 </div>
 
-                {/* Image URL & Controls if type === image */}
-                {config.background.type === "image" && (
+                {/* Image / GIF Background Controls */}
+                {(config.background.type === "image" || config.background.type === "gif") && (
                   <div className="space-y-3 p-4 rounded-xl border border-neutral-800 bg-[#101012]">
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-neutral-400 uppercase">
-                        Background Image URL
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] text-neutral-400 uppercase font-bold">
+                        Background Image / GIF
                       </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsBgModalOpen(true)}
+                        className="px-2.5 py-1 rounded-md bg-white text-black font-bold text-[10px] hover:bg-neutral-200 cursor-pointer flex items-center gap-1.5 transition-all shadow-sm"
+                      >
+                        <ImageIcon size={12} />
+                        CUSTOMIZE & CROP ↗
+                      </button>
+                    </div>
+
+                    <div className="space-y-1">
                       <input
                         type="text"
                         value={config.background.imageUrl || ""}
@@ -993,64 +1024,24 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                             background: { ...prev.background, imageUrl: e.target.value },
                           }))
                         }
-                        placeholder="https://images.unsplash.com/..."
-                        className="w-full bg-black border border-neutral-700 rounded p-2 text-white text-xs"
+                        placeholder="https://... direct image or gif link"
+                        className="w-full bg-black border border-neutral-700 rounded p-2 text-white text-xs focus:outline-none focus:border-white"
                       />
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2 pt-2">
-                      <div>
-                        <label className="text-[10px] text-neutral-400">Position</label>
-                        <select
-                          value={config.background.position}
-                          onChange={(e) =>
-                            updateConfig((prev) => ({
-                              ...prev,
-                              background: { ...prev.background, position: e.target.value },
-                            }))
-                          }
-                          className="w-full bg-black border border-neutral-700 rounded p-1.5 text-white text-xs"
-                        >
-                          <option value="center">Center</option>
-                          <option value="top">Top</option>
-                          <option value="bottom">Bottom</option>
-                        </select>
+                    {/* Quick Transformation Indicators */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[10px] font-mono">
+                      <div className="p-2 rounded bg-black/60 border border-neutral-800 text-neutral-400">
+                        RATIO: <span className="text-white font-bold">{config.background.aspectRatio || "full"}</span>
                       </div>
-
-                      <div>
-                        <label className="text-[10px] text-neutral-400">Repeat</label>
-                        <select
-                          value={config.background.repeat}
-                          onChange={(e) =>
-                            updateConfig((prev) => ({
-                              ...prev,
-                              background: { ...prev.background, repeat: e.target.value as "no-repeat" | "repeat" | "repeat-x" | "repeat-y" },
-                            }))
-                          }
-                          className="w-full bg-black border border-neutral-700 rounded p-1.5 text-white text-xs"
-                        >
-                          <option value="no-repeat">No Repeat</option>
-                          <option value="repeat">Repeat</option>
-                          <option value="repeat-x">Repeat X</option>
-                        </select>
+                      <div className="p-2 rounded bg-black/60 border border-neutral-800 text-neutral-400">
+                        FIT: <span className="text-white font-bold">{config.background.fitMode || "cover"}</span>
                       </div>
-
-                      <div>
-                        <label className="text-[10px] text-neutral-400">Size</label>
-                        <select
-                          value={config.background.size}
-                          onChange={(e) =>
-                            updateConfig((prev) => ({
-                              ...prev,
-                              background: { ...prev.background, size: e.target.value as "cover" | "contain" | "auto" },
-                            }))
-                          }
-                          className="w-full bg-black border border-neutral-700 rounded p-1.5 text-white text-xs"
-                        >
-                          <option value="cover">Cover</option>
-                          <option value="contain">Contain</option>
-                          <option value="auto">Auto</option>
-                        </select>
+                      <div className="p-2 rounded bg-black/60 border border-neutral-800 text-neutral-400">
+                        ZOOM: <span className="text-white font-bold">{config.background.zoom || 100}%</span>
+                      </div>
+                      <div className="p-2 rounded bg-black/60 border border-neutral-800 text-neutral-400">
+                        ROT: <span className="text-white font-bold">{config.background.rotation || 0}°</span>
                       </div>
                     </div>
                   </div>
@@ -1918,6 +1909,22 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
           </div>
         )}
       </div>
+
+      {/* Interactive Background Customizer & Crop Modal */}
+      <BackgroundCustomizerModal
+        isOpen={isBgModalOpen}
+        onClose={() => setIsBgModalOpen(false)}
+        backgroundConfig={config.background}
+        onApply={(updated) => {
+          updateConfig((prev) => ({
+            ...prev,
+            background: {
+              ...prev.background,
+              ...updated,
+            },
+          }));
+        }}
+      />
     </div>
   );
 };

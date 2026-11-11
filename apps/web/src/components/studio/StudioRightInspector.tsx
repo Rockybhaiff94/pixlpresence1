@@ -6,11 +6,14 @@ import {
   AlertCircle,
   Check,
   Info,
+  Image as ImageIcon,
 } from "lucide-react";
 import {
   ProfileDesignConfig,
   LayoutPreset,
   BackgroundType,
+  BackgroundAspectRatio,
+  BackgroundFitMode,
   PatternType,
   ParticleEffect,
   BadgeStyle,
@@ -22,6 +25,7 @@ import {
 import { StudioTab } from "./StudioLeftPanel";
 import { CURATED_FONTS } from "./fonts";
 import { validateCss } from "./cssUtils";
+import { BackgroundCustomizerModal } from "./BackgroundCustomizerModal";
 
 interface StudioRightInspectorProps {
   activeTab: StudioTab;
@@ -55,6 +59,7 @@ export const StudioRightInspector: React.FC<StudioRightInspectorProps> = ({
   setMusicUrl,
 }) => {
   const [cssValidation, setCssValidation] = useState<{ valid: boolean; error?: string }>({ valid: true });
+  const [isBgModalOpen, setIsBgModalOpen] = useState(false);
 
   const ACCENTS = ["#ffffff", "#d71920", "#ff9800", "#4ade80", "#38bdf8", "#818cf8", "#a855f7", "#ec4899", "#facc15"];
 
@@ -410,10 +415,20 @@ export const StudioRightInspector: React.FC<StudioRightInspectorProps> = ({
             )}
 
             {(config.background.type === "image" || config.background.type === "gif") && (
-              <div className="space-y-1">
-                <label className="text-[10px] text-neutral-400 uppercase tracking-wider">
-                  Background Image / GIF URL
-                </label>
+              <div className="space-y-2.5 p-3 rounded-xl bg-[#141416] border border-[#242426]">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-bold">
+                    Background Image / GIF
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsBgModalOpen(true)}
+                    className="px-2 py-1 rounded bg-white text-black font-bold text-[10px] hover:bg-neutral-200 cursor-pointer flex items-center gap-1 transition-all"
+                  >
+                    <ImageIcon size={11} />
+                    CUSTOMIZE & CROP ↗
+                  </button>
+                </div>
                 <input
                   type="url"
                   value={config.background.imageUrl || bannerUrl}
@@ -426,8 +441,17 @@ export const StudioRightInspector: React.FC<StudioRightInspectorProps> = ({
                     }));
                   }}
                   placeholder="https://... (direct image link)"
-                  className="w-full px-3 py-2 rounded-lg bg-[#141416] border border-[#242426] text-white text-xs focus:outline-none focus:border-white"
+                  className="w-full px-3 py-2 rounded-lg bg-[#0e0e10] border border-[#242426] text-white text-xs focus:outline-none focus:border-white"
                 />
+
+                <div className="grid grid-cols-2 gap-1.5 pt-1 text-[10px] font-mono text-neutral-400">
+                  <div className="p-1.5 rounded bg-black/40 border border-[#242426]">
+                    RATIO: <span className="text-white font-bold">{config.background.aspectRatio || "full"}</span>
+                  </div>
+                  <div className="p-1.5 rounded bg-black/40 border border-[#242426]">
+                    FIT: <span className="text-white font-bold">{config.background.fitMode || "cover"}</span>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -931,6 +955,22 @@ export const StudioRightInspector: React.FC<StudioRightInspectorProps> = ({
           </div>
         )}
       </div>
+
+      {/* Interactive Background Customizer & Crop Modal */}
+      <BackgroundCustomizerModal
+        isOpen={isBgModalOpen}
+        onClose={() => setIsBgModalOpen(false)}
+        backgroundConfig={config.background}
+        onApply={(updated) => {
+          updateConfig((prev) => ({
+            ...prev,
+            background: {
+              ...prev.background,
+              ...updated,
+            },
+          }));
+        }}
+      />
     </aside>
   );
 };

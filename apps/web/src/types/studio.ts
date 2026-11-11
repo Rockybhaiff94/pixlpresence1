@@ -12,6 +12,8 @@ export type LayoutPreset =
 
 export type AvatarShape = "circle" | "square" | "rounded" | "squircle";
 export type BackgroundType = "solid" | "gradient" | "mesh" | "image" | "gif" | "pattern";
+export type BackgroundAspectRatio = "full" | "16:9" | "9:16" | "1:1" | "4:3" | "custom";
+export type BackgroundFitMode = "cover" | "contain" | "fill";
 export type PatternType = "none" | "dots" | "grid" | "matrix" | "scanlines" | "noise";
 export type ParticleEffect = "None" | "Snow" | "Stars" | "Fireflies" | "Rain" | "Matrix";
 export type BadgeStyle = "pill" | "glyph" | "minimal" | "neon" | "hidden";
@@ -20,6 +22,86 @@ export type SocialIconStyle = "minimal" | "pill" | "glass" | "neon" | "circle";
 export type RpcStyle = "card" | "glass" | "minimal" | "compact" | "neon";
 export type RpcImageLayout = "left" | "right" | "stacked" | "hidden";
 export type RpcImageSize = "small" | "medium" | "large";
+
+export type CanvasElementType =
+  | "embed"
+  | "avatar"
+  | "username"
+  | "tagline"
+  | "bio"
+  | "rpc"
+  | "button"
+  | "image"
+  | "text"
+  | "shape"
+  | "divider"
+  | "socials"
+  | "bottomIcon";
+
+export interface CanvasTransform {
+  x: number; // in px
+  y: number;
+  width: number; // in px
+  height: number;
+  rotation: number; // in deg (0-360)
+  zIndex: number;
+}
+
+export interface CanvasElementStyle {
+  backgroundColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  borderRadius?: number;
+  opacity?: number;
+  shadowBlur?: number;
+  shadowColor?: string;
+  blur?: number;
+  backdropBlur?: number;
+  gradientBorder?: string;
+  animatedBorder?: boolean;
+  glowColor?: string;
+  padding?: number;
+  color?: string;
+  fontSize?: number;
+  fontWeight?: number;
+  fontFamily?: string;
+  textAlign?: "left" | "center" | "right";
+  letterSpacing?: number;
+  lineHeight?: number;
+}
+
+export interface CanvasElement {
+  id: string;
+  type: CanvasElementType;
+  name: string;
+  parentEmbedId?: string | null;
+  attachedToId?: string | null;
+  transform: CanvasTransform;
+  style?: CanvasElementStyle;
+  props?: Record<string, any>;
+  isLocked?: boolean;
+  isVisible?: boolean;
+  groupId?: string | null;
+}
+
+export interface CanvasEmbed {
+  id: string;
+  title: string;
+  transform: CanvasTransform;
+  style: CanvasElementStyle;
+  childrenIds: string[];
+  isLocked?: boolean;
+  isVisible?: boolean;
+  clipContent?: boolean;
+}
+
+export interface CanvasEngineState {
+  embeds: CanvasEmbed[];
+  elements: CanvasElement[];
+  selectedId: string | null;
+  selectedIds: string[];
+  activeEmbedId?: string | null;
+}
 
 export type StudioTab =
   | "layout"
@@ -89,6 +171,16 @@ export interface ProfileDesignConfig {
     position?: string;
     repeat?: "no-repeat" | "repeat" | "repeat-x" | "repeat-y";
     size?: "cover" | "contain" | "auto";
+    aspectRatio?: BackgroundAspectRatio;
+    customAspectRatio?: number;
+    fitMode?: BackgroundFitMode;
+    zoom?: number; // 50 to 300
+    offsetX?: number; // pan in px or %
+    offsetY?: number; // pan in px or %
+    rotation?: number; // 0 to 360 deg
+    focalPoint?: { x: number; y: number }; // 0-100%
+    crop?: { x: number; y: number; width: number; height: number };
+    isAnimatedGif?: boolean;
     pattern: PatternType;
     blur: number;
     opacity: number;
@@ -145,6 +237,7 @@ export interface ProfileDesignConfig {
   };
   customCss?: string;
   layers: StudioLayer[];
+  canvas?: CanvasEngineState;
 }
 
 export type WorkspaceTransparencyMode = "solid" | "transparent" | "glass" | "floating";
@@ -172,6 +265,136 @@ export const DEFAULT_WORKSPACE_PREFS: StudioWorkspacePrefs = {
   deviceMode: "desktop",
   zoom: 100,
 };
+
+export function createDefaultCanvasState(cfg?: Partial<ProfileDesignConfig>): CanvasEngineState {
+  const primaryEmbedId = "embed_primary";
+  const maxWidth = cfg?.layout?.maxWidth || 580;
+
+  const embeds: CanvasEmbed[] = [
+    {
+      id: primaryEmbedId,
+      title: "Primary Profile Embed",
+      transform: {
+        x: 0,
+        y: 0,
+        width: maxWidth,
+        height: 640,
+        rotation: 0,
+        zIndex: 1,
+      },
+      style: {
+        backgroundColor: "rgba(10, 10, 14, 0.85)",
+        borderColor: "#26262b",
+        borderWidth: 1,
+        borderRadius: 24,
+        opacity: 90,
+        shadowBlur: 30,
+        shadowColor: "rgba(0,0,0,0.6)",
+        blur: 16,
+        backdropBlur: 16,
+        padding: 28,
+      },
+      childrenIds: ["avatar_1", "username_1", "tagline_1", "bio_1", "rpc_1", "buttons_1", "socials_1"],
+      isLocked: false,
+      isVisible: true,
+      clipContent: false,
+    },
+  ];
+
+  const elements: CanvasElement[] = [
+    {
+      id: "avatar_1",
+      type: "avatar",
+      name: "User Avatar",
+      parentEmbedId: primaryEmbedId,
+      transform: { x: 0, y: 0, width: cfg?.avatar?.size || 96, height: cfg?.avatar?.size || 96, rotation: 0, zIndex: 2 },
+      isLocked: false,
+      isVisible: true,
+    },
+    {
+      id: "username_1",
+      type: "username",
+      name: "Username Display",
+      parentEmbedId: primaryEmbedId,
+      transform: { x: 0, y: 110, width: maxWidth - 60, height: 36, rotation: 0, zIndex: 2 },
+      style: {
+        color: cfg?.identity?.titleColor || "#ffffff",
+        fontSize: cfg?.identity?.titleSize || 26,
+        fontWeight: cfg?.identity?.titleWeight || 700,
+        fontFamily: cfg?.identity?.titleFont || "Space Grotesk",
+        textAlign: "center",
+      },
+      isLocked: false,
+      isVisible: true,
+    },
+    {
+      id: "tagline_1",
+      type: "tagline",
+      name: "Custom Tagline",
+      parentEmbedId: primaryEmbedId,
+      transform: { x: 0, y: 152, width: maxWidth - 60, height: 24, rotation: 0, zIndex: 2 },
+      style: {
+        color: "#a3a3a3",
+        fontSize: 12,
+        fontWeight: 500,
+        fontFamily: "Inter",
+        textAlign: "center",
+      },
+      props: { text: "Digital Identity // Nothing OS" },
+      isLocked: false,
+      isVisible: true,
+    },
+    {
+      id: "bio_1",
+      type: "bio",
+      name: "User Biography",
+      parentEmbedId: primaryEmbedId,
+      transform: { x: 0, y: 185, width: maxWidth - 60, height: 48, rotation: 0, zIndex: 2 },
+      style: {
+        color: cfg?.identity?.bioColor || "#a3a3a3",
+        fontSize: cfg?.identity?.bioSize || 14,
+        fontFamily: cfg?.identity?.bioFont || "Inter",
+        textAlign: "center",
+      },
+      isLocked: false,
+      isVisible: true,
+    },
+    {
+      id: "rpc_1",
+      type: "rpc",
+      name: "Discord Rich Presence",
+      parentEmbedId: primaryEmbedId,
+      transform: { x: 0, y: 250, width: maxWidth - 60, height: 110, rotation: 0, zIndex: 3 },
+      isLocked: false,
+      isVisible: cfg?.discordRpc?.showProfileRpc !== false,
+    },
+    {
+      id: "buttons_1",
+      type: "button",
+      name: "Profile Action Buttons",
+      parentEmbedId: primaryEmbedId,
+      transform: { x: 0, y: 380, width: maxWidth - 60, height: 120, rotation: 0, zIndex: 3 },
+      isLocked: false,
+      isVisible: true,
+    },
+    {
+      id: "socials_1",
+      type: "socials",
+      name: "Social Links Bar",
+      parentEmbedId: primaryEmbedId,
+      transform: { x: 0, y: 520, width: maxWidth - 60, height: 44, rotation: 0, zIndex: 3 },
+      isLocked: false,
+      isVisible: true,
+    },
+  ];
+
+  return {
+    embeds,
+    elements,
+    selectedId: null,
+    selectedIds: [],
+  };
+}
 
 export const DEFAULT_DESIGN_CONFIG: ProfileDesignConfig = {
   version: 2,
@@ -223,6 +446,13 @@ export const DEFAULT_DESIGN_CONFIG: ProfileDesignConfig = {
     position: "center",
     repeat: "no-repeat",
     size: "cover",
+    aspectRatio: "full",
+    fitMode: "cover",
+    zoom: 100,
+    offsetX: 0,
+    offsetY: 0,
+    rotation: 0,
+    focalPoint: { x: 50, y: 50 },
     blur: 0,
     opacity: 100,
     overlayColor: "#000000",

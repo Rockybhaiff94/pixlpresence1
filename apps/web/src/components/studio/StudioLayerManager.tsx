@@ -12,6 +12,11 @@ import {
   Copy,
   Trash2,
   Sliders,
+  Plus,
+  Type,
+  Image as ImageIcon,
+  Minus,
+  Box,
 } from "lucide-react";
 import { ProfileDesignConfig, StudioLayer, StudioTab } from "@/types/studio";
 
@@ -23,6 +28,10 @@ interface StudioLayerManagerProps {
   onSelectCategory: (tab: StudioTab) => void;
   onDuplicateLayer?: (layerId: string) => void;
   onDeleteLayer?: (layerId: string) => void;
+  onAddEmbed?: () => void;
+  onAddElement?: (type: "text" | "image" | "shape" | "divider") => void;
+  selectedId?: string | null;
+  onSelectElement?: (id: string) => void;
 }
 
 export const StudioLayerManager: React.FC<StudioLayerManagerProps> = ({
@@ -33,6 +42,10 @@ export const StudioLayerManager: React.FC<StudioLayerManagerProps> = ({
   onSelectCategory,
   onDuplicateLayer,
   onDeleteLayer,
+  onAddEmbed,
+  onAddElement,
+  selectedId,
+  onSelectElement,
 }) => {
   const layers = config.layers || [];
 
@@ -62,16 +75,60 @@ export const StudioLayerManager: React.FC<StudioLayerManagerProps> = ({
 
   return (
     <div className="space-y-6 text-xs font-mono text-[#ededed]">
-      {/* Header */}
-      <div className="p-4 rounded-xl border border-neutral-800 bg-[#101014] flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-bold text-white flex items-center gap-2">
-            <Layers size={16} className="text-white" />
-            PROFILE LAYER HIERARCHY & ORDER
-          </h2>
-          <p className="text-[11px] text-neutral-400 pt-0.5">
-            Manage visibility, reorder vertical rendering flow, or jump directly to element property editors.
-          </p>
+      {/* Header & Add Object Bar */}
+      <div className="p-4 rounded-xl border border-neutral-800 bg-[#101014] space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-bold text-white flex items-center gap-2">
+              <Layers size={16} className="text-white" />
+              LAYER HIERARCHY & OBJECT TREE
+            </h2>
+            <p className="text-[11px] text-neutral-400 pt-0.5">
+              Add multiple embeds, components, manage stacking, locks, and visibility.
+            </p>
+          </div>
+        </div>
+
+        {/* Action Buttons to Add Objects to Canvas */}
+        <div className="pt-2 border-t border-neutral-800/80 flex flex-wrap gap-2">
+          {onAddEmbed && (
+            <button
+              type="button"
+              onClick={onAddEmbed}
+              className="px-2.5 py-1.5 rounded-lg bg-white text-black font-bold text-[10px] hover:bg-neutral-200 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+            >
+              <Plus size={13} />
+              Add Embed
+            </button>
+          )}
+          {onAddElement && (
+            <>
+              <button
+                type="button"
+                onClick={() => onAddElement("text")}
+                className="px-2.5 py-1.5 rounded-lg bg-[#18181c] border border-neutral-700/80 text-white font-bold text-[10px] hover:border-neutral-500 transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Type size={13} />
+                Add Text
+              </button>
+              <button
+                type="button"
+                onClick={() => onAddElement("image")}
+                className="px-2.5 py-1.5 rounded-lg bg-[#18181c] border border-neutral-700/80 text-white font-bold text-[10px] hover:border-neutral-500 transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <ImageIcon size={13} />
+                Add Image
+              </button>
+              <button
+                type="button"
+                onClick={() => onAddElement("divider")}
+                className="px-2.5 py-1.5 rounded-lg bg-[#18181c] border border-neutral-700/80 text-white font-bold text-[10px] hover:border-neutral-500 transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Minus size={13} />
+                Add Divider
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -81,12 +138,15 @@ export const StudioLayerManager: React.FC<StudioLayerManagerProps> = ({
           const category = getLayerCategory(layer);
           const isFirst = index === 0;
           const isLast = index === layers.length - 1;
+          const isSelected = selectedId === layer.id;
 
           return (
             <div
               key={layer.id}
               className={`p-3 rounded-xl border transition-all flex items-center justify-between gap-3 ${
-                layer.visible
+                isSelected
+                  ? "border-sky-400 bg-sky-950/20 shadow-md ring-1 ring-sky-400/50"
+                  : layer.visible
                   ? "border-neutral-800 bg-[#0c0c0e] hover:border-neutral-600"
                   : "border-neutral-900 bg-[#070708] opacity-60"
               }`}

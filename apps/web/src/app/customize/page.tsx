@@ -9,6 +9,10 @@ import {
   DEFAULT_DESIGN_CONFIG,
   StudioTab,
   WorkspaceTransparencyMode,
+  CanvasEngineState,
+  createDefaultCanvasState,
+  CanvasEmbed,
+  CanvasElement,
 } from "@/types/studio";
 import { StudioTopBar, DeviceMode, StudioView } from "@/components/studio/StudioTopBar";
 import { StudioLeftWorkspace } from "@/components/studio/StudioLeftWorkspace";
@@ -280,24 +284,143 @@ export default function CustomizePage() {
 
   const handleMoveLayer = (layerId: string, direction: "up" | "down") => {
     updateConfigWithHistory((prev) => {
-      const currentLayers = [...prev.layers];
-      const idx = currentLayers.findIndex((l) => l.id === layerId);
+      const idx = prev.layers.findIndex((l) => l.id === layerId);
       if (idx === -1) return prev;
       const targetIdx = direction === "up" ? idx - 1 : idx + 1;
-      if (targetIdx < 0 || targetIdx >= currentLayers.length) return prev;
+      if (targetIdx < 0 || targetIdx >= prev.layers.length) return prev;
 
-      const item = currentLayers.splice(idx, 1)[0];
-      currentLayers.splice(targetIdx, 0, item);
+      const newLayers = [...prev.layers];
+      const temp = newLayers[idx];
+      newLayers[idx] = newLayers[targetIdx];
+      newLayers[targetIdx] = temp;
 
       return {
         ...prev,
-        layers: currentLayers,
-        layout: {
-          ...prev.layout,
-          elementOrder: currentLayers.map((l) => l.id),
+        layers: newLayers,
+      };
+    });
+  };
+
+  const [selectedCanvasId, setSelectedCanvasId] = useState<string | null>(null);
+
+  const handleUpdateCanvas = useCallback(
+    (updater: (prev: CanvasEngineState) => CanvasEngineState) => {
+      updateConfigWithHistory((prev) => {
+        const currentCanvas = prev.canvas || createDefaultCanvasState(prev);
+        const updatedCanvas = updater(currentCanvas);
+        return {
+          ...prev,
+          canvas: updatedCanvas,
+        };
+      });
+    },
+    [updateConfigWithHistory]
+  );
+
+  const handleAddEmbed = () => {
+    updateConfigWithHistory((prev) => {
+      const currentCanvas = prev.canvas || createDefaultCanvasState(prev);
+      const newEmbedId = `embed_${Date.now()}`;
+      const newEmbed: CanvasEmbed = {
+        id: newEmbedId,
+        title: `Custom Embed #${currentCanvas.embeds.length + 1}`,
+        transform: {
+          x: 0,
+          y: currentCanvas.embeds.length * 160,
+          width: prev.layout.maxWidth || 580,
+          height: 180,
+          rotation: 0,
+          zIndex: currentCanvas.embeds.length + 1,
+        },
+        style: {
+          backgroundColor: "rgba(14, 14, 18, 0.85)",
+          borderColor: "#26262b",
+          borderWidth: 1,
+          borderRadius: 20,
+          opacity: 90,
+          shadowBlur: 20,
+          shadowColor: "rgba(0,0,0,0.5)",
+          blur: 12,
+          backdropBlur: 12,
+          padding: 24,
+        },
+        childrenIds: [],
+        isVisible: true,
+        isLocked: false,
+      };
+
+      const updatedLayers = [
+        ...prev.layers,
+        {
+          id: newEmbedId,
+          type: "container" as const,
+          label: newEmbed.title,
+          visible: true,
+          locked: false,
+        },
+      ];
+
+      setSelectedCanvasId(newEmbedId);
+      return {
+        ...prev,
+        layers: updatedLayers,
+        canvas: {
+          ...currentCanvas,
+          embeds: [...currentCanvas.embeds, newEmbed],
+          selectedId: newEmbedId,
+          selectedIds: [newEmbedId],
         },
       };
     });
+    setMsg({ text: "Added new customizable embed.", type: "success" });
+  };
+
+  const handleAddElement = (type: "text" | "image" | "shape" | "divider") => {
+    updateConfigWithHistory((prev) => {
+      const currentCanvas = prev.canvas || createDefaultCanvasState(prev);
+      const newId = `${type}_${Date.now()}`;
+      const targetEmbed = currentCanvas.embeds[0];
+
+      const newEl: CanvasElement = {
+        id: newId,
+        type,
+        name: `Custom ${type.charAt(0).toUpperCase() + type.slice(1)}`,
+        parentEmbedId: targetEmbed ? targetEmbed.id : null,
+        transform: {
+          x: 0,
+          y: 0,
+          width: (prev.layout.maxWidth || 580) - 60,
+          height: type === "divider" ? 2 : type === "text" ? 32 : 120,
+          rotation: 0,
+          zIndex: currentCanvas.elements.length + 2,
+        },
+        props:
+          type === "text"
+            ? { content: "New editable text component" }
+            : type === "image"
+            ? { imageUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500" }
+            : {},
+        style: {
+          color: "#ffffff",
+          fontSize: 14,
+          borderRadius: 12,
+        },
+        isVisible: true,
+        isLocked: false,
+      };
+
+      setSelectedCanvasId(newId);
+      return {
+        ...prev,
+        canvas: {
+          ...currentCanvas,
+          elements: [...currentCanvas.elements, newEl],
+          selectedId: newId,
+          selectedIds: [newId],
+        },
+      };
+    });
+    setMsg({ text: `Added new ${type} component to canvas.`, type: "success" });
   };
 
   // Load initial profile & presence
@@ -348,6 +471,7 @@ export default function CustomizePage() {
                   socials: { ...DEFAULT_DESIGN_CONFIG.socials, ...(parsed.socials || {}) },
                   effects: { ...DEFAULT_DESIGN_CONFIG.effects, ...(parsed.effects || {}) },
                   advanced: { ...DEFAULT_DESIGN_CONFIG.advanced, ...(parsed.advanced || {}) },
+                  canvas: parsed.canvas || DEFAULT_DESIGN_CONFIG.canvas,
                   customCss: p.customCss || parsed.customCss || "",
                 };
                 setConfig(merged);
@@ -728,6 +852,10 @@ export default function CustomizePage() {
                   onToggleLayerVisibility={handleToggleLayerVisibility}
                   onToggleLayerLock={handleToggleLayerLock}
                   onMoveLayer={handleMoveLayer}
+                  onAddEmbed={handleAddEmbed}
+                  onAddElement={handleAddElement}
+                  selectedId={selectedCanvasId}
+                  onSelectElement={(id) => setSelectedCanvasId(id)}
                   transparencyMode={transparencyMode}
                   panelOpacity={panelOpacity}
                   panelBlur={panelBlur}
@@ -787,6 +915,9 @@ export default function CustomizePage() {
                       setMobileView("edit");
                     }
                   }}
+                  onUpdateCanvas={handleUpdateCanvas}
+                  selectedCanvasId={selectedCanvasId}
+                  onSelectCanvasId={(id) => setSelectedCanvasId(id)}
                   zoom={zoom}
                   setZoom={setZoom}
                   transparencyMode={transparencyMode}

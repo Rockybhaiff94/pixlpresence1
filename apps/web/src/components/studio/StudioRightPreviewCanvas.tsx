@@ -2,9 +2,10 @@
 
 import React, { useState } from "react";
 import { DeviceMode } from "./StudioTopBar";
-import { ProfileDesignConfig, StudioTab, WorkspaceTransparencyMode } from "@/types/studio";
+import { ProfileDesignConfig, StudioTab, WorkspaceTransparencyMode, CanvasEngineState } from "@/types/studio";
 import { StudioProfilePreview, PreviewData } from "./StudioProfilePreview";
 import { FloatingPreviewToolbar } from "./FloatingPreviewToolbar";
+import { CanvasEngine } from "./CanvasEngine";
 import { PanelLeftOpen } from "lucide-react";
 
 interface StudioRightPreviewCanvasProps {
@@ -14,6 +15,9 @@ interface StudioRightPreviewCanvasProps {
   previewData: PreviewData;
   activeCategory: StudioTab;
   onSelectCategory: (cat: StudioTab) => void;
+  onUpdateCanvas?: (updater: (prev: CanvasEngineState) => CanvasEngineState) => void;
+  selectedCanvasId?: string | null;
+  onSelectCanvasId?: (id: string | null) => void;
 
   // Workspace controls & preferences
   zoom?: number;
@@ -42,6 +46,9 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
   previewData,
   activeCategory,
   onSelectCategory,
+  onUpdateCanvas,
+  selectedCanvasId,
+  onSelectCanvasId,
   zoom: externalZoom,
   setZoom: externalSetZoom,
   transparencyMode = "solid",
@@ -229,16 +236,48 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
               </div>
             )}
 
-            {/* Live Profile Engine */}
+            {/* Live Profile Engine (Multi-Embed Canvas or Classic Structured) */}
             <div className={`w-full h-full ${showWireframe ? "wireframe-debug" : ""}`}>
-              <StudioProfilePreview
-                config={config}
-                data={previewData}
-                isInteractiveEditor={true}
-                activeElementId={activeCategory}
-                onSelectElement={handleSelectElement}
-                scopeId="studio-live-canvas"
-              />
+              {config.canvas && onUpdateCanvas ? (
+                <CanvasEngine
+                  canvasState={config.canvas}
+                  onUpdateCanvas={onUpdateCanvas}
+                  zoom={zoom}
+                  isInteractive={true}
+                  onSelectElement={(id) => {
+                    onSelectCanvasId?.(id);
+                    if (id) {
+                      // Map to category tab if recognized
+                      if (id.startsWith("avatar")) onSelectCategory("avatar");
+                      else if (id.startsWith("username") || id.startsWith("bio") || id.startsWith("tagline")) onSelectCategory("identity");
+                      else if (id.startsWith("rpc")) onSelectCategory("rpc");
+                      else if (id.startsWith("button") || id.startsWith("socials")) onSelectCategory("buttons");
+                      else if (id.startsWith("embed")) onSelectCategory("layout");
+                    }
+                  }}
+                >
+                  <StudioProfilePreview
+                    config={config}
+                    data={previewData}
+                    isInteractiveEditor={true}
+                    activeElementId={selectedCanvasId || activeCategory}
+                    onSelectElement={(id) => {
+                      onSelectCanvasId?.(id);
+                      handleSelectElement(id);
+                    }}
+                    scopeId="studio-live-canvas"
+                  />
+                </CanvasEngine>
+              ) : (
+                <StudioProfilePreview
+                  config={config}
+                  data={previewData}
+                  isInteractiveEditor={true}
+                  activeElementId={activeCategory}
+                  onSelectElement={handleSelectElement}
+                  scopeId="studio-live-canvas"
+                />
+              )}
             </div>
 
             {/* Mobile Home Bar */}
