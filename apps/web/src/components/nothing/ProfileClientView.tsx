@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import {
   Disc,
+  Heart,
 } from "lucide-react";
 import { io } from "socket.io-client";
 import { getApiBaseUrl, apiFetch } from "@/lib/api";
@@ -41,6 +42,7 @@ interface ProfileClientProps {
   opacity?: number;
   roundedCorners?: number;
   views: number;
+  likesCount?: number;
   buttons: ProfileButton[];
   links: ProfileLink[];
   musicUrl?: string | null;
@@ -63,6 +65,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
   opacity = 90,
   roundedCorners = 20,
   views,
+  likesCount = 0,
   buttons = [],
   links = [],
   musicUrl,
@@ -74,6 +77,46 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
 }) => {
   const [entered, setEntered] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Database-backed Like state
+  const [likes, setLikes] = useState<number>(likesCount);
+  const [hasLiked, setHasLiked] = useState<boolean>(false);
+  const [isLiking, setIsLiking] = useState<boolean>(false);
+
+  useEffect(() => {
+    let active = true;
+    apiFetch(`/api/profile/u/${encodeURIComponent(username)}/like`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data) {
+          if (typeof data.likesCount === "number") setLikes(data.likesCount);
+          if (typeof data.hasLiked === "boolean") setHasLiked(data.hasLiked);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [username]);
+
+  const handleToggleLike = async () => {
+    if (isLiking) return;
+    try {
+      setIsLiking(true);
+      const res = await apiFetch(`/api/profile/u/${encodeURIComponent(username)}/like`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLikes(data.likesCount);
+        setHasLiked(data.liked);
+      }
+    } catch (_) {
+      // Ignore
+    } finally {
+      setIsLiking(false);
+    }
+  };
 
   // Live Discord Rich Presence state management with real-time websocket and anti-race ordering
   const [livePresence, setLivePresence] = useState<any>(discordPresence || null);
@@ -304,6 +347,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
             musicTitle,
             musicArtist,
             views,
+            likes,
             buttons,
             links,
             discordPresence: livePresence,
@@ -315,7 +359,22 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
 
       {/* Global Minimalist Footer Bar */}
       <div className="w-full py-3 px-6 border-t border-[#141414] text-[10px] text-neutral-600 flex items-center justify-between font-mono bg-[#050505] relative z-20">
-        <span>IDENTITY SPEC // NOT-BIO-PX1</span>
+        <div className="flex items-center gap-3">
+          <span>IDENTITY SPEC // NOT-BIO-PX1</span>
+          <button
+            onClick={handleToggleLike}
+            disabled={isLiking}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-mono transition-all ${
+              hasLiked
+                ? "bg-rose-500/15 border-rose-500/40 text-rose-400"
+                : "bg-[#101010] border-[#222] text-neutral-400 hover:text-white hover:border-neutral-600"
+            }`}
+            title={hasLiked ? "Unlike profile" : "Like profile"}
+          >
+            <Heart size={11} className={hasLiked ? "fill-rose-500 text-rose-500" : ""} />
+            <span>{likes.toLocaleString()}</span>
+          </button>
+        </div>
         <Link href="/register" className="text-neutral-400 hover:text-white transition-colors">
           CLAIM YOUR OWN PROFILE ↗
         </Link>

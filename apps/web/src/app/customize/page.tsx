@@ -188,6 +188,8 @@ export default function CustomizePage() {
     largeImage?: string | null;
     smallImage?: string | null;
   } | null>(null);
+  const [viewsCount, setViewsCount] = useState<number>(0);
+  const [likesCount, setLikesCount] = useState<number>(0);
 
   // Full Studio Design Config with Undo/Redo
   const [config, setConfig] = useState<ProfileDesignConfig>(DEFAULT_DESIGN_CONFIG);
@@ -450,6 +452,8 @@ export default function CustomizePage() {
           setMusicUrl(p.musicUrl || "");
           setButtons(p.buttons || []);
           setLinks(p.links || []);
+          setViewsCount(p.views ?? 0);
+          setLikesCount(p.likesCount ?? 0);
 
           if (p.designConfig) {
             try {
@@ -661,7 +665,8 @@ export default function CustomizePage() {
     musicUrl,
     musicTitle: "Nothing Soundscape (01)",
     musicArtist: "Ambient Audio Engine",
-    views: 4182900,
+    views: viewsCount,
+    likes: likesCount,
     buttons,
     links,
     discordPresence,

@@ -16,6 +16,7 @@ export interface UserCapabilities {
   maxGifSizeBytes: number;
   maxImageSizeBytes: number;
   canRemoveBranding: boolean;
+  allowRepositionLikeButton: boolean;
   tier: "FREE" | "PREMIUM" | "NITRO" | "ADMIN";
 }
 
@@ -41,6 +42,7 @@ export function getUserCapabilities(user: {
       maxGifSizeBytes: 10 * 1024 * 1024,
       maxImageSizeBytes: 25 * 1024 * 1024,
       canRemoveBranding: true,
+      allowRepositionLikeButton: true,
       tier: "ADMIN",
     };
   }
@@ -58,6 +60,7 @@ export function getUserCapabilities(user: {
       maxGifSizeBytes: 8 * 1024 * 1024,
       maxImageSizeBytes: 15 * 1024 * 1024,
       canRemoveBranding: true,
+      allowRepositionLikeButton: true,
       tier: isNitro ? "NITRO" : "PREMIUM",
     };
   }
@@ -75,6 +78,7 @@ export function getUserCapabilities(user: {
     maxGifSizeBytes: 5 * 1024 * 1024, // Standard 5 MB GIF upload limit
     maxImageSizeBytes: 10 * 1024 * 1024,
     canRemoveBranding: false,
+    allowRepositionLikeButton: false,
     tier: "FREE",
   };
 }
@@ -107,6 +111,19 @@ export function validateProfileCapabilities(
         valid: false,
         error: `Your account tier (${capabilities.tier}) allows up to ${capabilities.maxCustomElements} canvas elements.`,
       };
+    }
+
+    // Validate Like button custom repositioning (Premium restriction)
+    if (!capabilities.allowRepositionLikeButton) {
+      const likeEl = designConfig.canvas.elements.find(
+        (el: any) => el.type === "like" || el.id === "profile_like_btn"
+      );
+      if (likeEl && (likeEl.transform?.x !== 0 || likeEl.transform?.y !== 0)) {
+        return {
+          valid: false,
+          error: "Custom positioning for the profile Like button is an exclusive Premium feature. Standard accounts display the Like button in the default profile action bar.",
+        };
+      }
     }
   }
 

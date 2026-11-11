@@ -19,6 +19,8 @@ import {
   Layers,
   ArrowRight,
   LineChart,
+  Heart,
+  Cookie,
 } from "lucide-react";
 import { AccountLayout } from "@/components/account/AccountLayout";
 import { Button } from "@/components/nothing/Button";
@@ -42,6 +44,8 @@ interface AnalyticsData {
     uniqueVisitors?: { value: string; delta: string };
     avgDailyViews: { value: string; delta: string };
   };
+  likes?: { total: number };
+  cookies?: { received: number; sent: number };
   timeline: { date: string; views: number; clicks: number }[];
   devices: { name: string; percentage: number; count: number }[];
   socials: { platform: string; icon: string; url: string; clicks: number; percentage: number }[];
@@ -202,77 +206,105 @@ export default function AccountAnalyticsPage() {
         </div>
       ) : data ? (
         <div className="space-y-8">
-          {/* Part C: 4 Summary KPI Cards (21st.dev Inspired with Glass Sheen & Delta Badges) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 font-mono">
-            {/* 1. Total Link Clicks */}
-            <div className="p-5 rounded-2xl bg-[#0b0b0e] border border-[#1e1e24] hover:border-neutral-700 transition-colors space-y-3 relative overflow-hidden group">
-              <div className="flex items-center justify-between text-neutral-400 text-xs">
-                <span className="text-[10px] uppercase tracking-wider font-semibold">TOTAL LINK CLICKS</span>
-                <div className="p-1.5 rounded-lg bg-[#141418] border border-[#222228] text-neutral-300">
-                  <MousePointerClick size={13} />
-                </div>
-              </div>
-              <div className="text-3xl font-extrabold text-white tracking-tight">
-                {kpis.totalClicks?.value || "0"}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  <TrendingUp size={11} />
-                  <span>{kpis.totalClicks?.delta || "0%"}</span>
-                </span>
-                <span className="text-[10px] text-neutral-500">vs prev cycle</span>
-              </div>
-            </div>
-
-            {/* 2. Click Rate */}
-            <div className="p-5 rounded-2xl bg-[#0b0b0e] border border-[#1e1e24] hover:border-neutral-700 transition-colors space-y-3 relative overflow-hidden group">
-              <div className="flex items-center justify-between text-neutral-400 text-xs">
-                <span className="text-[10px] uppercase tracking-wider font-semibold">CLICK-THROUGH RATE</span>
-                <div className="p-1.5 rounded-lg bg-[#141418] border border-[#222228] text-neutral-300">
-                  <Percent size={13} />
-                </div>
-              </div>
-              <div className="text-3xl font-extrabold text-white tracking-tight">
-                {kpis.clickRate?.value || "0.0%"}
-              </div>
-              <div className="text-[10px] text-neutral-400 tracking-wide uppercase">
-                CLICKS PER ELIGIBLE VISIT
-              </div>
-            </div>
-
-            {/* 3. Profile Views */}
-            <div className="p-5 rounded-2xl bg-[#0b0b0e] border border-[#1e1e24] hover:border-neutral-700 transition-colors space-y-3 relative overflow-hidden group">
+          {/* Summary KPI Cards (Genuine Database Telemetry) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 font-mono">
+            {/* 1. Profile Views */}
+            <div className="p-4 rounded-2xl bg-[#0b0b0e] border border-[#1e1e24] hover:border-neutral-700 transition-colors space-y-2 relative overflow-hidden group">
               <div className="flex items-center justify-between text-neutral-400 text-xs">
                 <span className="text-[10px] uppercase tracking-wider font-semibold">PROFILE VIEWS</span>
                 <div className="p-1.5 rounded-lg bg-[#141418] border border-[#222228] text-neutral-300">
                   <Eye size={13} />
                 </div>
               </div>
-              <div className="text-3xl font-extrabold text-white tracking-tight">
+              <div className="text-2xl font-extrabold text-white tracking-tight">
                 {kpis.profileViews?.value || "0"}
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  <TrendingUp size={11} />
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <TrendingUp size={10} />
                   <span>{kpis.profileViews?.delta || "0%"}</span>
                 </span>
-                <span className="text-[10px] text-neutral-500">organic reach</span>
+                <span className="text-[10px] text-neutral-500">period reach</span>
               </div>
             </div>
 
-            {/* 4. Average Daily Views */}
-            <div className="p-5 rounded-2xl bg-[#0b0b0e] border border-[#1e1e24] hover:border-neutral-700 transition-colors space-y-3 relative overflow-hidden group">
+            {/* 2. Unique Visitors */}
+            <div className="p-4 rounded-2xl bg-[#0b0b0e] border border-[#1e1e24] hover:border-neutral-700 transition-colors space-y-2 relative overflow-hidden group">
+              <div className="flex items-center justify-between text-neutral-400 text-xs">
+                <span className="text-[10px] uppercase tracking-wider font-semibold">UNIQUE VISITORS</span>
+                <div className="p-1.5 rounded-lg bg-[#141418] border border-[#222228] text-neutral-300">
+                  <Globe size={13} />
+                </div>
+              </div>
+              <div className="text-2xl font-extrabold text-white tracking-tight">
+                {kpis.uniqueVisitors?.value || "0"}
+              </div>
+              <div className="text-[10px] text-neutral-400 tracking-wide uppercase">
+                DEDUPLICATED SESSIONS
+              </div>
+            </div>
+
+            {/* 3. Average Daily Views */}
+            <div className="p-4 rounded-2xl bg-[#0b0b0e] border border-[#1e1e24] hover:border-neutral-700 transition-colors space-y-2 relative overflow-hidden group">
               <div className="flex items-center justify-between text-neutral-400 text-xs">
                 <span className="text-[10px] uppercase tracking-wider font-semibold">AVG DAILY VIEWS</span>
                 <div className="p-1.5 rounded-lg bg-[#141418] border border-[#222228] text-neutral-300">
                   <Calendar size={13} />
                 </div>
               </div>
-              <div className="text-3xl font-extrabold text-white tracking-tight">
+              <div className="text-2xl font-extrabold text-white tracking-tight">
                 {kpis.avgDailyViews?.value || "0"}
               </div>
               <div className="text-[10px] text-neutral-400 uppercase tracking-wide">
-                TRAFFIC RATE / {data?.days || 7} DAYS
+                OVER {data?.days || 7} DAYS
+              </div>
+            </div>
+
+            {/* 4. Total Likes */}
+            <div className="p-4 rounded-2xl bg-[#0b0b0e] border border-[#1e1e24] hover:border-neutral-700 transition-colors space-y-2 relative overflow-hidden group">
+              <div className="flex items-center justify-between text-neutral-400 text-xs">
+                <span className="text-[10px] uppercase tracking-wider font-semibold">TOTAL LIKES</span>
+                <div className="p-1.5 rounded-lg bg-[#141418] border border-[#222228] text-rose-400">
+                  <Heart size={13} className="fill-rose-500 text-rose-500" />
+                </div>
+              </div>
+              <div className="text-2xl font-extrabold text-white tracking-tight">
+                {(data?.likes?.total || 0).toLocaleString()}
+              </div>
+              <div className="text-[10px] text-neutral-400 tracking-wide uppercase">
+                VERIFIED PROFILE LIKES
+              </div>
+            </div>
+
+            {/* 5. Cookies Received & Sent */}
+            <div className="p-4 rounded-2xl bg-[#0b0b0e] border border-[#1e1e24] hover:border-neutral-700 transition-colors space-y-2 relative overflow-hidden group">
+              <div className="flex items-center justify-between text-neutral-400 text-xs">
+                <span className="text-[10px] uppercase tracking-wider font-semibold">COOKIES</span>
+                <div className="p-1.5 rounded-lg bg-[#141418] border border-[#222228] text-amber-400">
+                  <Cookie size={13} />
+                </div>
+              </div>
+              <div className="text-2xl font-extrabold text-white tracking-tight">
+                {(data?.cookies?.received || 0).toLocaleString()}
+              </div>
+              <div className="text-[10px] text-neutral-400 tracking-wide uppercase">
+                SENT: {(data?.cookies?.sent || 0).toLocaleString()} &bull; 1/DAY
+              </div>
+            </div>
+
+            {/* 6. Click Rate */}
+            <div className="p-4 rounded-2xl bg-[#0b0b0e] border border-[#1e1e24] hover:border-neutral-700 transition-colors space-y-2 relative overflow-hidden group">
+              <div className="flex items-center justify-between text-neutral-400 text-xs">
+                <span className="text-[10px] uppercase tracking-wider font-semibold">CLICK RATE</span>
+                <div className="p-1.5 rounded-lg bg-[#141418] border border-[#222228] text-neutral-300">
+                  <Percent size={13} />
+                </div>
+              </div>
+              <div className="text-2xl font-extrabold text-white tracking-tight">
+                {kpis.clickRate?.value || "0.0%"}
+              </div>
+              <div className="text-[10px] text-neutral-400 tracking-wide uppercase">
+                TOTAL CLICKS: {kpis.totalClicks?.value || "0"}
               </div>
             </div>
           </div>

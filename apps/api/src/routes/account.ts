@@ -163,23 +163,49 @@ accountRouter.get('/overview', requireAuth, async (req: any, res) => {
 
     // 7-day Analytics Mock/Aggregation
     const today = new Date();
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const recentDbViews = await prisma.profileView.findMany({
+      where: {
+        profileId: (profile as any).id,
+        viewedAt: { gte: sevenDaysAgo },
+        counted: true,
+      },
+    });
+
     const dailyViews: { date: string; views: number }[] = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
       const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      // Approximate 7-day spread based on total views
-      const factor = Math.max(1, Math.round(profile.views * 0.08));
-      const dailyCount = Math.round(factor * (0.7 + (i % 3) * 0.3));
-      dailyViews.push({ date: label, views: dailyCount });
+      const dayStart = new Date(d);
+      dayStart.setUTCHours(0, 0, 0, 0);
+      const dayEnd = new Date(d);
+      dayEnd.setUTCHours(23, 59, 59, 999);
+
+      const dayCount = recentDbViews.filter((v) => v.viewedAt >= dayStart && v.viewedAt <= dayEnd).length;
+      dailyViews.push({ date: label, views: dayCount });
     }
 
-    const visitorDevices = [
-      { name: 'Desktop', percentage: 68, count: Math.round(profile.views * 0.68) },
-      { name: 'Mobile', percentage: 26, count: Math.round(profile.views * 0.26) },
-      { name: 'Tablet', percentage: 4, count: Math.round(profile.views * 0.04) },
-      { name: 'Other', percentage: 2, count: Math.round(profile.views * 0.02) },
-    ];
+    let desktopCount = 0;
+    let mobileCount = 0;
+    let tabletCount = 0;
+    recentDbViews.forEach((v) => {
+      if (v.device === 'Mobile') mobileCount++;
+      else if (v.device === 'Tablet') tabletCount++;
+      else desktopCount++;
+    });
+    const totalRecDev = desktopCount + mobileCount + tabletCount;
+    const visitorDevices = totalRecDev > 0
+      ? [
+          { name: 'Desktop', percentage: Math.round((desktopCount / totalRecDev) * 100), count: desktopCount },
+          { name: 'Mobile', percentage: Math.round((mobileCount / totalRecDev) * 100), count: mobileCount },
+          { name: 'Tablet', percentage: Math.round((tabletCount / totalRecDev) * 100), count: tabletCount },
+        ]
+      : [
+          { name: 'Desktop', percentage: 0, count: 0 },
+          { name: 'Mobile', percentage: 0, count: 0 },
+          { name: 'Tablet', percentage: 0, count: 0 },
+        ];
 
     // Alias capacity (1 for free, 5 for premium)
     const maxAliases = user.premiumStatus ? 5 : 1;
@@ -538,73 +564,80 @@ accountRouter.get('/analytics', requireAuth, async (req: any, res) => {
       take: 5000,
     });
 
-    // Compute genuine metrics or scale authentic telemetry baseline if legacy views exist
-    const hasDbViews = dbViews.length > 0;
-    const rangeFactor = Math.min(1, days / 30);
-    const estimatedRangeViews = Math.max(dbViews.length, Math.round(totalViewsAllTime * rangeFactor));
-    const rangeViews = Math.max(0, estimatedRangeViews);
+    // Filter strictly counted views for telemetry
+    const countedViews = dbViews.filter((v) => v.counted);
+    const rangeViews = countedViews.length;
 
-    // Compute unique visitors
+    // Genuine unique visitors
     const uniqueIds = new Set<string>();
-    dbViews.forEach((v) => {
+    countedViews.forEach((v) => {
       const vid = v.anonymousVisitorId || v.viewerUserId || v.ipHash;
       if (vid) uniqueIds.add(vid);
     });
-    const uniqueVisitorsCount = Math.max(uniqueIds.size, Math.round(rangeViews * 0.76));
+    const uniqueVisitorsCount = uniqueIds.size;
 
-    const totalClicks = Math.round(rangeViews * 0.22);
-    const clickRate = rangeViews > 0 ? ((totalClicks / rangeViews) * 100).toFixed(1) : '0.0';
-    const avgDailyViews = Math.max(1, Math.round(rangeViews / Math.max(1, days)));
+    // Genuine database likes and cookie gifting statistics
+    const [totalLikes, cookiesReceived, cookiesSent] = await Promise.all([
+      prisma.profileLike.count({ where: { profileId } }),
+      prisma.cookieGift.count({ where: { recipientId: user.id } }),
+      prisma.cookieGift.count({ where: { senderId: user.id } }),
+    ]);
 
-    // 1. Daily Chart Series Timeline
+    // Compute genuine delta compared to previous period of same duration
+    const prevStartDate = new Date(startDate.getTime() - days * 24 * 60 * 60 * 1000);
+    const prevCount = await prisma.profileView.count({
+      where: {
+        profileId,
+        counted: true,
+        viewedAt: { gte: prevStartDate, lt: startDate },
+      },
+    });
+
+    let viewsDelta = '0%';
+    if (prevCount > 0) {
+      const diffPct = Math.round(((rangeViews - prevCount) / prevCount) * 100);
+      viewsDelta = `${diffPct >= 0 ? '+' : ''}${diffPct}% vs prev`;
+    } else if (rangeViews > 0) {
+      viewsDelta = '+100% vs prev';
+    }
+
+    const avgDailyViews = rangeViews > 0 ? Math.round(rangeViews / Math.max(1, days)) : 0;
+
+    // 1. Daily Chart Series Timeline (Real events only, zero when none)
     const timeline: { date: string; views: number; clicks: number }[] = [];
     for (let i = days - 1; i >= 0; i--) {
       const d = new Date(endDate);
       d.setDate(d.getDate() - i);
       const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-      // Count actual views on this day from db if available
       const dayStart = new Date(d);
-      dayStart.setHours(0, 0, 0, 0);
+      dayStart.setUTCHours(0, 0, 0, 0);
       const dayEnd = new Date(d);
-      dayEnd.setHours(23, 59, 59, 999);
+      dayEnd.setUTCHours(23, 59, 59, 999);
 
-      const dayMatches = dbViews.filter((v) => v.viewedAt >= dayStart && v.viewedAt <= dayEnd);
-      let dayViews = dayMatches.length;
-
-      if (!hasDbViews && rangeViews > 0) {
-        const variance = 0.8 + ((i * 7) % 5) * 0.1;
-        dayViews = Math.max(0, Math.round(avgDailyViews * variance));
-      }
-      const dayClicks = Math.round(dayViews * 0.21);
-      timeline.push({ date: label, views: dayViews, clicks: dayClicks });
+      const dayViews = countedViews.filter((v) => v.viewedAt >= dayStart && v.viewedAt <= dayEnd).length;
+      timeline.push({ date: label, views: dayViews, clicks: 0 });
     }
 
-    // 2. Hardware Devices Breakdown
+    // 2. Hardware Devices Breakdown (Real counts)
     let desktopCount = 0;
     let mobileCount = 0;
     let tabletCount = 0;
 
-    if (hasDbViews) {
-      dbViews.forEach((v) => {
-        if (v.device === 'Mobile') mobileCount++;
-        else if (v.device === 'Tablet') tabletCount++;
-        else desktopCount++;
-      });
-    } else {
-      desktopCount = Math.round(rangeViews * 0.64);
-      mobileCount = Math.round(rangeViews * 0.30);
-      tabletCount = Math.round(rangeViews * 0.06);
-    }
-    const devTotal = Math.max(1, desktopCount + mobileCount + tabletCount);
+    countedViews.forEach((v) => {
+      if (v.device === 'Mobile') mobileCount++;
+      else if (v.device === 'Tablet') tabletCount++;
+      else desktopCount++;
+    });
 
+    const devTotal = desktopCount + mobileCount + tabletCount;
     const devices = [
-      { name: 'Desktop', count: desktopCount, percentage: Math.round((desktopCount / devTotal) * 100) },
-      { name: 'Mobile', count: mobileCount, percentage: Math.round((mobileCount / devTotal) * 100) },
-      { name: 'Tablet', count: tabletCount, percentage: Math.round((tabletCount / devTotal) * 100) },
+      { name: 'Desktop', count: desktopCount, percentage: devTotal > 0 ? Math.round((desktopCount / devTotal) * 100) : 0 },
+      { name: 'Mobile', count: mobileCount, percentage: devTotal > 0 ? Math.round((mobileCount / devTotal) * 100) : 0 },
+      { name: 'Tablet', count: tabletCount, percentage: devTotal > 0 ? Math.round((tabletCount / devTotal) * 100) : 0 },
     ];
 
-    // 3. Traffic Sources Breakdown
+    // 3. Traffic Sources Breakdown (Real counts)
     const sourceCounts: Record<string, number> = {
       DIRECT: 0,
       DISCORD: 0,
@@ -613,59 +646,44 @@ accountRouter.get('/analytics', requireAuth, async (req: any, res) => {
       EXTERNAL: 0,
     };
 
-    if (hasDbViews) {
-      dbViews.forEach((v) => {
-        const src = v.trafficSource || 'DIRECT';
-        sourceCounts[src] = (sourceCounts[src] || 0) + 1;
-      });
-    } else {
-      sourceCounts.DIRECT = Math.round(rangeViews * 0.45);
-      sourceCounts.DISCORD = Math.round(rangeViews * 0.28);
-      sourceCounts.SOCIAL = Math.round(rangeViews * 0.15);
-      sourceCounts.SEARCH = Math.round(rangeViews * 0.08);
-      sourceCounts.EXTERNAL = Math.round(rangeViews * 0.04);
-    }
+    countedViews.forEach((v) => {
+      const src = v.trafficSource || 'DIRECT';
+      sourceCounts[src] = (sourceCounts[src] || 0) + 1;
+    });
 
+    const totalSources = Object.values(sourceCounts).reduce((a, b) => a + b, 0);
     const referrers = [
-      { name: 'Direct Traffic', count: sourceCounts.DIRECT, percentage: Math.round((sourceCounts.DIRECT / Math.max(1, rangeViews)) * 100) },
-      { name: 'Discord Community & RPC', count: sourceCounts.DISCORD, percentage: Math.round((sourceCounts.DISCORD / Math.max(1, rangeViews)) * 100) },
-      { name: 'Social Media (X, Reddit, etc.)', count: sourceCounts.SOCIAL, percentage: Math.round((sourceCounts.SOCIAL / Math.max(1, rangeViews)) * 100) },
-      { name: 'Search Engines', count: sourceCounts.SEARCH, percentage: Math.round((sourceCounts.SEARCH / Math.max(1, rangeViews)) * 100) },
-      { name: 'External Referrals', count: sourceCounts.EXTERNAL, percentage: Math.round((sourceCounts.EXTERNAL / Math.max(1, rangeViews)) * 100) },
+      { name: 'Direct Traffic', count: sourceCounts.DIRECT, percentage: totalSources > 0 ? Math.round((sourceCounts.DIRECT / totalSources) * 100) : 0 },
+      { name: 'Discord Community & RPC', count: sourceCounts.DISCORD, percentage: totalSources > 0 ? Math.round((sourceCounts.DISCORD / totalSources) * 100) : 0 },
+      { name: 'Social Media', count: sourceCounts.SOCIAL, percentage: totalSources > 0 ? Math.round((sourceCounts.SOCIAL / totalSources) * 100) : 0 },
+      { name: 'Search Engines', count: sourceCounts.SEARCH, percentage: totalSources > 0 ? Math.round((sourceCounts.SEARCH / totalSources) * 100) : 0 },
+      { name: 'External Referrals', count: sourceCounts.EXTERNAL, percentage: totalSources > 0 ? Math.round((sourceCounts.EXTERNAL / totalSources) * 100) : 0 },
     ];
 
     // 4. Socials & Buttons Clicks
     const links = user.profile.links || [];
-    const socials = links.map((l, idx) => {
-      const share = Math.max(5, Math.round(40 / (idx + 1)));
-      return {
-        platform: l.label,
-        icon: l.icon || 'link',
-        url: l.url,
-        clicks: Math.round(totalClicks * (share / 100)),
-        percentage: share,
-      };
-    });
+    const socials = links.map((l) => ({
+      platform: l.label,
+      icon: l.icon || 'link',
+      url: l.url,
+      clicks: 0,
+      percentage: 0,
+    }));
 
     const buttons = user.profile.buttons || [];
-    const clickedButtons = buttons.map((b, idx) => {
-      const clicks = Math.round(totalClicks * (0.35 / (idx + 1)));
-      const rate = rangeViews > 0 ? `${((clicks / rangeViews) * 100).toFixed(1)}%` : '0.0%';
-      return {
-        id: b.id,
-        title: b.title,
-        url: b.url,
-        clicks,
-        rate,
-      };
-    });
+    const clickedButtons = buttons.map((b) => ({
+      id: b.id,
+      title: b.title,
+      url: b.url,
+      clicks: 0,
+      rate: '0.0%',
+    }));
 
-    // 5. Global Countries Breakdown (With accurate coordinates & unique visitors)
+    // 5. Global Countries Breakdown (Genuine telemetry only)
     const countryMap = new Map<string, { views: number; uniqueIds: Set<string> }>();
-
-    if (hasDbViews) {
-      dbViews.forEach((v) => {
-        const code = v.countryCode || 'IN';
+    countedViews.forEach((v) => {
+      if (v.countryCode) {
+        const code = v.countryCode.toUpperCase();
         if (!countryMap.has(code)) {
           countryMap.set(code, { views: 0, uniqueIds: new Set() });
         }
@@ -673,26 +691,8 @@ accountRouter.get('/analytics', requireAuth, async (req: any, res) => {
         entry.views++;
         const vid = v.anonymousVisitorId || v.viewerUserId || v.ipHash;
         if (vid) entry.uniqueIds.add(vid);
-      });
-    } else {
-      // Baseline global distribution anchored in India and global developer hubs
-      const seeds = [
-        { code: 'IN', share: 0.42 },
-        { code: 'US', share: 0.22 },
-        { code: 'GB', share: 0.13 },
-        { code: 'DE', share: 0.09 },
-        { code: 'CA', share: 0.05 },
-        { code: 'AU', share: 0.04 },
-        { code: 'FR', share: 0.03 },
-        { code: 'JP', share: 0.02 },
-      ];
-      seeds.forEach((s) => {
-        countryMap.set(s.code, {
-          views: Math.max(1, Math.round(rangeViews * s.share)),
-          uniqueIds: new Set(new Array(Math.max(1, Math.round(uniqueVisitorsCount * s.share))).fill('u')),
-        });
-      });
-    }
+      }
+    });
 
     const countries = Array.from(countryMap.entries())
       .map(([code, stats]) => {
@@ -702,7 +702,7 @@ accountRouter.get('/analytics', requireAuth, async (req: any, res) => {
           code,
           name: COUNTRY_NAMES[code] || code,
           views: stats.views,
-          uniqueVisitors: Math.max(1, stats.uniqueIds.size),
+          uniqueVisitors: stats.uniqueIds.size,
           percentage: pct,
           lat: centroid.lat,
           lng: centroid.lng,
@@ -710,218 +710,86 @@ accountRouter.get('/analytics', requireAuth, async (req: any, res) => {
       })
       .sort((a, b) => b.views - a.views);
 
-    // 6. India States & Regional Drill-Down
-    const indiaTotalViews = countries.find((c) => c.code === 'IN')?.views || Math.round(rangeViews * 0.42);
+    // 6. India States & Regional Breakdown (Genuine telemetry only)
     const stateMap = new Map<string, { views: number; uniqueVisitors: number }>();
-
-    if (hasDbViews) {
-      dbViews
-        .filter((v) => v.countryCode === 'IN')
-        .forEach((v) => {
-          const st = v.region || 'Maharashtra';
-          if (!stateMap.has(st)) stateMap.set(st, { views: 0, uniqueVisitors: 0 });
-          const entry = stateMap.get(st)!;
-          entry.views++;
-          entry.uniqueVisitors++;
-        });
-    }
-
-    if (stateMap.size === 0) {
-      const stateSeeds = [
-        { name: 'Maharashtra', share: 0.34 },
-        { name: 'Jharkhand', share: 0.22 },
-        { name: 'Delhi', share: 0.16 },
-        { name: 'Karnataka', share: 0.11 },
-        { name: 'Tamil Nadu', share: 0.06 },
-        { name: 'Uttar Pradesh', share: 0.05 },
-        { name: 'West Bengal', share: 0.03 },
-        { name: 'Gujarat', share: 0.03 },
-      ];
-      stateSeeds.forEach((s) => {
-        stateMap.set(s.name, {
-          views: Math.max(1, Math.round(indiaTotalViews * s.share)),
-          uniqueVisitors: Math.max(1, Math.round(indiaTotalViews * s.share * 0.8)),
-        });
+    countedViews
+      .filter((v) => v.countryCode === 'IN' && v.region)
+      .forEach((v) => {
+        const st = v.region!;
+        if (!stateMap.has(st)) stateMap.set(st, { views: 0, uniqueVisitors: 0 });
+        const entry = stateMap.get(st)!;
+        entry.views++;
+        entry.uniqueVisitors++;
       });
-    }
-
-    const STATE_CENTROIDS: Record<string, { lat: number; lng: number }> = {
-      Maharashtra: { lat: 19.7515, lng: 75.7139 },
-      Jharkhand: { lat: 23.6102, lng: 85.2799 },
-      Delhi: { lat: 28.7041, lng: 77.1025 },
-      Karnataka: { lat: 15.3173, lng: 75.7139 },
-      'Tamil Nadu': { lat: 11.1271, lng: 78.6569 },
-      'Uttar Pradesh': { lat: 26.8467, lng: 80.9462 },
-      'West Bengal': { lat: 22.9868, lng: 87.855 },
-      Gujarat: { lat: 22.2587, lng: 71.1924 },
-      Rajasthan: { lat: 27.0238, lng: 74.2179 },
-      Kerala: { lat: 10.8505, lng: 76.2711 },
-      Telangana: { lat: 18.1124, lng: 79.0193 },
-      Bihar: { lat: 25.0961, lng: 85.3131 },
-      Punjab: { lat: 31.1471, lng: 75.3412 },
-      Haryana: { lat: 29.0588, lng: 76.0856 },
-      'Madhya Pradesh': { lat: 22.9734, lng: 78.6569 },
-      Odisha: { lat: 20.9517, lng: 85.0985 },
-      Assam: { lat: 26.2006, lng: 92.9376 },
-      Chhattisgarh: { lat: 21.2787, lng: 81.8661 },
-      'Himachal Pradesh': { lat: 31.1048, lng: 77.1734 },
-      Uttarakhand: { lat: 30.0668, lng: 79.0193 },
-      Ladakh: { lat: 34.1526, lng: 77.5771 },
-      'Jammu & Kashmir': { lat: 33.7782, lng: 76.5762 },
-      'Jammu and Kashmir': { lat: 33.7782, lng: 76.5762 },
-      Goa: { lat: 15.2993, lng: 74.124 },
-      Sikkim: { lat: 27.533, lng: 88.5122 },
-      'Andaman & Nicobar': { lat: 11.7401, lng: 92.6586 },
-      'Andaman and Nicobar': { lat: 11.7401, lng: 92.6586 },
-      Tripura: { lat: 23.9408, lng: 91.9882 },
-      Meghalaya: { lat: 25.467, lng: 91.3662 },
-      Manipur: { lat: 24.6637, lng: 93.9063 },
-      Nagaland: { lat: 26.1584, lng: 94.5624 },
-      Mizoram: { lat: 23.1645, lng: 92.9376 },
-      'Arunachal Pradesh': { lat: 28.218, lng: 94.7278 },
-    };
 
     const states = Array.from(stateMap.entries())
       .map(([name, stats]) => {
-        const centroid = STATE_CENTROIDS[name] || { lat: 20.5937, lng: 78.9629 };
-        const pct = indiaTotalViews > 0 ? Math.round((stats.views / indiaTotalViews) * 100) : 0;
         return {
           name,
           views: stats.views,
           uniqueVisitors: stats.uniqueVisitors,
-          percentage: pct,
-          lat: centroid.lat,
-          lng: centroid.lng,
+          percentage: rangeViews > 0 ? Math.round((stats.views / rangeViews) * 100) : 0,
+          lat: 20.5937,
+          lng: 78.9629,
         };
       })
       .sort((a, b) => b.views - a.views);
 
-    // 7. City-Level Analytics (Real visits + High-Activity Nodes)
-    const activeStateName = stateFilter || 'Maharashtra';
-    const activeStateViews = states.find((s) => s.name.toLowerCase() === activeStateName.toLowerCase())?.views || 100;
-
-    const ALL_CITY_SEEDS = [
-      // Maharashtra
-      { name: 'Mumbai', state: 'Maharashtra', country: 'IN', countryCode: 'IN', share: 0.52, lat: 19.076, lng: 72.8777 },
-      { name: 'Pune', state: 'Maharashtra', country: 'IN', countryCode: 'IN', share: 0.24, lat: 18.5204, lng: 73.8567 },
-      { name: 'Nagpur', state: 'Maharashtra', country: 'IN', countryCode: 'IN', share: 0.12, lat: 21.1458, lng: 79.0882 },
-      { name: 'Nashik', state: 'Maharashtra', country: 'IN', countryCode: 'IN', share: 0.08, lat: 19.9975, lng: 73.7898 },
-      { name: 'Thane', state: 'Maharashtra', country: 'IN', countryCode: 'IN', share: 0.04, lat: 19.2183, lng: 72.9781 },
-      // Jharkhand
-      { name: 'Ranchi', state: 'Jharkhand', country: 'IN', countryCode: 'IN', share: 0.44, lat: 23.3441, lng: 85.3096 },
-      { name: 'Jamshedpur', state: 'Jharkhand', country: 'IN', countryCode: 'IN', share: 0.26, lat: 22.8046, lng: 86.2029 },
-      { name: 'Dhanbad', state: 'Jharkhand', country: 'IN', countryCode: 'IN', share: 0.16, lat: 23.7957, lng: 86.4304 },
-      { name: 'Bokaro', state: 'Jharkhand', country: 'IN', countryCode: 'IN', share: 0.08, lat: 23.6693, lng: 86.1511 },
-      { name: 'Deoghar', state: 'Jharkhand', country: 'IN', countryCode: 'IN', share: 0.06, lat: 24.4826, lng: 86.7001 },
-      // Other Indian Hubs
-      { name: 'Delhi', state: 'Delhi', country: 'IN', countryCode: 'IN', share: 0.35, lat: 28.7041, lng: 77.1025 },
-      { name: 'Bengaluru', state: 'Karnataka', country: 'IN', countryCode: 'IN', share: 0.30, lat: 12.9716, lng: 77.5946 },
-      { name: 'Chennai', state: 'Tamil Nadu', country: 'IN', countryCode: 'IN', share: 0.18, lat: 13.0827, lng: 80.2707 },
-      { name: 'Kolkata', state: 'West Bengal', country: 'IN', countryCode: 'IN', share: 0.15, lat: 22.5726, lng: 88.3639 },
-      { name: 'Ahmedabad', state: 'Gujarat', country: 'IN', countryCode: 'IN', share: 0.14, lat: 23.0225, lng: 72.5714 },
-      { name: 'Hyderabad', state: 'Telangana', country: 'IN', countryCode: 'IN', share: 0.18, lat: 17.385, lng: 78.4867 },
-      // Global Hubs
-      { name: 'New York', state: 'New York', country: 'US', countryCode: 'US', share: 0.28, lat: 40.7128, lng: -74.006 },
-      { name: 'London', state: 'England', country: 'GB', countryCode: 'GB', share: 0.22, lat: 51.5074, lng: -0.1278 },
-      { name: 'Frankfurt', state: 'Hesse', country: 'DE', countryCode: 'DE', share: 0.15, lat: 50.1109, lng: 8.6821 },
-      { name: 'Tokyo', state: 'Kanto', country: 'JP', countryCode: 'JP', share: 0.12, lat: 35.6762, lng: 139.6503 },
-      { name: 'Sydney', state: 'New South Wales', country: 'AU', countryCode: 'AU', share: 0.10, lat: -33.8688, lng: 151.2093 },
-    ];
-
-    // Priority to real database telemetry city occurrences
-    const dbCityMap = new Map<string, { views: number; uniqueIds: Set<string>; city: string; state: string; countryCode: string; lat: number; lng: number }>();
-    if (hasDbViews) {
-      dbViews.forEach((v) => {
-        if (v.city) {
-          const key = v.city.toLowerCase();
-          if (!dbCityMap.has(key)) {
-            dbCityMap.set(key, {
-              views: 0,
-              uniqueIds: new Set(),
-              city: v.city,
-              state: v.region || activeStateName,
-              countryCode: v.countryCode || 'IN',
-              lat: v.latitude || 19.076,
-              lng: v.longitude || 72.8777,
-            });
-          }
-          const rec = dbCityMap.get(key)!;
-          rec.views++;
-          const vid = v.anonymousVisitorId || v.viewerUserId || v.ipHash;
-          if (vid) rec.uniqueIds.add(vid);
+    // 7. City Breakdown (Genuine telemetry only)
+    const cityMap = new Map<string, { views: number; uniqueIds: Set<string>; state: string; countryCode: string; lat: number; lng: number }>();
+    countedViews.forEach((v) => {
+      if (v.city) {
+        const key = v.city.toLowerCase();
+        if (!cityMap.has(key)) {
+          cityMap.set(key, {
+            views: 0,
+            uniqueIds: new Set(),
+            state: v.region || '',
+            countryCode: v.countryCode || 'IN',
+            lat: v.latitude || 20.0,
+            lng: v.longitude || 78.0,
+          });
         }
-      });
-    }
-
-    const cities = ALL_CITY_SEEDS.map((c) => {
-      const realMatch = dbCityMap.get(c.name.toLowerCase());
-      const vCount = realMatch ? realMatch.views : Math.max(1, Math.round(activeStateViews * c.share));
-      const uCount = realMatch ? Math.max(1, realMatch.uniqueIds.size) : Math.max(1, Math.round(vCount * 0.82));
-      return {
-        name: c.name,
-        state: c.state,
-        country: c.country,
-        countryCode: c.countryCode,
-        views: vCount,
-        uniqueVisitors: uCount,
-        percentage: Math.max(1, Math.round((vCount / Math.max(1, rangeViews)) * 100)),
-        lat: realMatch?.lat || c.lat,
-        lng: realMatch?.lng || c.lng,
-      };
+        const rec = cityMap.get(key)!;
+        rec.views++;
+        const vid = v.anonymousVisitorId || v.viewerUserId || v.ipHash;
+        if (vid) rec.uniqueIds.add(vid);
+      }
     });
 
-    // 8. Animated Traffic Connections (Geodesic routes from active visitor origins to host anchor)
-    // Anchor: Profile host anchor / primary server hub (Mumbai / US-East)
-    const hostAnchor = { name: 'Mumbai, IN', lat: 19.076, lng: 72.8777, country: 'IN' };
+    const cities = Array.from(cityMap.entries()).map(([key, c]) => ({
+      name: key.toUpperCase(),
+      state: c.state,
+      country: COUNTRY_NAMES[c.countryCode] || c.countryCode,
+      countryCode: c.countryCode,
+      views: c.views,
+      uniqueVisitors: c.uniqueIds.size,
+      percentage: rangeViews > 0 ? Math.round((c.views / rangeViews) * 100) : 0,
+      lat: c.lat,
+      lng: c.lng,
+    }));
 
-    const routes = [
-      {
-        id: 'rt_us_in',
-        origin: { name: 'New York, US', lat: 40.7128, lng: -74.006, country: 'US' },
-        destination: hostAnchor,
-        volume: Math.round(rangeViews * 0.22),
-        active: true,
-      },
-      {
-        id: 'rt_de_in',
-        origin: { name: 'Frankfurt, DE', lat: 50.1109, lng: 8.6821, country: 'DE' },
-        destination: hostAnchor,
-        volume: Math.round(rangeViews * 0.09),
-        active: true,
-      },
-      {
-        id: 'rt_gb_ca',
-        origin: { name: 'London, GB', lat: 51.5074, lng: -0.1278, country: 'GB' },
-        destination: { name: 'Toronto, CA', lat: 43.6532, lng: -79.3832, country: 'CA' },
-        volume: Math.round(rangeViews * 0.07),
-        active: true,
-      },
-      {
-        id: 'rt_in_au',
-        origin: hostAnchor,
-        destination: { name: 'Sydney, AU', lat: -33.8688, lng: 151.2093, country: 'AU' },
-        volume: Math.round(rangeViews * 0.05),
-        active: true,
-      },
-      {
-        id: 'rt_sg_in',
-        origin: { name: 'Singapore, SG', lat: 1.3521, lng: 103.8198, country: 'SG' },
-        destination: hostAnchor,
-        volume: Math.round(rangeViews * 0.04),
-        active: true,
-      },
-    ];
+    // 8. Genuine Active Now Telemetry (Last 5 minutes)
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const activeNowCount = countedViews.filter((v) => v.viewedAt >= fiveMinutesAgo).length;
 
     res.json({
       range,
       days,
       lastUpdated: new Date().toISOString(),
       kpis: {
-        totalClicks: { value: totalClicks.toLocaleString(), delta: '+11.8% vs prev' },
-        clickRate: { value: `${clickRate}%`, delta: '+1.4% vs prev' },
-        profileViews: { value: rangeViews.toLocaleString(), delta: '+16.5% vs prev' },
-        uniqueVisitors: { value: uniqueVisitorsCount.toLocaleString(), delta: '+12.4% vs prev' },
-        avgDailyViews: { value: avgDailyViews.toLocaleString(), delta: '+14.0% vs prev' },
+        totalClicks: { value: '0', delta: '0%' },
+        clickRate: { value: '0.0%', delta: '0%' },
+        profileViews: { value: rangeViews.toLocaleString(), delta: viewsDelta },
+        uniqueVisitors: { value: uniqueVisitorsCount.toLocaleString(), delta: viewsDelta },
+        avgDailyViews: { value: avgDailyViews.toLocaleString(), delta: viewsDelta },
+      },
+      likes: {
+        total: totalLikes,
+      },
+      cookies: {
+        received: cookiesReceived,
+        sent: cookiesSent,
       },
       timeline,
       devices,
@@ -931,11 +799,11 @@ accountRouter.get('/analytics', requireAuth, async (req: any, res) => {
       countries,
       states,
       cities,
-      routes,
+      routes: [],
       realtime: {
-        activeNow: Math.max(1, Math.round(uniqueVisitorsCount * 0.06)),
-        lastEventAt: dbViews[0]?.viewedAt?.toISOString() || new Date().toISOString(),
-        liveStatus: 'TELEMETRY_CONNECTED',
+        activeNow: activeNowCount,
+        lastEventAt: countedViews[0]?.viewedAt?.toISOString() || null,
+        liveStatus: activeNowCount > 0 ? 'ACTIVE_VISITOR_ONLINE' : 'IDLE',
       },
     });
   } catch (err: any) {

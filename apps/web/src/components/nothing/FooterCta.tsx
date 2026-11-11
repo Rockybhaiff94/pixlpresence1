@@ -34,7 +34,7 @@ export const FooterCta: React.FC = () => {
             CLAIM YOUR HANDLE TODAY.
           </h2>
           <p className="text-sm font-mono text-neutral-400 max-w-lg mx-auto">
-            Join over 1,420,000 creators, developers, and designers on the premier Nothing-inspired digital identity platform.
+            Join creators, developers, and designers building verifiable digital identities on PIXLS.IN.
           </p>
         </div>
 

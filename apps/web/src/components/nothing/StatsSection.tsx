@@ -1,8 +1,9 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Users, Eye, Zap, Shield } from "lucide-react";
 import { motion, type Variants } from "framer-motion";
+import { apiFetch } from "@/lib/api";
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -27,15 +28,41 @@ const cardVariants: Variants = {
 };
 
 export const StatsSection: React.FC = () => {
+  const [platformStats, setPlatformStats] = useState<{
+    totalProfiles: number;
+    totalViews: number;
+    totalUsers: number;
+  } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    apiFetch("/api/platform/stats")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data) {
+          setPlatformStats({
+            totalProfiles: data.totalProfiles || 0,
+            totalViews: data.totalViews || 0,
+            totalUsers: data.totalUsers || 0,
+          });
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const stats = [
     {
-      metric: "1,420,000+",
+      metric: platformStats ? `${platformStats.totalProfiles.toLocaleString()}` : "...",
       label: "PROFILES CREATED",
       spec: "SPEC: DISTRIBUTED BIO GRAPH",
       icon: Users,
     },
     {
-      metric: "84,000,000+",
+      metric: platformStats ? `${platformStats.totalViews.toLocaleString()}` : "...",
       label: "TOTAL PROFILE VIEWS",
       spec: "STREAM: EDGE TELEMETRY",
       icon: Eye,
@@ -58,47 +85,44 @@ export const StatsSection: React.FC = () => {
     <section className="w-full bg-[#070707] border-b border-[#1a1a1a] py-14 px-4 sm:px-6">
       <div className="max-w-7xl mx-auto">
         <div className="mb-6 flex items-center justify-between text-xs font-mono text-neutral-500">
-          <span className="flex items-center gap-1.5 text-neutral-400">
-            [ 01 // TELEMETRY DATA ]
-          </span>
-          <span>GLOBAL PLATFORM READOUT</span>
+          <span>[ METRICS // PLATFORM TELEMETRY ]</span>
+          <span>SYS_METRICS: ACTIVE</span>
         </div>
 
         <motion.div
           variants={containerVariants}
           initial="hidden"
           whileInView="visible"
-          viewport={{ once: true, margin: "-40px" }}
+          viewport={{ once: true, margin: "-50px" }}
           className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
         >
-          {stats.map((s, idx) => (
-            <motion.div
-              key={s.label}
-              variants={cardVariants}
-              whileHover={{ y: -4, borderColor: "#4f4f4f", transition: { duration: 0.2 } }}
-              className="bg-[#0f0f0f] border border-[#222222] rounded-xl p-5 space-y-3 relative nt-crosshair cursor-default group"
-            >
-              <div className="flex items-center justify-between text-neutral-500">
-                <span className="font-mono text-xs text-neutral-500 group-hover:text-neutral-400 transition-colors">
-                  {`FIG. 0${idx + 1}`}
-                </span>
-                <s.icon size={16} className="text-neutral-400 group-hover:text-white transition-colors" />
-              </div>
+          {stats.map((stat) => {
+            const Icon = stat.icon;
+            return (
+              <motion.div
+                key={stat.label}
+                variants={cardVariants}
+                whileHover={{ y: -4, borderColor: "#333333" }}
+                className="bg-[#0b0b0b] border border-[#1f1f1f] rounded-2xl p-6 flex flex-col justify-between transition-colors shadow-lg"
+              >
+                <div className="flex items-center justify-between text-neutral-500 mb-4">
+                  <span className="text-[10px] font-mono tracking-wider">{stat.spec}</span>
+                  <div className="w-8 h-8 rounded-lg bg-[#141414] border border-[#222222] flex items-center justify-center text-neutral-300">
+                    <Icon size={16} />
+                  </div>
+                </div>
 
-              <div className="text-3xl font-bold font-mono tracking-tight text-white">
-                {s.metric}
-              </div>
-
-              <div className="space-y-0.5">
-                <p className="text-xs font-mono font-semibold text-neutral-300 tracking-wider">
-                  {s.label}
-                </p>
-                <p className="text-[10px] font-mono text-neutral-600 group-hover:text-neutral-500 transition-colors">
-                  {s.spec}
-                </p>
-              </div>
-            </motion.div>
-          ))}
+                <div className="space-y-1">
+                  <div className="text-3xl sm:text-4xl font-bold font-mono tracking-tight text-white">
+                    {stat.metric}
+                  </div>
+                  <div className="text-xs font-mono text-neutral-400 font-semibold tracking-wide">
+                    {stat.label}
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
         </motion.div>
       </div>
     </section>

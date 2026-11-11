@@ -8,6 +8,7 @@ import {
   Volume2,
   Share2,
   Eye,
+  Heart,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { ProfileDesignConfig } from "@/types/studio";
@@ -29,6 +30,7 @@ export interface PreviewData {
   musicTitle?: string | null;
   musicArtist?: string | null;
   views?: number;
+  likes?: number;
   buttons?: Array<{
     id: string;
     title: string;
@@ -308,6 +310,10 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
             <div className="flex items-center gap-1 text-neutral-400">
               <Eye size={12} />
               <span>{(data.views || 0).toLocaleString()}</span>
+            </div>
+            <div className="flex items-center gap-1 text-neutral-400">
+              <Heart size={12} className={data.likes ? "text-rose-500 fill-rose-500" : "text-neutral-500"} />
+              <span>{(data.likes || 0).toLocaleString()}</span>
             </div>
             <div className="flex items-center gap-1 text-neutral-500 hover:text-white transition-colors cursor-pointer">
               <Share2 size={12} />

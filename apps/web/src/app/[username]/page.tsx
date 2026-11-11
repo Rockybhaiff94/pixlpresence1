@@ -30,6 +30,7 @@ interface PublicProfilePayload {
     opacity?: number;
     roundedCorners?: number;
     views?: number;
+    likesCount?: number;
     musicUrl?: string | null;
     customCss?: string | null;
     designConfig?: string | null;
@@ -223,6 +224,7 @@ export default async function ProfilePage({
         opacity={profile?.opacity || 90}
         roundedCorners={profile?.roundedCorners || 20}
         views={profile?.views || 0}
+        likesCount={profile?.likesCount || 0}
         buttons={profile?.buttons || []}
         links={profile?.links || []}
         musicUrl={profile?.musicUrl || null}

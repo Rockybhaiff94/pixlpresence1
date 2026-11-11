@@ -1,155 +1,65 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { Search, Trophy, TrendingUp, Eye, ArrowUpRight, Flame } from "lucide-react";
+import { Search, Trophy, Eye, ArrowUpRight, Heart, RefreshCw } from "lucide-react";
 import { Navbar } from "@/components/nothing/Navbar";
 import { Footer } from "@/components/nothing/Footer";
+import { apiFetch } from "@/lib/api";
 
 interface CreatorRank {
   rank: number;
+  profileId: string;
   username: string;
   displayName: string;
   bio: string;
+  avatar: string | null;
   viewsAllTime: number;
   viewsMonthly: number;
+  likesCount: number;
   verified: boolean;
   premium: boolean;
   founder?: boolean;
-  activity?: string;
+  activity?: string | null;
 }
 
-const creators: CreatorRank[] = [
-  {
-    rank: 1,
-    username: "hris",
-    displayName: "hris",
-    bio: "guns.lol & pixel.gg lead engineer // digital identity architect",
-    viewsAllTime: 4182900,
-    viewsMonthly: 382400,
-    verified: true,
-    premium: true,
-    founder: true,
-    activity: "Developing Nothing OS UI",
-  },
-  {
-    rank: 2,
-    username: "azre",
-    displayName: "azre",
-    bio: "designer & aesthetic visual artist // 3d director",
-    viewsAllTime: 2984100,
-    viewsMonthly: 291200,
-    verified: true,
-    premium: true,
-    activity: "Blender 4.2",
-  },
-  {
-    rank: 3,
-    username: "popaperc",
-    displayName: "popaperc",
-    bio: "music producer // audio engineer // sound design",
-    viewsAllTime: 2190400,
-    viewsMonthly: 184500,
-    verified: true,
-    premium: true,
-    activity: "Ableton Live 12",
-  },
-  {
-    rank: 4,
-    username: "vue",
-    displayName: "vue",
-    bio: "minimalist photographer // industrial creative",
-    viewsAllTime: 1840200,
-    viewsMonthly: 152000,
-    verified: true,
-    premium: true,
-    activity: "Lightroom Classic",
-  },
-  {
-    rank: 5,
-    username: "guns",
-    displayName: "guns.lol",
-    bio: "official guns.lol archival profile",
-    viewsAllTime: 1650300,
-    viewsMonthly: 124800,
-    verified: true,
-    premium: true,
-    founder: true,
-    activity: "Idle",
-  },
-  {
-    rank: 6,
-    username: "carl",
-    displayName: "Carl Pei",
-    bio: "technology entrepreneur // nothing technology",
-    viewsAllTime: 1420900,
-    viewsMonthly: 118400,
-    verified: true,
-    premium: true,
-    activity: "Nothing OS Phone (2)",
-  },
-  {
-    rank: 7,
-    username: "stealth",
-    displayName: "Stealth",
-    bio: "cybersecurity researcher & cryptographic engineer",
-    viewsAllTime: 1210800,
-    viewsMonthly: 98400,
-    verified: true,
-    premium: false,
-    activity: "Terminal / Zsh",
-  },
-  {
-    rank: 8,
-    username: "mono",
-    displayName: "Monochrome",
-    bio: "black & white publication art director",
-    viewsAllTime: 984200,
-    viewsMonthly: 84200,
-    verified: true,
-    premium: true,
-    activity: "Figma",
-  },
-  {
-    rank: 9,
-    username: "void",
-    displayName: "Void Runner",
-    bio: "ambient electronica & darksynth tracks",
-    viewsAllTime: 842000,
-    viewsMonthly: 71200,
-    verified: false,
-    premium: true,
-    activity: "FL Studio 21",
-  },
-  {
-    rank: 10,
-    username: "neon",
-    displayName: "Neon Ghost",
-    bio: "generative shader programmer & glsl artist",
-    viewsAllTime: 719400,
-    viewsMonthly: 64100,
-    verified: false,
-    premium: false,
-    activity: "TouchDesigner",
-  },
-];
-
 export default function LeaderboardPage() {
-  const [timeframe, setTimeframe] = useState<"ALL_TIME" | "THIS_MONTH">("ALL_TIME");
+  const [timeframe, setTimeframe] = useState<"ALL_TIME" | "THIS_MONTH" | "MOST_LIKED">("ALL_TIME");
   const [query, setQuery] = useState("");
+  const [creators, setCreators] = useState<CreatorRank[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filtered = creators
-    .filter(
-      (c) =>
-        c.username.toLowerCase().includes(query.toLowerCase()) ||
-        c.displayName.toLowerCase().includes(query.toLowerCase()) ||
-        c.bio.toLowerCase().includes(query.toLowerCase())
-    )
-    .sort((a, b) =>
-      timeframe === "ALL_TIME"
-        ? b.viewsAllTime - a.viewsAllTime
-        : b.viewsMonthly - a.viewsMonthly
-    );
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+
+    apiFetch(`/api/leaderboard?timeframe=${timeframe}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data?.creators) {
+          setCreators(data.creators);
+        } else if (active) {
+          setCreators([]);
+        }
+      })
+      .catch(() => {
+        if (active) setCreators([]);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [timeframe]);
+
+  const filtered = creators.filter(
+    (c) =>
+      c.username.toLowerCase().includes(query.toLowerCase()) ||
+      c.displayName.toLowerCase().includes(query.toLowerCase()) ||
+      c.bio.toLowerCase().includes(query.toLowerCase())
+  );
 
   return (
     <div className="min-h-screen bg-[#050505] text-[#ededed] flex flex-col font-mono selection:bg-white selection:text-black">
@@ -161,13 +71,13 @@ export default function LeaderboardPage() {
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-[#1c1c1c] pb-8">
             <div className="space-y-2">
               <span className="text-xs text-neutral-500 uppercase tracking-widest">
-                [ TELEMETRY // GLOBAL CREATOR RANKINGS ]
+                [ TELEMETRY // GENUINE CREATOR RANKINGS ]
               </span>
               <h1 className="text-3xl sm:text-5xl font-bold tracking-tight text-white">
                 LEADERBOARD.
               </h1>
               <p className="text-sm text-neutral-400 font-sans max-w-lg">
-                Real-time verified view rankings across the Pixel.gg network.
+                Real-time verified rankings calculated directly from database records.
               </p>
             </div>
 
@@ -175,7 +85,7 @@ export default function LeaderboardPage() {
             <div className="flex items-center gap-1.5 bg-[#121212] border border-[#242424] p-1 rounded-lg self-start md:self-auto">
               <button
                 onClick={() => setTimeframe("ALL_TIME")}
-                className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
                   timeframe === "ALL_TIME"
                     ? "bg-white text-black shadow-sm"
                     : "text-neutral-400 hover:text-white"
@@ -185,13 +95,23 @@ export default function LeaderboardPage() {
               </button>
               <button
                 onClick={() => setTimeframe("THIS_MONTH")}
-                className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
                   timeframe === "THIS_MONTH"
                     ? "bg-white text-black shadow-sm"
                     : "text-neutral-400 hover:text-white"
                 }`}
               >
                 THIS MONTH
+              </button>
+              <button
+                onClick={() => setTimeframe("MOST_LIKED")}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                  timeframe === "MOST_LIKED"
+                    ? "bg-white text-black shadow-sm"
+                    : "text-neutral-400 hover:text-white"
+                }`}
+              >
+                MOST LIKED
               </button>
             </div>
           </div>
@@ -223,19 +143,47 @@ export default function LeaderboardPage() {
               <div className="col-span-2 sm:col-span-1 text-center">RANK</div>
               <div className="col-span-6 sm:col-span-6">CREATOR</div>
               <div className="hidden sm:block sm:col-span-3">DISCORD RPC</div>
-              <div className="col-span-4 sm:col-span-2 text-right">VIEWS</div>
+              <div className="col-span-4 sm:col-span-2 text-right">
+                {timeframe === "MOST_LIKED" ? "LIKES" : "VIEWS"}
+              </div>
             </div>
 
             {/* Table Rows */}
             <div className="divide-y divide-[#181818] text-xs">
-              {filtered.length === 0 ? (
-                <div className="p-12 text-center text-neutral-500 space-y-2">
-                  <p className="text-sm font-semibold text-white">NO CREATORS FOUND</p>
-                  <p className="text-xs">No profile matched your search query &ldquo;{query}&rdquo;.</p>
+              {loading ? (
+                <div className="p-12 text-center text-neutral-500 space-y-2 flex flex-col items-center justify-center">
+                  <RefreshCw size={18} className="animate-spin text-white mb-2" />
+                  <p className="text-xs">RETRIEVING VERIFIED TELEMETRY...</p>
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="p-12 text-center text-neutral-500 space-y-3">
+                  <p className="text-sm font-semibold text-white">
+                    {query ? "NO CREATORS FOUND" : "NO PUBLIC PROFILES YET"}
+                  </p>
+                  <p className="text-xs max-w-md mx-auto">
+                    {query
+                      ? `No profile matched your search query "${query}".`
+                      : "No public profiles have been published yet. Be the first to register and claim your handle!"}
+                  </p>
+                  {!query && (
+                    <div className="pt-2">
+                      <Link
+                        href="/register"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white text-black font-semibold text-xs hover:bg-neutral-200 transition-colors"
+                      >
+                        CLAIM YOUR PROFILE ↗
+                      </Link>
+                    </div>
+                  )}
                 </div>
               ) : (
-                filtered.map((c, index) => {
-                  const views = timeframe === "ALL_TIME" ? c.viewsAllTime : c.viewsMonthly;
+                filtered.map((c) => {
+                  const statValue =
+                    timeframe === "MOST_LIKED"
+                      ? c.likesCount
+                      : timeframe === "THIS_MONTH"
+                      ? c.viewsMonthly
+                      : c.viewsAllTime;
                   const rankDisplay = c.rank < 10 ? `0${c.rank}` : String(c.rank);
 
                   return (
@@ -259,8 +207,12 @@ export default function LeaderboardPage() {
 
                       {/* Creator Info */}
                       <div className="col-span-6 sm:col-span-6 flex items-center gap-3 min-w-0 pr-4">
-                        <div className="w-10 h-10 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-white shrink-0">
-                          {c.displayName.charAt(0)}
+                        <div className="w-10 h-10 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-white shrink-0 overflow-hidden">
+                          {c.avatar ? (
+                            <img src={c.avatar} alt={c.displayName} className="w-full h-full object-cover" />
+                          ) : (
+                            c.displayName.charAt(0).toUpperCase()
+                          )}
                         </div>
                         <div className="truncate">
                           <div className="flex items-center gap-1.5">
@@ -279,7 +231,7 @@ export default function LeaderboardPage() {
                             )}
                           </div>
                           <p className="text-[11px] text-neutral-500 truncate">
-                            @{c.username} &bull; <span className="font-sans">{c.bio}</span>
+                            @{c.username} {c.bio ? `• ${c.bio}` : ""}
                           </p>
                         </div>
                       </div>
@@ -288,14 +240,18 @@ export default function LeaderboardPage() {
                       <div className="hidden sm:block sm:col-span-3 text-[11px] text-neutral-400 truncate">
                         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#161616] border border-[#242424] truncate max-w-[220px]">
                           <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
-                          <span className="truncate">{c.activity || "Online"}</span>
+                          <span className="truncate">{c.activity || "Profile Online"}</span>
                         </span>
                       </div>
 
-                      {/* Views */}
+                      {/* Stat (Views / Likes) */}
                       <div className="col-span-4 sm:col-span-2 text-right font-bold text-white flex items-center justify-end gap-1.5">
-                        <Eye size={13} className="text-neutral-500 hidden sm:inline" />
-                        <span>{views.toLocaleString()}</span>
+                        {timeframe === "MOST_LIKED" ? (
+                          <Heart size={13} className="text-rose-500 fill-rose-500 hidden sm:inline" />
+                        ) : (
+                          <Eye size={13} className="text-neutral-500 hidden sm:inline" />
+                        )}
+                        <span>{statValue.toLocaleString()}</span>
                         <ArrowUpRight size={13} className="text-neutral-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                       </div>
                     </Link>
@@ -311,4 +267,3 @@ export default function LeaderboardPage() {
     </div>
   );
 }
-

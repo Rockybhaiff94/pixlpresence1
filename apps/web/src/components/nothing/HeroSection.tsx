@@ -281,7 +281,7 @@ export const HeroSection: React.FC = () => {
 
               {/* Bottom Metric */}
               <div className="pt-2 text-[10px] font-mono text-neutral-600 flex items-center justify-between">
-                <span>VIEWS: 142,890</span>
+                <span>[ DEMO SPECIMEN ]</span>
                 <span>PIXEL.GG (01)</span>
               </div>
             </div>

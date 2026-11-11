@@ -35,6 +35,16 @@ async function resolveOptionalViewer(req: any) {
   return null;
 }
 
+// Middleware to check authentication via Session OR Bearer Token
+const requireAuth = async (req: any, res: any, next: any) => {
+  const user = await resolveOptionalViewer(req);
+  if (user) {
+    req.user = user;
+    return next();
+  }
+  return res.status(401).json({ error: 'Unauthorized' });
+};
+
 // Bot & crawler detection
 function isBotRequest(ua: string | undefined): boolean {
   if (!ua) return false;
@@ -201,6 +211,11 @@ const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
 // Track Profile View with Deduplication, Bot Filtering & Owner Exemption
 profileRouter.post('/u/:username/view', viewRateLimiter, async (req: any, res) => {
   try {
+    // 0. Explicit Studio Preview Guard — Studio editor renders must NEVER track views
+    if (req.body?.isPreview || req.headers['x-studio-preview'] === '1') {
+      return res.json({ success: true, counted: false, reason: 'studio_preview_ignored' });
+    }
+
     const rawUsername = req.params.username;
     const userAgent = req.headers['user-agent'] || '';
 
@@ -223,20 +238,45 @@ profileRouter.post('/u/:username/view', viewRateLimiter, async (req: any, res) =
     const viewerUserId = viewer ? viewer.id : null;
     const isOwner = Boolean(viewerUserId && viewerUserId === targetUserId);
 
-    // 4. Rule: Profile Owner's own visits NEVER increase public view count
+    // Explicit UTC day boundary for deduplication
+    const now = new Date();
+    const todayUtcStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    const dateBucket = now.toISOString().slice(0, 10);
+
+    // 4. Rule: Profile Owner's own visits count at most once per UTC day
     if (isOwner) {
-      // Record internal owner visit for analytics (counted: false) without altering public profile.views
-      try {
-        const geo = resolveTelemetry(req);
-        await prisma.profileView.create({
+      const ownerDedupeKey = `${profileId}:owner:${dateBucket}`;
+      const existingOwnerViewToday = await prisma.profileView.findFirst({
+        where: {
+          profileId,
+          viewSource: 'OWNER',
+          counted: true,
+          viewedAt: { gte: todayUtcStart },
+        },
+      });
+
+      if (existingOwnerViewToday) {
+        // Owner has already contributed their 1 view for today
+        return res.json({
+          success: true,
+          counted: false,
+          reason: 'owner_daily_limit_reached',
+          currentViews: targetUser.profile.views,
+        });
+      }
+
+      // First owner visit of the UTC day: count 1 view!
+      const geo = resolveTelemetry(req);
+      const [viewRecord, updatedProfile] = await prisma.$transaction([
+        prisma.profileView.create({
           data: {
             profileId,
             viewerUserId,
             anonymousVisitorId: null,
             sessionId: req.sessionID || null,
             viewSource: 'OWNER',
-            counted: false,
-            deduplicationKey: `${profileId}:owner:${new Date().toISOString().slice(0, 10)}:${Date.now()}`,
+            counted: true,
+            deduplicationKey: ownerDedupeKey,
             userAgent: userAgent.slice(0, 255),
             countryCode: geo.countryCode,
             countryName: geo.countryName,
@@ -250,16 +290,18 @@ profileRouter.post('/u/:username/view', viewRateLimiter, async (req: any, res) =
             browser: geo.browser,
             os: geo.os,
           },
-        });
-      } catch (ownerErr) {
-        console.warn('[Track Owner Visit Warning]:', ownerErr);
-      }
+        }),
+        prisma.profile.update({
+          where: { id: profileId },
+          data: { views: { increment: 1 } },
+        }),
+      ]);
 
       return res.json({
         success: true,
-        counted: false,
-        reason: 'owner_visit',
-        currentViews: targetUser.profile.views,
+        counted: true,
+        reason: 'owner_first_daily_view',
+        currentViews: updatedProfile.views,
       });
     }
 
@@ -275,14 +317,12 @@ profileRouter.post('/u/:username/view', viewRateLimiter, async (req: any, res) =
     const cookieVisitorId = req.headers.cookie?.match(/(?:^|;\s*)pixel_vid=([^;]+)/)?.[1]?.trim() || null;
     const anonymousVisitorId = bodyVisitorId || cookieVisitorId || ipHash;
 
-    const windowStart = new Date(Date.now() - DEDUPE_WINDOW_MS);
-
-    // 6. Deduplication Check (24 hours)
-    // - Registered users are tracked uniquely by their authenticated viewerUserId
-    // - Anonymous guests are deduplicated by their persistent anonymousVisitorId / ipHash
+    // 6. Deduplication Check (1 unique view per profile per UTC day)
+    // - Authenticated users are tracked uniquely by their viewerUserId
+    // - Anonymous guests are deduplicated by their anonymousVisitorId / ipHash
     const dedupeWhere: any = {
       profileId,
-      viewedAt: { gte: windowStart },
+      viewedAt: { gte: todayUtcStart },
       counted: true,
     };
 
@@ -303,13 +343,12 @@ profileRouter.post('/u/:username/view', viewRateLimiter, async (req: any, res) =
       return res.json({
         success: true,
         counted: false,
-        reason: 'deduplicated_within_24h',
+        reason: 'deduplicated_within_today_utc',
         currentViews: targetUser.profile.views,
       });
     }
 
     // 7. Atomic Transaction: Record Unique View + Increment Profile Views
-    const dateBucket = new Date().toISOString().slice(0, 10);
     const deduplicationKey = `${profileId}:${viewerUserId || anonymousVisitorId}:${dateBucket}`;
 
     // Resolve geographic and client telemetry
@@ -359,6 +398,7 @@ profileRouter.post('/u/:username/view', viewRateLimiter, async (req: any, res) =
     return res.json({
       success: true,
       counted: true,
+      viewId: viewRecord.id,
       currentViews: updatedProfile.views,
     });
   } catch (err: any) {
@@ -367,22 +407,133 @@ profileRouter.post('/u/:username/view', viewRateLimiter, async (req: any, res) =
   }
 });
 
-// Middleware to check authentication via Session OR Bearer Token
-const requireAuth = async (req: any, res: any, next: any) => {
-  if (typeof req.isAuthenticated === 'function' && req.isAuthenticated()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1]?.trim();
-    if (token) {
-      const user = await prisma.user.findUnique({ where: { appToken: token } });
-      if (user) {
-        req.user = user;
-        return next();
-      }
+/**
+ * GET /api/profile/u/:username/like
+ * Retrieves the genuine database-backed like count and the current viewer's like status.
+ */
+profileRouter.get('/u/:username/like', async (req: any, res) => {
+  try {
+    const rawUsername = req.params.username;
+    const targetUser = await findUserByIdentifier(rawUsername);
+    if (!targetUser || !targetUser.profile) {
+      return res.status(404).json({ error: 'Profile not found' });
     }
+
+    const viewer = await resolveOptionalViewer(req);
+    let hasLiked = false;
+    if (viewer) {
+      const existing = await prisma.profileLike.findUnique({
+        where: {
+          profileId_userId: {
+            profileId: targetUser.profile.id,
+            userId: viewer.id,
+          },
+        },
+      });
+      hasLiked = Boolean(existing);
+    }
+
+    res.json({
+      likesCount: targetUser.profile.likesCount || 0,
+      hasLiked,
+    });
+  } catch (err: any) {
+    console.error('[Get Profile Like Status Error]:', err);
+    res.status(500).json({ error: 'Failed to retrieve like status' });
   }
-  return res.status(401).json({ error: 'Unauthorized' });
-};
+});
+
+/**
+ * POST /api/profile/u/:username/like
+ * Toggles like for authenticated users with atomic database transactions.
+ * Rules:
+ * - Requires authentication.
+ * - Cannot like own profile.
+ * - Toggle: click again unlikes.
+ * - Database-enforced unique constraint prevents duplicate concurrent likes.
+ */
+profileRouter.post('/u/:username/like', requireAuth, async (req: any, res) => {
+  try {
+    const rawUsername = req.params.username;
+    const targetUser = await findUserByIdentifier(rawUsername);
+    if (!targetUser || !targetUser.profile) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    const profileId = targetUser.profile.id;
+    const userId = req.user.id;
+
+    // Prevent self-liking
+    if (userId === targetUser.id) {
+      return res.status(400).json({ error: 'You cannot like your own profile.' });
+    }
+
+    // Check if like exists
+    const existing = await prisma.profileLike.findUnique({
+      where: {
+        profileId_userId: {
+          profileId,
+          userId,
+        },
+      },
+    });
+
+    if (existing) {
+      // Toggle OFF (Unlike)
+      const [, updatedProfile] = await prisma.$transaction([
+        prisma.profileLike.delete({
+          where: {
+            profileId_userId: {
+              profileId,
+              userId,
+            },
+          },
+        }),
+        prisma.profile.update({
+          where: { id: profileId },
+          data: {
+            likesCount: {
+              decrement: targetUser.profile.likesCount > 0 ? 1 : 0,
+            },
+          },
+        }),
+      ]);
+
+      return res.json({
+        success: true,
+        liked: false,
+        likesCount: Math.max(0, updatedProfile.likesCount),
+      });
+    } else {
+      // Toggle ON (Like)
+      const [, updatedProfile] = await prisma.$transaction([
+        prisma.profileLike.create({
+          data: {
+            profileId,
+            userId,
+          },
+        }),
+        prisma.profile.update({
+          where: { id: profileId },
+          data: {
+            likesCount: {
+              increment: 1,
+            },
+          },
+        }),
+      ]);
+
+      return res.json({
+        success: true,
+        liked: true,
+        likesCount: updatedProfile.likesCount,
+      });
+    }
+  } catch (err: any) {
+    console.error('[Profile Like Error]:', err);
+    res.status(500).json({ error: err.message || 'Failed to toggle like' });
+  }
+});
 
 // Get Profile
 profileRouter.get('/me', requireAuth, async (req: any, res) => {

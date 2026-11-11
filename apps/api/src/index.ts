@@ -30,6 +30,8 @@ import { rpcRouter } from './routes/rpc';
 import { adminRouter } from './routes/admin';
 import { guildRouter } from './routes/guild';
 import { accountRouter } from './routes/account';
+import { leaderboardRouter } from './routes/leaderboard';
+import { platformRouter } from './routes/platform';
 
 import { Server } from 'socket.io';
 import http from 'http';
@@ -243,6 +245,8 @@ app.use('/api/rpc', rpcRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/guild', guildRouter);
 app.use('/api/account', accountRouter);
+app.use('/api/leaderboard', leaderboardRouter);
+app.use('/api/platform', platformRouter);
 
 app.get('/', (req: express.Request, res: express.Response) => {
   res.json({ message: 'Discord RPC Platform API is running.' });

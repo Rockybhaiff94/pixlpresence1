@@ -32,6 +32,9 @@ model User {
   layers        ProfileLayer[]
   identities    UserIdentity[]
   viewedProfiles ProfileView[] @relation("UserViewedProfiles")
+  likedProfiles  ProfileLike[] @relation("UserLikedProfiles")
+  sentCookies    CookieGift[]  @relation("CookieSender")
+  receivedCookies CookieGift[] @relation("CookieRecipient")
   appToken      String?   @unique
   rpcDevices    RpcDeviceAuthorization[]
   uploadedAssets UploadedAsset[]
@@ -96,9 +99,11 @@ model Profile {
   buttons        Button[]
 
   // Analytics
-  views          Int      @default(0)
+  views          Int           @default(0)
   viewRecords    ProfileView[]
-  createdAt      DateTime @default(now())
+  likesCount     Int           @default(0)
+  likes          ProfileLike[]
+  createdAt      DateTime      @default(now())
   updatedAt      DateTime @updatedAt
 }
 
@@ -140,6 +145,35 @@ model ProfileView {
   @@index([profileId, countryCode])
   @@index([profileId, region])
   @@index([profileId, city])
+}
+
+model ProfileLike {
+  id        String   @id @default(cuid())
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("UserLikedProfiles", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([profileId, userId])
+  @@index([profileId])
+  @@index([userId])
+}
+
+model CookieGift {
+  id          String   @id @default(cuid())
+  senderId    String
+  sender      User     @relation("CookieSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String
+  recipient   User     @relation("CookieRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  dateBucket  String   // UTC Day bucket e.g. "2026-11-11" to enforce 1 cookie gift per UTC day
+  message     String?
+  source      String   @default("DISCORD_BOT")
+  createdAt   DateTime @default(now())
+
+  @@unique([senderId, dateBucket])
+  @@index([recipientId, createdAt])
+  @@index([senderId, createdAt])
 }
 
 model Link {
