@@ -11,7 +11,6 @@ import {
   Unlock,
   Eye,
   EyeOff,
-  CornerDownRight,
   Sparkles,
 } from "lucide-react";
 import {
@@ -19,7 +18,14 @@ import {
   CanvasEmbed,
   CanvasEngineState,
   CanvasTransform,
+  CanvasGridSettings,
+  EmbedScalingMode,
+  DEFAULT_GRID_SETTINGS,
 } from "@/types/studio";
+import { calculateSmartSnap, GuideLine } from "./smartAlignment";
+import { scaleEmbedChildren } from "./embedScaling";
+import { SelectionToolbar } from "./SelectionToolbar";
+import { SelectedObjectMenu } from "./SelectedObjectMenu";
 
 interface CanvasEngineProps {
   canvasState: CanvasEngineState;
@@ -27,6 +33,11 @@ interface CanvasEngineProps {
   zoom?: number;
   isInteractive?: boolean;
   onSelectElement?: (id: string | null) => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  modifierKey?: "Alt" | "Control" | "Shift" | "Meta";
+  scalingMode?: EmbedScalingMode;
+  gridSettings?: CanvasGridSettings;
   children: React.ReactNode;
 }
 
@@ -52,11 +63,18 @@ export function CanvasEngine({
   zoom = 100,
   isInteractive = true,
   onSelectElement,
+  onUndo,
+  onRedo,
+  modifierKey = "Alt",
+  scalingMode = "hybrid",
+  gridSettings = DEFAULT_GRID_SETTINGS,
   children,
 }: CanvasEngineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dragOp, setDragOp] = useState<DragOperation | null>(null);
-  const [guideLines, setGuideLines] = useState<{ x?: number; y?: number }>({});
+  const [activeGuides, setActiveGuides] = useState<GuideLine[]>([]);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  const [isAltPressed, setIsAltPressed] = useState(false);
 
   const scale = zoom / 100;
 
@@ -66,16 +84,50 @@ export function CanvasEngine({
   const selectedItem = selectedElement || selectedEmbed;
   const isSelectedEmbed = Boolean(selectedEmbed);
 
-  // Keyboard shortcuts handler
+  // Close more menu when selection changes
   useEffect(() => {
-    if (!isInteractive || !canvasState.selectedId) return;
+    setIsMoreMenuOpen(false);
+  }, [canvasState.selectedId]);
+
+  // Track modifier keys and keyboard shortcuts
+  useEffect(() => {
+    if (!isInteractive) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if user is typing in an input or textarea
+      // Check modifier key
+      if (
+        (modifierKey === "Alt" && e.altKey) ||
+        (modifierKey === "Control" && e.ctrlKey) ||
+        (modifierKey === "Shift" && e.shiftKey) ||
+        (modifierKey === "Meta" && e.metaKey)
+      ) {
+        setIsAltPressed(true);
+      }
+
+      // Check undo/redo
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          onRedo?.();
+        } else {
+          onUndo?.();
+        }
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        onRedo?.();
+        return;
+      }
+
+      // Ignore input/textarea for element shortcuts
       const target = e.target as HTMLElement;
       if (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable) {
         return;
       }
+
+      if (!canvasState.selectedId) return;
 
       const nudgeStep = e.shiftKey ? 10 : 1;
 
@@ -99,25 +151,47 @@ export function CanvasEngine({
         duplicateSelected();
       } else if (e.key === "Escape") {
         e.preventDefault();
-        onSelectElement?.(null);
-        onUpdateCanvas((prev) => ({ ...prev, selectedId: null, selectedIds: [] }));
+        if (isMoreMenuOpen) {
+          setIsMoreMenuOpen(false);
+        } else {
+          onSelectElement?.(null);
+          onUpdateCanvas((prev) => ({ ...prev, selectedId: null, selectedIds: [] }));
+        }
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (
+        (modifierKey === "Alt" && !e.altKey) ||
+        (modifierKey === "Control" && !e.ctrlKey) ||
+        (modifierKey === "Shift" && !e.shiftKey) ||
+        (modifierKey === "Meta" && !e.metaKey)
+      ) {
+        setIsAltPressed(false);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isInteractive, canvasState.selectedId, onSelectElement, onUpdateCanvas]);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, [isInteractive, canvasState.selectedId, modifierKey, isMoreMenuOpen, onSelectElement, onUpdateCanvas, onUndo, onRedo]);
 
+  // Nudge selected item by dx, dy
   const nudgeSelected = (dx: number, dy: number) => {
     onUpdateCanvas((prev) => {
       const id = prev.selectedId;
       if (!id) return prev;
 
-      // Check if moving an embed
+      // Embed nudge
       const embedIdx = prev.embeds.findIndex((em) => em.id === id);
       if (embedIdx !== -1) {
         const target = prev.embeds[embedIdx];
-        if (target.isLocked) return prev;
+        if (target.isLocked || target.transform.lockType === "position" || target.transform.lockType === "full") {
+          return prev;
+        }
 
         const updatedEmbed = {
           ...target,
@@ -128,7 +202,6 @@ export function CanvasEngine({
           },
         };
 
-        // Move children as well
         const updatedElements = prev.elements.map((el) => {
           if (el.parentEmbedId === id) {
             return {
@@ -148,11 +221,13 @@ export function CanvasEngine({
         return { ...prev, embeds: newEmbeds, elements: updatedElements };
       }
 
-      // Check if moving an element
+      // Element nudge
       const elIdx = prev.elements.findIndex((el) => el.id === id);
       if (elIdx !== -1) {
         const target = prev.elements[elIdx];
-        if (target.isLocked) return prev;
+        if (target.isLocked || target.transform.lockType === "position" || target.transform.lockType === "full") {
+          return prev;
+        }
 
         const updatedElements = [...prev.elements];
         updatedElements[elIdx] = {
@@ -170,6 +245,7 @@ export function CanvasEngine({
     });
   };
 
+  // Delete selected item
   const deleteSelected = () => {
     onUpdateCanvas((prev) => {
       const id = prev.selectedId;
@@ -183,9 +259,11 @@ export function CanvasEngine({
         selectedIds: [],
       };
     });
+    setIsMoreMenuOpen(false);
     onSelectElement?.(null);
   };
 
+  // Duplicate selected item
   const duplicateSelected = () => {
     onUpdateCanvas((prev) => {
       const id = prev.selectedId;
@@ -259,6 +337,56 @@ export function CanvasEngine({
     });
   };
 
+  // Toggle Lock
+  const toggleLockSelected = () => {
+    onUpdateCanvas((prev) => {
+      const id = prev.selectedId;
+      if (!id) return prev;
+
+      return {
+        ...prev,
+        embeds: prev.embeds.map((em) =>
+          em.id === id ? { ...em, isLocked: !em.isLocked } : em
+        ),
+        elements: prev.elements.map((el) =>
+          el.id === id ? { ...el, isLocked: !el.isLocked } : el
+        ),
+      };
+    });
+  };
+
+  // Set Lock Type
+  const setLockTypeSelected = (lockType: "none" | "position" | "size" | "full") => {
+    onUpdateCanvas((prev) => {
+      const id = prev.selectedId;
+      if (!id) return prev;
+
+      const isLocked = lockType !== "none";
+
+      return {
+        ...prev,
+        embeds: prev.embeds.map((em) =>
+          em.id === id
+            ? {
+                ...em,
+                isLocked,
+                transform: { ...em.transform, lockType, isLocked },
+              }
+            : em
+        ),
+        elements: prev.elements.map((el) =>
+          el.id === id
+            ? {
+                ...el,
+                isLocked,
+                transform: { ...el.transform, lockType, isLocked },
+              }
+            : el
+        ),
+      };
+    });
+  };
+
   // Pointer drag start for moving object
   const startMove = (e: React.PointerEvent, targetId: string, isEmbed: boolean) => {
     if (!isInteractive) return;
@@ -268,7 +396,14 @@ export function CanvasEngine({
       ? canvasState.embeds.find((em) => em.id === targetId)
       : canvasState.elements.find((el) => el.id === targetId);
 
-    if (!item || item.isLocked) return;
+    if (
+      !item ||
+      item.isLocked ||
+      item.transform.lockType === "position" ||
+      item.transform.lockType === "full"
+    ) {
+      return;
+    }
 
     onSelectElement?.(targetId);
     onUpdateCanvas((prev) => ({ ...prev, selectedId: targetId, selectedIds: [targetId] }));
@@ -297,8 +432,25 @@ export function CanvasEngine({
 
   // Pointer drag start for resize handles
   const startResize = (e: React.PointerEvent, handle: HandleType) => {
-    if (!isInteractive || !selectedItem || selectedItem.isLocked) return;
+    if (
+      !isInteractive ||
+      !selectedItem ||
+      selectedItem.isLocked ||
+      selectedItem.transform.lockType === "size" ||
+      selectedItem.transform.lockType === "full"
+    ) {
+      return;
+    }
     e.stopPropagation();
+
+    const childTransforms = new Map<string, CanvasTransform>();
+    if (isSelectedEmbed) {
+      canvasState.elements
+        .filter((el) => el.parentEmbedId === selectedItem.id)
+        .forEach((child) => {
+          childTransforms.set(child.id, { ...child.transform });
+        });
+    }
 
     setDragOp({
       mode: "resize",
@@ -308,6 +460,7 @@ export function CanvasEngine({
       startX: e.clientX,
       startY: e.clientY,
       initialTransform: { ...selectedItem.transform },
+      childInitialTransforms: childTransforms,
     });
 
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -315,7 +468,15 @@ export function CanvasEngine({
 
   // Pointer drag start for rotation
   const startRotate = (e: React.PointerEvent) => {
-    if (!isInteractive || !selectedItem || selectedItem.isLocked || !containerRef.current) return;
+    if (
+      !isInteractive ||
+      !selectedItem ||
+      selectedItem.isLocked ||
+      selectedItem.transform.lockType === "full" ||
+      !containerRef.current
+    ) {
+      return;
+    }
     e.stopPropagation();
 
     const rect = (e.currentTarget.parentElement as HTMLElement)?.getBoundingClientRect();
@@ -345,18 +506,43 @@ export function CanvasEngine({
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!dragOp) return;
 
-    const deltaX = (e.clientX - dragOp.startX) / scale;
-    const deltaY = (e.clientY - dragOp.startY) / scale;
+    // Check precision modifier (Alt key) - reduces speed by 80% for micro-movements
+    const isPrecision =
+      (modifierKey === "Alt" && e.altKey) ||
+      (modifierKey === "Control" && e.ctrlKey) ||
+      (modifierKey === "Shift" && e.shiftKey) ||
+      (modifierKey === "Meta" && e.metaKey);
+
+    const precisionFactor = isPrecision ? 0.2 : 1.0;
+    const deltaX = ((e.clientX - dragOp.startX) / scale) * precisionFactor;
+    const deltaY = ((e.clientY - dragOp.startY) / scale) * precisionFactor;
 
     if (dragOp.mode === "move") {
-      const newX = Math.round(dragOp.initialTransform.x + deltaX);
-      const newY = Math.round(dragOp.initialTransform.y + deltaY);
+      let rawX = dragOp.initialTransform.x + deltaX;
+      let rawY = dragOp.initialTransform.y + deltaY;
+
+      // Collect sibling transforms for smart snap
+      const siblings: CanvasTransform[] = dragOp.isEmbed
+        ? canvasState.embeds.filter((em) => em.id !== dragOp.targetId).map((em) => em.transform)
+        : canvasState.elements.filter((el) => el.id !== dragOp.targetId).map((el) => el.transform);
+
+      // Smart Snapping & Guides
+      const snap = calculateSmartSnap(
+        { ...dragOp.initialTransform, x: rawX, y: rawY },
+        siblings,
+        undefined,
+        gridSettings
+      );
+
+      const finalX = isPrecision ? Math.round(rawX) : snap.x;
+      const finalY = isPrecision ? Math.round(rawY) : snap.y;
+      setActiveGuides(isPrecision ? [] : snap.guides);
 
       onUpdateCanvas((prev) => {
         if (dragOp.isEmbed) {
           const updatedEmbeds = prev.embeds.map((em) =>
             em.id === dragOp.targetId
-              ? { ...em, transform: { ...em.transform, x: newX, y: newY } }
+              ? { ...em, transform: { ...em.transform, x: finalX, y: finalY } }
               : em
           );
 
@@ -368,8 +554,8 @@ export function CanvasEngine({
                 ...el,
                 transform: {
                   ...el.transform,
-                  x: Math.round(initChild.x + deltaX),
-                  y: Math.round(initChild.y + deltaY),
+                  x: Math.round(initChild.x + (finalX - dragOp.initialTransform.x)),
+                  y: Math.round(initChild.y + (finalY - dragOp.initialTransform.y)),
                 },
               };
             }
@@ -380,7 +566,7 @@ export function CanvasEngine({
         } else {
           const updatedElements = prev.elements.map((el) =>
             el.id === dragOp.targetId
-              ? { ...el, transform: { ...el.transform, x: newX, y: newY } }
+              ? { ...el, transform: { ...el.transform, x: finalX, y: finalY } }
               : el
           );
           return { ...prev, elements: updatedElements };
@@ -393,6 +579,8 @@ export function CanvasEngine({
       let nextY = dragOp.initialTransform.y;
 
       const handle = dragOp.handle;
+      const lockAspect = e.shiftKey || dragOp.initialTransform.aspectRatioLocked;
+      const initialAspect = dragOp.initialTransform.width / Math.max(1, dragOp.initialTransform.height);
 
       if (handle.includes("e")) nextW = Math.max(40, Math.round(dragOp.initialTransform.width + deltaX));
       if (handle.includes("s")) nextH = Math.max(24, Math.round(dragOp.initialTransform.height + deltaY));
@@ -407,24 +595,41 @@ export function CanvasEngine({
         nextH = potentialH;
       }
 
+      // Maintain aspect ratio if shift key is held or aspect ratio lock is enabled
+      if (lockAspect && (handle === "nw" || handle === "ne" || handle === "se" || handle === "sw")) {
+        nextH = Math.max(24, Math.round(nextW / initialAspect));
+      }
+
       onUpdateCanvas((prev) => {
         if (dragOp.isEmbed) {
+          const nextTransform: CanvasTransform = {
+            ...dragOp.initialTransform,
+            x: nextX,
+            y: nextY,
+            width: nextW,
+            height: nextH,
+          };
+
+          // Scale children according to configured scalingMode (hybrid, proportional, adaptive)
+          const currentChildren = prev.elements.filter((el) => el.parentEmbedId === dragOp.targetId);
+          const scaledChildren = scaleEmbedChildren(
+            currentChildren,
+            dragOp.initialTransform,
+            nextTransform,
+            scalingMode
+          );
+
+          const updatedElements = prev.elements.map((el) => {
+            const scaled = scaledChildren.find((sc) => sc.id === el.id);
+            return scaled || el;
+          });
+
           return {
             ...prev,
             embeds: prev.embeds.map((em) =>
-              em.id === dragOp.targetId
-                ? {
-                    ...em,
-                    transform: {
-                      ...em.transform,
-                      x: nextX,
-                      y: nextY,
-                      width: nextW,
-                      height: nextH,
-                    },
-                  }
-                : em
+              em.id === dragOp.targetId ? { ...em, transform: nextTransform } : em
             ),
+            elements: updatedElements,
           };
         } else {
           return {
@@ -484,7 +689,7 @@ export function CanvasEngine({
   const handlePointerUp = (e: React.PointerEvent) => {
     if (dragOp) {
       setDragOp(null);
-      setGuideLines({});
+      setActiveGuides([]);
       try {
         (e.target as HTMLElement).releasePointerCapture(e.pointerId);
       } catch {
@@ -499,18 +704,60 @@ export function CanvasEngine({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onClick={(e) => {
-        // Deselect if clicking on empty canvas
+        // Deselect if clicking on empty preview canvas
         if (e.target === e.currentTarget) {
+          setIsMoreMenuOpen(false);
           onSelectElement?.(null);
           onUpdateCanvas((prev) => ({ ...prev, selectedId: null, selectedIds: [] }));
         }
       }}
       className="relative w-full h-full flex flex-col items-center justify-start select-none"
     >
+      {/* Visual Alignment Grid Overlay if Enabled */}
+      {isInteractive && gridSettings?.showGrid && (
+        <div
+          className="absolute inset-0 pointer-events-none z-0 opacity-15"
+          style={{
+            backgroundImage: `linear-gradient(to right, #38bdf8 1px, transparent 1px), linear-gradient(to bottom, #38bdf8 1px, transparent 1px)`,
+            backgroundSize: `${gridSettings.gridSize}px ${gridSettings.gridSize}px`,
+          }}
+        />
+      )}
+
+      {/* Dynamic Smart Guide Lines (Horizontal & Vertical) */}
+      {isInteractive &&
+        activeGuides.map((guide, idx) =>
+          guide.type === "x" ? (
+            <div
+              key={`guide_x_${idx}`}
+              className="absolute top-0 bottom-0 w-[1px] bg-cyan-400 z-50 pointer-events-none shadow-[0_0_8px_#22d3ee]"
+              style={{ left: `${guide.position}px` }}
+            >
+              {guide.label && (
+                <span className="absolute top-2 left-1 bg-cyan-950/90 text-cyan-200 text-[8px] font-mono px-1 py-0.5 rounded border border-cyan-500/60 whitespace-nowrap">
+                  {guide.label}
+                </span>
+              )}
+            </div>
+          ) : (
+            <div
+              key={`guide_y_${idx}`}
+              className="absolute left-0 right-0 h-[1px] bg-cyan-400 z-50 pointer-events-none shadow-[0_0_8px_#22d3ee]"
+              style={{ top: `${guide.position}px` }}
+            >
+              {guide.label && (
+                <span className="absolute left-2 -top-4 bg-cyan-950/90 text-cyan-200 text-[8px] font-mono px-1 py-0.5 rounded border border-cyan-500/60 whitespace-nowrap">
+                  {guide.label}
+                </span>
+              )}
+            </div>
+          )
+        )}
+
       {/* Underlying Profile / Embed Hierarchy */}
       {children}
 
-      {/* Interactive Selection Bounding Box & 8 Resize Handles */}
+      {/* Interactive Selection Bounding Box, 8 Handles & Floating Toolbar */}
       {isInteractive && selectedItem && (
         <div
           className="absolute pointer-events-none z-50 transition-all duration-75"
@@ -523,100 +770,188 @@ export function CanvasEngine({
             transformOrigin: "center center",
           }}
         >
-          {/* Blue Figma-style selection bounding border */}
-          <div className="absolute inset-0 border-2 border-sky-400 rounded-sm shadow-sm" />
+          {/* Subtle Selection Outline with Soft Glow */}
+          <div
+            className={`absolute inset-0 rounded-sm border-2 ${
+              isSelectedEmbed ? "border-amber-400" : "border-sky-400"
+            }`}
+            style={{
+              boxShadow: isSelectedEmbed
+                ? "0 0 16px rgba(251, 191, 36, 0.45), inset 0 0 8px rgba(251, 191, 36, 0.15)"
+                : "0 0 16px rgba(56, 189, 248, 0.45), inset 0 0 8px rgba(56, 189, 248, 0.15)",
+            }}
+          />
+
+          {/* Contextual Floating Selection Toolbar */}
+          <SelectionToolbar
+            title={isSelectedEmbed ? (selectedItem as CanvasEmbed).title : (selectedItem as CanvasElement).name}
+            isEmbed={isSelectedEmbed}
+            isLocked={Boolean(selectedItem.isLocked || selectedItem.transform.lockType !== "none")}
+            lockType={selectedItem.transform.lockType || (selectedItem.isLocked ? "full" : "none")}
+            onToggleLock={toggleLockSelected}
+            onSetLockType={setLockTypeSelected}
+            onDuplicate={duplicateSelected}
+            onDelete={deleteSelected}
+            onToggleMoreMenu={() => setIsMoreMenuOpen((prev) => !prev)}
+            isMoreMenuOpen={isMoreMenuOpen}
+          />
+
+          {/* Inline Three-Dot More Options Menu (PHASE 7) */}
+          {isMoreMenuOpen && (
+            <SelectedObjectMenu
+              item={selectedItem}
+              isEmbed={isSelectedEmbed}
+              onUpdateTransform={(t) => {
+                onUpdateCanvas((prev) => {
+                  const id = selectedItem.id;
+                  if (isSelectedEmbed) {
+                    return {
+                      ...prev,
+                      embeds: prev.embeds.map((em) =>
+                        em.id === id ? { ...em, transform: { ...em.transform, ...t } } : em
+                      ),
+                    };
+                  } else {
+                    return {
+                      ...prev,
+                      elements: prev.elements.map((el) =>
+                        el.id === id ? { ...el, transform: { ...el.transform, ...t } } : el
+                      ),
+                    };
+                  }
+                });
+              }}
+              onUpdateStyle={(s) => {
+                onUpdateCanvas((prev) => {
+                  const id = selectedItem.id;
+                  if (isSelectedEmbed) {
+                    return {
+                      ...prev,
+                      embeds: prev.embeds.map((em) =>
+                        em.id === id ? { ...em, style: { ...em.style, ...s } } : em
+                      ),
+                    };
+                  } else {
+                    return {
+                      ...prev,
+                      elements: prev.elements.map((el) =>
+                        el.id === id ? { ...el, style: { ...(el.style || {}), ...s } } : el
+                      ),
+                    };
+                  }
+                });
+              }}
+              onUpdateProps={(p) => {
+                if (!isSelectedEmbed) {
+                  onUpdateCanvas((prev) => ({
+                    ...prev,
+                    elements: prev.elements.map((el) =>
+                      el.id === selectedItem.id
+                        ? { ...el, props: { ...(el.props || {}), ...p } }
+                        : el
+                    ),
+                  }));
+                }
+              }}
+              onUpdateVisibility={(vis) => {
+                onUpdateCanvas((prev) => {
+                  const id = selectedItem.id;
+                  if (isSelectedEmbed) {
+                    return {
+                      ...prev,
+                      embeds: prev.embeds.map((em) => (em.id === id ? { ...em, isVisible: vis } : em)),
+                    };
+                  } else {
+                    return {
+                      ...prev,
+                      elements: prev.elements.map((el) => (el.id === id ? { ...el, isVisible: vis } : el)),
+                    };
+                  }
+                });
+              }}
+              onClose={() => setIsMoreMenuOpen(false)}
+            />
+          )}
 
           {/* Dimension Tag */}
-          <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-sky-500 text-black text-[9px] font-bold font-mono px-2 py-0.5 rounded shadow pointer-events-none whitespace-nowrap">
-            {Math.round(selectedItem.transform.width)} × {Math.round(selectedItem.transform.height)}
-            {selectedItem.transform.rotation ? ` (${selectedItem.transform.rotation}°)` : ""}
+          <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-neutral-900 border border-neutral-700 text-sky-300 text-[9px] font-bold font-mono px-2 py-0.5 rounded shadow-lg pointer-events-none whitespace-nowrap flex items-center gap-1">
+            <span>
+              {Math.round(selectedItem.transform.width)} × {Math.round(selectedItem.transform.height)}
+            </span>
+            {selectedItem.transform.rotation ? (
+              <span className="text-neutral-400">({selectedItem.transform.rotation}°)</span>
+            ) : null}
+            {isAltPressed && (
+              <span className="bg-sky-500/20 text-sky-400 px-1 rounded text-[8px]">
+                FINE ({modifierKey})
+              </span>
+            )}
           </div>
 
-          {/* Move Handle Bar on Top */}
+          {/* Move Drag Surface (Title bar) */}
           <div
             onPointerDown={(e) => startMove(e, selectedItem.id, isSelectedEmbed)}
-            className="absolute -top-7 left-0 right-0 h-6 flex items-center justify-between px-2 bg-sky-950/90 border border-sky-500/80 rounded text-sky-200 text-[10px] font-mono cursor-move pointer-events-auto"
-          >
-            <span className="flex items-center gap-1 font-bold truncate">
-              <Move size={11} />
-              {isSelectedEmbed ? (selectedItem as CanvasEmbed).title : (selectedItem as CanvasElement).name}
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  duplicateSelected();
-                }}
-                title="Duplicate (Ctrl+D)"
-                className="p-1 hover:text-white"
-              >
-                <Copy size={11} />
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteSelected();
-                }}
-                title="Delete"
-                className="p-1 hover:text-rose-400"
-              >
-                <Trash2 size={11} />
-              </button>
-            </div>
-          </div>
+            title="Click & Drag to Move"
+            className="absolute inset-0 cursor-move pointer-events-auto opacity-0"
+          />
 
-          {/* Rotation Handle with Guide Stem */}
-          <div className="absolute -top-12 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-auto">
+          {/* Rotation Handle with Stem */}
+          <div className="absolute -top-16 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-auto">
             <div
               onPointerDown={startRotate}
-              title="Drag to Rotate"
+              title="Drag to Rotate (0-360°)"
               className="w-5 h-5 rounded-full bg-white border-2 border-sky-500 shadow-md flex items-center justify-center cursor-grab active:cursor-grabbing text-sky-600 hover:scale-110 transition-transform"
             >
               <RotateCw size={11} />
             </div>
-            <div className="w-0.5 h-7 bg-sky-400" />
+            <div className="w-0.5 h-6 bg-sky-400" />
           </div>
 
           {/* 4 Corner Resize Handles */}
           <div
             onPointerDown={(e) => startResize(e, "nw")}
+            title="Resize (NW)"
             className="absolute -top-1.5 -left-1.5 w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-sm cursor-nwse-resize pointer-events-auto shadow hover:scale-125 transition-transform"
           />
           <div
             onPointerDown={(e) => startResize(e, "ne")}
+            title="Resize (NE)"
             className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-sm cursor-nesw-resize pointer-events-auto shadow hover:scale-125 transition-transform"
           />
           <div
             onPointerDown={(e) => startResize(e, "se")}
+            title="Resize (SE)"
             className="absolute -bottom-1.5 -right-1.5 w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-sm cursor-nwse-resize pointer-events-auto shadow hover:scale-125 transition-transform"
           />
           <div
             onPointerDown={(e) => startResize(e, "sw")}
+            title="Resize (SW)"
             className="absolute -bottom-1.5 -left-1.5 w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-sm cursor-nesw-resize pointer-events-auto shadow hover:scale-125 transition-transform"
           />
 
           {/* 4 Edge Resize Handles */}
           <div
             onPointerDown={(e) => startResize(e, "n")}
-            className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-sky-500 rounded-sm cursor-ns-resize pointer-events-auto shadow hover:scale-125 transition-transform"
+            title="Resize Height (North)"
+            className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-sm cursor-ns-resize pointer-events-auto shadow hover:scale-125 transition-transform"
           />
           <div
             onPointerDown={(e) => startResize(e, "s")}
-            className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-sky-500 rounded-sm cursor-ns-resize pointer-events-auto shadow hover:scale-125 transition-transform"
+            title="Resize Height (South)"
+            className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-sm cursor-ns-resize pointer-events-auto shadow hover:scale-125 transition-transform"
           />
           <div
             onPointerDown={(e) => startResize(e, "w")}
-            className="absolute top-1/2 -left-1.5 -translate-y-1/2 w-3 h-3 bg-white border-2 border-sky-500 rounded-sm cursor-ew-resize pointer-events-auto shadow hover:scale-125 transition-transform"
+            title="Resize Width (West)"
+            className="absolute top-1/2 -left-1.5 -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-sm cursor-ew-resize pointer-events-auto shadow hover:scale-125 transition-transform"
           />
           <div
             onPointerDown={(e) => startResize(e, "e")}
-            className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 bg-white border-2 border-sky-500 rounded-sm cursor-ew-resize pointer-events-auto shadow hover:scale-125 transition-transform"
+            title="Resize Width (East)"
+            className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-sm cursor-ew-resize pointer-events-auto shadow hover:scale-125 transition-transform"
           />
         </div>
       )}
     </div>
   );
 }
-

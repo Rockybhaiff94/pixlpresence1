@@ -22,10 +22,13 @@ import {
   FileCode,
   PanelLeftClose,
   X,
+  Grid,
+  Command,
 } from "lucide-react";
 import {
   ProfileDesignConfig,
   DEFAULT_DESIGN_CONFIG,
+  DEFAULT_GRID_SETTINGS,
   StudioTab,
   WorkspaceTransparencyMode,
   LayoutPreset,
@@ -1913,8 +1916,324 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                     ADVANCED WORKSPACE SETTINGS
                   </h3>
                   <p className="text-neutral-400 text-[11px] pt-0.5">
-                    Wireframe guides, platform badges, watermark toggles, and JSON import/export.
+                    Wireframe guides, platform badges, scaling engines, precision modifiers, and smart grid settings.
                   </p>
+                </div>
+
+                {/* EMBED RESPONSIVE SCALING SYSTEM */}
+                <div className="p-4 rounded-xl border border-neutral-800 bg-[#101012] space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-white font-semibold text-xs flex items-center gap-2">
+                        <Sliders size={14} className="text-sky-400" /> Embed Responsive Scaling Mode
+                      </span>
+                      <p className="text-[10px] text-neutral-500 pt-0.5">
+                        Controls how child elements react when the parent embed is resized.
+                      </p>
+                    </div>
+                    <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-sky-950/80 border border-sky-500/40 text-sky-300 font-mono">
+                      {config.advanced?.embedScaling || "hybrid"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["hybrid", "proportional", "adaptive"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() =>
+                          updateConfig((prev) => ({
+                            ...prev,
+                            advanced: {
+                              ...DEFAULT_DESIGN_CONFIG.advanced,
+                              ...(prev.advanced || {}),
+                              embedScaling: mode,
+                            },
+                          }))
+                        }
+                        className={`p-2.5 rounded-lg border text-left transition-all ${
+                          (config.advanced?.embedScaling || "hybrid") === mode
+                            ? "border-sky-500 bg-sky-950/30 text-white"
+                            : "border-neutral-800 bg-neutral-900/60 text-neutral-400 hover:text-white"
+                        }`}
+                      >
+                        <div className="font-bold text-[11px] capitalize">{mode}</div>
+                        <div className="text-[9px] text-neutral-500 mt-1">
+                          {mode === "hybrid"
+                            ? "Proportional then adaptive (Recommended)"
+                            : mode === "proportional"
+                            ? "Scales all children uniformly"
+                            : "Clamps and wraps inside bounds"}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ALT-DRAG PRECISION EDITING & CUSTOM KEYBIND */}
+                <div className="p-4 rounded-xl border border-neutral-800 bg-[#101012] space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-white font-semibold text-xs flex items-center gap-2">
+                        <Command size={14} className="text-amber-400" /> Precision Dragging & Fine Adjustment
+                      </span>
+                      <p className="text-[10px] text-neutral-500 pt-0.5">
+                        Hold modifier key during drag or resize for 0.2x micro-adjustments.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateConfig((prev) => ({
+                          ...prev,
+                          advanced: {
+                            ...DEFAULT_DESIGN_CONFIG.advanced,
+                            ...(prev.advanced || {}),
+                            precisionModifierEnabled: !(prev.advanced?.precisionModifierEnabled ?? true),
+                          },
+                        }))
+                      }
+                      className={`px-3 py-1 rounded text-xs font-bold transition-colors ${
+                        (config.advanced?.precisionModifierEnabled ?? true)
+                          ? "bg-amber-400 text-black"
+                          : "bg-neutral-800 text-neutral-400"
+                      }`}
+                    >
+                      {(config.advanced?.precisionModifierEnabled ?? true) ? "ENABLED" : "DISABLED"}
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-neutral-400">Modifier Keybind</label>
+                      <select
+                        value={config.advanced?.precisionModifier || "Alt"}
+                        onChange={(e) =>
+                          updateConfig((prev) => ({
+                            ...prev,
+                            advanced: {
+                              ...DEFAULT_DESIGN_CONFIG.advanced,
+                              ...(prev.advanced || {}),
+                              precisionModifier: e.target.value as any,
+                            },
+                          }))
+                        }
+                        className="w-full bg-neutral-900 border border-neutral-700 rounded px-2.5 py-1.5 text-xs text-white"
+                      >
+                        <option value="Alt">Alt Key (Default Recommended)</option>
+                        <option value="Control">Control Key (Ctrl)</option>
+                        <option value="Shift">Shift Key</option>
+                        <option value="Meta">Meta Key (Cmd / Windows)</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateConfig((prev) => ({
+                            ...prev,
+                            advanced: {
+                              ...DEFAULT_DESIGN_CONFIG.advanced,
+                              ...(prev.advanced || {}),
+                              precisionModifier: "Alt",
+                              precisionModifierEnabled: true,
+                            },
+                          }))
+                        }
+                        className="w-full py-1.5 px-3 rounded border border-neutral-700 bg-neutral-900 text-neutral-300 hover:text-white text-xs font-mono transition-colors"
+                      >
+                        Reset to Default (Alt)
+                      </button>
+                    </div>
+                  </div>
+
+                  {(config.advanced?.precisionModifier === "Control" || config.advanced?.precisionModifier === "Meta") && (
+                    <div className="p-2 rounded bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[10px] flex items-center gap-1.5">
+                      <AlertCircle size={12} className="shrink-0" />
+                      <span>Note: Using {config.advanced?.precisionModifier} may conflict with browser default tabs or shortcuts.</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* SMART GRID & ALIGNMENT SYSTEM */}
+                <div className="p-4 rounded-xl border border-neutral-800 bg-[#101012] space-y-4">
+                  <div>
+                    <span className="text-white font-semibold text-xs flex items-center gap-2">
+                      <Grid size={14} className="text-cyan-400" /> Smart Grid & Alignment Guides
+                    </span>
+                    <p className="text-[10px] text-neutral-500 pt-0.5">
+                      Snapping, dynamic alignment guide lines, and visual spacing guides.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateConfig((prev) => ({
+                          ...prev,
+                          advanced: {
+                            ...DEFAULT_DESIGN_CONFIG.advanced,
+                            ...(prev.advanced || {}),
+                            gridSettings: {
+                              ...(prev.advanced?.gridSettings || DEFAULT_GRID_SETTINGS),
+                              showGrid: !(prev.advanced?.gridSettings?.showGrid ?? false),
+                            },
+                          },
+                        }))
+                      }
+                      className={`p-2.5 rounded-lg border text-left transition-colors ${
+                        config.advanced?.gridSettings?.showGrid
+                          ? "border-cyan-500 bg-cyan-950/30 text-cyan-200"
+                          : "border-neutral-800 bg-neutral-900/60 text-neutral-400"
+                      }`}
+                    >
+                      <div className="font-bold text-[11px]">Show Visual Grid</div>
+                      <div className="text-[9px] text-neutral-500">
+                        {config.advanced?.gridSettings?.showGrid ? "Overlay active" : "Hidden"}
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateConfig((prev) => ({
+                          ...prev,
+                          advanced: {
+                            ...DEFAULT_DESIGN_CONFIG.advanced,
+                            ...(prev.advanced || {}),
+                            gridSettings: {
+                              ...(prev.advanced?.gridSettings || DEFAULT_GRID_SETTINGS),
+                              snapToGrid: !(prev.advanced?.gridSettings?.snapToGrid ?? true),
+                            },
+                          },
+                        }))
+                      }
+                      className={`p-2.5 rounded-lg border text-left transition-colors ${
+                        (config.advanced?.gridSettings?.snapToGrid ?? true)
+                          ? "border-cyan-500 bg-cyan-950/30 text-cyan-200"
+                          : "border-neutral-800 bg-neutral-900/60 text-neutral-400"
+                      }`}
+                    >
+                      <div className="font-bold text-[11px]">Snap to Grid</div>
+                      <div className="text-[9px] text-neutral-500">
+                        {(config.advanced?.gridSettings?.snapToGrid ?? true) ? "Active" : "Free position"}
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateConfig((prev) => ({
+                          ...prev,
+                          advanced: {
+                            ...DEFAULT_DESIGN_CONFIG.advanced,
+                            ...(prev.advanced || {}),
+                            gridSettings: {
+                              ...(prev.advanced?.gridSettings || DEFAULT_GRID_SETTINGS),
+                              smartGuides: !(prev.advanced?.gridSettings?.smartGuides ?? true),
+                            },
+                          },
+                        }))
+                      }
+                      className={`p-2.5 rounded-lg border text-left transition-colors ${
+                        (config.advanced?.gridSettings?.smartGuides ?? true)
+                          ? "border-cyan-500 bg-cyan-950/30 text-cyan-200"
+                          : "border-neutral-800 bg-neutral-900/60 text-neutral-400"
+                      }`}
+                    >
+                      <div className="font-bold text-[11px]">Smart Guides</div>
+                      <div className="text-[9px] text-neutral-500">Center & edge lines</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateConfig((prev) => ({
+                          ...prev,
+                          advanced: {
+                            ...DEFAULT_DESIGN_CONFIG.advanced,
+                            ...(prev.advanced || {}),
+                            gridSettings: {
+                              ...(prev.advanced?.gridSettings || DEFAULT_GRID_SETTINGS),
+                              snapToElements: !(prev.advanced?.gridSettings?.snapToElements ?? true),
+                            },
+                          },
+                        }))
+                      }
+                      className={`p-2.5 rounded-lg border text-left transition-colors ${
+                        (config.advanced?.gridSettings?.snapToElements ?? true)
+                          ? "border-cyan-500 bg-cyan-950/30 text-cyan-200"
+                          : "border-neutral-800 bg-neutral-900/60 text-neutral-400"
+                      }`}
+                    >
+                      <div className="font-bold text-[11px]">Snap to Elements</div>
+                      <div className="text-[9px] text-neutral-500">Align with siblings</div>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] text-neutral-400">
+                        <span>Grid Size</span>
+                        <span className="font-mono text-cyan-300">
+                          {config.advanced?.gridSettings?.gridSize ?? 16}px
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={8}
+                        max={32}
+                        step={4}
+                        value={config.advanced?.gridSettings?.gridSize ?? 16}
+                        onChange={(e) =>
+                          updateConfig((prev) => ({
+                            ...prev,
+                            advanced: {
+                              ...DEFAULT_DESIGN_CONFIG.advanced,
+                              ...(prev.advanced || {}),
+                              gridSettings: {
+                                ...(prev.advanced?.gridSettings || DEFAULT_GRID_SETTINGS),
+                                gridSize: Number(e.target.value),
+                              },
+                            },
+                          }))
+                        }
+                        className="w-full accent-cyan-400"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] text-neutral-400">
+                        <span>Snap Sensitivity</span>
+                        <span className="font-mono text-cyan-300">
+                          {config.advanced?.gridSettings?.snapSensitivity ?? 6}px
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={2}
+                        max={16}
+                        step={1}
+                        value={config.advanced?.gridSettings?.snapSensitivity ?? 6}
+                        onChange={(e) =>
+                          updateConfig((prev) => ({
+                            ...prev,
+                            advanced: {
+                              ...DEFAULT_DESIGN_CONFIG.advanced,
+                              ...(prev.advanced || {}),
+                              gridSettings: {
+                                ...(prev.advanced?.gridSettings || DEFAULT_GRID_SETTINGS),
+                                snapSensitivity: Number(e.target.value),
+                              },
+                            },
+                          }))
+                        }
+                        className="w-full accent-cyan-400"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -9,7 +9,18 @@ import {
 import { PreviewData } from "./StudioProfilePreview";
 import { DiscordRpcCard } from "./DiscordRpcCard";
 import { PlatformIcon } from "@/components/links/PlatformIcons";
-import { ExternalLink, Sparkles, User, Flame } from "lucide-react";
+import {
+  ExternalLink,
+  Sparkles,
+  User,
+  Flame,
+  BadgeCheck,
+  Music,
+  Plus,
+  Play,
+  Share2,
+  Tv,
+} from "lucide-react";
 
 interface CanvasObjectRendererProps {
   embeds: CanvasEmbed[];
@@ -20,6 +31,7 @@ interface CanvasObjectRendererProps {
   selectedId?: string | null;
   onSelectElement?: (id: string) => void;
   onPointerDownElement?: (e: React.PointerEvent, id: string, isEmbed: boolean) => void;
+  onOpenComponentLibrary?: (parentEmbedId: string) => void;
 }
 
 export function CanvasObjectRenderer({
@@ -31,6 +43,7 @@ export function CanvasObjectRenderer({
   selectedId,
   onSelectElement,
   onPointerDownElement,
+  onOpenComponentLibrary,
 }: CanvasObjectRendererProps) {
   const {
     username,
@@ -56,7 +69,8 @@ export function CanvasObjectRenderer({
       transform: `rotate(${transform.rotation || 0}deg)`,
       zIndex: transform.zIndex || 2,
       cursor: isInteractive ? "pointer" : "default",
-      transition: "outline 0.15s ease",
+      transition: "all 0.15s ease",
+      boxShadow: isSelected ? "0 0 14px rgba(56, 189, 248, 0.45)" : undefined,
     };
 
     const handleClick = (e: React.MouseEvent) => {
@@ -69,6 +83,12 @@ export function CanvasObjectRenderer({
       if (!isInteractive) return;
       onPointerDownElement?.(e, el.id, false);
     };
+
+    const outlineClasses = isSelected
+      ? "ring-2 ring-sky-400"
+      : isInteractive
+      ? "hover:ring-1 hover:ring-white/40"
+      : "";
 
     switch (el.type) {
       case "avatar": {
@@ -84,9 +104,7 @@ export function CanvasObjectRenderer({
             onClick={handleClick}
             onPointerDown={handlePointerDown}
             style={baseWrapperStyle}
-            className={`flex items-center justify-center p-1 rounded-2xl ${
-              isSelected ? "ring-2 ring-sky-400" : isInteractive ? "hover:ring-1 hover:ring-white/40" : ""
-            }`}
+            className={`flex items-center justify-center p-1 rounded-2xl ${outlineClasses}`}
           >
             <div
               className="relative overflow-hidden group shadow-xl"
@@ -121,8 +139,9 @@ export function CanvasObjectRenderer({
         );
       }
 
+      case "displayName":
       case "username": {
-        const text = el.props?.text || displayName || username;
+        const text = el.props?.text || (el.type === "displayName" ? displayName : username);
         const fontColor = el.style?.color || config.identity.titleColor || "#ffffff";
         const gradient = el.style?.gradientBorder;
 
@@ -132,9 +151,7 @@ export function CanvasObjectRenderer({
             onClick={handleClick}
             onPointerDown={handlePointerDown}
             style={baseWrapperStyle}
-            className={`flex items-center justify-center py-1 px-2 ${
-              isSelected ? "ring-2 ring-sky-400" : isInteractive ? "hover:ring-1 hover:ring-white/40" : ""
-            }`}
+            className={`flex items-center justify-center py-1 px-2 ${outlineClasses}`}
           >
             <h1
               className="font-bold tracking-tight select-none text-center truncate max-w-full"
@@ -157,8 +174,34 @@ export function CanvasObjectRenderer({
         );
       }
 
+      case "title":
+      case "heading": {
+        const titleText = el.props?.text ?? "Heading Title";
+        return (
+          <div
+            key={el.id}
+            onClick={handleClick}
+            onPointerDown={handlePointerDown}
+            style={baseWrapperStyle}
+            className={`flex items-center justify-center py-1 px-2 ${outlineClasses}`}
+          >
+            <h2
+              className="font-bold tracking-tight select-none text-center truncate max-w-full"
+              style={{
+                fontSize: `${el.style?.fontSize || 20}px`,
+                fontWeight: el.style?.fontWeight || 600,
+                color: el.style?.color || "#ffffff",
+                fontFamily: el.style?.fontFamily || "Space Grotesk",
+              }}
+            >
+              {titleText}
+            </h2>
+          </div>
+        );
+      }
+
+      case "subtitle":
       case "tagline": {
-        // Tagline is now a completely customizable text element (not hardcoded)
         const taglineText = el.props?.text ?? "Digital Identity // Nothing OS";
         return (
           <div
@@ -166,9 +209,7 @@ export function CanvasObjectRenderer({
             onClick={handleClick}
             onPointerDown={handlePointerDown}
             style={baseWrapperStyle}
-            className={`flex items-center justify-center py-0.5 px-2 ${
-              isSelected ? "ring-2 ring-sky-400" : isInteractive ? "hover:ring-1 hover:ring-white/40" : ""
-            }`}
+            className={`flex items-center justify-center py-0.5 px-2 ${outlineClasses}`}
           >
             <span
               className="text-xs uppercase tracking-wider select-none text-center truncate max-w-full"
@@ -185,8 +226,9 @@ export function CanvasObjectRenderer({
         );
       }
 
-      case "bio": {
-        const bioText = el.props?.text ?? bio;
+      case "bio":
+      case "description": {
+        const bioText = el.props?.text ?? (el.type === "bio" ? bio : "Description text...");
         if (!bioText && !isInteractive) return null;
 
         return (
@@ -195,9 +237,7 @@ export function CanvasObjectRenderer({
             onClick={handleClick}
             onPointerDown={handlePointerDown}
             style={baseWrapperStyle}
-            className={`p-2.5 rounded-xl transition-all ${
-              isSelected ? "ring-2 ring-sky-400" : isInteractive ? "hover:ring-1 hover:ring-white/40" : ""
-            }`}
+            className={`p-2.5 rounded-xl transition-all ${outlineClasses}`}
           >
             <p
               className="text-xs leading-relaxed select-none text-center whitespace-pre-line"
@@ -213,6 +253,23 @@ export function CanvasObjectRenderer({
         );
       }
 
+      case "verificationBadge": {
+        return (
+          <div
+            key={el.id}
+            onClick={handleClick}
+            onPointerDown={handlePointerDown}
+            style={baseWrapperStyle}
+            className={`flex items-center justify-center ${outlineClasses}`}
+          >
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/15 border border-sky-500/40 text-sky-400 text-[10px] font-bold font-mono">
+              <BadgeCheck size={12} className="shrink-0" />
+              VERIFIED
+            </span>
+          </div>
+        );
+      }
+
       case "rpc": {
         if (!config.discordRpc?.showProfileRpc && !isInteractive) return null;
 
@@ -222,9 +279,7 @@ export function CanvasObjectRenderer({
             onClick={handleClick}
             onPointerDown={handlePointerDown}
             style={baseWrapperStyle}
-            className={`w-full ${
-              isSelected ? "ring-2 ring-sky-400 rounded-2xl" : isInteractive ? "hover:ring-1 hover:ring-white/40 rounded-2xl" : ""
-            }`}
+            className={`w-full ${outlineClasses}`}
           >
             <DiscordRpcCard
               config={config.discordRpc}
@@ -246,9 +301,7 @@ export function CanvasObjectRenderer({
             onClick={handleClick}
             onPointerDown={handlePointerDown}
             style={baseWrapperStyle}
-            className={`w-full space-y-2.5 p-1 ${
-              isSelected ? "ring-2 ring-sky-400 rounded-2xl" : isInteractive ? "hover:ring-1 hover:ring-white/40 rounded-2xl" : ""
-            }`}
+            className={`w-full space-y-2.5 p-1 ${outlineClasses}`}
           >
             {buttonList.map((btn) => (
               <a
@@ -287,9 +340,7 @@ export function CanvasObjectRenderer({
             onClick={handleClick}
             onPointerDown={handlePointerDown}
             style={baseWrapperStyle}
-            className={`w-full flex items-center justify-center gap-3 py-2 flex-wrap ${
-              isSelected ? "ring-2 ring-sky-400 rounded-xl" : isInteractive ? "hover:ring-1 hover:ring-white/40 rounded-xl" : ""
-            }`}
+            className={`w-full flex items-center justify-center gap-3 py-2 flex-wrap ${outlineClasses}`}
           >
             {(socialLinks.length > 0
               ? socialLinks
@@ -303,26 +354,54 @@ export function CanvasObjectRenderer({
                 onClick={(e) => {
                   if (isInteractive) e.preventDefault();
                 }}
-                className="w-9 h-9 rounded-full bg-[#141416] border border-neutral-800 flex items-center justify-center text-neutral-400 hover:text-white hover:border-neutral-600 transition-all shadow-sm"
+                className="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white hover:border-neutral-700 transition-all shadow flex items-center justify-center"
               >
-                <PlatformIcon id={(link as any).icon || link.label} className="w-4 h-4 shrink-0" />
+                <PlatformIcon id={link.label.toLowerCase()} className="w-4 h-4" />
               </a>
             ))}
           </div>
         );
       }
 
-      case "image": {
-        const src = el.props?.imageUrl || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500";
+      case "music": {
+        const trackTitle = el.props?.title || "Track Title - Artist";
         return (
           <div
             key={el.id}
             onClick={handleClick}
             onPointerDown={handlePointerDown}
             style={baseWrapperStyle}
-            className={`overflow-hidden rounded-xl shadow-lg ${
-              isSelected ? "ring-2 ring-sky-400" : isInteractive ? "hover:ring-1 hover:ring-white/40" : ""
-            }`}
+            className={`w-full p-3 rounded-xl bg-[#121216] border border-neutral-800 flex items-center justify-between gap-3 ${outlineClasses}`}
+          >
+            <div className="flex items-center gap-2.5 truncate">
+              <div className="w-8 h-8 rounded-lg bg-sky-500/20 border border-sky-500/40 flex items-center justify-center text-sky-400 shrink-0">
+                <Music size={14} />
+              </div>
+              <div className="truncate">
+                <p className="text-xs font-bold text-white truncate">{trackTitle}</p>
+                <p className="text-[10px] text-neutral-400">Audio Player // Studio</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="w-7 h-7 rounded-full bg-white text-black flex items-center justify-center shadow hover:scale-105 transition-transform shrink-0"
+            >
+              <Play size={11} className="fill-current ml-0.5" />
+            </button>
+          </div>
+        );
+      }
+
+      case "image":
+      case "thumbnail": {
+        const src = el.props?.src || "/placeholder.png";
+        return (
+          <div
+            key={el.id}
+            onClick={handleClick}
+            onPointerDown={handlePointerDown}
+            style={baseWrapperStyle}
+            className={`overflow-hidden rounded-xl shadow-lg ${outlineClasses}`}
           >
             <img
               src={src}
@@ -344,9 +423,7 @@ export function CanvasObjectRenderer({
             onClick={handleClick}
             onPointerDown={handlePointerDown}
             style={baseWrapperStyle}
-            className={`p-2 rounded-lg ${
-              isSelected ? "ring-2 ring-sky-400" : isInteractive ? "hover:ring-1 hover:ring-white/40" : ""
-            }`}
+            className={`p-2 rounded-lg ${outlineClasses}`}
           >
             <p
               className="select-none leading-relaxed"
@@ -371,9 +448,7 @@ export function CanvasObjectRenderer({
             onClick={handleClick}
             onPointerDown={handlePointerDown}
             style={baseWrapperStyle}
-            className={`flex items-center justify-center py-2 ${
-              isSelected ? "ring-2 ring-sky-400 rounded" : isInteractive ? "hover:ring-1 hover:ring-white/40 rounded" : ""
-            }`}
+            className={`flex items-center justify-center py-2 ${outlineClasses}`}
           >
             <div
               className="w-full h-[1px] bg-neutral-800"
@@ -393,9 +468,7 @@ export function CanvasObjectRenderer({
             onClick={handleClick}
             onPointerDown={handlePointerDown}
             style={baseWrapperStyle}
-            className={`flex items-center justify-center py-2 ${
-              isSelected ? "ring-2 ring-sky-400 rounded-full" : isInteractive ? "hover:ring-1 hover:ring-white/40 rounded-full" : ""
-            }`}
+            className={`flex items-center justify-center py-2 ${outlineClasses}`}
           >
             <div className="w-7 h-7 rounded-full bg-neutral-900 border border-neutral-700 flex items-center justify-center text-white text-[10px] font-bold shadow">
               {(displayName || username).slice(0, 1).toUpperCase()}
@@ -418,7 +491,6 @@ export function CanvasObjectRenderer({
       {embeds.map((embed) => {
         if (embed.isVisible === false) return null;
         const isEmbedSelected = isInteractive && selectedId === embed.id;
-
         const embedChildren = elements.filter((el) => el.parentEmbedId === embed.id);
 
         return (
@@ -442,7 +514,9 @@ export function CanvasObjectRenderer({
               borderWidth: `${embed.style.borderWidth ?? 1}px`,
               borderRadius: `${embed.style.borderRadius ?? 24}px`,
               padding: `${embed.style.padding ?? 28}px`,
-              boxShadow: embed.style.shadowBlur
+              boxShadow: isEmbedSelected
+                ? "0 0 20px rgba(251, 191, 36, 0.45)"
+                : embed.style.shadowBlur
                 ? `0 12px ${embed.style.shadowBlur}px ${embed.style.shadowColor || "rgba(0,0,0,0.5)"}`
                 : undefined,
               backdropFilter: embed.style.backdropBlur ? `blur(${embed.style.backdropBlur}px)` : undefined,
@@ -450,7 +524,7 @@ export function CanvasObjectRenderer({
             }}
             className={`relative flex flex-col items-center justify-center gap-4 transition-all ${
               isEmbedSelected
-                ? "ring-2 ring-sky-400"
+                ? "ring-2 ring-amber-400"
                 : isInteractive
                 ? "hover:ring-1 hover:ring-white/30"
                 : ""
@@ -461,6 +535,27 @@ export function CanvasObjectRenderer({
               <div className="w-full flex items-center justify-between text-[10px] text-neutral-500 font-mono pb-1 border-b border-neutral-800/60">
                 <span className="font-bold uppercase tracking-wider text-neutral-400">{embed.title}</span>
                 <span className="text-neutral-600">// EMBED</span>
+              </div>
+            )}
+
+            {/* Empty Embed Canvas State with "+ Add Component" */}
+            {embedChildren.length === 0 && isInteractive && (
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenComponentLibrary?.(embed.id);
+                }}
+                className="w-full py-10 px-4 rounded-xl border-2 border-dashed border-neutral-700/60 hover:border-sky-400/80 bg-neutral-900/30 hover:bg-sky-950/20 text-neutral-400 hover:text-sky-300 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all group"
+              >
+                <div className="w-9 h-9 rounded-full bg-neutral-800 group-hover:bg-sky-500/20 border border-neutral-700 group-hover:border-sky-400/60 flex items-center justify-center text-white group-hover:text-sky-400 shadow transition-all">
+                  <Plus size={16} />
+                </div>
+                <span className="text-xs font-bold font-mono tracking-wide">
+                  EMPTY EMBED CANVAS
+                </span>
+                <span className="text-[10px] text-neutral-500 group-hover:text-neutral-400 text-center max-w-[240px]">
+                  Click to open the Component Library and add elements to this embed
+                </span>
               </div>
             )}
 
@@ -475,4 +570,3 @@ export function CanvasObjectRenderer({
     </div>
   );
 }
-

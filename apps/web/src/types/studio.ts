@@ -26,16 +26,48 @@ export type RpcImageSize = "small" | "medium" | "large";
 export type CanvasElementType =
   | "embed"
   | "avatar"
+  | "displayName"
   | "username"
   | "tagline"
   | "bio"
-  | "rpc"
-  | "button"
-  | "image"
+  | "title"
+  | "subtitle"
+  | "verificationBadge"
+  | "customBadges"
   | "text"
-  | "shape"
-  | "divider"
+  | "heading"
+  | "description"
+  | "authorText"
+  | "footerText"
+  | "timestamp"
+  | "fieldName"
+  | "fieldValue"
+  | "customLabels"
+  | "rpc"
+  | "discordArtwork"
+  | "discordActivity"
+  | "discordGameTitle"
+  | "discordActivityDesc"
+  | "discordParty"
+  | "discordTimestamps"
+  | "image"
+  | "thumbnail"
+  | "mediaGallery"
+  | "music"
+  | "videoBackground"
   | "socials"
+  | "socialIcon"
+  | "linkedAccount"
+  | "container"
+  | "section"
+  | "divider"
+  | "column"
+  | "row"
+  | "button"
+  | "actionRow"
+  | "selectMenu"
+  | "interactiveLink"
+  | "shape"
   | "bottomIcon";
 
 export interface CanvasTransform {
@@ -45,7 +77,40 @@ export interface CanvasTransform {
   height: number;
   rotation: number; // in deg (0-360)
   zIndex: number;
+  isLocked?: boolean;
+  lockType?: "none" | "position" | "size" | "full";
+  aspectRatioLocked?: boolean;
 }
+
+export type EmbedScalingMode = "hybrid" | "proportional" | "adaptive";
+
+export interface CanvasGridSettings {
+  showGrid: boolean;
+  gridSize: number; // 8, 10, 16, 20, 24, 32
+  snapToGrid: boolean;
+  smartGuides: boolean;
+  snapSensitivity: number; // 2 to 16 px
+  snapToElements: boolean;
+}
+
+export interface PrecisionKeySettings {
+  modifierKey: "Alt" | "Control" | "Shift" | "Meta";
+  enabled: boolean;
+}
+
+export const DEFAULT_GRID_SETTINGS: CanvasGridSettings = {
+  showGrid: false,
+  gridSize: 16,
+  snapToGrid: true,
+  smartGuides: true,
+  snapSensitivity: 6,
+  snapToElements: true,
+};
+
+export const DEFAULT_PRECISION_KEY_SETTINGS: PrecisionKeySettings = {
+  modifierKey: "Alt",
+  enabled: true,
+};
 
 export interface CanvasElementStyle {
   backgroundColor?: string;
@@ -101,6 +166,9 @@ export interface CanvasEngineState {
   selectedId: string | null;
   selectedIds: string[];
   activeEmbedId?: string | null;
+  scalingMode?: EmbedScalingMode;
+  gridSettings?: CanvasGridSettings;
+  precisionKey?: PrecisionKeySettings;
 }
 
 export type StudioTab =
@@ -234,6 +302,10 @@ export interface ProfileDesignConfig {
     customCursor?: boolean;
     watermark?: boolean;
     wireframeMode?: boolean;
+    embedScaling?: EmbedScalingMode;
+    precisionModifier?: "Alt" | "Control" | "Shift" | "Meta";
+    precisionModifierEnabled?: boolean;
+    gridSettings?: CanvasGridSettings;
   };
   customCss?: string;
   layers: StudioLayer[];
@@ -396,6 +468,50 @@ export function createDefaultCanvasState(cfg?: Partial<ProfileDesignConfig>): Ca
   };
 }
 
+/**
+ * Creates an empty modular embed canvas state for building from scratch.
+ * Starts with an empty embed container with zero elements.
+ */
+export function createEmptyCanvasState(cfg?: Partial<ProfileDesignConfig>): CanvasEngineState {
+  const primaryEmbedId = "embed_primary";
+  const maxWidth = cfg?.layout?.maxWidth || 580;
+
+  return {
+    embeds: [
+      {
+        id: primaryEmbedId,
+        title: "Modular Profile Embed",
+        transform: {
+          x: 0,
+          y: 0,
+          width: maxWidth,
+          height: 320,
+          rotation: 0,
+          zIndex: 1,
+        },
+        style: {
+          backgroundColor: "rgba(14, 14, 18, 0.85)",
+          borderColor: "#26262b",
+          borderWidth: 1,
+          borderRadius: 24,
+          opacity: 90,
+          shadowBlur: 20,
+          shadowColor: "rgba(0,0,0,0.5)",
+          blur: 12,
+          backdropBlur: 12,
+          padding: 28,
+        },
+        childrenIds: [],
+        isVisible: true,
+        isLocked: false,
+      },
+    ],
+    elements: [],
+    selectedId: null,
+    selectedIds: [],
+  };
+}
+
 export const DEFAULT_DESIGN_CONFIG: ProfileDesignConfig = {
   version: 2,
   mode: "studio",
@@ -503,6 +619,10 @@ export const DEFAULT_DESIGN_CONFIG: ProfileDesignConfig = {
     customCursor: false,
     watermark: true,
     wireframeMode: false,
+    embedScaling: "hybrid",
+    precisionModifier: "Alt",
+    precisionModifierEnabled: true,
+    gridSettings: DEFAULT_GRID_SETTINGS,
   },
   customCss: "",
   layers: [

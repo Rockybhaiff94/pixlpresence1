@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { DeviceMode } from "./StudioTopBar";
-import { ProfileDesignConfig, StudioTab, WorkspaceTransparencyMode, CanvasEngineState } from "@/types/studio";
+import { ProfileDesignConfig, StudioTab, WorkspaceTransparencyMode, CanvasEngineState, DEFAULT_GRID_SETTINGS } from "@/types/studio";
 import { StudioProfilePreview, PreviewData } from "./StudioProfilePreview";
 import { FloatingPreviewToolbar } from "./FloatingPreviewToolbar";
 import { CanvasEngine } from "./CanvasEngine";
@@ -37,6 +37,8 @@ interface StudioRightPreviewCanvasProps {
   onResetPanelSplit?: () => void;
   isFullscreenPreview?: boolean;
   onToggleFullscreenPreview?: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
 }
 
 export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> = ({
@@ -66,6 +68,8 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
   onResetPanelSplit,
   isFullscreenPreview = false,
   onToggleFullscreenPreview,
+  onUndo,
+  onRedo,
 }) => {
   const [internalZoom, setInternalZoom] = useState(100);
   const zoom = externalZoom !== undefined ? externalZoom : internalZoom;
@@ -227,6 +231,11 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
                   onUpdateCanvas={onUpdateCanvas}
                   zoom={zoom}
                   isInteractive={true}
+                  modifierKey={config.advanced?.precisionModifier || "Alt"}
+                  scalingMode={config.advanced?.embedScaling || "hybrid"}
+                  gridSettings={config.advanced?.gridSettings || DEFAULT_GRID_SETTINGS}
+                  onUndo={onUndo}
+                  onRedo={onRedo}
                   onSelectElement={(id) => {
                     onSelectCanvasId?.(id);
                     if (id) {

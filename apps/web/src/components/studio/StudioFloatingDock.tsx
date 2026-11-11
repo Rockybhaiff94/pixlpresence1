@@ -540,3 +540,4 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
     </div>
   );
 };
+

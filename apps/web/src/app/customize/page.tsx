@@ -848,6 +848,8 @@ export default function CustomizePage() {
                 setPanelBorderOpacity={setPanelBorderOpacity}
                 isEditorVisible={isSettingsOpen}
                 setIsEditorVisible={setIsSettingsOpen}
+                onUndo={handleUndo}
+                onRedo={handleRedo}
                 isPreviewVisible={true}
                 setIsPreviewVisible={() => {}}
                 onResetPanelSplit={handleResetPanelSplit}
