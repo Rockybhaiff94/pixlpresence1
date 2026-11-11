@@ -318,3 +318,4 @@ export function DiscordRpcCard({
     </div>
   );
 }
+
