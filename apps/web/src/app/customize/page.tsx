@@ -848,6 +848,7 @@ export default function CustomizePage() {
                 setPanelBorderOpacity={setPanelBorderOpacity}
                 isEditorVisible={isSettingsOpen}
                 setIsEditorVisible={setIsSettingsOpen}
+                isPremium={Boolean(user?.premiumStatus)}
                 onUndo={handleUndo}
                 onRedo={handleRedo}
                 isPreviewVisible={true}

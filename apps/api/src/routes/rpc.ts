@@ -687,14 +687,14 @@ rpcRouter.post('/upload', requireAuth, uploadRateLimiter, async (req: any, res) 
       return res.status(400).json({ error: validation.error || 'Invalid image file content.' });
     }
 
-    // Enforce 5 MB limit for GIFs
-    const MAX_GIF_BYTES = 5 * 1024 * 1024; // 5,242,880 bytes (~5 MB)
+    // Enforce 10 MB limit for GIFs and static images
+    const MAX_GIF_BYTES = 10 * 1024 * 1024; // 10,485,760 bytes (~10 MB)
     const MAX_STATIC_BYTES = 10 * 1024 * 1024; // 10 MB
 
     if (validation.mimeType === 'image/gif') {
       if (buffer.length > MAX_GIF_BYTES) {
         return res.status(400).json({
-          error: `GIF animation exceeds the 5 MB maximum size limit. Uploaded file size is ${(buffer.length / (1024 * 1024)).toFixed(2)} MB.`,
+          error: `GIF animation exceeds the 10 MB maximum size limit. Uploaded file size is ${(buffer.length / (1024 * 1024)).toFixed(2)} MB.`,
           fileSize: buffer.length,
           maxAllowed: MAX_GIF_BYTES,
         });

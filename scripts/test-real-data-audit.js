@@ -222,17 +222,17 @@ runTest("Cookies are kept strictly isolated from profile views and likes", () =>
 });
 
 // ---------------------------------------------------------------------------
-// 6. GIF 5MB Size Validation
+// 6. GIF 10MB Size Validation
 // ---------------------------------------------------------------------------
-console.log("\nSuite 6: GIF 5MB Pipeline Validation");
+console.log("\nSuite 6: GIF 10MB Pipeline Validation");
 
 function validateUploadSize(mimeType, byteLength) {
-  const MAX_GIF = 5 * 1024 * 1024;
+  const MAX_GIF = 10 * 1024 * 1024;
   const MAX_STATIC = 10 * 1024 * 1024;
 
   if (mimeType === 'image/gif') {
     if (byteLength > MAX_GIF) {
-      return { allowed: false, error: 'GIF animation exceeds the 5 MB maximum size limit.' };
+      return { allowed: false, error: 'GIF animation exceeds the 10 MB maximum size limit.' };
     }
   } else {
     if (byteLength > MAX_STATIC) {
@@ -248,11 +248,11 @@ runTest("GIF size validator allows 4.58 MB GIF (formerly rejected under 2MB limi
   assert.strictEqual(res.allowed, true);
 });
 
-runTest("GIF size validator rejects GIF exceeding 5 MB", () => {
-  const gif55Mb = 5.5 * 1024 * 1024;
-  const res = validateUploadSize('image/gif', gif55Mb);
+runTest("GIF size validator rejects GIF exceeding 10 MB", () => {
+  const gif11Mb = 11 * 1024 * 1024;
+  const res = validateUploadSize('image/gif', gif11Mb);
   assert.strictEqual(res.allowed, false);
-  assert.ok(res.error.includes('5 MB'));
+  assert.ok(res.error.includes('10 MB'));
 });
 
 console.log("\n=======================================================");

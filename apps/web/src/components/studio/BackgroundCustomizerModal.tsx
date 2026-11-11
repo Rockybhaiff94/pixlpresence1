@@ -112,11 +112,11 @@ export function BackgroundCustomizerModal({
     }
 
     const isGif = file.type.toLowerCase() === "image/gif";
-    const MAX_GIF_BYTES = 5 * 1024 * 1024; // 5 MB
+    const MAX_GIF_BYTES = 10 * 1024 * 1024; // 10 MB
     const MAX_STATIC_BYTES = 10 * 1024 * 1024; // 10 MB
 
     if (isGif && file.size > MAX_GIF_BYTES) {
-      setErrorMessage(`GIF exceeds the 5 MB maximum size limit (${(file.size / (1024 * 1024)).toFixed(2)} MB).`);
+      setErrorMessage(`GIF exceeds the 10 MB maximum size limit (${(file.size / (1024 * 1024)).toFixed(2)} MB).`);
       return;
     }
     if (!isGif && file.size > MAX_STATIC_BYTES) {
@@ -411,7 +411,7 @@ export function BackgroundCustomizerModal({
                 }}
               />
               <p className="text-[10px] text-neutral-500">
-                Supports PNG, JPG, WEBP, or animated GIF up to 5 MB.
+                Supports PNG, JPG, WEBP, or animated GIF up to 10 MB.
               </p>
             </div>
 

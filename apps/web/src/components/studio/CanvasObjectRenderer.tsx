@@ -9,6 +9,7 @@ import {
 import { PreviewData } from "./StudioProfilePreview";
 import { DiscordRpcCard } from "./DiscordRpcCard";
 import { PlatformIcon } from "@/components/links/PlatformIcons";
+import { computeElementEffects } from "./effectsRenderer";
 import {
   ExternalLink,
   Sparkles,
@@ -61,6 +62,7 @@ export function CanvasObjectRenderer({
 
     const isSelected = isInteractive && selectedId === el.id;
     const transform = el.transform;
+    const effects = computeElementEffects(el.style, config.identity?.titleColor || "#ffffff");
 
     const baseWrapperStyle: React.CSSProperties = {
       position: "relative",
@@ -69,8 +71,12 @@ export function CanvasObjectRenderer({
       transform: `rotate(${transform.rotation || 0}deg)`,
       zIndex: transform.zIndex || 2,
       cursor: isInteractive ? "pointer" : "default",
-      transition: "all 0.15s ease",
-      boxShadow: isSelected ? "0 0 14px rgba(56, 189, 248, 0.45)" : undefined,
+      transition: effects.transition || "all 0.15s ease",
+      boxShadow: isSelected ? "0 0 14px rgba(56, 189, 248, 0.45)" : effects.boxShadow,
+      background: effects.background,
+      backdropFilter: effects.backdropFilter,
+      animation: effects.animation,
+      opacity: el.style?.opacity !== undefined ? el.style.opacity / 100 : undefined,
     };
 
     const handleClick = (e: React.MouseEvent) => {
@@ -345,20 +351,48 @@ export function CanvasObjectRenderer({
             {(socialLinks.length > 0
               ? socialLinks
               : [{ id: "l1", label: "Discord", url: "https://discord.gg" }]
-            ).map((link) => (
-              <a
-                key={link.id}
-                href={isInteractive ? "#" : link.url}
-                target={isInteractive ? undefined : "_blank"}
-                rel="noreferrer"
-                onClick={(e) => {
-                  if (isInteractive) e.preventDefault();
-                }}
-                className="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white hover:border-neutral-700 transition-all shadow flex items-center justify-center"
-              >
-                <PlatformIcon id={link.label.toLowerCase()} className="w-4 h-4" />
-              </a>
-            ))}
+            ).map((link) => {
+              const iconSrc = el.style?.customIconUrl;
+              const iconColor = effects.resolvedIconColor;
+              const iconVariant = el.style?.iconVariant || "default";
+
+              let variantClasses = "bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white";
+              if (iconVariant === "minimal") {
+                variantClasses = "bg-transparent border-0 text-neutral-300 hover:text-white";
+              } else if (iconVariant === "outline") {
+                variantClasses = "bg-transparent border border-neutral-700 text-neutral-200 hover:text-white";
+              } else if (iconVariant === "filled") {
+                variantClasses = "bg-white text-black font-bold";
+              }
+
+              return (
+                <a
+                  key={link.id}
+                  href={isInteractive ? "#" : link.url}
+                  target={isInteractive ? undefined : "_blank"}
+                  rel="noreferrer"
+                  onClick={(e) => {
+                    if (isInteractive) e.preventDefault();
+                  }}
+                  className={`p-2.5 rounded-xl transition-all shadow flex items-center justify-center ${variantClasses}`}
+                  style={{
+                    boxShadow: effects.boxShadow,
+                    borderColor: el.style?.borderColor,
+                    borderRadius: el.style?.borderRadius ? `${el.style.borderRadius}px` : undefined,
+                  }}
+                >
+                  {iconSrc ? (
+                    <img src={iconSrc} alt={link.label} className="w-4 h-4 object-contain" />
+                  ) : (
+                    <PlatformIcon
+                      id={link.label.toLowerCase()}
+                      color={iconColor}
+                      className="w-4 h-4"
+                    />
+                  )}
+                </a>
+              );
+            })}
           </div>
         );
       }
@@ -492,6 +526,7 @@ export function CanvasObjectRenderer({
         if (embed.isVisible === false) return null;
         const isEmbedSelected = isInteractive && selectedId === embed.id;
         const embedChildren = elements.filter((el) => el.parentEmbedId === embed.id);
+        const embedEffects = computeElementEffects(embed.style, config.identity?.titleColor || "#ffffff");
 
         return (
           <div
@@ -509,17 +544,19 @@ export function CanvasObjectRenderer({
               width: `${embed.transform.width}px`,
               minHeight: `${embed.transform.height}px`,
               transform: `rotate(${embed.transform.rotation || 0}deg)`,
-              backgroundColor: embed.style.backgroundColor || "rgba(10, 10, 14, 0.85)",
+              backgroundColor: embedEffects.background || embed.style.backgroundColor || "rgba(10, 10, 14, 0.85)",
               borderColor: embed.style.borderColor || "#26262b",
               borderWidth: `${embed.style.borderWidth ?? 1}px`,
               borderRadius: `${embed.style.borderRadius ?? 24}px`,
               padding: `${embed.style.padding ?? 28}px`,
               boxShadow: isEmbedSelected
                 ? "0 0 20px rgba(251, 191, 36, 0.45)"
-                : embed.style.shadowBlur
-                ? `0 12px ${embed.style.shadowBlur}px ${embed.style.shadowColor || "rgba(0,0,0,0.5)"}`
-                : undefined,
+                : embedEffects.boxShadow ||
+                  (embed.style.shadowBlur
+                    ? `0 12px ${embed.style.shadowBlur}px ${embed.style.shadowColor || "rgba(0,0,0,0.5)"}`
+                    : undefined),
               backdropFilter: embed.style.backdropBlur ? `blur(${embed.style.backdropBlur}px)` : undefined,
+              animation: embedEffects.animation,
               zIndex: embed.transform.zIndex || 1,
             }}
             className={`relative flex flex-col items-center justify-center gap-4 transition-all ${

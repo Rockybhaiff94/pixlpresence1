@@ -38,6 +38,8 @@ interface CanvasEngineProps {
   modifierKey?: "Alt" | "Control" | "Shift" | "Meta";
   scalingMode?: EmbedScalingMode;
   gridSettings?: CanvasGridSettings;
+  isPremium?: boolean;
+  themeAccentColor?: string;
   children: React.ReactNode;
 }
 
@@ -68,6 +70,8 @@ export function CanvasEngine({
   modifierKey = "Alt",
   scalingMode = "hybrid",
   gridSettings = DEFAULT_GRID_SETTINGS,
+  isPremium = false,
+  themeAccentColor = "#ffffff",
   children,
 }: CanvasEngineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -801,6 +805,8 @@ export function CanvasEngine({
             <SelectedObjectMenu
               item={selectedItem}
               isEmbed={isSelectedEmbed}
+              isPremium={isPremium}
+              themeAccentColor={themeAccentColor}
               onUpdateTransform={(t) => {
                 onUpdateCanvas((prev) => {
                   const id = selectedItem.id;

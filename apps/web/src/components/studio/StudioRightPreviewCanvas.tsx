@@ -39,6 +39,7 @@ interface StudioRightPreviewCanvasProps {
   onToggleFullscreenPreview?: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
+  isPremium?: boolean;
 }
 
 export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> = ({
@@ -70,6 +71,7 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
   onToggleFullscreenPreview,
   onUndo,
   onRedo,
+  isPremium = false,
 }) => {
   const [internalZoom, setInternalZoom] = useState(100);
   const zoom = externalZoom !== undefined ? externalZoom : internalZoom;
@@ -234,6 +236,8 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
                   modifierKey={config.advanced?.precisionModifier || "Alt"}
                   scalingMode={config.advanced?.embedScaling || "hybrid"}
                   gridSettings={config.advanced?.gridSettings || DEFAULT_GRID_SETTINGS}
+                  isPremium={isPremium}
+                  themeAccentColor={config.identity?.titleColor || "#ffffff"}
                   onUndo={onUndo}
                   onRedo={onRedo}
                   onSelectElement={(id) => {

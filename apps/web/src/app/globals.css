@@ -114,3 +114,60 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #444444;
 }
+
+/* Studio 2.0 Visual Effects & Animation Presets */
+@keyframes studioPulseGlow {
+  0%, 100% {
+    filter: brightness(1) drop-shadow(0 0 10px rgba(56, 189, 248, 0.4));
+  }
+  50% {
+    filter: brightness(1.15) drop-shadow(0 0 24px rgba(56, 189, 248, 0.85));
+  }
+}
+
+@keyframes studioFloat {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes studioGradientFlow {
+  0% {
+    filter: hue-rotate(0deg);
+  }
+  100% {
+    filter: hue-rotate(360deg);
+  }
+}
+
+@keyframes studioShineSweep {
+  0%, 100% {
+    opacity: 0.95;
+  }
+  50% {
+    opacity: 1;
+    filter: contrast(1.1) brightness(1.1);
+  }
+}
+
+@keyframes studioAmbientBreathe {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.02);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

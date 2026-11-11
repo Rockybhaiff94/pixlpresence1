@@ -17,6 +17,8 @@ export interface UserCapabilities {
   maxImageSizeBytes: number;
   canRemoveBranding: boolean;
   allowRepositionLikeButton: boolean;
+  allowAdvancedEffects: boolean;
+  allowCustomIconDesigns: boolean;
   tier: "FREE" | "PREMIUM" | "NITRO" | "ADMIN";
 }
 
@@ -43,6 +45,8 @@ export function getUserCapabilities(user: {
       maxImageSizeBytes: 25 * 1024 * 1024,
       canRemoveBranding: true,
       allowRepositionLikeButton: true,
+      allowAdvancedEffects: true,
+      allowCustomIconDesigns: true,
       tier: "ADMIN",
     };
   }
@@ -61,6 +65,8 @@ export function getUserCapabilities(user: {
       maxImageSizeBytes: 15 * 1024 * 1024,
       canRemoveBranding: true,
       allowRepositionLikeButton: true,
+      allowAdvancedEffects: true,
+      allowCustomIconDesigns: true,
       tier: isNitro ? "NITRO" : "PREMIUM",
     };
   }
@@ -79,6 +85,8 @@ export function getUserCapabilities(user: {
     maxImageSizeBytes: 10 * 1024 * 1024,
     canRemoveBranding: false,
     allowRepositionLikeButton: false,
+    allowAdvancedEffects: false,
+    allowCustomIconDesigns: false,
     tier: "FREE",
   };
 }
@@ -122,6 +130,35 @@ export function validateProfileCapabilities(
         return {
           valid: false,
           error: "Custom positioning for the profile Like button is an exclusive Premium feature. Standard accounts display the Like button in the default profile action bar.",
+        };
+      }
+    }
+
+    // Validate Advanced Effects (Premium restriction)
+    if (!capabilities.allowAdvancedEffects) {
+      const hasAdvancedGlow = designConfig.canvas.elements.some(
+        (el: any) => el.style?.glowType && el.style.glowType !== "basic"
+      );
+      const hasAdvancedAnimation = designConfig.canvas.elements.some(
+        (el: any) => el.style?.animationPreset && el.style.animationPreset !== "none"
+      );
+      if (hasAdvancedGlow || hasAdvancedAnimation) {
+        return {
+          valid: false,
+          error: "Animated glow and advanced animation presets are exclusive Premium features. Upgrade to Premium to save dynamic profile animations.",
+        };
+      }
+    }
+
+    // Validate Custom Icon Designs & Uploads (Premium restriction)
+    if (!capabilities.allowCustomIconDesigns) {
+      const hasCustomIcon = designConfig.canvas.elements.some(
+        (el: any) => el.style?.customIconUrl || (el.style?.iconVariant && el.style.iconVariant !== "default")
+      );
+      if (hasCustomIcon) {
+        return {
+          valid: false,
+          error: "Custom icon uploads and alternative icon styles are exclusive Premium features.",
         };
       }
     }

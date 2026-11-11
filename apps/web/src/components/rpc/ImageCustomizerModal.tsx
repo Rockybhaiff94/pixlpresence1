@@ -95,14 +95,14 @@ export function ImageCustomizerModal({
       return;
     }
 
-    // GIF 5 MB limit check
+    // GIF 10 MB limit check
     const isGif = file.type.toLowerCase() === "image/gif";
-    const MAX_GIF_BYTES = 5 * 1024 * 1024; // 5 MB
+    const MAX_GIF_BYTES = 10 * 1024 * 1024; // 10 MB
     const MAX_STATIC_BYTES = 10 * 1024 * 1024; // 10 MB
 
     if (isGif && file.size > MAX_GIF_BYTES) {
       const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
-      setErrorMessage(`Animated GIF exceeds the 5 MB maximum size limit (${sizeMb} MB). Please compress your GIF to under 5 MB.`);
+      setErrorMessage(`Animated GIF exceeds the 10 MB maximum size limit (${sizeMb} MB). Please compress your GIF to under 10 MB.`);
       return;
     }
 
@@ -229,7 +229,7 @@ export function ImageCustomizerModal({
                 CUSTOMIZE {slotTitle}
               </h3>
               <p className="text-[11px] text-neutral-400">
-                Upload PNG, JPG, WEBP, or animated GIF (up to 5MB).
+                Upload PNG, JPG, WEBP, or animated GIF (up to 10MB).
               </p>
             </div>
           </div>
@@ -266,7 +266,7 @@ export function ImageCustomizerModal({
                   DRAG & DROP IMAGE OR CLICK TO BROWSE
                 </p>
                 <p className="text-[11px] text-neutral-500">
-                  PNG, JPG, WEBP up to 10MB • Animated GIFs up to 5MB
+                  PNG, JPG, WEBP, or Animated GIFs up to 10MB
                 </p>
               </div>
               <input

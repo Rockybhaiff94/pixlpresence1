@@ -120,11 +120,20 @@ export interface CanvasElementStyle {
   opacity?: number;
   shadowBlur?: number;
   shadowColor?: string;
+  shadowDistance?: number;
+  shadowEnabled?: boolean;
+  lightingMode?: "none" | "ambient" | "directional" | "depth";
   blur?: number;
   backdropBlur?: number;
   gradientBorder?: string;
   animatedBorder?: boolean;
+  glowEnabled?: boolean;
   glowColor?: string;
+  glowIntensity?: number; // 0-100
+  glowBlur?: number; // 0-60
+  glowRadius?: number; // 0-40
+  glowType?: "basic" | "animated" | "multi" | "gradient" | "pulsating";
+  glowSpeed?: number; // in seconds
   padding?: number;
   color?: string;
   fontSize?: number;
@@ -133,6 +142,25 @@ export interface CanvasElementStyle {
   textAlign?: "left" | "center" | "right";
   letterSpacing?: number;
   lineHeight?: number;
+
+  // Icon Customization (Free & Premium)
+  iconColorMode?: "original" | "custom" | "theme";
+  iconColor?: string;
+  iconVariant?: "default" | "filled" | "outline" | "minimal" | "custom";
+  customIconUrl?: string;
+
+  // Gradients & Visual Presets (Premium)
+  gradientEnabled?: boolean;
+  gradientType?: "linear" | "radial" | "conic";
+  gradientAngle?: number;
+  gradientStops?: Array<{ color: string; offset: number }>;
+  gradientAnimated?: boolean;
+
+  // Hover Effects & Animation Presets
+  hoverEffect?: "none" | "opacity" | "glow" | "color" | "scale" | "lift" | "neon" | "pulse";
+  hoverScale?: number;
+  animationPreset?: "none" | "soft-neon" | "pulse-glow" | "ambient-glow" | "floating" | "smooth-highlight" | "gradient-flow" | "subtle-shine";
+  effectPreset?: string;
 }
 
 export interface CanvasElement {

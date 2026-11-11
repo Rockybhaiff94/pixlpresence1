@@ -149,15 +149,15 @@ runTest("Magic bytes rejects fake/corrupt executable or text disguised as image"
 });
 
 // ---------------------------------------------------------------------------
-// 3. File Size Validation (GIF <= 5MB, Static <= 10MB)
+// 3. File Size Validation (GIF <= 10MB, Static <= 10MB)
 // ---------------------------------------------------------------------------
 function validateFileSize(mimeType, sizeInBytes) {
   const MAX_STATIC_SIZE = 10 * 1024 * 1024; // 10 MB
-  const MAX_GIF_SIZE = 5 * 1024 * 1024;    // 5 MB
+  const MAX_GIF_SIZE = 10 * 1024 * 1024;   // 10 MB
 
   if (mimeType === "image/gif") {
     if (sizeInBytes > MAX_GIF_SIZE) {
-      return { allowed: false, error: "Animated GIF exceeds the 5 MB maximum size limit." };
+      return { allowed: false, error: "Animated GIF exceeds the 10 MB maximum size limit." };
     }
   } else {
     if (sizeInBytes > MAX_STATIC_SIZE) {
@@ -167,15 +167,15 @@ function validateFileSize(mimeType, sizeInBytes) {
   return { allowed: true };
 }
 
-runTest("GIF size validator rejects GIF larger than 5 MB", () => {
-  const oversizedGif = 5.5 * 1024 * 1024;
+runTest("GIF size validator rejects GIF larger than 10 MB", () => {
+  const oversizedGif = 10.5 * 1024 * 1024;
   const res = validateFileSize("image/gif", oversizedGif);
   assert.strictEqual(res.allowed, false);
-  assert.ok(res.error.includes("5 MB"));
+  assert.ok(res.error.includes("10 MB"));
 });
 
-runTest("GIF size validator accepts GIF under 5 MB", () => {
-  const validGif = 4.2 * 1024 * 1024;
+runTest("GIF size validator accepts GIF under 10 MB (e.g. 4.58 MB)", () => {
+  const validGif = 4.58 * 1024 * 1024;
   const res = validateFileSize("image/gif", validGif);
   assert.strictEqual(res.allowed, true);
 });
