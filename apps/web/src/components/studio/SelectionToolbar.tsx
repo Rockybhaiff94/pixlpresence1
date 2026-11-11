@@ -1,17 +1,22 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import {
   Lock,
   Unlock,
   Copy,
   Trash2,
   MoreHorizontal,
-  Move,
-  Maximize2,
-  Layers,
+  Type,
+  Bold,
+  Italic,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
+  Minus,
+  Plus,
 } from "lucide-react";
-import { CanvasTransform } from "@/types/studio";
 
 interface SelectionToolbarProps {
   title: string;
@@ -24,6 +29,18 @@ interface SelectionToolbarProps {
   onDelete: () => void;
   onToggleMoreMenu: () => void;
   isMoreMenuOpen: boolean;
+
+  // Text-specific quick actions (Phase 6)
+  isText?: boolean;
+  onEditText?: () => void;
+  onToggleBold?: () => void;
+  isBold?: boolean;
+  onToggleItalic?: () => void;
+  isItalic?: boolean;
+  onCycleAlign?: () => void;
+  textAlign?: "left" | "center" | "right" | "justify";
+  fontSize?: number;
+  onChangeFontSize?: (delta: number) => void;
 }
 
 export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
@@ -37,8 +54,18 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
   onDelete,
   onToggleMoreMenu,
   isMoreMenuOpen,
+  isText = false,
+  onEditText,
+  onToggleBold,
+  isBold = false,
+  onToggleItalic,
+  isItalic = false,
+  onCycleAlign,
+  textAlign = "center",
+  fontSize,
+  onChangeFontSize,
 }) => {
-  const [showLockDropdown, setShowLockDropdown] = React.useState(false);
+  const [showLockDropdown, setShowLockDropdown] = useState(false);
 
   return (
     <div
@@ -49,21 +76,105 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
       {/* Title & Badge */}
       <div className="flex items-center gap-1.5 min-w-0 pr-2">
         <span
-          className={`w-1.5 h-1.5 rounded-full ${
-            isEmbed ? "bg-amber-400" : "bg-sky-400"
+          className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+            isEmbed ? "bg-amber-400" : isText ? "bg-emerald-400" : "bg-sky-400"
           }`}
         />
-        <span className="font-bold text-neutral-200 truncate max-w-[140px]">
+        <span className="font-bold text-neutral-200 truncate max-w-[120px]">
           {title}
         </span>
-        <span className="text-[9px] px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-400 border border-neutral-700 uppercase">
-          {isEmbed ? "Embed" : "Element"}
+        <span className="text-[9px] px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-400 border border-neutral-700 uppercase shrink-0">
+          {isEmbed ? "Embed" : isText ? "Text" : "Element"}
         </span>
       </div>
 
-      {/* 4 Primary Actions */}
+      {/* Center / Text Quick Actions */}
+      {isText && (
+        <div className="flex items-center gap-0.5 border-x border-neutral-800 px-1.5 mx-1">
+          {/* Edit Text inline */}
+          {onEditText && (
+            <button
+              type="button"
+              onClick={onEditText}
+              title="Edit Text Content (Double-click)"
+              className="px-1.5 py-1 rounded text-neutral-300 hover:text-white hover:bg-neutral-800 flex items-center gap-1 text-[10px]"
+            >
+              <Type size={11} className="text-emerald-400" />
+              <span>Edit</span>
+            </button>
+          )}
+
+          {/* Toggle Bold */}
+          {onToggleBold && (
+            <button
+              type="button"
+              onClick={onToggleBold}
+              title="Toggle Bold"
+              className={`p-1 rounded transition-colors ${
+                isBold ? "bg-neutral-700 text-white font-bold" : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              <Bold size={11} />
+            </button>
+          )}
+
+          {/* Toggle Italic */}
+          {onToggleItalic && (
+            <button
+              type="button"
+              onClick={onToggleItalic}
+              title="Toggle Italic"
+              className={`p-1 rounded transition-colors ${
+                isItalic ? "bg-neutral-700 text-white" : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              <Italic size={11} />
+            </button>
+          )}
+
+          {/* Cycle Align */}
+          {onCycleAlign && (
+            <button
+              type="button"
+              onClick={onCycleAlign}
+              title={`Alignment: ${textAlign} (Click to cycle)`}
+              className="p-1 rounded text-neutral-400 hover:text-white transition-colors"
+            >
+              {textAlign === "left" && <AlignLeft size={11} />}
+              {textAlign === "center" && <AlignCenter size={11} />}
+              {textAlign === "right" && <AlignRight size={11} />}
+              {textAlign === "justify" && <AlignJustify size={11} />}
+            </button>
+          )}
+
+          {/* Font Size Stepper */}
+          {fontSize !== undefined && onChangeFontSize && (
+            <div className="flex items-center gap-0.5 ml-1 bg-neutral-950/80 border border-neutral-800 rounded px-1 py-0.5 text-[9px] text-neutral-300 font-mono">
+              <button
+                type="button"
+                onClick={() => onChangeFontSize(-1)}
+                className="hover:text-white text-neutral-400"
+                title="Decrease font size"
+              >
+                <Minus size={9} />
+              </button>
+              <span className="w-5 text-center">{fontSize}</span>
+              <button
+                type="button"
+                onClick={() => onChangeFontSize(1)}
+                className="hover:text-white text-neutral-400"
+                title="Increase font size"
+              >
+                <Plus size={9} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Primary Actions: Lock, Duplicate, Delete, More Options */}
       <div className="flex items-center gap-1 shrink-0">
-        {/* 1. Lock / Unlock */}
+        {/* Lock / Unlock */}
         <div className="relative">
           <button
             type="button"
@@ -138,7 +249,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
           )}
         </div>
 
-        {/* 2. Copy / Duplicate */}
+        {/* Copy / Duplicate */}
         <button
           type="button"
           onClick={onDuplicate}
@@ -148,7 +259,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
           <Copy size={12} />
         </button>
 
-        {/* 3. Delete */}
+        {/* Delete */}
         <button
           type="button"
           onClick={onDelete}
@@ -158,7 +269,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
           <Trash2 size={12} />
         </button>
 
-        {/* 4. More Options */}
+        {/* More Options */}
         <button
           type="button"
           onClick={onToggleMoreMenu}

@@ -53,7 +53,10 @@ interface StudioProfilePreviewProps {
   data: PreviewData;
   isInteractiveEditor?: boolean;
   activeElementId?: string;
+  inlineEditingId?: string | null;
   onSelectElement?: (elementId: string) => void;
+  onSetInlineEditingId?: (id: string | null) => void;
+  onUpdateElementProps?: (id: string, props: Record<string, any>) => void;
   scopeId?: string;
 }
 
@@ -62,7 +65,10 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
   data,
   isInteractiveEditor = false,
   activeElementId,
+  inlineEditingId,
   onSelectElement,
+  onSetInlineEditingId,
+  onUpdateElementProps,
   scopeId = "profile-preview-root",
 }) => {
   const {
@@ -271,7 +277,10 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
           data={data}
           isInteractive={isInteractiveEditor}
           selectedId={activeElementId}
+          inlineEditingId={inlineEditingId}
           onSelectElement={onSelectElement}
+          onSetInlineEditingId={onSetInlineEditingId}
+          onUpdateElementProps={onUpdateElementProps}
         />
       ) : (
         /* Main Container Card Fallback */

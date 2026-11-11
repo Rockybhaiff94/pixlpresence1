@@ -139,9 +139,22 @@ export interface CanvasElementStyle {
   fontSize?: number;
   fontWeight?: number;
   fontFamily?: string;
-  textAlign?: "left" | "center" | "right";
+  textAlign?: "left" | "center" | "right" | "justify";
   letterSpacing?: number;
   lineHeight?: number;
+  wordSpacing?: number;
+  textTransform?: "none" | "uppercase" | "lowercase" | "capitalize";
+  textDecoration?: "none" | "underline" | "line-through";
+  textStroke?: string;
+  textOverflow?: "wrap" | "truncate" | "hidden" | "scroll";
+  maxLines?: number;
+  italic?: boolean;
+  underline?: boolean;
+  strikethrough?: boolean;
+
+  // Smart Typography Inheritance (Prompt 4)
+  styleGroupId?: TextStyleGroupId;
+  hasCustomTypographyOverride?: boolean;
 
   // Icon Customization (Free & Premium)
   iconColorMode?: "original" | "custom" | "theme";
@@ -188,6 +201,94 @@ export interface CanvasEmbed {
   clipContent?: boolean;
 }
 
+export type TextStyleGroupId =
+  | "profileName"
+  | "heading"
+  | "subheading"
+  | "body"
+  | "footer"
+  | "metadata";
+
+export interface TextStyleDefinition {
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: number;
+  color: string;
+  letterSpacing?: number;
+  lineHeight?: number;
+  textAlign?: "left" | "center" | "right" | "justify";
+  textTransform?: "none" | "uppercase" | "lowercase" | "capitalize";
+  textDecoration?: "none" | "underline" | "line-through";
+  shadowBlur?: number;
+  shadowColor?: string;
+  opacity?: number;
+}
+
+export type TextStyleGroups = Record<TextStyleGroupId, TextStyleDefinition>;
+
+export const DEFAULT_TEXT_STYLE_GROUPS: TextStyleGroups = {
+  profileName: {
+    fontFamily: "Space Grotesk",
+    fontSize: 26,
+    fontWeight: 700,
+    color: "#ffffff",
+    letterSpacing: -0.5,
+    lineHeight: 1.2,
+    textAlign: "center",
+    textTransform: "none",
+  },
+  heading: {
+    fontFamily: "Space Grotesk",
+    fontSize: 20,
+    fontWeight: 600,
+    color: "#ffffff",
+    letterSpacing: -0.2,
+    lineHeight: 1.3,
+    textAlign: "center",
+    textTransform: "none",
+  },
+  subheading: {
+    fontFamily: "Inter",
+    fontSize: 12,
+    fontWeight: 500,
+    color: "#a3a3a3",
+    letterSpacing: 0.5,
+    lineHeight: 1.4,
+    textAlign: "center",
+    textTransform: "uppercase",
+  },
+  body: {
+    fontFamily: "Inter",
+    fontSize: 14,
+    fontWeight: 400,
+    color: "#d4d4d8",
+    letterSpacing: 0,
+    lineHeight: 1.6,
+    textAlign: "left",
+    textTransform: "none",
+  },
+  footer: {
+    fontFamily: "Inter",
+    fontSize: 11,
+    fontWeight: 400,
+    color: "#737373",
+    letterSpacing: 0.2,
+    lineHeight: 1.4,
+    textAlign: "center",
+    textTransform: "none",
+  },
+  metadata: {
+    fontFamily: "JetBrains Mono",
+    fontSize: 12,
+    fontWeight: 500,
+    color: "#a1a1aa",
+    letterSpacing: 0.5,
+    lineHeight: 1.3,
+    textAlign: "left",
+    textTransform: "none",
+  },
+};
+
 export interface CanvasEngineState {
   embeds: CanvasEmbed[];
   elements: CanvasElement[];
@@ -197,6 +298,7 @@ export interface CanvasEngineState {
   scalingMode?: EmbedScalingMode;
   gridSettings?: CanvasGridSettings;
   precisionKey?: PrecisionKeySettings;
+  textStyleGroups?: TextStyleGroups;
 }
 
 export type StudioTab =
@@ -423,6 +525,8 @@ export function createDefaultCanvasState(cfg?: Partial<ProfileDesignConfig>): Ca
         fontWeight: cfg?.identity?.titleWeight || 700,
         fontFamily: cfg?.identity?.titleFont || "Space Grotesk",
         textAlign: "center",
+        styleGroupId: "profileName",
+        hasCustomTypographyOverride: false,
       },
       isLocked: false,
       isVisible: true,
@@ -439,6 +543,8 @@ export function createDefaultCanvasState(cfg?: Partial<ProfileDesignConfig>): Ca
         fontWeight: 500,
         fontFamily: "Inter",
         textAlign: "center",
+        styleGroupId: "subheading",
+        hasCustomTypographyOverride: false,
       },
       props: { text: "Digital Identity // Nothing OS" },
       isLocked: false,
@@ -455,6 +561,8 @@ export function createDefaultCanvasState(cfg?: Partial<ProfileDesignConfig>): Ca
         fontSize: cfg?.identity?.bioSize || 14,
         fontFamily: cfg?.identity?.bioFont || "Inter",
         textAlign: "center",
+        styleGroupId: "body",
+        hasCustomTypographyOverride: false,
       },
       isLocked: false,
       isVisible: true,
@@ -493,6 +601,7 @@ export function createDefaultCanvasState(cfg?: Partial<ProfileDesignConfig>): Ca
     elements,
     selectedId: null,
     selectedIds: [],
+    textStyleGroups: { ...DEFAULT_TEXT_STYLE_GROUPS },
   };
 }
 
@@ -537,6 +646,7 @@ export function createEmptyCanvasState(cfg?: Partial<ProfileDesignConfig>): Canv
     elements: [],
     selectedId: null,
     selectedIds: [],
+    textStyleGroups: { ...DEFAULT_TEXT_STYLE_GROUPS },
   };
 }
 

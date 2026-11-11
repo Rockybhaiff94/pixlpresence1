@@ -174,3 +174,4 @@ export const EFFECT_PRESETS: EffectPresetDef[] = [
     },
   },
 ];
+

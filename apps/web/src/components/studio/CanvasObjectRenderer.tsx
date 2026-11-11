@@ -10,6 +10,7 @@ import { PreviewData } from "./StudioProfilePreview";
 import { DiscordRpcCard } from "./DiscordRpcCard";
 import { PlatformIcon } from "@/components/links/PlatformIcons";
 import { computeElementEffects } from "./effectsRenderer";
+import { RichTextRenderer } from "./richTextRenderer";
 import {
   ExternalLink,
   Sparkles,
@@ -30,7 +31,10 @@ interface CanvasObjectRendererProps {
   data: PreviewData;
   isInteractive?: boolean;
   selectedId?: string | null;
+  inlineEditingId?: string | null;
   onSelectElement?: (id: string) => void;
+  onSetInlineEditingId?: (id: string | null) => void;
+  onUpdateElementProps?: (id: string, props: Record<string, any>) => void;
   onPointerDownElement?: (e: React.PointerEvent, id: string, isEmbed: boolean) => void;
   onOpenComponentLibrary?: (parentEmbedId: string) => void;
 }
@@ -42,7 +46,10 @@ export function CanvasObjectRenderer({
   data,
   isInteractive = false,
   selectedId,
+  inlineEditingId,
   onSelectElement,
+  onSetInlineEditingId,
+  onUpdateElementProps,
   onPointerDownElement,
   onOpenComponentLibrary,
 }: CanvasObjectRendererProps) {
@@ -96,6 +103,113 @@ export function CanvasObjectRenderer({
       ? "hover:ring-1 hover:ring-white/40"
       : "";
 
+    // Helper for all text-based elements supporting typography, Markdown, and direct inline editing
+    const renderEditableTextNode = (
+      defaultText: string,
+      isMultiline: boolean = false,
+      extraWrapperClass: string = "py-1 px-2"
+    ) => {
+      const rawText = el.props?.text ?? el.props?.content ?? defaultText;
+      const isEditing = isInteractive && inlineEditingId === el.id;
+      const gradient = el.style?.gradientBorder;
+
+      const typographyStyle: React.CSSProperties = {
+        fontFamily: el.style?.fontFamily || "Inter",
+        fontSize: `${el.style?.fontSize || 14}px`,
+        fontWeight: el.style?.fontWeight || 400,
+        color: gradient ? "transparent" : el.style?.color || "#ffffff",
+        letterSpacing: el.style?.letterSpacing !== undefined ? `${el.style.letterSpacing}px` : undefined,
+        lineHeight: el.style?.lineHeight || 1.4,
+        textAlign: el.style?.textAlign || "left",
+        textTransform: el.style?.textTransform || "none",
+        textDecoration: el.style?.textDecoration || "none",
+        backgroundImage: gradient ? gradient : undefined,
+        WebkitBackgroundClip: gradient ? "text" : undefined,
+        WebkitTextFillColor: gradient ? "transparent" : undefined,
+        textShadow: el.style?.shadowBlur
+          ? `0 2px ${el.style.shadowBlur}px ${el.style.shadowColor || "rgba(0,0,0,0.8)"}`
+          : undefined,
+        wordSpacing: el.style?.wordSpacing !== undefined ? `${el.style.wordSpacing}px` : undefined,
+      };
+
+      const handleDoubleClick = (e: React.MouseEvent) => {
+        if (isInteractive && onSetInlineEditingId) {
+          e.stopPropagation();
+          onSetInlineEditingId(el.id);
+        }
+      };
+
+      return (
+        <div
+          key={el.id}
+          onClick={handleClick}
+          onDoubleClick={handleDoubleClick}
+          onPointerDown={handlePointerDown}
+          style={baseWrapperStyle}
+          className={`flex items-center ${extraWrapperClass} ${outlineClasses}`}
+        >
+          {isEditing ? (
+            isMultiline ? (
+              <textarea
+                autoFocus
+                value={rawText}
+                onChange={(e) => {
+                  onUpdateElementProps?.(el.id, {
+                    ...(el.props?.text !== undefined ? { text: e.target.value } : { content: e.target.value }),
+                  });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    onSetInlineEditingId?.(null);
+                  }
+                }}
+                onBlur={() => onSetInlineEditingId?.(null)}
+                className="w-full bg-black/80 border border-sky-400 rounded p-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-sky-400 text-white"
+                style={typographyStyle}
+                rows={Math.max(2, rawText.split("\n").length)}
+              />
+            ) : (
+              <input
+                type="text"
+                autoFocus
+                value={rawText}
+                onChange={(e) => {
+                  onUpdateElementProps?.(el.id, {
+                    ...(el.props?.text !== undefined ? { text: e.target.value } : { content: e.target.value }),
+                  });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === "Escape") {
+                    onSetInlineEditingId?.(null);
+                  }
+                }}
+                onBlur={() => onSetInlineEditingId?.(null)}
+                className="w-full bg-black/80 border border-sky-400 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-sky-400 text-white"
+                style={typographyStyle}
+              />
+            )
+          ) : (
+            <div
+              style={typographyStyle}
+              className={`w-full select-none ${
+                el.style?.textOverflow === "truncate"
+                  ? "truncate"
+                  : el.style?.textOverflow === "hidden"
+                  ? "overflow-hidden"
+                  : "break-words"
+              }`}
+            >
+              <RichTextRenderer
+                content={rawText}
+                themeAccentColor={config.identity?.titleColor || "#ffffff"}
+                allowBlockFormatting={isMultiline}
+              />
+            </div>
+          )}
+        </div>
+      );
+    };
+
     switch (el.type) {
       case "avatar": {
         const shape = config.avatar.shape;
@@ -145,119 +259,49 @@ export function CanvasObjectRenderer({
         );
       }
 
+      // Profile Text Components
       case "displayName":
-      case "username": {
-        const text = el.props?.text || (el.type === "displayName" ? displayName : username);
-        const fontColor = el.style?.color || config.identity.titleColor || "#ffffff";
-        const gradient = el.style?.gradientBorder;
-
-        return (
-          <div
-            key={el.id}
-            onClick={handleClick}
-            onPointerDown={handlePointerDown}
-            style={baseWrapperStyle}
-            className={`flex items-center justify-center py-1 px-2 ${outlineClasses}`}
-          >
-            <h1
-              className="font-bold tracking-tight select-none text-center truncate max-w-full"
-              style={{
-                fontSize: `${el.style?.fontSize || config.identity.titleSize || 26}px`,
-                fontWeight: el.style?.fontWeight || config.identity.titleWeight || 700,
-                fontFamily: el.style?.fontFamily || config.identity.titleFont || "inherit",
-                color: gradient ? "transparent" : fontColor,
-                backgroundImage: gradient ? gradient : undefined,
-                WebkitBackgroundClip: gradient ? "text" : undefined,
-                WebkitTextFillColor: gradient ? "transparent" : undefined,
-                textShadow: el.style?.shadowBlur
-                  ? `0 2px ${el.style.shadowBlur}px ${el.style.shadowColor || "rgba(0,0,0,0.8)"}`
-                  : undefined,
-              }}
-            >
-              {text}
-            </h1>
-          </div>
+      case "username":
+        return renderEditableTextNode(
+          (el.type === "displayName" ? displayName : username) || "User",
+          false,
+          "py-1 px-2 justify-center"
         );
-      }
 
       case "title":
-      case "heading": {
-        const titleText = el.props?.text ?? "Heading Title";
-        return (
-          <div
-            key={el.id}
-            onClick={handleClick}
-            onPointerDown={handlePointerDown}
-            style={baseWrapperStyle}
-            className={`flex items-center justify-center py-1 px-2 ${outlineClasses}`}
-          >
-            <h2
-              className="font-bold tracking-tight select-none text-center truncate max-w-full"
-              style={{
-                fontSize: `${el.style?.fontSize || 20}px`,
-                fontWeight: el.style?.fontWeight || 600,
-                color: el.style?.color || "#ffffff",
-                fontFamily: el.style?.fontFamily || "Space Grotesk",
-              }}
-            >
-              {titleText}
-            </h2>
-          </div>
-        );
-      }
+      case "heading":
+        return renderEditableTextNode("Heading Title", false, "py-1 px-2 justify-center");
 
       case "subtitle":
-      case "tagline": {
-        const taglineText = el.props?.text ?? "Digital Identity // Nothing OS";
-        return (
-          <div
-            key={el.id}
-            onClick={handleClick}
-            onPointerDown={handlePointerDown}
-            style={baseWrapperStyle}
-            className={`flex items-center justify-center py-0.5 px-2 ${outlineClasses}`}
-          >
-            <span
-              className="text-xs uppercase tracking-wider select-none text-center truncate max-w-full"
-              style={{
-                color: el.style?.color || "#a3a3a3",
-                fontSize: `${el.style?.fontSize || 12}px`,
-                fontWeight: el.style?.fontWeight || 500,
-                fontFamily: el.style?.fontFamily || "Inter",
-              }}
-            >
-              {taglineText}
-            </span>
-          </div>
-        );
-      }
+      case "tagline":
+        return renderEditableTextNode("Digital Identity // Nothing OS", false, "py-0.5 px-2 justify-center");
 
       case "bio":
-      case "description": {
-        const bioText = el.props?.text ?? (el.type === "bio" ? bio : "Description text...");
-        if (!bioText && !isInteractive) return null;
-
-        return (
-          <div
-            key={el.id}
-            onClick={handleClick}
-            onPointerDown={handlePointerDown}
-            style={baseWrapperStyle}
-            className={`p-2.5 rounded-xl transition-all ${outlineClasses}`}
-          >
-            <p
-              className="text-xs leading-relaxed select-none text-center whitespace-pre-line"
-              style={{
-                color: el.style?.color || config.identity.bioColor || "#a3a3a3",
-                fontSize: `${el.style?.fontSize || config.identity.bioSize || 14}px`,
-                fontFamily: el.style?.fontFamily || config.identity.bioFont || "Inter",
-              }}
-            >
-              {bioText || (isInteractive ? "Add your biography here..." : "")}
-            </p>
-          </div>
+      case "description":
+      case "text":
+        return renderEditableTextNode(
+          el.type === "bio" ? bio || "Biography text..." : "Custom text content...",
+          true,
+          "p-2.5 rounded-xl"
         );
-      }
+
+      case "authorText":
+      case "footerText":
+      case "timestamp":
+        return renderEditableTextNode(
+          el.type === "footerText" ? "© Pixel.gg Studio" : el.type === "timestamp" ? "Updated just now" : "Author Name",
+          false,
+          "py-1 px-1.5"
+        );
+
+      case "fieldName":
+      case "fieldValue":
+      case "customLabels":
+        return renderEditableTextNode(
+          el.type === "fieldName" ? "FIELD LABEL" : "Field Value Information",
+          false,
+          "py-0.5 px-1"
+        );
 
       case "verificationBadge": {
         return (
@@ -449,32 +493,6 @@ export function CanvasObjectRenderer({
         );
       }
 
-      case "text": {
-        const content = el.props?.content || "Custom text block...";
-        return (
-          <div
-            key={el.id}
-            onClick={handleClick}
-            onPointerDown={handlePointerDown}
-            style={baseWrapperStyle}
-            className={`p-2 rounded-lg ${outlineClasses}`}
-          >
-            <p
-              className="select-none leading-relaxed"
-              style={{
-                color: el.style?.color || "#ffffff",
-                fontSize: `${el.style?.fontSize || 14}px`,
-                fontWeight: el.style?.fontWeight || 400,
-                fontFamily: el.style?.fontFamily || "Inter",
-                textAlign: el.style?.textAlign || "left",
-              }}
-            >
-              {content}
-            </p>
-          </div>
-        );
-      }
-
       case "divider": {
         return (
           <div
@@ -520,13 +538,14 @@ export function CanvasObjectRenderer({
   const freeElements = elements.filter((el) => !el.parentEmbedId);
 
   return (
-    <div className="relative w-full flex flex-col items-center justify-center gap-6 z-10">
-      {/* Multi-Embed Rendering */}
+    <div className="relative w-full h-full">
+      {/* 1. Embed Containers */}
       {embeds.map((embed) => {
         if (embed.isVisible === false) return null;
-        const isEmbedSelected = isInteractive && selectedId === embed.id;
-        const embedChildren = elements.filter((el) => el.parentEmbedId === embed.id);
-        const embedEffects = computeElementEffects(embed.style, config.identity?.titleColor || "#ffffff");
+
+        const isSelectedEmbed = isInteractive && selectedId === embed.id;
+        const embedElements = elements.filter((el) => el.parentEmbedId === embed.id);
+        const effects = computeElementEffects(embed.style, config.identity?.titleColor || "#ffffff");
 
         return (
           <div
@@ -541,68 +560,66 @@ export function CanvasObjectRenderer({
               onPointerDownElement?.(e, embed.id, true);
             }}
             style={{
+              position: "relative",
               width: `${embed.transform.width}px`,
               minHeight: `${embed.transform.height}px`,
+              margin: "0 auto 32px auto",
               transform: `rotate(${embed.transform.rotation || 0}deg)`,
-              backgroundColor: embedEffects.background || embed.style.backgroundColor || "rgba(10, 10, 14, 0.85)",
-              borderColor: embed.style.borderColor || "#26262b",
-              borderWidth: `${embed.style.borderWidth ?? 1}px`,
+              backgroundColor: effects.background || embed.style.backgroundColor || "rgba(10, 10, 14, 0.85)",
+              border: `${embed.style.borderWidth ?? 1}px solid ${embed.style.borderColor || "#26262b"}`,
               borderRadius: `${embed.style.borderRadius ?? 24}px`,
-              padding: `${embed.style.padding ?? 28}px`,
-              boxShadow: isEmbedSelected
-                ? "0 0 20px rgba(251, 191, 36, 0.45)"
-                : embedEffects.boxShadow ||
-                  (embed.style.shadowBlur
-                    ? `0 12px ${embed.style.shadowBlur}px ${embed.style.shadowColor || "rgba(0,0,0,0.5)"}`
-                    : undefined),
-              backdropFilter: embed.style.backdropBlur ? `blur(${embed.style.backdropBlur}px)` : undefined,
-              animation: embedEffects.animation,
-              zIndex: embed.transform.zIndex || 1,
+              padding: `${embed.style.padding ?? 24}px`,
+              boxShadow: isSelectedEmbed
+                ? "0 0 20px rgba(251, 191, 36, 0.5)"
+                : effects.boxShadow,
+              backdropFilter: effects.backdropFilter || (embed.style.backdropBlur ? `blur(${embed.style.backdropBlur}px)` : undefined),
+              animation: effects.animation,
+              transition: effects.transition || "all 0.15s ease",
+              cursor: isInteractive ? "pointer" : "default",
             }}
-            className={`relative flex flex-col items-center justify-center gap-4 transition-all ${
-              isEmbedSelected
+            className={`space-y-4 ${
+              isSelectedEmbed
                 ? "ring-2 ring-amber-400"
                 : isInteractive
                 ? "hover:ring-1 hover:ring-white/30"
                 : ""
             }`}
           >
-            {/* Embed Title Header if specified */}
-            {embed.title && (
-              <div className="w-full flex items-center justify-between text-[10px] text-neutral-500 font-mono pb-1 border-b border-neutral-800/60">
-                <span className="font-bold uppercase tracking-wider text-neutral-400">{embed.title}</span>
-                <span className="text-neutral-600">// EMBED</span>
-              </div>
-            )}
-
-            {/* Empty Embed Canvas State with "+ Add Component" */}
-            {embedChildren.length === 0 && isInteractive && (
-              <div
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenComponentLibrary?.(embed.id);
-                }}
-                className="w-full py-10 px-4 rounded-xl border-2 border-dashed border-neutral-700/60 hover:border-sky-400/80 bg-neutral-900/30 hover:bg-sky-950/20 text-neutral-400 hover:text-sky-300 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all group"
-              >
-                <div className="w-9 h-9 rounded-full bg-neutral-800 group-hover:bg-sky-500/20 border border-neutral-700 group-hover:border-sky-400/60 flex items-center justify-center text-white group-hover:text-sky-400 shadow transition-all">
-                  <Plus size={16} />
-                </div>
-                <span className="text-xs font-bold font-mono tracking-wide">
-                  EMPTY EMBED CANVAS
-                </span>
-                <span className="text-[10px] text-neutral-500 group-hover:text-neutral-400 text-center max-w-[240px]">
-                  Click to open the Component Library and add elements to this embed
+            {/* Embed Header Label in Studio Mode */}
+            {isInteractive && (
+              <div className="flex items-center justify-between text-[10px] font-mono text-neutral-400 border-b border-neutral-800/80 pb-2 select-none">
+                <span className="font-bold text-neutral-300 uppercase tracking-wider">{embed.title}</span>
+                <span className="text-[9px] text-neutral-500">
+                  {Math.round(embed.transform.width)} × {Math.round(embed.transform.height)}
                 </span>
               </div>
             )}
 
-            {/* Child elements inside this embed */}
-            {embedChildren.map(renderElement)}
+            {/* Elements inside this embed */}
+            {embedElements.length > 0 ? (
+              embedElements.map(renderElement)
+            ) : (
+              <div className="p-8 text-center text-neutral-500 border border-dashed border-neutral-800 rounded-xl space-y-2 select-none font-mono">
+                <p className="text-xs">Empty Embed Container</p>
+                {isInteractive && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenComponentLibrary?.(embed.id);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-white text-black font-bold text-xs hover:bg-neutral-200 transition-colors inline-flex items-center gap-1.5"
+                  >
+                    <Plus size={12} /> Add First Element
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
 
-      {/* Freeform Canvas-Level Elements */}
+      {/* 2. Free-floating Elements */}
       {freeElements.map(renderElement)}
     </div>
   );

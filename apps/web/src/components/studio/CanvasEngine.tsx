@@ -21,11 +21,16 @@ import {
   CanvasGridSettings,
   EmbedScalingMode,
   DEFAULT_GRID_SETTINGS,
+  DEFAULT_TEXT_STYLE_GROUPS,
+  TextStyleGroupId,
+  TextStyleDefinition,
+  CanvasElementStyle,
 } from "@/types/studio";
 import { calculateSmartSnap, GuideLine } from "./smartAlignment";
 import { scaleEmbedChildren } from "./embedScaling";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { SelectedObjectMenu } from "./SelectedObjectMenu";
+import { isTextBasedElement, resolveStyleGroup } from "./typographyEngine";
 
 interface CanvasEngineProps {
   canvasState: CanvasEngineState;
@@ -79,6 +84,7 @@ export function CanvasEngine({
   const [activeGuides, setActiveGuides] = useState<GuideLine[]>([]);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isAltPressed, setIsAltPressed] = useState(false);
+  const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
 
   const scale = zoom / 100;
 
@@ -87,11 +93,35 @@ export function CanvasEngine({
   const selectedEmbed = canvasState.embeds.find((em) => em.id === canvasState.selectedId);
   const selectedItem = selectedElement || selectedEmbed;
   const isSelectedEmbed = Boolean(selectedEmbed);
+  const isSelectedText = Boolean(!isSelectedEmbed && selectedElement && isTextBasedElement(selectedElement.type));
+  const selectedElStyle = !isSelectedEmbed ? selectedElement?.style : undefined;
 
-  // Close more menu when selection changes
+  // Close more menu and finish inline editing when selection changes
   useEffect(() => {
     setIsMoreMenuOpen(false);
+    setInlineEditingId(null);
   }, [canvasState.selectedId]);
+
+  const updateSelectedElementStyle = (patch: Partial<CanvasElementStyle>) => {
+    if (!selectedItem || isSelectedEmbed) return;
+    onUpdateCanvas((prev) => ({
+      ...prev,
+      elements: prev.elements.map((el) =>
+        el.id === selectedItem.id
+          ? { ...el, style: { ...(el.style || {}), ...patch } }
+          : el
+      ),
+    }));
+  };
+
+  const handleUpdateElementProps = (id: string, newProps: Record<string, any>) => {
+    onUpdateCanvas((prev) => ({
+      ...prev,
+      elements: prev.elements.map((el) =>
+        el.id === id ? { ...el, props: { ...(el.props || {}), ...newProps } } : el
+      ),
+    }));
+  };
 
   // Track modifier keys and keyboard shortcuts
   useEffect(() => {
@@ -155,6 +185,10 @@ export function CanvasEngine({
         duplicateSelected();
       } else if (e.key === "Escape") {
         e.preventDefault();
+        if (inlineEditingId) {
+          setInlineEditingId(null);
+          return;
+        }
         if (isMoreMenuOpen) {
           setIsMoreMenuOpen(false);
         } else {
@@ -759,7 +793,13 @@ export function CanvasEngine({
         )}
 
       {/* Underlying Profile / Embed Hierarchy */}
-      {children}
+      {React.isValidElement(children)
+        ? React.cloneElement(children as any, {
+            inlineEditingId,
+            onSetInlineEditingId: setInlineEditingId,
+            onUpdateElementProps: handleUpdateElementProps,
+          })
+        : children}
 
       {/* Interactive Selection Bounding Box, 8 Handles & Floating Toolbar */}
       {isInteractive && selectedItem && (
@@ -798,6 +838,32 @@ export function CanvasEngine({
             onDelete={deleteSelected}
             onToggleMoreMenu={() => setIsMoreMenuOpen((prev) => !prev)}
             isMoreMenuOpen={isMoreMenuOpen}
+            isText={isSelectedText}
+            onEditText={() => setInlineEditingId(selectedItem.id)}
+            onToggleBold={() => {
+              const currentWeight = selectedElStyle?.fontWeight || 400;
+              const newWeight = currentWeight >= 700 ? 400 : 700;
+              updateSelectedElementStyle({ fontWeight: newWeight, hasCustomTypographyOverride: true });
+            }}
+            isBold={Boolean(selectedElStyle?.fontWeight && selectedElStyle.fontWeight >= 700)}
+            onToggleItalic={() => {
+              const isItalic = selectedElStyle?.italic === true;
+              updateSelectedElementStyle({ italic: !isItalic, hasCustomTypographyOverride: true });
+            }}
+            isItalic={Boolean(selectedElStyle?.italic)}
+            onCycleAlign={() => {
+              const current = selectedElStyle?.textAlign || "left";
+              const order: Array<"left" | "center" | "right" | "justify"> = ["left", "center", "right", "justify"];
+              const next = order[(order.indexOf(current) + 1) % order.length];
+              updateSelectedElementStyle({ textAlign: next, hasCustomTypographyOverride: true });
+            }}
+            textAlign={selectedElStyle?.textAlign || "left"}
+            fontSize={selectedElStyle?.fontSize || 14}
+            onChangeFontSize={(delta) => {
+              const current = selectedElStyle?.fontSize || 14;
+              const next = Math.max(8, Math.min(96, current + delta));
+              updateSelectedElementStyle({ fontSize: next, hasCustomTypographyOverride: true });
+            }}
           />
 
           {/* Inline Three-Dot More Options Menu (PHASE 7) */}
@@ -807,6 +873,7 @@ export function CanvasEngine({
               isEmbed={isSelectedEmbed}
               isPremium={isPremium}
               themeAccentColor={themeAccentColor}
+              textStyleGroups={canvasState.textStyleGroups || DEFAULT_TEXT_STYLE_GROUPS}
               onUpdateTransform={(t) => {
                 onUpdateCanvas((prev) => {
                   const id = selectedItem.id;
@@ -873,6 +940,106 @@ export function CanvasEngine({
                       elements: prev.elements.map((el) => (el.id === id ? { ...el, isVisible: vis } : el)),
                     };
                   }
+                });
+              }}
+              onUpdateStyleGroup={(groupId, def) => {
+                onUpdateCanvas((prev) => {
+                  const updatedGroups = {
+                    ...(prev.textStyleGroups || DEFAULT_TEXT_STYLE_GROUPS),
+                    [groupId]: def,
+                  };
+                  // Also update non-overridden elements belonging to this group
+                  const updatedElements = prev.elements.map((el) => {
+                    const gId = el.style?.styleGroupId || resolveStyleGroup(el.type);
+                    if (gId === groupId && !el.style?.hasCustomTypographyOverride) {
+                      return {
+                        ...el,
+                        style: {
+                          ...(el.style || {}),
+                          fontFamily: def.fontFamily,
+                          fontSize: def.fontSize,
+                          fontWeight: def.fontWeight,
+                          color: def.color,
+                          letterSpacing: def.letterSpacing,
+                          lineHeight: def.lineHeight,
+                          textAlign: def.textAlign,
+                          textTransform: def.textTransform,
+                          textDecoration: def.textDecoration,
+                        },
+                      };
+                    }
+                    return el;
+                  });
+
+                  return {
+                    ...prev,
+                    textStyleGroups: updatedGroups,
+                    elements: updatedElements,
+                  };
+                });
+              }}
+              onResetElementTypography={(elementId) => {
+                onUpdateCanvas((prev) => {
+                  const el = prev.elements.find((e) => e.id === elementId);
+                  if (!el) return prev;
+                  const gId = el.style?.styleGroupId || resolveStyleGroup(el.type);
+                  const groups = prev.textStyleGroups || DEFAULT_TEXT_STYLE_GROUPS;
+                  const def = groups[gId] || DEFAULT_TEXT_STYLE_GROUPS[gId] || DEFAULT_TEXT_STYLE_GROUPS.body;
+
+                  return {
+                    ...prev,
+                    elements: prev.elements.map((e) =>
+                      e.id === elementId
+                        ? {
+                            ...e,
+                            style: {
+                              ...(e.style || {}),
+                              fontFamily: def.fontFamily,
+                              fontSize: def.fontSize,
+                              fontWeight: def.fontWeight,
+                              color: def.color,
+                              letterSpacing: def.letterSpacing,
+                              lineHeight: def.lineHeight,
+                              textAlign: def.textAlign,
+                              textTransform: def.textTransform,
+                              textDecoration: def.textDecoration,
+                              hasCustomTypographyOverride: false,
+                            },
+                          }
+                        : e
+                    ),
+                  };
+                });
+              }}
+              onApplyGroupToMatchingElements={(groupId) => {
+                onUpdateCanvas((prev) => {
+                  const activeEl = prev.elements.find((e) => e.id === selectedItem.id);
+                  if (!activeEl || !activeEl.style) return prev;
+
+                  return {
+                    ...prev,
+                    elements: prev.elements.map((e) => {
+                      const gId = e.style?.styleGroupId || resolveStyleGroup(e.type);
+                      if (gId === groupId) {
+                        return {
+                          ...e,
+                          style: {
+                            ...(e.style || {}),
+                            fontFamily: activeEl.style!.fontFamily,
+                            fontSize: activeEl.style!.fontSize,
+                            fontWeight: activeEl.style!.fontWeight,
+                            color: activeEl.style!.color,
+                            letterSpacing: activeEl.style!.letterSpacing,
+                            lineHeight: activeEl.style!.lineHeight,
+                            textAlign: activeEl.style!.textAlign,
+                            textTransform: activeEl.style!.textTransform,
+                            textDecoration: activeEl.style!.textDecoration,
+                          },
+                        };
+                      }
+                      return e;
+                    }),
+                  };
                 });
               }}
               onClose={() => setIsMoreMenuOpen(false)}

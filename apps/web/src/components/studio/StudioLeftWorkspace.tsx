@@ -73,7 +73,7 @@ interface StudioLeftWorkspaceProps {
   onToggleLayerLock: (layerId: string) => void;
   onMoveLayer: (layerId: string, direction: "up" | "down") => void;
   onAddEmbed?: () => void;
-  onAddElement?: (type: "text" | "image" | "shape" | "divider") => void;
+  onAddElement?: (type: any) => void;
   onDuplicateLayer?: (layerId: string) => void;
   onDeleteLayer?: (layerId: string) => void;
   selectedId?: string | null;

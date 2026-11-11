@@ -29,7 +29,7 @@ interface StudioLayerManagerProps {
   onDuplicateLayer?: (layerId: string) => void;
   onDeleteLayer?: (layerId: string) => void;
   onAddEmbed?: () => void;
-  onAddElement?: (type: "text" | "image" | "shape" | "divider") => void;
+  onAddElement?: (type: any) => void;
   selectedId?: string | null;
   onSelectElement?: (id: string) => void;
 }

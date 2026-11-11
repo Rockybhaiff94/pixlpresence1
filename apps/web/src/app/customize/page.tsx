@@ -13,7 +13,9 @@ import {
   createDefaultCanvasState,
   CanvasEmbed,
   CanvasElement,
+  CanvasElementType,
 } from "@/types/studio";
+import { getInheritedTextStyle, isTextBasedElement } from "@/components/studio/typographyEngine";
 import { StudioTopBar, DeviceMode, StudioView } from "@/components/studio/StudioTopBar";
 import { StudioLeftWorkspace } from "@/components/studio/StudioLeftWorkspace";
 import { StudioRightPreviewCanvas } from "@/components/studio/StudioRightPreviewCanvas";
@@ -403,11 +405,35 @@ export default function CustomizePage() {
     setMsg({ text: "Added new customizable embed.", type: "success" });
   };
 
-  const handleAddElement = (type: "text" | "image" | "shape" | "divider") => {
+  const handleAddElement = (type: CanvasElementType) => {
     updateConfigWithHistory((prev) => {
       const currentCanvas = prev.canvas || createDefaultCanvasState(prev);
       const newId = `${type}_${Date.now()}`;
       const targetEmbed = currentCanvas.embeds[0];
+
+      let initialStyle: Record<string, any> = {
+        color: "#ffffff",
+        fontSize: 14,
+        borderRadius: 12,
+      };
+
+      let initialProps: Record<string, any> = {};
+
+      if (isTextBasedElement(type)) {
+        initialStyle = getInheritedTextStyle(type, currentCanvas.textStyleGroups);
+        if (type === "displayName") initialProps = { text: displayName || "Display Name" };
+        else if (type === "heading" || type === "title") initialProps = { text: "Heading Title" };
+        else if (type === "subtitle" || type === "tagline") initialProps = { text: "Digital Identity // Nothing OS" };
+        else if (type === "bio" || type === "description") initialProps = { text: bio || "Biography description text..." };
+        else if (type === "footerText") initialProps = { text: "© Pixel.gg Studio • All Rights Reserved" };
+        else if (type === "timestamp") initialProps = { text: "Updated today" };
+        else if (type === "authorText") initialProps = { text: "Author Name" };
+        else if (type === "fieldName") initialProps = { text: "FIELD NAME" };
+        else if (type === "fieldValue") initialProps = { text: "Custom value information" };
+        else initialProps = { content: "New editable text component" };
+      } else if (type === "image") {
+        initialProps = { imageUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500" };
+      }
 
       const newEl: CanvasElement = {
         id: newId,
@@ -418,21 +444,12 @@ export default function CustomizePage() {
           x: 0,
           y: 0,
           width: (prev.layout.maxWidth || 580) - 60,
-          height: type === "divider" ? 2 : type === "text" ? 32 : 120,
+          height: type === "divider" ? 2 : isTextBasedElement(type) ? 36 : 120,
           rotation: 0,
           zIndex: currentCanvas.elements.length + 2,
         },
-        props:
-          type === "text"
-            ? { content: "New editable text component" }
-            : type === "image"
-            ? { imageUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500" }
-            : {},
-        style: {
-          color: "#ffffff",
-          fontSize: 14,
-          borderRadius: 12,
-        },
+        props: initialProps,
+        style: initialStyle,
         isVisible: true,
         isLocked: false,
       };
