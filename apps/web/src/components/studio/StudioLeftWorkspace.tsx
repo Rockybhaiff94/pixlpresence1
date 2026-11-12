@@ -25,6 +25,11 @@ import {
   Grid,
   Command,
   ArrowLeft,
+  Lock,
+  Unlock,
+  Keyboard,
+  RotateCcw,
+  Maximize2,
 } from "lucide-react";
 import {
   ProfileDesignConfig,
@@ -133,6 +138,78 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
 }) => {
   const [cssValidation, setCssValidation] = useState<{ valid: boolean; error?: string }>({ valid: true });
   const [isBgModalOpen, setIsBgModalOpen] = useState(false);
+  const [isRecordingLockShortcut, setIsRecordingLockShortcut] = useState(false);
+  const [recordedShortcut, setRecordedShortcut] = useState("");
+  const [shortcutConflictWarning, setShortcutConflictWarning] = useState<string | null>(null);
+
+  const checkShortcutConflict = (shortcut: string): string | null => {
+    const norm = shortcut.toLowerCase().trim();
+    if (norm === "ctrl + z" || norm === "control + z" || norm === "cmd + z") {
+      return "Conflicts with Undo action (Ctrl+Z)";
+    }
+    if (norm === "ctrl + y" || norm === "control + y" || norm === "ctrl + shift + z") {
+      return "Conflicts with Redo action (Ctrl+Y)";
+    }
+    if (norm === "delete" || norm === "backspace") {
+      return "Conflicts with Delete Canvas Element";
+    }
+    if (norm === "escape") {
+      return "Conflicts with Deselect / Close (Escape)";
+    }
+    if (norm === "ctrl + c" || norm === "control + c") {
+      return "Conflicts with Copy action";
+    }
+    if (norm === "ctrl + v" || norm === "control + v") {
+      return "Conflicts with Paste action";
+    }
+    return null;
+  };
+
+  React.useEffect(() => {
+    if (!isRecordingLockShortcut) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (e.key === "Escape") {
+        setIsRecordingLockShortcut(false);
+        setRecordedShortcut("");
+        setShortcutConflictWarning(null);
+        return;
+      }
+
+      if (e.code === "CapsLock" || e.key === "CapsLock") {
+        setRecordedShortcut("CapsLock");
+        setShortcutConflictWarning(null);
+        return;
+      }
+
+      const parts: string[] = [];
+      if (e.ctrlKey) parts.push("Ctrl");
+      if (e.altKey) parts.push("Alt");
+      if (e.shiftKey) parts.push("Shift");
+      if (e.metaKey) parts.push("Meta");
+
+      const isModifierOnly = ["Control", "Shift", "Alt", "Meta"].includes(e.key);
+      if (isModifierOnly) {
+        setRecordedShortcut(parts.join(" + ") + (parts.length > 0 ? " + ..." : ""));
+        return;
+      }
+
+      let keyName = e.key.toUpperCase();
+      if (keyName === " ") keyName = "Space";
+      parts.push(keyName);
+
+      const captured = parts.join(" + ");
+      setRecordedShortcut(captured);
+      const conflict = checkShortcutConflict(captured);
+      setShortcutConflictWarning(conflict);
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [isRecordingLockShortcut]);
 
   const CATEGORIES: Array<{
     id: StudioTab;
@@ -2062,6 +2139,271 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                       <span>Note: Using {config.advanced?.precisionModifier} may conflict with browser default tabs or shortcuts.</span>
                     </div>
                   )}
+                </div>
+
+                {/* DOCK CONTROLS & POSITION LOCK (SECTIONS 2 & 3) */}
+                <div className="p-4 rounded-xl border border-neutral-800 bg-[#101012] space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-white font-semibold text-xs flex items-center gap-2">
+                        <Lock size={14} className="text-amber-400" /> Dock Controls: Dock Position Lock
+                      </span>
+                      <p className="text-[10px] text-neutral-500 pt-0.5">
+                        Lock your floating dock in its current position to prevent accidental movement. Customize the keyboard shortcut used to lock or unlock it.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextLock = !(config.advanced?.dockLocked ?? false);
+                        updateConfig((prev) => ({
+                          ...prev,
+                          advanced: {
+                            ...DEFAULT_DESIGN_CONFIG.advanced,
+                            ...(prev.advanced || {}),
+                            dockLocked: nextLock,
+                          },
+                        }));
+                        try {
+                          localStorage.setItem("pixel_studio_dock_locked", String(nextLock));
+                        } catch {}
+                      }}
+                      className={`px-3 py-1 rounded text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                        (config.advanced?.dockLocked ?? false)
+                          ? "bg-amber-400 text-black shadow-[0_0_12px_rgba(251,191,36,0.4)]"
+                          : "bg-neutral-800 text-neutral-400 hover:text-white"
+                      }`}
+                    >
+                      {(config.advanced?.dockLocked ?? false) ? (
+                        <>
+                          <Lock size={11} /> LOCKED
+                        </>
+                      ) : (
+                        <>
+                          <Unlock size={11} /> UNLOCKED
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Shortcut Configuration */}
+                  <div className="pt-2 border-t border-neutral-800/80 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-neutral-300 font-medium flex items-center gap-1.5">
+                        <Keyboard size={13} className="text-neutral-400" /> Dock Lock Shortcut
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <div className="px-2.5 py-1 rounded bg-black border border-neutral-700 text-amber-300 font-mono text-[11px] font-bold tracking-wider">
+                          {(config.advanced?.dockLockShortcut || "CapsLock").toUpperCase() === "CAPSLOCK"
+                            ? "CAPS LOCK"
+                            : config.advanced?.dockLockShortcut || "CAPS LOCK"}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsRecordingLockShortcut(true);
+                            setRecordedShortcut("");
+                            setShortcutConflictWarning(null);
+                          }}
+                          className="px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-medium cursor-pointer transition-colors"
+                        >
+                          Change
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateConfig((prev) => ({
+                              ...prev,
+                              advanced: {
+                                ...DEFAULT_DESIGN_CONFIG.advanced,
+                                ...(prev.advanced || {}),
+                                dockLockShortcut: "CapsLock",
+                              },
+                            }));
+                            try {
+                              localStorage.setItem("pixel_studio_dock_lock_shortcut", "CapsLock");
+                            } catch {}
+                          }}
+                          className="p-1 rounded text-neutral-500 hover:text-neutral-300 transition-colors"
+                          title="Reset to Default (CAPS LOCK)"
+                        >
+                          <RotateCcw size={13} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Recording Mode UI */}
+                    {isRecordingLockShortcut && (
+                      <div className="p-3 rounded-lg bg-neutral-900 border border-amber-500/40 space-y-2">
+                        <div className="text-[11px] text-neutral-200">
+                          Press a key or key combination to assign your dock lock shortcut.
+                        </div>
+                        {recordedShortcut && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-neutral-400">Captured:</span>
+                            <span className="px-2 py-0.5 rounded bg-black border border-amber-400 text-amber-300 font-mono text-xs font-bold">
+                              {recordedShortcut.toUpperCase() === "CAPSLOCK" ? "CAPS LOCK" : recordedShortcut}
+                            </span>
+                          </div>
+                        )}
+                        {shortcutConflictWarning && (
+                          <div className="p-2 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] flex items-center gap-1.5">
+                            <AlertCircle size={12} className="shrink-0" />
+                            <span>{shortcutConflictWarning}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsRecordingLockShortcut(false);
+                              setRecordedShortcut("");
+                              setShortcutConflictWarning(null);
+                            }}
+                            className="px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[10px] cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!recordedShortcut || !!shortcutConflictWarning || recordedShortcut.endsWith("...")}
+                            onClick={() => {
+                              if (recordedShortcut && !shortcutConflictWarning && !recordedShortcut.endsWith("...")) {
+                                updateConfig((prev) => ({
+                                  ...prev,
+                                  advanced: {
+                                    ...DEFAULT_DESIGN_CONFIG.advanced,
+                                    ...(prev.advanced || {}),
+                                    dockLockShortcut: recordedShortcut,
+                                  },
+                                }));
+                                try {
+                                  localStorage.setItem("pixel_studio_dock_lock_shortcut", recordedShortcut);
+                                } catch {}
+                                setIsRecordingLockShortcut(false);
+                                setRecordedShortcut("");
+                              }
+                            }}
+                            className="px-3 py-1 rounded bg-amber-400 hover:bg-amber-300 text-black text-[10px] font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Save Shortcut
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* MORE OPTIONS PANEL SIZE CUSTOMIZATION (SECTION 4) */}
+                <div className="p-4 rounded-xl border border-neutral-800 bg-[#101012] space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-white font-semibold text-xs flex items-center gap-2">
+                        <Maximize2 size={14} className="text-emerald-400" /> More Options Panel: Panel Size
+                      </span>
+                      <p className="text-[10px] text-neutral-500 pt-0.5">
+                        Adjust the size of your More Options panel to fit your workspace.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-bold text-emerald-400 px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/30">
+                        {config.advanced?.moreOptionsPanelSize ?? 100}%
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateConfig((prev) => ({
+                            ...prev,
+                            advanced: {
+                              ...DEFAULT_DESIGN_CONFIG.advanced,
+                              ...(prev.advanced || {}),
+                              moreOptionsPanelSize: 100,
+                            },
+                          }));
+                          try {
+                            localStorage.setItem("pixel_studio_more_options_size", "100");
+                          } catch {}
+                        }}
+                        className="p-1 rounded text-neutral-500 hover:text-neutral-300 transition-colors"
+                        title="Reset to Default (100%)"
+                      >
+                        <RotateCcw size={13} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Range Slider 20% to 100% */}
+                  <div className="space-y-1">
+                    <input
+                      type="range"
+                      min={20}
+                      max={100}
+                      step={1}
+                      value={config.advanced?.moreOptionsPanelSize ?? 100}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        updateConfig((prev) => ({
+                          ...prev,
+                          advanced: {
+                            ...DEFAULT_DESIGN_CONFIG.advanced,
+                            ...(prev.advanced || {}),
+                            moreOptionsPanelSize: val,
+                          },
+                        }));
+                        try {
+                          localStorage.setItem("pixel_studio_more_options_size", String(val));
+                        } catch {}
+                      }}
+                      className="w-full accent-emerald-400 cursor-pointer h-1.5 bg-neutral-800 rounded-lg"
+                    />
+                    <div className="flex justify-between text-[9px] text-neutral-500 font-mono">
+                      <span>20% (Micro)</span>
+                      <span>35%</span>
+                      <span>50%</span>
+                      <span>75%</span>
+                      <span>100% (Original)</span>
+                    </div>
+                  </div>
+
+                  {/* Quick Preset Buttons (Section 4 Table) */}
+                  <div className="grid grid-cols-5 gap-1.5 pt-1">
+                    {[
+                      { label: "Very Small", pct: 20 },
+                      { label: "Small", pct: 35 },
+                      { label: "Medium", pct: 50 },
+                      { label: "Compact", pct: 75 },
+                      { label: "Original", pct: 100 },
+                    ].map((preset) => {
+                      const isSelected = (config.advanced?.moreOptionsPanelSize ?? 100) === preset.pct;
+                      return (
+                        <button
+                          key={preset.pct}
+                          type="button"
+                          onClick={() => {
+                            updateConfig((prev) => ({
+                              ...prev,
+                              advanced: {
+                                ...DEFAULT_DESIGN_CONFIG.advanced,
+                                ...(prev.advanced || {}),
+                                moreOptionsPanelSize: preset.pct,
+                              },
+                            }));
+                            try {
+                              localStorage.setItem("pixel_studio_more_options_size", String(preset.pct));
+                            } catch {}
+                          }}
+                          className={`py-1.5 px-1 rounded-lg border text-center transition-all ${
+                            isSelected
+                              ? "border-emerald-500 bg-emerald-950/40 text-emerald-300 font-bold shadow-[0_0_10px_rgba(16,185,129,0.2)]"
+                              : "border-neutral-800 bg-neutral-900/60 text-neutral-400 hover:text-white hover:border-neutral-700"
+                          }`}
+                        >
+                          <div className="text-[10px] font-mono">{preset.pct}%</div>
+                          <div className="text-[8px] text-neutral-500 truncate">{preset.label}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* SMART GRID & ALIGNMENT SYSTEM */}

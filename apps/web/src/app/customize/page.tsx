@@ -1109,6 +1109,20 @@ export default function CustomizePage() {
               onAddElement={handleAddElement}
               onOpenSocialSelector={() => setIsSocialModalOpen(true)}
               onOpenRpcCustomizer={() => setIsRpcModalOpen(true)}
+              dockLockShortcut={config.advanced?.dockLockShortcut || "CapsLock"}
+              isDockLocked={config.advanced?.dockLocked ?? false}
+              onDockLockChange={(locked) => {
+                updateConfigWithHistory((prev) => ({
+                  ...prev,
+                  advanced: {
+                    ...DEFAULT_DESIGN_CONFIG.advanced,
+                    ...(prev.advanced || {}),
+                    dockLocked: locked,
+                  },
+                }));
+              }}
+              moreOptionsPanelSize={config.advanced?.moreOptionsPanelSize ?? 100}
+              snapThreshold={config.advanced?.dockSnapThreshold ?? 175}
             >
               <StudioLeftWorkspace
                 currentView={currentView}

@@ -18,6 +18,8 @@ import {
   Layers,
   GripHorizontal,
   GripVertical,
+  Lock,
+  Unlock,
   X,
   ArrowUp,
   ArrowDown,
@@ -66,7 +68,50 @@ export interface StudioFloatingDockProps {
 
   // Mode C integrated settings content
   children?: React.ReactNode;
+
+  // Customization & Lock Enhancements
+  dockLockShortcut?: string;
+  isDockLocked?: boolean;
+  onDockLockChange?: (locked: boolean) => void;
+  moreOptionsPanelSize?: number; // 20 to 100 percentage
+  snapThreshold?: number; // In px (160–190px range)
 }
+
+// Utility: format shortcut display for human readability
+export const formatShortcutDisplay = (shortcut?: string): string => {
+  if (!shortcut) return "CAPS LOCK";
+  if (shortcut.toLowerCase() === "capslock") return "CAPS LOCK";
+  return shortcut;
+};
+
+// Utility: match incoming keyboard event to assigned shortcut
+export const matchesShortcut = (e: KeyboardEvent, shortcut: string): boolean => {
+  if (!shortcut) return false;
+  const s = shortcut.trim();
+  if (s.toLowerCase() === "capslock") {
+    return e.code === "CapsLock" || e.key === "CapsLock";
+  }
+
+  const parts = s.split("+").map((p) => p.trim().toLowerCase());
+  const hasCtrl = parts.includes("ctrl") || parts.includes("control");
+  const hasShift = parts.includes("shift");
+  const hasAlt = parts.includes("alt");
+  const hasMeta = parts.includes("meta") || parts.includes("cmd") || parts.includes("command");
+
+  if (hasCtrl !== (e.ctrlKey || (!hasMeta && e.metaKey))) return false;
+  if (hasShift !== e.shiftKey) return false;
+  if (hasAlt !== e.altKey) return false;
+
+  const keyPart = parts.find(
+    (p) => !["ctrl", "control", "shift", "alt", "meta", "cmd", "command"].includes(p)
+  );
+  if (!keyPart) return false;
+
+  return (
+    e.key.toLowerCase() === keyPart.toLowerCase() ||
+    e.code.toLowerCase() === keyPart.toLowerCase()
+  );
+};
 
 export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   position: externalPosition,
@@ -85,6 +130,11 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   dockMode: externalDockMode,
   onDockModeChange,
   children,
+  dockLockShortcut: propShortcut,
+  isDockLocked: propLocked,
+  onDockLockChange,
+  moreOptionsPanelSize: propPanelSize,
+  snapThreshold: propSnapThreshold,
 }) => {
   // Navigation State: Always starts in Mode A ("main") on load / refresh
   const [internalMode, setInternalMode] = useState<DockMode>("main");
@@ -113,12 +163,32 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   // Normalized position along the attached edge or in floating space (0.0 to 1.0)
   const [ratio, setRatio] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
 
+  // Customizable Lock State & Shortcut
+  const [isLocked, setIsLocked] = useState<boolean>(propLocked ?? false);
+  const [lockShortcut, setLockShortcut] = useState<string>(propShortcut || "CapsLock");
+
+  // More Options Panel Size (20% to 100%, default 100%)
+  const panelSize = propPanelSize ?? 100;
+  const panelScale = Math.max(0.2, Math.min(1.0, panelSize / 100));
+
+  // Snapping distance threshold (default ~175px calibrated to 160–190 CSS pixels)
+  const snapThreshold = propSnapThreshold ?? 175;
+
   // Sync external position changes into internal edge state
   useEffect(() => {
     if (externalPosition && externalPosition !== edge && !isDragging) {
       setEdge(externalPosition);
     }
   }, [externalPosition]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync prop changes for lock and shortcut
+  useEffect(() => {
+    if (propLocked !== undefined) setIsLocked(propLocked);
+  }, [propLocked]);
+
+  useEffect(() => {
+    if (propShortcut) setLockShortcut(propShortcut);
+  }, [propShortcut]);
 
   // Dragging State Machine
   const [isDragging, setIsDragging] = useState(false);
@@ -145,15 +215,57 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         if (typeof parsed.ratioX === "number" && typeof parsed.ratioY === "number") {
           setRatio({ x: parsed.ratioX, y: parsed.ratioY });
         }
-        return;
+      } else {
+        const savedPos = localStorage.getItem("pixel_studio_dock_position") as DockPosition;
+        if (savedPos) {
+          setEdge(savedPos);
+          onPositionChange(savedPos);
+        }
       }
-      const savedPos = localStorage.getItem("pixel_studio_dock_position") as DockPosition;
-      if (savedPos) {
-        setEdge(savedPos);
-        onPositionChange(savedPos);
+
+      // Restore lock settings
+      const savedLock = localStorage.getItem("pixel_studio_dock_locked");
+      if (savedLock !== null) {
+        setIsLocked(savedLock === "true");
+      }
+      const savedShortcut = localStorage.getItem("pixel_studio_dock_lock_shortcut");
+      if (savedShortcut) {
+        setLockShortcut(savedShortcut);
       }
     } catch {}
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keyboard shortcut listener to toggle Dock Lock
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Do not trigger while typing in inputs, textareas, or contentEditable elements
+      const target = e.target as HTMLElement;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (matchesShortcut(e, lockShortcut)) {
+        e.preventDefault();
+        setIsLocked((prev) => {
+          const next = !prev;
+          try {
+            localStorage.setItem("pixel_studio_dock_locked", String(next));
+          } catch {}
+          onDockLockChange?.(next);
+          return next;
+        });
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [lockShortcut, onDockLockChange]);
 
   // Window & Container Resize Observer
   useEffect(() => {
@@ -416,6 +528,9 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
     // Only handle primary button (left click)
     if (e.button !== 0) return;
 
+    // If dock is locked, dragging is disabled entirely
+    if (isLocked) return;
+
     // Don't drag if interacting with an input/textarea/select
     const target = e.target as HTMLElement;
     if (
@@ -444,7 +559,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isPointerDownRef.current) return;
+    if (!isPointerDownRef.current || isLocked) return;
 
     const dx = e.clientX - dragStartPointerRef.current.x;
     const dy = e.clientY - dragStartPointerRef.current.y;
@@ -506,8 +621,8 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
       const distRight = Math.abs(containerRect.right - dockRect.right);
 
       const minDist = Math.min(distTop, distBottom, distLeft, distRight);
-      const snapThreshold = 45; // Configurable snapping threshold (35–55 px)
 
+      // Section 1: Calibrated nearest-edge snapping threshold (160–190 CSS pixels)
       let newEdge: DockPosition = "float";
       if (minDist <= snapThreshold) {
         if (minDist === distBottom) newEdge = "bottom";
@@ -592,7 +707,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   };
 
   // ========================================================
-  // DOCK POSITION & ATTACHMENT STYLING CALCULATIONS
+  // POSITION-AWARE DOCK & MORE OPTIONS EXPANSION CALCULATIONS
   // ========================================================
 
   const computeDockStyle = (): React.CSSProperties => {
@@ -620,90 +735,215 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
       };
     }
 
-    // Settled position: dock dimensions for clamping
-    const dockWidth = dockRef.current?.offsetWidth || (isVertical ? 44 : 220);
-    const dockHeight = dockRef.current?.offsetHeight || (isVertical ? 220 : 44);
+    // Base dimensions in Mode A
+    const modeAWidth = isVertical ? 44 : 220;
+    const modeAHeight = isVertical ? 220 : 44;
+
+    // Base dimensions for Expanded Panels (Mode B Directory & Mode C Settings)
+    const baseExpandedWidth = isVertical ? 420 : 540;
+    const baseExpandedHeight = isVertical ? 760 : 560;
+
+    // Apply User-Configured More Options Panel Size (20% to 100%)
+    const effectiveExpandedWidth = Math.min(
+      containerWidth - 24,
+      Math.max(80, Math.round(baseExpandedWidth * panelScale))
+    );
+    const effectiveExpandedHeight = Math.min(
+      containerHeight - 40,
+      Math.max(100, Math.round(baseExpandedHeight * panelScale))
+    );
 
     // Subtle ease-out transition (180–260ms) when snapping or releasing
     const baseTransition =
-      "left 220ms cubic-bezier(0.16, 1, 0.3, 1), top 220ms cubic-bezier(0.16, 1, 0.3, 1), border-radius 180ms ease, box-shadow 180ms ease";
+      "left 220ms cubic-bezier(0.16, 1, 0.3, 1), top 220ms cubic-bezier(0.16, 1, 0.3, 1), width 220ms cubic-bezier(0.16, 1, 0.3, 1), height 220ms cubic-bezier(0.16, 1, 0.3, 1), border-radius 180ms ease, box-shadow 180ms ease";
 
-    const effectiveEdge = edge;
+    // Mode A Anchor Coordinates
+    const maxX_A = Math.max(0, containerWidth - modeAWidth);
+    const maxY_A = Math.max(0, containerHeight - modeAHeight);
+    const dockLeft = Math.max(8, Math.min(maxX_A - 8, ratio.x * maxX_A));
+    const dockTop = Math.max(8, Math.min(maxY_A - 8, ratio.y * maxY_A));
+    const dockCenterX = dockLeft + modeAWidth / 2;
+    const dockCenterY = dockTop + modeAHeight / 2;
 
-    if (effectiveEdge === "bottom") {
-      const maxX = Math.max(0, containerWidth - dockWidth);
-      const leftPx = Math.max(8, Math.min(maxX - 8, ratio.x * maxX));
+    // ========================================================
+    // 1. MODE A (COMPACT DOCK)
+    // ========================================================
+    if (dockMode === "main") {
+      if (edge === "bottom") {
+        return {
+          position: "absolute",
+          bottom: 0,
+          left: `${dockLeft}px`,
+          top: "auto",
+          right: "auto",
+          transition: baseTransition,
+          zIndex: 40,
+          touchAction: "none",
+        };
+      }
+      if (edge === "top") {
+        return {
+          position: "absolute",
+          top: 0,
+          left: `${dockLeft}px`,
+          bottom: "auto",
+          right: "auto",
+          transition: baseTransition,
+          zIndex: 40,
+          touchAction: "none",
+        };
+      }
+      if (edge === "left") {
+        return {
+          position: "absolute",
+          left: 0,
+          top: `${dockTop}px`,
+          right: "auto",
+          bottom: "auto",
+          transition: baseTransition,
+          zIndex: 40,
+          touchAction: "none",
+        };
+      }
+      if (edge === "right") {
+        return {
+          position: "absolute",
+          right: 0,
+          top: `${dockTop}px`,
+          left: "auto",
+          bottom: "auto",
+          transition: baseTransition,
+          zIndex: 40,
+          touchAction: "none",
+        };
+      }
+      // Free-floating mode in Mode A
+      return {
+        position: "absolute",
+        left: `${dockLeft}px`,
+        top: `${dockTop}px`,
+        right: "auto",
+        bottom: "auto",
+        transition: baseTransition,
+        zIndex: 40,
+        touchAction: "none",
+      };
+    }
+
+    // ========================================================
+    // 2. POSITION-AWARE EXPANSION FOR MODES B & C
+    // ========================================================
+
+    // Case A: Attached to BOTTOM edge -> expand upward from bottom wall
+    if (edge === "bottom") {
+      const panelLeft = Math.max(
+        8,
+        Math.min(containerWidth - effectiveExpandedWidth - 8, dockCenterX - effectiveExpandedWidth / 2)
+      );
       return {
         position: "absolute",
         bottom: 0,
-        left: `${leftPx}px`,
+        left: `${panelLeft}px`,
         top: "auto",
         right: "auto",
+        width: `${effectiveExpandedWidth}px`,
         transition: baseTransition,
-        zIndex: 40,
+        zIndex: 45,
         touchAction: "none",
       };
     }
 
-    if (effectiveEdge === "top") {
-      const maxX = Math.max(0, containerWidth - dockWidth);
-      const leftPx = Math.max(8, Math.min(maxX - 8, ratio.x * maxX));
+    // Case B: Attached to TOP edge -> expand downward from top wall
+    if (edge === "top") {
+      const panelLeft = Math.max(
+        8,
+        Math.min(containerWidth - effectiveExpandedWidth - 8, dockCenterX - effectiveExpandedWidth / 2)
+      );
       return {
         position: "absolute",
         top: 0,
-        left: `${leftPx}px`,
+        left: `${panelLeft}px`,
         bottom: "auto",
         right: "auto",
+        width: `${effectiveExpandedWidth}px`,
         transition: baseTransition,
-        zIndex: 40,
+        zIndex: 45,
         touchAction: "none",
       };
     }
 
-    if (effectiveEdge === "left") {
-      const maxY = Math.max(0, containerHeight - dockHeight);
-      const topPx = Math.max(8, Math.min(maxY - 8, ratio.y * maxY));
+    // Case C: Attached to LEFT edge -> expand rightward from left wall
+    if (edge === "left") {
+      const panelTop = Math.max(
+        8,
+        Math.min(containerHeight - effectiveExpandedHeight - 8, dockCenterY - effectiveExpandedHeight / 2)
+      );
       return {
         position: "absolute",
         left: 0,
-        top: `${topPx}px`,
+        top: `${panelTop}px`,
         right: "auto",
         bottom: "auto",
+        width: `${effectiveExpandedWidth}px`,
         transition: baseTransition,
-        zIndex: 40,
+        zIndex: 45,
         touchAction: "none",
       };
     }
 
-    if (effectiveEdge === "right") {
-      const maxY = Math.max(0, containerHeight - dockHeight);
-      const topPx = Math.max(8, Math.min(maxY - 8, ratio.y * maxY));
+    // Case D: Attached to RIGHT edge -> expand leftward from right wall
+    if (edge === "right") {
+      const panelTop = Math.max(
+        8,
+        Math.min(containerHeight - effectiveExpandedHeight - 8, dockCenterY - effectiveExpandedHeight / 2)
+      );
       return {
         position: "absolute",
         right: 0,
-        top: `${topPx}px`,
+        top: `${panelTop}px`,
         left: "auto",
         bottom: "auto",
+        width: `${effectiveExpandedWidth}px`,
         transition: baseTransition,
-        zIndex: 40,
+        zIndex: 45,
         touchAction: "none",
       };
     }
 
-    // Free-floating mode
-    const maxX = Math.max(0, containerWidth - dockWidth);
-    const maxY = Math.max(0, containerHeight - dockHeight);
-    const leftPx = Math.max(12, Math.min(maxX - 12, ratio.x * maxX));
-    const topPx = Math.max(12, Math.min(maxY - 12, ratio.y * maxY));
+    // Case E: FREELY FLOATING ANYWHERE IN VIEWPORT (CRITICAL SECTION 5)
+    // Preserves exact floating state and opens panel at dock's current location
+    const spaceAbove = dockTop;
+    const spaceBelow = containerHeight - (dockTop + modeAHeight);
+
+    let panelTop: number;
+    if (spaceBelow >= effectiveExpandedHeight + 16) {
+      // Expand downward below the floating dock
+      panelTop = dockTop + modeAHeight + 8;
+    } else if (spaceAbove >= effectiveExpandedHeight + 16) {
+      // Expand upward above the floating dock
+      panelTop = dockTop - effectiveExpandedHeight - 8;
+    } else {
+      // Center vertically around the floating dock
+      panelTop = Math.max(
+        12,
+        Math.min(containerHeight - effectiveExpandedHeight - 12, dockCenterY - effectiveExpandedHeight / 2)
+      );
+    }
+
+    const panelLeft = Math.max(
+      12,
+      Math.min(containerWidth - effectiveExpandedWidth - 12, dockCenterX - effectiveExpandedWidth / 2)
+    );
 
     return {
       position: "absolute",
-      left: `${leftPx}px`,
-      top: `${topPx}px`,
+      left: `${panelLeft}px`,
+      top: `${panelTop}px`,
       right: "auto",
       bottom: "auto",
+      width: `${effectiveExpandedWidth}px`,
       transition: baseTransition,
-      zIndex: 40,
+      zIndex: 45,
       touchAction: "none",
     };
   };
@@ -789,8 +1029,8 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
               ? "w-11 py-1 px-1"
               : "h-11 px-1.5 py-1"
             : isVertical
-            ? "w-[420px] max-w-[90vw] h-[90vh] max-h-[92vh]"
-            : "w-[94vw] sm:w-[540px] md:w-[580px] max-w-[620px] max-h-[78vh]"
+            ? "max-w-[90vw] h-[90vh] max-h-[92vh]"
+            : "max-w-[94vw] max-h-[78vh]"
         }`}
       >
         {/* Subtle Edge Contact Line (Wall connection accent) */}
@@ -816,14 +1056,36 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
               isVertical ? "flex-col" : "flex-row"
             } items-center gap-1.5`}
           >
-            {/* Drag Handle Indicator */}
+            {/* Drag Handle or Subtle Lock Indicator (Sections 2 & 3) */}
             <div
-              className={`text-neutral-500 hover:text-neutral-300 transition-colors flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing ${
-                isVertical ? "w-8 h-4 my-0.5" : "w-4 h-8 mx-0.5"
-              }`}
-              title="Drag dock to move or snap to any screen edge"
+              onClick={() => {
+                const nextLock = !isLocked;
+                setIsLocked(nextLock);
+                try {
+                  localStorage.setItem("pixel_studio_dock_locked", String(nextLock));
+                } catch {}
+                onDockLockChange?.(nextLock);
+              }}
+              className={`transition-colors flex items-center justify-center shrink-0 cursor-pointer ${
+                isLocked
+                  ? "text-amber-400 hover:text-amber-300"
+                  : "text-neutral-500 hover:text-neutral-300 cursor-grab active:cursor-grabbing"
+              } ${isVertical ? "w-8 h-4 my-0.5" : "w-4 h-8 mx-0.5"}`}
+              title={
+                isLocked
+                  ? `Dock is locked [${formatShortcutDisplay(lockShortcut)} to unlock]`
+                  : `Drag dock to move or snap to any screen edge [${formatShortcutDisplay(
+                      lockShortcut
+                    )} to lock]`
+              }
             >
-              {isVertical ? <GripHorizontal size={13} /> : <GripVertical size={13} />}
+              {isLocked ? (
+                <Lock size={12} className="shrink-0" />
+              ) : isVertical ? (
+                <GripHorizontal size={13} />
+              ) : (
+                <GripVertical size={13} />
+              )}
             </div>
 
             {/* 4 Primary Customization Tool Icons */}
@@ -937,7 +1199,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         )}
 
         {/* ====================================================== */}
-        {/* MODE B: EXPANDED APP DIRECTORY (1:1 SQUARE ICON GRID) */}
+        {/* MODE B: EXPANDED APP DIRECTORY (POSITION-AWARE)       */}
         {/* ====================================================== */}
         {dockMode === "directory" && (
           <motion.div
@@ -948,7 +1210,10 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
             className="flex flex-col h-full overflow-hidden"
           >
             {/* Header: Title, Active Mode Indicator & Collapse */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#101014] shrink-0">
+            <div
+              style={panelScale !== 1 ? { zoom: panelScale } : undefined}
+              className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#101014] shrink-0"
+            >
               <div className="flex items-center gap-2.5">
                 <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-white shrink-0">
                   <LayoutGrid size={15} />
@@ -957,6 +1222,11 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                   <div className="flex items-center gap-1.5 text-[9px] text-neutral-400 uppercase tracking-widest font-semibold">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                     <span>APP DIRECTORY</span>
+                    {panelSize !== 100 && (
+                      <span className="text-[8px] text-neutral-500 font-mono">
+                        ({panelSize}%)
+                      </span>
+                    )}
                   </div>
                   <h3 className="text-xs font-bold text-white uppercase tracking-wider">
                     All Studio Applications
@@ -977,9 +1247,10 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
               </div>
             </div>
 
-            {/* Scrollable Directory Categorized Icon Grids */}
+            {/* Scrollable Directory Categorized Icon Grids (Scaled by panelScale) */}
             <div
               ref={directoryScrollRef}
+              style={panelScale !== 1 ? { zoom: panelScale } : undefined}
               className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-5"
             >
               {APP_GROUPS.map((group) => (

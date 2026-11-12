@@ -437,6 +437,10 @@ export interface ProfileDesignConfig {
     precisionModifier?: "Alt" | "Control" | "Shift" | "Meta";
     precisionModifierEnabled?: boolean;
     gridSettings?: CanvasGridSettings;
+    dockLockShortcut?: string;
+    dockLocked?: boolean;
+    dockSnapThreshold?: number;
+    moreOptionsPanelSize?: number;
   };
   customCss?: string;
   layers: StudioLayer[];
@@ -762,6 +766,10 @@ export const DEFAULT_DESIGN_CONFIG: ProfileDesignConfig = {
     precisionModifier: "Alt",
     precisionModifierEnabled: true,
     gridSettings: DEFAULT_GRID_SETTINGS,
+    dockLockShortcut: "CapsLock",
+    dockLocked: false,
+    dockSnapThreshold: 175,
+    moreOptionsPanelSize: 100,
   },
   customCss: "",
   layers: [
