@@ -356,37 +356,6 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Quick Switcher between Category / Templates / Layers */}
-            <div className="flex items-center gap-1 bg-[#1a1a20] p-0.5 rounded-lg border border-white/5">
-              <button
-                onClick={() => setCurrentView("categories")}
-                className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${currentView === "categories"
-                    ? "bg-white text-black font-bold"
-                    : "text-neutral-400 hover:text-white"
-                  }`}
-              >
-                Category
-              </button>
-              <button
-                onClick={() => setCurrentView("templates")}
-                className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${currentView === "templates"
-                    ? "bg-white text-black font-bold"
-                    : "text-neutral-400 hover:text-white"
-                  }`}
-              >
-                Templates
-              </button>
-              <button
-                onClick={() => setCurrentView("layers")}
-                className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${currentView === "layers"
-                    ? "bg-white text-black font-bold"
-                    : "text-neutral-400 hover:text-white"
-                  }`}
-              >
-                Layers
-              </button>
-            </div>
-
             {onClose && (
               <button
                 onClick={onClose}
