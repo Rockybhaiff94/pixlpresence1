@@ -127,9 +127,17 @@ export const Footer: React.FC = () => {
         {/* Directory Column 3: Legal & Support */}
         <div className="space-y-3">
           <p className="text-white text-xs font-semibold tracking-widest uppercase">
-            [ 03 // LEGAL ]
+            [ 03 // SUPPORT & LEGAL ]
           </p>
           <ul className="space-y-2 text-neutral-400">
+            <li>
+              <a
+                href="mailto:itsalex0ff@gmail.com"
+                className="hover:text-white transition-colors flex items-center gap-1.5"
+              >
+                <span>Support: itsalex0ff@gmail.com</span>
+              </a>
+            </li>
             <li>
               <Link href="/terms" className="hover:text-white transition-colors">
                 Terms of Service

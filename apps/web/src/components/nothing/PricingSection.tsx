@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Check, Sparkles, Shield, Gift, ArrowRight } from "lucide-react";
 import { motion, type Variants } from "framer-motion";
 import { Button } from "./Button";
+import { useAuth } from "@/context/AuthContext";
+import { openPaddleCheckout } from "@/lib/paddle";
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -29,6 +31,24 @@ const cardVariants: Variants = {
 };
 
 export const PricingSection: React.FC = () => {
+  const { user } = useAuth();
+
+  const handleCheckout = (tierName: string) => {
+    if (tierName === "PREMIUM") {
+      openPaddleCheckout({
+        priceId: process.env.NEXT_PUBLIC_PADDLE_PRICE_PREMIUM || "pri_01m77937g210r680cc5ctrjt06",
+        userId: user?.id,
+        userEmail: user?.email,
+      });
+    } else if (tierName === "CUSTOM BADGE") {
+      openPaddleCheckout({
+        priceId: process.env.NEXT_PUBLIC_PADDLE_PRICE_BADGE || "pri_01m77938ah2vr0fd44jngajdzm",
+        userId: user?.id,
+        userEmail: user?.email,
+      });
+    }
+  };
+
   const tiers = [
     {
       name: "FREE",
@@ -156,13 +176,23 @@ export const PricingSection: React.FC = () => {
               </div>
 
               <div className="pt-4">
-                <Button
-                  variant={t.buttonVariant}
-                  href={t.href}
-                  className="w-full text-xs font-mono justify-center"
-                >
-                  {t.buttonText}
-                </Button>
+                {t.name === "FREE" ? (
+                  <Button
+                    variant={t.buttonVariant}
+                    href={t.href}
+                    className="w-full text-xs font-mono justify-center"
+                  >
+                    {t.buttonText}
+                  </Button>
+                ) : (
+                  <Button
+                    variant={t.buttonVariant}
+                    onClick={() => handleCheckout(t.name)}
+                    className="w-full text-xs font-mono justify-center cursor-pointer"
+                  >
+                    {t.buttonText}
+                  </Button>
+                )}
               </div>
             </motion.div>
           ))}

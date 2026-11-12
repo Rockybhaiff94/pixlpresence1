@@ -18,6 +18,7 @@ import {
 import { AccountLayout } from "@/components/account/AccountLayout";
 import { Button } from "@/components/nothing/Button";
 import { useAuth } from "@/context/AuthContext";
+import { openPaddleCheckout } from "@/lib/paddle";
 
 export default function PremiumPage() {
   const { user } = useAuth();
@@ -58,7 +59,13 @@ export default function PremiumPage() {
             </div>
           ) : (
             <button
-              onClick={() => setCheckoutModal(true)}
+              onClick={() => {
+                openPaddleCheckout({
+                  priceId: process.env.NEXT_PUBLIC_PADDLE_PRICE_PREMIUM || "pri_01m77937g210r680cc5ctrjt06",
+                  userId: user?.id,
+                  userEmail: user?.email,
+                });
+              }}
               className="px-5 py-2.5 rounded-xl bg-white text-black font-bold text-xs hover:bg-neutral-200 transition-colors flex items-center gap-2 cursor-pointer"
             >
               <Crown size={14} className="text-black" />

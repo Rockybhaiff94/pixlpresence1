@@ -8,6 +8,8 @@ import { Footer } from "@/components/nothing/Footer";
 import { FaqSection } from "@/components/nothing/FaqSection";
 import { FooterCta } from "@/components/nothing/FooterCta";
 import { Button } from "@/components/nothing/Button";
+import { useAuth } from "@/context/AuthContext";
+import { openPaddleCheckout } from "@/lib/paddle";
 
 interface FeatureRow {
   name: string;
@@ -112,7 +114,24 @@ const matrix: FeatureRow[] = [
 ];
 
 export default function PricingPage() {
+  const { user } = useAuth();
   const [filterCat, setFilterCat] = useState<string>("ALL");
+
+  const handleCheckout = (type: "PREMIUM" | "BADGE") => {
+    if (type === "PREMIUM") {
+      openPaddleCheckout({
+        priceId: process.env.NEXT_PUBLIC_PADDLE_PRICE_PREMIUM || "pri_01m77937g210r680cc5ctrjt06",
+        userId: user?.id,
+        userEmail: user?.email,
+      });
+    } else {
+      openPaddleCheckout({
+        priceId: process.env.NEXT_PUBLIC_PADDLE_PRICE_BADGE || "pri_01m77938ah2vr0fd44jngajdzm",
+        userId: user?.id,
+        userEmail: user?.email,
+      });
+    }
+  };
 
   const categories = ["ALL", "IDENTITY", "DISCORD", "PREMIUM", "TELEMETRY"];
   const filteredRows =
@@ -218,7 +237,11 @@ export default function PricingPage() {
               </div>
 
               <div className="space-y-2">
-                <Button variant="solid-white" href="/login?returnUri=/pricing" className="w-full justify-center text-xs py-3">
+                <Button
+                  variant="solid-white"
+                  onClick={() => handleCheckout("PREMIUM")}
+                  className="w-full justify-center text-xs py-3 cursor-pointer"
+                >
                   PURCHASE LIFETIME
                 </Button>
                 <div className="text-center text-[10px] text-neutral-500">
@@ -257,7 +280,11 @@ export default function PricingPage() {
                 </ul>
               </div>
 
-              <Button variant="surface" href="/login?returnUri=/pricing" className="w-full justify-center text-xs py-3">
+              <Button
+                variant="surface"
+                onClick={() => handleCheckout("BADGE")}
+                className="w-full justify-center text-xs py-3 cursor-pointer"
+              >
                 PURCHASE BADGE
               </Button>
             </div>
