@@ -113,6 +113,38 @@ test("Lock State & Shortcut configuration support in StudioLeftWorkspace", () =>
   assert(workspaceSource.includes("checkShortcutConflict"), "Must detect shortcut conflicts");
 });
 
+test("Dock icons in Mode A have NO visual hover tooltips in both horizontal and vertical orientations", () => {
+  // Freshly read source to ensure latest content is evaluated
+  const currentDockSrc = fs.readFileSync(dockSourcePath, "utf-8");
+  // Tooltip bubbles in Mode A have been completely removed
+  assert(
+    !currentDockSrc.includes('hoveredTool === tool.id'),
+    "Must not render hover tooltips for primary dock icons"
+  );
+  assert(
+    !currentDockSrc.includes('hoveredTool === "more"'),
+    "Must not render hover tooltips for More Options dock icon"
+  );
+  // Verify accessibility aria-labels are fully preserved
+  assert(
+    currentDockSrc.includes("aria-label={tool.label}"),
+    "Must preserve aria-label accessibility on primary dock buttons"
+  );
+  assert(
+    currentDockSrc.includes('aria-label="More Options (Expand App Directory)"'),
+    "Must preserve aria-label accessibility on More Options button"
+  );
+});
+
+test("More Options panel retains all application names and detailed tool items", () => {
+  const currentDockSrc = fs.readFileSync(dockSourcePath, "utf-8");
+  assert(currentDockSrc.includes("Layout & Structure"), "Must retain Layout & Structure inside More Options");
+  assert(currentDockSrc.includes("Profile Identity"), "Must retain Profile Identity inside More Options");
+  assert(currentDockSrc.includes("Typography & Fonts"), "Must retain Typography & Fonts inside More Options");
+  assert(currentDockSrc.includes("Discord Rich Presence"), "Must retain Discord Rich Presence inside More Options");
+  assert(currentDockSrc.includes("APP DIRECTORY"), "Must retain App Directory header");
+});
+
 // ===============================================================
 // 2. Nearest-Edge Snapping (160–190px Calibrated Distance)
 // ===============================================================

@@ -1104,8 +1104,6 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                       e.stopPropagation();
                       handlePrimaryClick(tool.id);
                     }}
-                    onMouseEnter={() => !isDragging && setHoveredTool(tool.id)}
-                    onMouseLeave={() => setHoveredTool(null)}
                     aria-label={tool.label}
                     className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer ${
                       isActive
@@ -1118,34 +1116,6 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                       <span className="absolute -bottom-0.5 w-1 h-1 rounded-full bg-white shadow" />
                     )}
                   </button>
-
-                  {/* Tooltip on Hover */}
-                  <AnimatePresence>
-                    {!isDragging && hoveredTool === tool.id && (
-                      <motion.div
-                        initial={{ opacity: 0, y: isVertical ? 0 : 4, x: isVertical ? 4 : 0 }}
-                        animate={{ opacity: 1, y: 0, x: 0 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.15 }}
-                        className={`absolute z-50 pointer-events-none px-2.5 py-1 rounded-lg bg-neutral-900 border border-neutral-700 text-white text-[10px] font-mono tracking-wider whitespace-nowrap shadow-xl ${
-                          edge === "bottom"
-                            ? "bottom-full mb-2.5 left-1/2 -translate-x-1/2"
-                            : edge === "top"
-                            ? "top-full mt-2.5 left-1/2 -translate-x-1/2"
-                            : edge === "left"
-                            ? "left-full ml-2.5 top-1/2 -translate-y-1/2"
-                            : "right-full mr-2.5 top-1/2 -translate-y-1/2"
-                        }`}
-                      >
-                        <span>{tool.label}</span>
-                        {tool.hotkey && (
-                          <span className="ml-1.5 px-1 py-0.2 rounded bg-neutral-800 text-neutral-400 text-[9px]">
-                            [{tool.hotkey}]
-                          </span>
-                        )}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
                 </div>
               );
             })}
@@ -1165,35 +1135,11 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                   e.stopPropagation();
                   handleToggleMore();
                 }}
-                onMouseEnter={() => !isDragging && setHoveredTool("more")}
-                onMouseLeave={() => setHoveredTool(null)}
                 aria-label="More Options (Expand App Directory)"
                 className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer text-neutral-400 hover:text-white hover:bg-white/10"
               >
                 <LayoutGrid size={17} />
               </button>
-
-              <AnimatePresence>
-                {!isDragging && hoveredTool === "more" && (
-                  <motion.div
-                    initial={{ opacity: 0, y: isVertical ? 0 : 4, x: isVertical ? 4 : 0 }}
-                    animate={{ opacity: 1, y: 0, x: 0 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.15 }}
-                    className={`absolute z-50 pointer-events-none px-2.5 py-1 rounded-lg bg-neutral-900 border border-neutral-700 text-white text-[10px] font-mono tracking-wider whitespace-nowrap shadow-xl ${
-                      edge === "bottom"
-                        ? "bottom-full mb-2.5 left-1/2 -translate-x-1/2"
-                        : edge === "top"
-                        ? "top-full mt-2.5 left-1/2 -translate-x-1/2"
-                        : edge === "left"
-                        ? "left-full ml-2.5 top-1/2 -translate-y-1/2"
-                        : "right-full mr-2.5 top-1/2 -translate-y-1/2"
-                    }`}
-                  >
-                    <span>More Options (App Directory)</span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
           </div>
         )}
