@@ -160,7 +160,7 @@ class DockPositionEngine {
     this.snapThreshold = snapThreshold; // 160–190 CSS px calibrated visual distance
     this.isLocked = false;
     this.lockShortcut = "CapsLock";
-    this.moreOptionsPanelSize = 100; // 20% to 100%
+    this.moreOptionsPanelSize = 100; // 40% to 100%
     this.mode = "main"; // "main" | "directory" | "settings"
     this.isDragging = false;
     this.dragStartPointer = { x: 0, y: 0 };
@@ -276,7 +276,7 @@ class DockPositionEngine {
 
   // Position-Aware Expansion Calculation for Mode B (More Options)
   computeMoreOptionsExpansion() {
-    const scale = Math.max(0.2, Math.min(1.0, this.moreOptionsPanelSize / 100));
+    const scale = Math.max(0.4, Math.min(1.0, this.moreOptionsPanelSize / 100));
     const baseWidth = this.isVertical ? 420 : 540;
     const baseHeight = this.isVertical ? 760 : 560;
 
@@ -414,36 +414,52 @@ test("Unlocking dock restores normal dragging without repositioning", () => {
 });
 
 // ===============================================================
-// 4. More Options Panel Size Customization (20% to 100%)
+// 4. More Options Panel Size Customization (40% to 100%)
 // ===============================================================
-console.log("\n--- Suite 4: More Options Panel Size Customization ---");
+console.log("\n--- Suite 4: More Options Panel Size Customization (40% to 100%) ---");
 
-test("Default panel size is 100% and scales proportionally across all presets", () => {
+test("Default panel size is 100% and scales proportionally across all 6 mandatory breakpoints (40% to 100%)", () => {
   const engine = new DockPositionEngine();
   assert.strictEqual(engine.moreOptionsPanelSize, 100, "Default size must be 100%");
 
+  // Breakpoint 1: 100% (Full interface)
   const full = engine.computeMoreOptionsExpansion();
-  assert.strictEqual(full.width, 540, "Original 100% width must be 540px");
+  assert.strictEqual(full.width, 540, "100% full width must be 540px");
 
-  // Compact preset: 75%
-  engine.moreOptionsPanelSize = 75;
-  const compact = engine.computeMoreOptionsExpansion();
-  assert.strictEqual(compact.width, 405, "75% compact width must be 405px");
+  // Breakpoint 2: 90% (Slightly compact)
+  engine.moreOptionsPanelSize = 90;
+  const p90 = engine.computeMoreOptionsExpansion();
+  assert.strictEqual(p90.width, 486, "90% slightly compact width must be 486px");
 
-  // Medium preset: 50%
-  engine.moreOptionsPanelSize = 50;
-  const medium = engine.computeMoreOptionsExpansion();
-  assert.strictEqual(medium.width, 270, "50% medium width must be 270px");
+  // Breakpoint 3: 80% (Moderately compact)
+  engine.moreOptionsPanelSize = 80;
+  const p80 = engine.computeMoreOptionsExpansion();
+  assert.strictEqual(p80.width, 432, "80% moderately compact width must be 432px");
 
-  // Small preset: 35%
-  engine.moreOptionsPanelSize = 35;
-  const small = engine.computeMoreOptionsExpansion();
-  assert.strictEqual(small.width, 189, "35% small width must be 189px");
+  // Breakpoint 4: 70% (Reduced information)
+  engine.moreOptionsPanelSize = 70;
+  const p70 = engine.computeMoreOptionsExpansion();
+  assert.strictEqual(p70.width, 378, "70% reduced information width must be 378px");
 
-  // Very Small preset: 20%
+  // Breakpoint 5: 60% (Compact controls)
+  engine.moreOptionsPanelSize = 60;
+  const p60 = engine.computeMoreOptionsExpansion();
+  assert.strictEqual(p60.width, 324, "60% compact controls width must be 324px");
+
+  // Breakpoint 6: 40% (Minimum-size interface)
+  engine.moreOptionsPanelSize = 40;
+  const p40 = engine.computeMoreOptionsExpansion();
+  assert.strictEqual(p40.width, 216, "40% minimum-size width must be 216px");
+
+  // Strict Limits Enforcement: below 40% clamped to 40% (216px)
   engine.moreOptionsPanelSize = 20;
-  const verySmall = engine.computeMoreOptionsExpansion();
-  assert.strictEqual(verySmall.width, 108, "20% very small width must be 108px");
+  const clampedLow = engine.computeMoreOptionsExpansion();
+  assert.strictEqual(clampedLow.width, 216, "Values below 40% must be strictly clamped to 40% (216px)");
+
+  // Strict Limits Enforcement: above 100% clamped to 100% (540px)
+  engine.moreOptionsPanelSize = 120;
+  const clampedHigh = engine.computeMoreOptionsExpansion();
+  assert.strictEqual(clampedHigh.width, 540, "Values above 100% must be strictly clamped to 100% (540px)");
 });
 
 // ===============================================================

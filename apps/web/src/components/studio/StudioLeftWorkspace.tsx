@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Layout,
   User,
@@ -96,6 +96,7 @@ interface StudioLeftWorkspaceProps {
   onCollapsePanel?: () => void;
   isFloatingContext?: boolean;
   onClose?: () => void;
+  panelSize?: number;
 }
 
 export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
@@ -135,11 +136,57 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
   onCollapsePanel,
   isFloatingContext = false,
   onClose,
+  panelSize,
 }) => {
   const [cssValidation, setCssValidation] = useState<{ valid: boolean; error?: string }>({ valid: true });
   const [isBgModalOpen, setIsBgModalOpen] = useState(false);
   const [isRecordingLockShortcut, setIsRecordingLockShortcut] = useState(false);
   const [recordedShortcut, setRecordedShortcut] = useState("");
+
+  // Container-aware responsive layout measurement & intelligent tiers
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [measuredWidth, setMeasuredWidth] = useState<number>(540);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const update = () => {
+      if (containerRef.current) {
+        setMeasuredWidth(containerRef.current.clientWidth);
+      }
+    };
+    update();
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.contentRect.width > 0) {
+            setMeasuredWidth(Math.round(entry.contentRect.width));
+          }
+        }
+      });
+      ro.observe(containerRef.current);
+      return () => ro.disconnect();
+    }
+  }, []);
+
+  const rawPanelSize = panelSize ?? config.advanced?.moreOptionsPanelSize ?? 100;
+  const currentSizePct = Math.max(40, Math.min(100, rawPanelSize));
+
+  // Determine tiers based on measured width or panel size percentage
+  // 100% (~540px): Full interface
+  // 90%  (~486px): Slightly compact
+  // 80%  (~432px): Moderately compact
+  // 70%  (~378px): Reduced information
+  // 60%  (~324px): Compact controls
+  // 40%  (~216px): Minimum-size interface
+  const isWidthUnder = (threshold: number, pctThreshold: number) => {
+    return measuredWidth < threshold || currentSizePct <= pctThreshold;
+  };
+
+  const is90OrBelow = isWidthUnder(510, 90);
+  const is80OrBelow = isWidthUnder(450, 80);
+  const is70OrBelow = isWidthUnder(390, 70);
+  const is60OrBelow = isWidthUnder(330, 60);
+  const is40OrBelow = isWidthUnder(260, 45);
   const [shortcutConflictWarning, setShortcutConflictWarning] = useState<string | null>(null);
 
   const checkShortcutConflict = (shortcut: string): string | null => {
@@ -458,7 +505,12 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+      <div
+        ref={containerRef}
+        className={`flex-1 overflow-y-auto custom-scrollbar ${
+          is40OrBelow ? "p-2.5" : is80OrBelow ? "p-3 sm:p-4" : "p-4 sm:p-6"
+        }`}
+      >
         {/* TEMPLATES VIEW */}
         {currentView === "templates" && (
           <StudioTemplateManager
@@ -2025,76 +2077,119 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
 
             {/* 10. ADVANCED SETTINGS */}
             {activeCategory === "advanced" && (
-              <div className="space-y-6">
+              <div className={is40OrBelow ? "space-y-3" : is80OrBelow ? "space-y-4" : "space-y-6"}>
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Settings size={16} className="text-white" />
-                    ADVANCED WORKSPACE SETTINGS
+                    <Settings size={is40OrBelow ? 14 : 16} className="text-white shrink-0" />
+                    <span className="truncate">
+                      {is40OrBelow ? "ADVANCED SETTINGS" : "ADVANCED WORKSPACE SETTINGS"}
+                    </span>
                   </h3>
-                  <p className="text-neutral-400 text-[11px] pt-0.5">
-                    Wireframe guides, platform badges, scaling engines, precision modifiers, and smart grid settings.
-                  </p>
+                  {!is60OrBelow && (
+                    <p className="text-neutral-400 text-[11px] pt-0.5 leading-snug">
+                      {is80OrBelow
+                        ? "Guides, platform scaling, modifiers, and grid."
+                        : "Wireframe guides, platform badges, scaling engines, precision modifiers, and smart grid settings."}
+                    </p>
+                  )}
                 </div>
 
                 {/* EMBED RESPONSIVE SCALING SYSTEM */}
-                <div className="p-4 rounded-xl border border-neutral-800 bg-[#101012] space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-white font-semibold text-xs flex items-center gap-2">
-                        <Sliders size={14} className="text-sky-400" /> Embed Responsive Scaling Mode
+                <div className={`rounded-xl border border-neutral-800 bg-[#101012] ${
+                  is40OrBelow ? "p-2.5 space-y-2" : is80OrBelow ? "p-3 space-y-2.5" : "p-4 space-y-3"
+                }`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-white font-semibold text-xs flex items-center gap-1.5 truncate">
+                        <Sliders size={14} className="text-sky-400 shrink-0" />
+                        <span className="truncate">
+                          {is40OrBelow ? "Embed Scaling" : is70OrBelow ? "Embed Scaling Mode" : "Embed Responsive Scaling Mode"}
+                        </span>
                       </span>
-                      <p className="text-[10px] text-neutral-500 pt-0.5">
-                        Controls how child elements react when the parent embed is resized.
-                      </p>
+                      {!is60OrBelow && (
+                        <p className="text-[10px] text-neutral-500 pt-0.5 line-clamp-1">
+                          {is80OrBelow
+                            ? "Child elements reaction to embed resize."
+                            : "Controls how child elements react when the parent embed is resized."}
+                        </p>
+                      )}
                     </div>
-                    <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-sky-950/80 border border-sky-500/40 text-sky-300 font-mono">
+                    <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-sky-950/80 border border-sky-500/40 text-sky-300 font-mono shrink-0">
                       {config.advanced?.embedScaling || "hybrid"}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
-                    {(["hybrid", "proportional", "adaptive"] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() =>
-                          updateConfig((prev) => ({
-                            ...prev,
-                            advanced: {
-                              ...DEFAULT_DESIGN_CONFIG.advanced,
-                              ...(prev.advanced || {}),
-                              embedScaling: mode,
-                            },
-                          }))
-                        }
-                        className={`p-2.5 rounded-lg border text-left transition-all ${(config.advanced?.embedScaling || "hybrid") === mode
-                            ? "border-sky-500 bg-sky-950/30 text-white"
-                            : "border-neutral-800 bg-neutral-900/60 text-neutral-400 hover:text-white"
+                  <div className={`grid gap-2 ${
+                    is70OrBelow ? "grid-cols-1" : "grid-cols-3"
+                  }`}>
+                    {(["hybrid", "proportional", "adaptive"] as const).map((mode) => {
+                      const isSelected = (config.advanced?.embedScaling || "hybrid") === mode;
+                      return (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() =>
+                            updateConfig((prev) => ({
+                              ...prev,
+                              advanced: {
+                                ...DEFAULT_DESIGN_CONFIG.advanced,
+                                ...(prev.advanced || {}),
+                                embedScaling: mode,
+                              },
+                            }))
+                          }
+                          className={`rounded-lg border text-left transition-all cursor-pointer ${
+                            is40OrBelow ? "p-2" : "p-2.5"
+                          } ${
+                            isSelected
+                              ? "border-sky-500 bg-sky-950/40 text-white shadow-[0_0_12px_rgba(14,165,233,0.15)]"
+                              : "border-neutral-800 bg-neutral-900/60 text-neutral-400 hover:text-white hover:border-neutral-700"
                           }`}
-                      >
-                        <div className="font-bold text-[11px] capitalize">{mode}</div>
-                        <div className="text-[9px] text-neutral-500 mt-1">
-                          {mode === "hybrid"
-                            ? "Proportional then adaptive (Recommended)"
-                            : mode === "proportional"
-                              ? "Scales all children uniformly"
-                              : "Clamps and wraps inside bounds"}
-                        </div>
-                      </button>
-                    ))}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-[11px] capitalize flex items-center gap-1.5">
+                              {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />}
+                              <span>{mode}</span>
+                              {mode === "hybrid" && is40OrBelow && (
+                                <span className="text-[8px] text-sky-400 font-mono font-normal">(Rec)</span>
+                              )}
+                            </span>
+                            {isSelected && !is70OrBelow && (
+                              <span className="text-[8px] font-mono text-sky-400 uppercase">Active</span>
+                            )}
+                          </div>
+                          {!is40OrBelow && (
+                            <div className={`text-[9px] mt-1 line-clamp-2 ${isSelected ? "text-neutral-300" : "text-neutral-500"}`}>
+                              {mode === "hybrid"
+                                ? "Proportional then adaptive (Recommended)"
+                                : mode === "proportional"
+                                  ? "Scales all children uniformly"
+                                  : "Clamps and wraps inside bounds"}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
                 {/* ALT-DRAG PRECISION EDITING & CUSTOM KEYBIND */}
-                <div className="p-4 rounded-xl border border-neutral-800 bg-[#101012] space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-white font-semibold text-xs flex items-center gap-2">
-                        <Command size={14} className="text-amber-400" /> Precision Dragging & Fine Adjustment
+                <div className={`rounded-xl border border-neutral-800 bg-[#101012] ${
+                  is40OrBelow ? "p-2.5 space-y-2" : is80OrBelow ? "p-3 space-y-2.5" : "p-4 space-y-3"
+                }`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-white font-semibold text-xs flex items-center gap-1.5 truncate">
+                        <Command size={14} className="text-amber-400 shrink-0" />
+                        <span className="truncate">
+                          {is40OrBelow ? "Precision Drag" : is70OrBelow ? "Precision Dragging" : "Precision Dragging & Fine Adjustment"}
+                        </span>
                       </span>
-                      <p className="text-[10px] text-neutral-500 pt-0.5">
-                        Hold modifier key during drag or resize for 0.2x micro-adjustments.
-                      </p>
+                      {!is60OrBelow && (
+                        <p className="text-[10px] text-neutral-500 pt-0.5 line-clamp-1">
+                          {is80OrBelow ? "Modifier key for 0.2x micro-adjustments." : "Hold modifier key during drag or resize for 0.2x micro-adjustments."}
+                        </p>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -2108,18 +2203,25 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           },
                         }))
                       }
-                      className={`px-3 py-1 rounded text-xs font-bold transition-colors ${(config.advanced?.precisionModifierEnabled ?? true)
-                          ? "bg-amber-400 text-black"
-                          : "bg-neutral-800 text-neutral-400"
-                        }`}
+                      className={`px-2.5 py-1 rounded text-xs font-bold transition-colors cursor-pointer shrink-0 ${
+                        (config.advanced?.precisionModifierEnabled ?? true)
+                          ? "bg-amber-400 text-black shadow-[0_0_10px_rgba(251,191,36,0.25)]"
+                          : "bg-neutral-800 text-neutral-400 hover:text-white"
+                      }`}
                     >
-                      {(config.advanced?.precisionModifierEnabled ?? true) ? "ENABLED" : "DISABLED"}
+                      {(config.advanced?.precisionModifierEnabled ?? true)
+                        ? (is40OrBelow ? "ON" : "ENABLED")
+                        : (is40OrBelow ? "OFF" : "DISABLED")}
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-neutral-400">Modifier Keybind</label>
+                  <div className={`grid gap-2.5 pt-1 ${
+                    is70OrBelow ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"
+                  }`}>
+                    <div className="space-y-1 min-w-0">
+                      <label className="text-[10px] text-neutral-400 flex items-center justify-between">
+                        <span>Modifier Keybind</span>
+                      </label>
                       <select
                         value={config.advanced?.precisionModifier || "Alt"}
                         onChange={(e) =>
@@ -2132,12 +2234,12 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                             },
                           }))
                         }
-                        className="w-full bg-neutral-900 border border-neutral-700 rounded px-2.5 py-1.5 text-xs text-white"
+                        className="w-full bg-neutral-900 border border-neutral-700 rounded px-2.5 py-1.5 text-xs text-white cursor-pointer focus:border-amber-400 focus:outline-none"
                       >
-                        <option value="Alt">Alt Key (Default Recommended)</option>
-                        <option value="Control">Control Key (Ctrl)</option>
+                        <option value="Alt">{is60OrBelow ? "Alt (Default)" : "Alt Key (Default Recommended)"}</option>
+                        <option value="Control">{is60OrBelow ? "Ctrl (Control)" : "Control Key (Ctrl)"}</option>
                         <option value="Shift">Shift Key</option>
-                        <option value="Meta">Meta Key (Cmd / Windows)</option>
+                        <option value="Meta">{is60OrBelow ? "Cmd / Win" : "Meta Key (Cmd / Windows)"}</option>
                       </select>
                     </div>
 
@@ -2155,9 +2257,12 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                             },
                           }))
                         }
-                        className="w-full py-1.5 px-3 rounded border border-neutral-700 bg-neutral-900 text-neutral-300 hover:text-white text-xs font-mono transition-colors"
+                        className="w-full py-1.5 px-3 rounded border border-neutral-700 bg-neutral-900 text-neutral-300 hover:text-white text-xs font-mono transition-colors flex items-center justify-center gap-1.5 cursor-pointer hover:border-neutral-500"
                       >
-                        Reset to Default (Alt)
+                        <RotateCcw size={12} className="shrink-0 text-neutral-400" />
+                        <span className="truncate">
+                          {is40OrBelow ? "Reset (Alt)" : is70OrBelow ? "Reset to Default" : "Reset to Default (Alt)"}
+                        </span>
                       </button>
                     </div>
                   </div>
@@ -2165,21 +2270,32 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   {(config.advanced?.precisionModifier === "Control" || config.advanced?.precisionModifier === "Meta") && (
                     <div className="p-2 rounded bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[10px] flex items-center gap-1.5">
                       <AlertCircle size={12} className="shrink-0" />
-                      <span>Note: Using {config.advanced?.precisionModifier} may conflict with browser default tabs or shortcuts.</span>
+                      <span className="leading-tight">
+                        {is40OrBelow
+                          ? `May conflict with ${config.advanced?.precisionModifier} browser shortcuts.`
+                          : `Note: Using ${config.advanced?.precisionModifier} may conflict with browser default tabs or shortcuts.`}
+                      </span>
                     </div>
                   )}
                 </div>
 
                 {/* DOCK CONTROLS & POSITION LOCK (SECTIONS 2 & 3) */}
-                <div className="p-4 rounded-xl border border-neutral-800 bg-[#101012] space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-white font-semibold text-xs flex items-center gap-2">
-                        <Lock size={14} className="text-amber-400" /> Dock Controls: Dock Position Lock
+                <div className={`rounded-xl border border-neutral-800 bg-[#101012] ${
+                  is40OrBelow ? "p-2.5 space-y-2.5" : is80OrBelow ? "p-3 space-y-3" : "p-4 space-y-4"
+                }`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-white font-semibold text-xs flex items-center gap-1.5 truncate">
+                        <Lock size={14} className="text-amber-400 shrink-0" />
+                        <span className="truncate">
+                          {is40OrBelow ? "Dock Lock" : is70OrBelow ? "Dock Position Lock" : "Dock Controls: Dock Position Lock"}
+                        </span>
                       </span>
-                      <p className="text-[10px] text-neutral-500 pt-0.5">
-                        Lock your floating dock in its current position to prevent accidental movement. Customize the keyboard shortcut used to lock or unlock it.
-                      </p>
+                      {!is60OrBelow && (
+                        <p className="text-[10px] text-neutral-500 pt-0.5 line-clamp-1">
+                          {is80OrBelow ? "Lock floating dock in position." : "Lock your floating dock in its current position to prevent accidental movement."}
+                        </p>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -2197,7 +2313,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           localStorage.setItem("pixel_studio_dock_locked", String(nextLock));
                         } catch {}
                       }}
-                      className={`px-3 py-1 rounded text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      className={`px-2.5 py-1 rounded text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
                         (config.advanced?.dockLocked ?? false)
                           ? "bg-amber-400 text-black shadow-[0_0_12px_rgba(251,191,36,0.4)]"
                           : "bg-neutral-800 text-neutral-400 hover:text-white"
@@ -2217,12 +2333,15 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
 
                   {/* Shortcut Configuration */}
                   <div className="pt-2 border-t border-neutral-800/80 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-neutral-300 font-medium flex items-center gap-1.5">
-                        <Keyboard size={13} className="text-neutral-400" /> Dock Lock Shortcut
+                    <div className={`flex gap-2 ${
+                      is70OrBelow ? "flex-col items-start" : "items-center justify-between"
+                    }`}>
+                      <span className="text-[11px] text-neutral-300 font-medium flex items-center gap-1.5 shrink-0">
+                        <Keyboard size={13} className="text-neutral-400 shrink-0" />
+                        <span>Dock Lock Shortcut</span>
                       </span>
-                      <div className="flex items-center gap-2">
-                        <div className="px-2.5 py-1 rounded bg-black border border-neutral-700 text-amber-300 font-mono text-[11px] font-bold tracking-wider">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <div className="px-2 py-0.5 rounded bg-black border border-neutral-700 text-amber-300 font-mono text-[10px] font-bold tracking-wider">
                           {(config.advanced?.dockLockShortcut || "CapsLock").toUpperCase() === "CAPSLOCK"
                             ? "CAPS LOCK"
                             : config.advanced?.dockLockShortcut || "CAPS LOCK"}
@@ -2234,7 +2353,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                             setRecordedShortcut("");
                             setShortcutConflictWarning(null);
                           }}
-                          className="px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-medium cursor-pointer transition-colors"
+                          className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-white text-[10px] font-medium cursor-pointer transition-colors"
                         >
                           Change
                         </button>
@@ -2253,10 +2372,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                               localStorage.setItem("pixel_studio_dock_lock_shortcut", "CapsLock");
                             } catch {}
                           }}
-                          className="p-1 rounded text-neutral-500 hover:text-neutral-300 transition-colors"
+                          className="p-1 rounded text-neutral-500 hover:text-neutral-300 transition-colors cursor-pointer"
                           title="Reset to Default (CAPS LOCK)"
                         >
-                          <RotateCcw size={13} />
+                          <RotateCcw size={12} />
                         </button>
                       </div>
                     </div>
@@ -2323,20 +2442,27 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   </div>
                 </div>
 
-                {/* MORE OPTIONS PANEL SIZE CUSTOMIZATION (SECTION 4) */}
-                <div className="p-4 rounded-xl border border-neutral-800 bg-[#101012] space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-white font-semibold text-xs flex items-center gap-2">
-                        <Maximize2 size={14} className="text-emerald-400" /> More Options Panel: Panel Size
+                {/* MORE OPTIONS PANEL SIZE CUSTOMIZATION (40% to 100%) */}
+                <div className={`rounded-xl border border-neutral-800 bg-[#101012] ${
+                  is40OrBelow ? "p-2.5 space-y-2.5" : is80OrBelow ? "p-3 space-y-3" : "p-4 space-y-3"
+                }`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-white font-semibold text-xs flex items-center gap-1.5 truncate">
+                        <Maximize2 size={14} className="text-emerald-400 shrink-0" />
+                        <span className="truncate">
+                          {is40OrBelow ? "Panel Size" : is70OrBelow ? "More Options Size" : "More Options Panel: Panel Size"}
+                        </span>
                       </span>
-                      <p className="text-[10px] text-neutral-500 pt-0.5">
-                        Adjust the size of your More Options panel to fit your workspace.
-                      </p>
+                      {!is60OrBelow && (
+                        <p className="text-[10px] text-neutral-500 pt-0.5 line-clamp-1">
+                          Adjust More Options panel dimensions (40% to 100%).
+                        </p>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <span className="text-xs font-mono font-bold text-emerald-400 px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/30">
-                        {config.advanced?.moreOptionsPanelSize ?? 100}%
+                        {currentSizePct}%
                       </span>
                       <button
                         type="button"
@@ -2353,7 +2479,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                             localStorage.setItem("pixel_studio_more_options_size", "100");
                           } catch {}
                         }}
-                        className="p-1 rounded text-neutral-500 hover:text-neutral-300 transition-colors"
+                        className="p-1 rounded text-neutral-500 hover:text-neutral-300 transition-colors cursor-pointer"
                         title="Reset to Default (100%)"
                       >
                         <RotateCcw size={13} />
@@ -2361,16 +2487,17 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                     </div>
                   </div>
 
-                  {/* Range Slider 20% to 100% */}
+                  {/* Range Slider 40% to 100% */}
                   <div className="space-y-1">
                     <input
                       type="range"
-                      min={20}
+                      min={40}
                       max={100}
                       step={1}
-                      value={config.advanced?.moreOptionsPanelSize ?? 100}
+                      value={currentSizePct}
                       onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
+                        const raw = parseInt(e.target.value, 10);
+                        const val = Math.max(40, Math.min(100, isNaN(raw) ? 100 : raw));
                         updateConfig((prev) => ({
                           ...prev,
                           advanced: {
@@ -2386,24 +2513,28 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                       className="w-full accent-emerald-400 cursor-pointer h-1.5 bg-neutral-800 rounded-lg"
                     />
                     <div className="flex justify-between text-[9px] text-neutral-500 font-mono">
-                      <span>20% (Micro)</span>
-                      <span>35%</span>
-                      <span>50%</span>
-                      <span>75%</span>
-                      <span>100% (Original)</span>
+                      <span>40% (Min)</span>
+                      {!is40OrBelow && <span>60%</span>}
+                      {!is60OrBelow && <span>70%</span>}
+                      {!is40OrBelow && <span>80%</span>}
+                      {!is60OrBelow && <span>90%</span>}
+                      <span>100% (Full)</span>
                     </div>
                   </div>
 
-                  {/* Quick Preset Buttons (Section 4 Table) */}
-                  <div className="grid grid-cols-5 gap-1.5 pt-1">
+                  {/* Quick Preset Buttons (40%, 60%, 70%, 80%, 90%, 100%) */}
+                  <div className={`grid gap-1.5 pt-1 ${
+                    is80OrBelow ? "grid-cols-3" : "grid-cols-6"
+                  }`}>
                     {[
-                      { label: "Very Small", pct: 20 },
-                      { label: "Small", pct: 35 },
-                      { label: "Medium", pct: 50 },
-                      { label: "Compact", pct: 75 },
-                      { label: "Original", pct: 100 },
+                      { label: "Min", fullLabel: "Minimum", pct: 40 },
+                      { label: "Compact", fullLabel: "Compact", pct: 60 },
+                      { label: "Medium", fullLabel: "Medium", pct: 70 },
+                      { label: "Moderate", fullLabel: "Moderate", pct: 80 },
+                      { label: "Slight", fullLabel: "Slight", pct: 90 },
+                      { label: "Full", fullLabel: "Original", pct: 100 },
                     ].map((preset) => {
-                      const isSelected = (config.advanced?.moreOptionsPanelSize ?? 100) === preset.pct;
+                      const isSelected = currentSizePct === preset.pct;
                       return (
                         <button
                           key={preset.pct}
@@ -2421,14 +2552,18 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                               localStorage.setItem("pixel_studio_more_options_size", String(preset.pct));
                             } catch {}
                           }}
-                          className={`py-1.5 px-1 rounded-lg border text-center transition-all ${
+                          className={`py-1.5 px-1 rounded-lg border text-center transition-all cursor-pointer ${
                             isSelected
                               ? "border-emerald-500 bg-emerald-950/40 text-emerald-300 font-bold shadow-[0_0_10px_rgba(16,185,129,0.2)]"
                               : "border-neutral-800 bg-neutral-900/60 text-neutral-400 hover:text-white hover:border-neutral-700"
                           }`}
                         >
                           <div className="text-[10px] font-mono">{preset.pct}%</div>
-                          <div className="text-[8px] text-neutral-500 truncate">{preset.label}</div>
+                          {!is40OrBelow && (
+                            <div className="text-[8px] text-neutral-500 truncate">
+                              {is60OrBelow ? preset.label : preset.fullLabel}
+                            </div>
+                          )}
                         </button>
                       );
                     })}
@@ -2436,17 +2571,22 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                 </div>
 
                 {/* SMART GRID & ALIGNMENT SYSTEM */}
-                <div className="p-4 rounded-xl border border-neutral-800 bg-[#101012] space-y-4">
+                <div className={`rounded-xl border border-neutral-800 bg-[#101012] ${
+                  is40OrBelow ? "p-2.5 space-y-2.5" : is80OrBelow ? "p-3 space-y-3" : "p-4 space-y-4"
+                }`}>
                   <div>
-                    <span className="text-white font-semibold text-xs flex items-center gap-2">
-                      <Grid size={14} className="text-cyan-400" /> Smart Grid & Alignment Guides
+                    <span className="text-white font-semibold text-xs flex items-center gap-1.5">
+                      <Grid size={14} className="text-cyan-400 shrink-0" />
+                      <span className="truncate">Smart Grid & Alignment</span>
                     </span>
-                    <p className="text-[10px] text-neutral-500 pt-0.5">
-                      Snapping, dynamic alignment guide lines, and visual spacing guides.
-                    </p>
+                    {!is60OrBelow && (
+                      <p className="text-[10px] text-neutral-500 pt-0.5 line-clamp-1">
+                        Snapping, dynamic guide lines, and visual spacing guides.
+                      </p>
+                    )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className={`grid gap-2 ${is70OrBelow ? "grid-cols-1" : "grid-cols-2"}`}>
                     <button
                       type="button"
                       onClick={() =>
@@ -2462,15 +2602,25 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           },
                         }))
                       }
-                      className={`p-2.5 rounded-lg border text-left transition-colors ${config.advanced?.gridSettings?.showGrid
+                      className={`rounded-lg border text-left transition-colors cursor-pointer ${
+                        is40OrBelow ? "p-2" : "p-2.5"
+                      } ${
+                        config.advanced?.gridSettings?.showGrid
                           ? "border-cyan-500 bg-cyan-950/30 text-cyan-200"
-                          : "border-neutral-800 bg-neutral-900/60 text-neutral-400"
-                        }`}
+                          : "border-neutral-800 bg-neutral-900/60 text-neutral-400 hover:text-white"
+                      }`}
                     >
-                      <div className="font-bold text-[11px]">Show Visual Grid</div>
-                      <div className="text-[9px] text-neutral-500">
-                        {config.advanced?.gridSettings?.showGrid ? "Overlay active" : "Hidden"}
+                      <div className="font-bold text-[11px] flex items-center justify-between">
+                        <span>Show Visual Grid</span>
+                        {config.advanced?.gridSettings?.showGrid && (
+                          <span className="text-[8px] font-mono text-cyan-400">ON</span>
+                        )}
                       </div>
+                      {!is40OrBelow && (
+                        <div className="text-[9px] text-neutral-500">
+                          {config.advanced?.gridSettings?.showGrid ? "Overlay active" : "Hidden"}
+                        </div>
+                      )}
                     </button>
 
                     <button
@@ -2488,15 +2638,25 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           },
                         }))
                       }
-                      className={`p-2.5 rounded-lg border text-left transition-colors ${(config.advanced?.gridSettings?.snapToGrid ?? true)
+                      className={`rounded-lg border text-left transition-colors cursor-pointer ${
+                        is40OrBelow ? "p-2" : "p-2.5"
+                      } ${
+                        (config.advanced?.gridSettings?.snapToGrid ?? true)
                           ? "border-cyan-500 bg-cyan-950/30 text-cyan-200"
-                          : "border-neutral-800 bg-neutral-900/60 text-neutral-400"
-                        }`}
+                          : "border-neutral-800 bg-neutral-900/60 text-neutral-400 hover:text-white"
+                      }`}
                     >
-                      <div className="font-bold text-[11px]">Snap to Grid</div>
-                      <div className="text-[9px] text-neutral-500">
-                        {(config.advanced?.gridSettings?.snapToGrid ?? true) ? "Active" : "Free position"}
+                      <div className="font-bold text-[11px] flex items-center justify-between">
+                        <span>Snap to Grid</span>
+                        {(config.advanced?.gridSettings?.snapToGrid ?? true) && (
+                          <span className="text-[8px] font-mono text-cyan-400">ON</span>
+                        )}
                       </div>
+                      {!is40OrBelow && (
+                        <div className="text-[9px] text-neutral-500">
+                          {(config.advanced?.gridSettings?.snapToGrid ?? true) ? "Active" : "Free position"}
+                        </div>
+                      )}
                     </button>
 
                     <button
@@ -2514,13 +2674,23 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           },
                         }))
                       }
-                      className={`p-2.5 rounded-lg border text-left transition-colors ${(config.advanced?.gridSettings?.smartGuides ?? true)
+                      className={`rounded-lg border text-left transition-colors cursor-pointer ${
+                        is40OrBelow ? "p-2" : "p-2.5"
+                      } ${
+                        (config.advanced?.gridSettings?.smartGuides ?? true)
                           ? "border-cyan-500 bg-cyan-950/30 text-cyan-200"
-                          : "border-neutral-800 bg-neutral-900/60 text-neutral-400"
-                        }`}
+                          : "border-neutral-800 bg-neutral-900/60 text-neutral-400 hover:text-white"
+                      }`}
                     >
-                      <div className="font-bold text-[11px]">Smart Guides</div>
-                      <div className="text-[9px] text-neutral-500">Center & edge lines</div>
+                      <div className="font-bold text-[11px] flex items-center justify-between">
+                        <span>Smart Guides</span>
+                        {(config.advanced?.gridSettings?.smartGuides ?? true) && (
+                          <span className="text-[8px] font-mono text-cyan-400">ON</span>
+                        )}
+                      </div>
+                      {!is40OrBelow && (
+                        <div className="text-[9px] text-neutral-500">Center & edge lines</div>
+                      )}
                     </button>
 
                     <button
@@ -2538,17 +2708,27 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           },
                         }))
                       }
-                      className={`p-2.5 rounded-lg border text-left transition-colors ${(config.advanced?.gridSettings?.snapToElements ?? true)
+                      className={`rounded-lg border text-left transition-colors cursor-pointer ${
+                        is40OrBelow ? "p-2" : "p-2.5"
+                      } ${
+                        (config.advanced?.gridSettings?.snapToElements ?? true)
                           ? "border-cyan-500 bg-cyan-950/30 text-cyan-200"
-                          : "border-neutral-800 bg-neutral-900/60 text-neutral-400"
-                        }`}
+                          : "border-neutral-800 bg-neutral-900/60 text-neutral-400 hover:text-white"
+                      }`}
                     >
-                      <div className="font-bold text-[11px]">Snap to Elements</div>
-                      <div className="text-[9px] text-neutral-500">Align with siblings</div>
+                      <div className="font-bold text-[11px] flex items-center justify-between">
+                        <span>Snap to Elements</span>
+                        {(config.advanced?.gridSettings?.snapToElements ?? true) && (
+                          <span className="text-[8px] font-mono text-cyan-400">ON</span>
+                        )}
+                      </div>
+                      {!is40OrBelow && (
+                        <div className="text-[9px] text-neutral-500">Align with siblings</div>
+                      )}
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div className={`grid gap-3 pt-2 ${is70OrBelow ? "grid-cols-1" : "grid-cols-2"}`}>
                     <div className="space-y-1">
                       <div className="flex justify-between text-[10px] text-neutral-400">
                         <span>Grid Size</span>
@@ -2611,11 +2791,13 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="p-3 rounded-xl border border-neutral-800 bg-[#101012] flex items-center justify-between">
-                    <div>
-                      <span className="text-white font-semibold">Wireframe Guides</span>
-                      <p className="text-[10px] text-neutral-500">Show element bounds in editor</p>
+                <div className={`grid gap-3 ${is70OrBelow ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"}`}>
+                  <div className="p-3 rounded-xl border border-neutral-800 bg-[#101012] flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-white font-semibold text-xs truncate block">Wireframe Guides</span>
+                      {!is60OrBelow && (
+                        <p className="text-[10px] text-neutral-500 truncate">Show element bounds in editor</p>
+                      )}
                     </div>
                     <button
                       onClick={() =>
@@ -2628,7 +2810,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           },
                         }))
                       }
-                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${config.advanced?.wireframeMode
+                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors shrink-0 ${config.advanced?.wireframeMode
                           ? "bg-white text-black"
                           : "bg-neutral-800 text-neutral-400"
                         }`}
@@ -2637,10 +2819,12 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                     </button>
                   </div>
 
-                  <div className="p-3 rounded-xl border border-neutral-800 bg-[#101012] flex items-center justify-between">
-                    <div>
-                      <span className="text-white font-semibold">Watermark Pill</span>
-                      <p className="text-[10px] text-neutral-500">Display &quot;Built with Pixel.gg&quot;</p>
+                  <div className="p-3 rounded-xl border border-neutral-800 bg-[#101012] flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-white font-semibold text-xs truncate block">Watermark Pill</span>
+                      {!is60OrBelow && (
+                        <p className="text-[10px] text-neutral-500 truncate">Display &quot;Built with Pixel.gg&quot;</p>
+                      )}
                     </div>
                     <button
                       onClick={() =>
@@ -2653,7 +2837,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           },
                         }))
                       }
-                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${config.advanced?.watermark
+                      className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors shrink-0 ${config.advanced?.watermark
                           ? "bg-white text-black"
                           : "bg-neutral-800 text-neutral-400"
                         }`}

@@ -167,9 +167,9 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   const [isLocked, setIsLocked] = useState<boolean>(propLocked ?? false);
   const [lockShortcut, setLockShortcut] = useState<string>(propShortcut || "CapsLock");
 
-  // More Options Panel Size (20% to 100%, default 100%)
-  const panelSize = propPanelSize ?? 100;
-  const panelScale = Math.max(0.2, Math.min(1.0, panelSize / 100));
+  // More Options Panel Size (40% to 100%, default 100%)
+  const panelSize = Math.max(40, Math.min(100, propPanelSize ?? 100));
+  const panelScale = Math.max(0.4, Math.min(1.0, panelSize / 100));
 
   // Snapping distance threshold (default ~175px calibrated to 160–190 CSS pixels)
   const snapThreshold = propSnapThreshold ?? 175;
@@ -743,14 +743,14 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
     const baseExpandedWidth = isVertical ? 420 : 540;
     const baseExpandedHeight = isVertical ? 760 : 560;
 
-    // Apply User-Configured More Options Panel Size (20% to 100%)
+    // Apply User-Configured More Options Panel Size (40% to 100%)
     const effectiveExpandedWidth = Math.min(
       containerWidth - 24,
-      Math.max(80, Math.round(baseExpandedWidth * panelScale))
+      Math.max(Math.round(baseExpandedWidth * 0.4), Math.round(baseExpandedWidth * panelScale))
     );
     const effectiveExpandedHeight = Math.min(
       containerHeight - 40,
-      Math.max(100, Math.round(baseExpandedHeight * panelScale))
+      Math.max(Math.round(baseExpandedHeight * 0.4), Math.round(baseExpandedHeight * panelScale))
     );
 
     // Subtle ease-out transition (180–260ms) when snapping or releasing
@@ -1156,15 +1156,6 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.96 }}
             transition={{ duration: 0.2 }}
-            style={
-              panelScale !== 1
-                ? {
-                    zoom: panelScale,
-                    width: `${(100 / panelScale).toFixed(3)}%`,
-                    height: `${(100 / panelScale).toFixed(3)}%`,
-                  }
-                : undefined
-            }
             className="flex flex-col h-full overflow-hidden"
           >
             {/* Header: Title, Active Mode Indicator & Collapse */}
@@ -1329,15 +1320,6 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.97 }}
             transition={{ duration: 0.2 }}
-            style={
-              panelScale !== 1
-                ? {
-                    zoom: panelScale,
-                    width: `${(100 / panelScale).toFixed(3)}%`,
-                    height: `${(100 / panelScale).toFixed(3)}%`,
-                  }
-                : undefined
-            }
             className="flex flex-col h-full overflow-hidden"
           >
             {/* Integrated Settings Content with Built-In Back & Collapse Controls */}
@@ -1345,6 +1327,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
               {children ? (
                 React.cloneElement(children as React.ReactElement<any>, {
                   isFloatingContext: true,
+                  panelSize,
                   onBack: () => setDockMode("directory"),
                   onClose: () => setDockMode("main"),
                 })
