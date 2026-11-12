@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   Layout,
   User,
@@ -97,6 +97,8 @@ interface StudioLeftWorkspaceProps {
   isFloatingContext?: boolean;
   onClose?: () => void;
   panelSize?: number;
+  dockWidth?: number;
+  isVertical?: boolean;
 }
 
 export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
@@ -137,33 +139,39 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
   isFloatingContext = false,
   onClose,
   panelSize,
+  dockWidth,
+  isVertical = false,
 }) => {
   const [cssValidation, setCssValidation] = useState<{ valid: boolean; error?: string }>({ valid: true });
   const [isBgModalOpen, setIsBgModalOpen] = useState(false);
   const [isRecordingLockShortcut, setIsRecordingLockShortcut] = useState(false);
   const [recordedShortcut, setRecordedShortcut] = useState("");
 
-  // Container-aware responsive layout measurement & intelligent tiers
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [measuredWidth, setMeasuredWidth] = useState<number>(540);
+  // Outer container ref for stable, non-feedback measurement
+  const outerContainerRef = useRef<HTMLDivElement>(null);
+  const [measuredOuterWidth, setMeasuredOuterWidth] = useState<number>(540);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!outerContainerRef.current) return;
     const update = () => {
-      if (containerRef.current) {
-        setMeasuredWidth(containerRef.current.clientWidth);
+      if (outerContainerRef.current) {
+        setMeasuredOuterWidth(outerContainerRef.current.clientWidth);
       }
     };
     update();
     if (typeof ResizeObserver !== "undefined") {
+      let lastWidth = outerContainerRef.current.clientWidth;
       const ro = new ResizeObserver((entries) => {
         for (const entry of entries) {
-          if (entry.contentRect.width > 0) {
-            setMeasuredWidth(Math.round(entry.contentRect.width));
+          const w = Math.round(entry.contentRect.width);
+          // 4px deadband eliminates subpixel / fractional rounding jitter
+          if (w > 0 && Math.abs(w - lastWidth) > 4) {
+            lastWidth = w;
+            setMeasuredOuterWidth(w);
           }
         }
       });
-      ro.observe(containerRef.current);
+      ro.observe(outerContainerRef.current);
       return () => ro.disconnect();
     }
   }, []);
@@ -171,22 +179,38 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
   const rawPanelSize = panelSize ?? config.advanced?.moreOptionsPanelSize ?? 100;
   const currentSizePct = Math.max(40, Math.min(100, rawPanelSize));
 
-  // Determine tiers based on measured width or panel size percentage
-  // 100% (~540px): Full interface
-  // 90%  (~486px): Slightly compact
-  // 80%  (~432px): Moderately compact
-  // 70%  (~378px): Reduced information
-  // 60%  (~324px): Compact controls
-  // 40%  (~216px): Minimum-size interface
-  const isWidthUnder = (threshold: number, pctThreshold: number) => {
-    return measuredWidth < threshold || currentSizePct <= pctThreshold;
-  };
+  // Determine effective percentage with a single, stable source of truth:
+  // 1. If panelSize prop is passed from StudioFloatingDock, it is already computed
+  //    accounting for user preferences, dock orientation, and screen constraints.
+  // 2. Otherwise fall back to config settings and outer measured width.
+  const effectivePct = useMemo(() => {
+    if (panelSize !== undefined) {
+      return Math.max(40, Math.min(100, panelSize));
+    }
+    const userPct = currentSizePct;
+    const width = dockWidth || measuredOuterWidth;
+    if (width && width < 535) {
+      const base = isVertical ? 420 : 540;
+      const constrainedMaxPct = Math.round((width / base) * 100);
+      if (constrainedMaxPct < userPct) {
+        return Math.max(40, Math.min(100, constrainedMaxPct));
+      }
+    }
+    return Math.max(40, Math.min(100, userPct));
+  }, [panelSize, currentSizePct, dockWidth, measuredOuterWidth, isVertical]);
 
-  const is90OrBelow = isWidthUnder(510, 90);
-  const is80OrBelow = isWidthUnder(450, 80);
-  const is70OrBelow = isWidthUnder(390, 70);
-  const is60OrBelow = isWidthUnder(330, 60);
-  const is40OrBelow = isWidthUnder(260, 45);
+  // Clean, mutually exclusive & hierarchical tiers:
+  // 100% (>90): Full interface
+  // 90%  (81–90): Slightly compact
+  // 80%  (71–80): Moderately compact
+  // 70%  (61–70): Stable reduced information
+  // 60%  (46–60): Compact controls
+  // 40%  (40–45): Minimum-size interface
+  const is90OrBelow = effectivePct <= 90;
+  const is80OrBelow = effectivePct <= 80;
+  const is70OrBelow = effectivePct <= 70;
+  const is60OrBelow = effectivePct <= 60;
+  const is40OrBelow = effectivePct <= 45;
   const [shortcutConflictWarning, setShortcutConflictWarning] = useState<string | null>(null);
 
   const checkShortcutConflict = (shortcut: string): string | null => {
@@ -347,6 +371,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
 
   return (
     <div
+      ref={outerContainerRef}
       style={getWorkspaceStyles()}
       className={`flex-1 flex flex-col min-h-0 text-xs font-mono text-[#ededed] select-none transition-colors duration-200 ${transparencyMode === "floating"
           ? "m-2 sm:m-3 rounded-2xl border shadow-2xl overflow-hidden"
@@ -506,7 +531,6 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
 
       {/* Main Content Area */}
       <div
-        ref={containerRef}
         className={`flex-1 overflow-y-auto custom-scrollbar ${
           is40OrBelow ? "p-2.5" : is80OrBelow ? "p-3 sm:p-4" : "p-4 sm:p-6"
         }`}

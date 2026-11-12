@@ -710,18 +710,38 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   // POSITION-AWARE DOCK & MORE OPTIONS EXPANSION CALCULATIONS
   // ========================================================
 
+  const currentContainerWidth = containerRef?.current
+    ? containerRef.current.clientWidth
+    : typeof window !== "undefined"
+    ? window.innerWidth
+    : 1200;
+  const currentContainerHeight = containerRef?.current
+    ? containerRef.current.clientHeight
+    : typeof window !== "undefined"
+    ? window.innerHeight
+    : 800;
+
+  const baseExpandedWidth = isVertical ? 420 : 540;
+  const baseExpandedHeight = isVertical ? 760 : 560;
+
+  // Apply User-Configured More Options Panel Size (40% to 100%)
+  const effectiveExpandedWidth = Math.min(
+    currentContainerWidth - 24,
+    Math.max(Math.round(baseExpandedWidth * 0.4), Math.round(baseExpandedWidth * panelScale))
+  );
+  const effectiveExpandedHeight = Math.min(
+    currentContainerHeight - 40,
+    Math.max(Math.round(baseExpandedHeight * 0.4), Math.round(baseExpandedHeight * panelScale))
+  );
+
+  const effectivePanelPct = Math.max(
+    40,
+    Math.min(100, Math.round((effectiveExpandedWidth / baseExpandedWidth) * 100))
+  );
+
   const computeDockStyle = (): React.CSSProperties => {
-    const container = containerRef?.current;
-    const containerWidth = container
-      ? container.clientWidth
-      : typeof window !== "undefined"
-      ? window.innerWidth
-      : 1200;
-    const containerHeight = container
-      ? container.clientHeight
-      : typeof window !== "undefined"
-      ? window.innerHeight
-      : 800;
+    const containerWidth = currentContainerWidth;
+    const containerHeight = currentContainerHeight;
 
     // While dragging: follow pointer directly with zero transition delay
     if (isDragging && dragCurrentPos) {
@@ -738,20 +758,6 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
     // Base dimensions in Mode A
     const modeAWidth = isVertical ? 44 : 220;
     const modeAHeight = isVertical ? 220 : 44;
-
-    // Base dimensions for Expanded Panels (Mode B Directory & Mode C Settings)
-    const baseExpandedWidth = isVertical ? 420 : 540;
-    const baseExpandedHeight = isVertical ? 760 : 560;
-
-    // Apply User-Configured More Options Panel Size (40% to 100%)
-    const effectiveExpandedWidth = Math.min(
-      containerWidth - 24,
-      Math.max(Math.round(baseExpandedWidth * 0.4), Math.round(baseExpandedWidth * panelScale))
-    );
-    const effectiveExpandedHeight = Math.min(
-      containerHeight - 40,
-      Math.max(Math.round(baseExpandedHeight * 0.4), Math.round(baseExpandedHeight * panelScale))
-    );
 
     // Subtle ease-out transition (180–260ms) when snapping or releasing
     const baseTransition =
@@ -1327,7 +1333,9 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
               {children ? (
                 React.cloneElement(children as React.ReactElement<any>, {
                   isFloatingContext: true,
-                  panelSize,
+                  panelSize: effectivePanelPct,
+                  dockWidth: effectiveExpandedWidth,
+                  isVertical,
                   onBack: () => setDockMode("directory"),
                   onClose: () => setDockMode("main"),
                 })
