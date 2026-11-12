@@ -847,6 +847,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         top: "auto",
         right: "auto",
         width: `${effectiveExpandedWidth}px`,
+        height: `${effectiveExpandedHeight}px`,
         transition: baseTransition,
         zIndex: 45,
         touchAction: "none",
@@ -866,6 +867,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         bottom: "auto",
         right: "auto",
         width: `${effectiveExpandedWidth}px`,
+        height: `${effectiveExpandedHeight}px`,
         transition: baseTransition,
         zIndex: 45,
         touchAction: "none",
@@ -885,6 +887,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         right: "auto",
         bottom: "auto",
         width: `${effectiveExpandedWidth}px`,
+        height: `${effectiveExpandedHeight}px`,
         transition: baseTransition,
         zIndex: 45,
         touchAction: "none",
@@ -904,6 +907,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         left: "auto",
         bottom: "auto",
         width: `${effectiveExpandedWidth}px`,
+        height: `${effectiveExpandedHeight}px`,
         transition: baseTransition,
         zIndex: 45,
         touchAction: "none",
@@ -942,6 +946,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
       right: "auto",
       bottom: "auto",
       width: `${effectiveExpandedWidth}px`,
+      height: `${effectiveExpandedHeight}px`,
       transition: baseTransition,
       zIndex: 45,
       touchAction: "none",
@@ -1028,9 +1033,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
             ? isVertical
               ? "w-11 py-1 px-1"
               : "h-11 px-1.5 py-1"
-            : isVertical
-            ? "max-w-[90vw] h-[90vh] max-h-[92vh]"
-            : "max-w-[94vw] max-h-[78vh]"
+            : "w-full h-full"
         }`}
       >
         {/* Subtle Edge Contact Line (Wall connection accent) */}
@@ -1153,11 +1156,19 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.96 }}
             transition={{ duration: 0.2 }}
+            style={
+              panelScale !== 1
+                ? {
+                    zoom: panelScale,
+                    width: `${(100 / panelScale).toFixed(3)}%`,
+                    height: `${(100 / panelScale).toFixed(3)}%`,
+                  }
+                : undefined
+            }
             className="flex flex-col h-full overflow-hidden"
           >
             {/* Header: Title, Active Mode Indicator & Collapse */}
             <div
-              style={panelScale !== 1 ? { zoom: panelScale } : undefined}
               className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#101014] shrink-0"
             >
               <div className="flex items-center gap-2.5">
@@ -1196,7 +1207,6 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
             {/* Scrollable Directory Categorized Icon Grids (Scaled by panelScale) */}
             <div
               ref={directoryScrollRef}
-              style={panelScale !== 1 ? { zoom: panelScale } : undefined}
               className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-5"
             >
               {APP_GROUPS.map((group) => (
@@ -1319,6 +1329,15 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.97 }}
             transition={{ duration: 0.2 }}
+            style={
+              panelScale !== 1
+                ? {
+                    zoom: panelScale,
+                    width: `${(100 / panelScale).toFixed(3)}%`,
+                    height: `${(100 / panelScale).toFixed(3)}%`,
+                  }
+                : undefined
+            }
             className="flex flex-col h-full overflow-hidden"
           >
             {/* Integrated Settings Content with Built-In Back & Collapse Controls */}

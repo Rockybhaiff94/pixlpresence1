@@ -69,50 +69,6 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
           </span>
         </div>
 
-        {/* Categories / Templates / Layers Toolbar Switcher */}
-        {!isClassicMode && (
-          <div className="flex items-center bg-[#141416] border border-[#242426] rounded-lg p-0.5">
-            <button
-              onClick={() => setCurrentView("categories")}
-              className={`px-2.5 py-1 rounded text-[11px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
-                currentView === "categories"
-                  ? "bg-white text-black font-bold shadow-sm"
-                  : "text-neutral-400 hover:text-white"
-              }`}
-              title="Category Editors"
-            >
-              <Sliders size={12} />
-              <span>Categories</span>
-            </button>
-
-            <button
-              onClick={() => setCurrentView("templates")}
-              className={`px-2.5 py-1 rounded text-[11px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
-                currentView === "templates"
-                  ? "bg-white text-black font-bold shadow-sm"
-                  : "text-neutral-400 hover:text-white"
-              }`}
-              title="Templates & Presets"
-            >
-              <LayoutTemplate size={12} />
-              <span>Templates</span>
-            </button>
-
-            <button
-              onClick={() => setCurrentView("layers")}
-              className={`px-2.5 py-1 rounded text-[11px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
-                currentView === "layers"
-                  ? "bg-white text-black font-bold shadow-sm"
-                  : "text-neutral-400 hover:text-white"
-              }`}
-              title="Layer Hierarchy"
-            >
-              <Layers size={12} />
-              <span>Layers</span>
-            </button>
-          </div>
-        )}
-
         {isDirty && (
           <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 font-semibold hidden md:inline">
             UNSAVED EDITS
