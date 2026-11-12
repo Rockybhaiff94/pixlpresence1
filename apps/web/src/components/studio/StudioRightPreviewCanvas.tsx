@@ -139,18 +139,18 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
     switch (deviceMode) {
       case "mobile":
         return {
-          outer: "w-[390px] h-[844px] rounded-[48px] border-[10px] border-[#18181b] shadow-2xl overflow-hidden relative",
+          outer: "w-[390px] h-[844px] rounded-[48px] border-[10px] border-[#18181b] shadow-2xl overflow-hidden relative shrink-0",
           scaleFactor: 1,
         };
       case "tablet":
         return {
-          outer: "w-[768px] h-[920px] rounded-[36px] border-[12px] border-[#18181b] shadow-2xl overflow-hidden relative",
+          outer: "w-[768px] h-[920px] rounded-[36px] border-[12px] border-[#18181b] shadow-2xl overflow-hidden relative shrink-0",
           scaleFactor: 0.9,
         };
       case "desktop":
       default:
         return {
-          outer: "w-full h-full min-h-[600px] rounded-none border-0 shadow-none overflow-y-auto relative",
+          outer: "w-full h-full min-h-full rounded-none border-0 shadow-none overflow-y-auto overflow-x-hidden relative flex-1 flex flex-col",
           scaleFactor: 1,
         };
     }
@@ -213,9 +213,9 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
       )}
 
       {/* Canvas Viewport Frame */}
-      <div className="w-full h-full flex items-center justify-center p-2 sm:p-4 overflow-auto custom-scrollbar">
+      <div className={`w-full h-full flex items-center justify-center overflow-auto custom-scrollbar ${deviceMode === "desktop" ? "p-0" : "p-2 sm:p-4"}`}>
         <div
-          className="transition-transform duration-200 origin-top flex items-center justify-center shrink-0"
+          className={`transition-transform duration-200 origin-top flex items-center justify-center ${deviceMode === "desktop" ? "w-full h-full min-h-full flex-1" : "shrink-0"}`}
           style={{
             transform: `scale(${effectiveZoom})`,
             transformOrigin: "center top",
@@ -230,7 +230,7 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
             )}
 
             {/* Live Profile Engine (Multi-Embed Canvas or Classic Structured) */}
-            <div className={`w-full h-full ${showWireframe ? "wireframe-debug" : ""}`}>
+            <div className={`w-full h-full min-h-full flex-1 flex flex-col ${showWireframe ? "wireframe-debug" : ""}`}>
               {config.canvas && onUpdateCanvas ? (
                 <CanvasEngine
                   canvasState={config.canvas}

@@ -39,13 +39,13 @@ export const StudioCenterCanvas: React.FC<StudioCenterCanvasProps> = ({
       <div
         className={`w-full transition-all duration-300 flex items-center justify-center ${
           deviceMode === "mobile"
-            ? "max-w-[390px] border-4 border-[#242426] rounded-[40px] shadow-2xl overflow-hidden my-auto p-1 bg-black"
+            ? "max-w-[390px] h-[844px] border-4 border-[#242426] rounded-[40px] shadow-2xl overflow-hidden my-auto p-1 bg-black shrink-0"
             : deviceMode === "tablet"
-            ? "max-w-[768px] border-4 border-[#242426] rounded-[28px] shadow-2xl overflow-hidden my-auto p-1 bg-black"
-            : "max-w-4xl"
+            ? "max-w-[768px] h-[920px] border-4 border-[#242426] rounded-[28px] shadow-2xl overflow-hidden my-auto p-1 bg-black shrink-0"
+            : "w-full min-h-full flex-1"
         }`}
       >
-        <div className="w-full rounded-[24px] overflow-hidden">
+        <div className={`w-full h-full min-h-full flex-1 flex flex-col ${deviceMode === "desktop" ? "rounded-none" : "rounded-[24px] overflow-hidden"}`}>
           <StudioProfilePreview
             config={config}
             data={previewData}
