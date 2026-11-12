@@ -29,7 +29,6 @@ import {
 import { StudioTopBar, DeviceMode, StudioView } from "@/components/studio/StudioTopBar";
 import { StudioLeftWorkspace } from "@/components/studio/StudioLeftWorkspace";
 import { StudioRightPreviewCanvas } from "@/components/studio/StudioRightPreviewCanvas";
-import { ResizableDivider } from "@/components/studio/ResizableDivider";
 import { ParticlesCanvas } from "@/components/studio/ParticlesCanvas";
 import { ClassicCustomizer } from "@/components/studio/ClassicCustomizer";
 import { StudioTemplatePreset } from "@/components/studio/templates";
