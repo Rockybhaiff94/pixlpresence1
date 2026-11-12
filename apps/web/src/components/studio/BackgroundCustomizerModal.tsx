@@ -325,7 +325,7 @@ export function BackgroundCustomizerModal({
                     alt="Background Preview"
                     className="w-full h-full select-none"
                     style={{
-                      objectFit: fitMode,
+                      objectFit: fitMode === "stretch" ? "fill" : fitMode,
                       objectPosition: `${focalPoint.x}% ${focalPoint.y}%`,
                     }}
                   />

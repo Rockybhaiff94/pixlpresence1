@@ -11,9 +11,9 @@ export type LayoutPreset =
   | "custom";
 
 export type AvatarShape = "circle" | "square" | "rounded" | "squircle";
-export type BackgroundType = "solid" | "gradient" | "mesh" | "image" | "gif" | "pattern";
+export type BackgroundType = "solid" | "gradient" | "mesh" | "image" | "gif" | "video" | "pattern";
 export type BackgroundAspectRatio = "full" | "16:9" | "9:16" | "1:1" | "4:3" | "custom";
-export type BackgroundFitMode = "cover" | "contain" | "fill";
+export type BackgroundFitMode = "cover" | "contain" | "fill" | "stretch";
 export type PatternType = "none" | "dots" | "grid" | "matrix" | "scanlines" | "noise";
 export type ParticleEffect = "None" | "Snow" | "Stars" | "Fireflies" | "Rain" | "Matrix";
 export type BadgeStyle = "pill" | "glyph" | "minimal" | "neon" | "hidden";
@@ -366,13 +366,19 @@ export interface ProfileDesignConfig {
       stops: { color: string; offset: number }[];
     };
     imageUrl?: string;
+    videoUrl?: string;
+    videoPoster?: string;
+    videoType?: "mp4" | "webm" | "auto";
+    customCssGradient?: string;
     position?: string;
     repeat?: "no-repeat" | "repeat" | "repeat-x" | "repeat-y";
+    attachment?: "fixed" | "scroll";
     size?: "cover" | "contain" | "auto";
     aspectRatio?: BackgroundAspectRatio;
     customAspectRatio?: number;
     fitMode?: BackgroundFitMode;
     zoom?: number; // 50 to 300
+    scale?: number;
     offsetX?: number; // pan in px or %
     offsetY?: number; // pan in px or %
     rotation?: number; // 0 to 360 deg

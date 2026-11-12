@@ -1083,8 +1083,8 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
                     Background Type
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {(["solid", "gradient", "mesh", "image"] as BackgroundType[]).map((type) => (
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                    {(["solid", "gradient", "mesh", "image", "video"] as BackgroundType[]).map((type) => (
                       <button
                         key={type}
                         onClick={() =>
@@ -1166,6 +1166,66 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                     ))}
                   </div>
                 </div>
+
+                {/* Video Background Controls */}
+                {config.background.type === "video" && (
+                  <div className="space-y-3 p-4 rounded-xl border border-neutral-800 bg-[#101012]">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] text-neutral-400 uppercase font-bold">
+                        Full-Viewport Video Background
+                      </label>
+                      <span className="text-[9px] text-emerald-400 font-mono">AUTOPLAY &bull; LOOP &bull; MUTED</span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <input
+                        type="url"
+                        value={config.background.videoUrl || ""}
+                        onChange={(e) =>
+                          updateConfig((prev) => ({
+                            ...prev,
+                            background: { ...prev.background, videoUrl: e.target.value },
+                          }))
+                        }
+                        placeholder="https://... direct MP4 or WebM video link"
+                        className="w-full bg-black border border-neutral-700 rounded p-2 text-white text-xs focus:outline-none focus:border-white font-mono"
+                      />
+                      <input
+                        type="url"
+                        value={config.background.videoPoster || ""}
+                        onChange={(e) =>
+                          updateConfig((prev) => ({
+                            ...prev,
+                            background: { ...prev.background, videoPoster: e.target.value },
+                          }))
+                        }
+                        placeholder="Poster image fallback URL (optional)"
+                        className="w-full bg-black border border-neutral-800 rounded p-2 text-white text-xs focus:outline-none focus:border-white"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 pt-1 text-xs">
+                      {(["cover", "contain", "fill"] as const).map((fit) => (
+                        <button
+                          key={fit}
+                          onClick={() =>
+                            updateConfig((prev) => ({
+                              ...prev,
+                              background: { ...prev.background, fitMode: fit },
+                            }))
+                          }
+                          className={`py-1.5 px-2 rounded-lg border text-center capitalize cursor-pointer transition-all ${
+                            (config.background.fitMode || "cover") === fit
+                              ? "bg-white text-black font-bold border-white"
+                              : "bg-black border-neutral-800 text-neutral-400 hover:text-white"
+                          }`}
+                        >
+                          {fit}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Image / GIF Background Controls */}
                 {(config.background.type === "image" || config.background.type === "gif") && (

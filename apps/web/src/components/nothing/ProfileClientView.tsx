@@ -278,7 +278,12 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] text-[#ededed] font-mono relative overflow-hidden flex flex-col justify-between selection:bg-white selection:text-black">
+    <div
+      className="min-h-screen text-[#ededed] font-mono relative overflow-x-hidden flex flex-col justify-between selection:bg-white selection:text-black"
+      style={{
+        backgroundColor: activeConfig.background?.color || "#050505",
+      }}
+    >
       {/* Hidden Audio Element */}
       {musicUrl && (
         <audio
@@ -336,7 +341,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
       </AnimatePresence>
 
       {/* Main Profile Layout — Rendered via Studio Engine */}
-      <div className="w-full flex-1 flex flex-col items-center justify-center relative">
+      <div className="w-full flex-1 flex flex-col items-center justify-center relative z-10">
         <StudioProfilePreview
           config={activeConfig}
           data={{

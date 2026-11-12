@@ -136,13 +136,15 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
     }
   };
 
-  // Compute base background styling (solid, gradient, mesh)
+  // Compute base background styling (solid, gradient, mesh, custom CSS gradient)
   const getBaseBackgroundStyle = (): React.CSSProperties => {
     const base: React.CSSProperties = {
       backgroundColor: background.color || "#050505",
     };
 
-    if (background.type === "gradient" && background.gradient?.stops?.length >= 2) {
+    if (background.customCssGradient) {
+      base.backgroundImage = background.customCssGradient;
+    } else if (background.type === "gradient" && background.gradient?.stops?.length >= 2) {
       const stops = background.gradient.stops.map((s) => `${s.color} ${s.offset}%`).join(", ");
       base.backgroundImage =
         background.gradient.type === "radial"
@@ -152,28 +154,17 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
       base.backgroundImage = `radial-gradient(at 10% 20%, ${identity.titleColor}15 0px, transparent 50%), radial-gradient(at 90% 80%, ${effects.glowColor}20 0px, transparent 50%)`;
     }
 
-    return base;
-  };
-
-  // Compute aspect ratio framing box style
-  const getAspectRatioFramingStyle = (): React.CSSProperties => {
-    const ar = background.aspectRatio || "full";
-    if (ar === "full") {
-      return { width: "100%", height: "100%" };
+    if (background.repeat) {
+      base.backgroundRepeat = background.repeat;
     }
-    let ratio = "16 / 9";
-    if (ar === "9:16") ratio = "9 / 16";
-    else if (ar === "1:1") ratio = "1 / 1";
-    else if (ar === "4:3") ratio = "4 / 3";
-    else if (ar === "custom" && background.customAspectRatio) ratio = `${background.customAspectRatio}`;
+    if (background.attachment) {
+      base.backgroundAttachment = background.attachment;
+    }
+    if (background.position) {
+      base.backgroundPosition = background.position;
+    }
 
-    return {
-      aspectRatio: ratio,
-      maxWidth: "100%",
-      maxHeight: "100%",
-      margin: "auto",
-      boxShadow: "0 0 50px rgba(0,0,0,0.7)",
-    };
+    return base;
   };
 
   const scopedCssCode = customCss ? scopeAndSanitizeCss(customCss, `.${scopeId}`) : "";
@@ -191,88 +182,126 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
       {/* Dynamic Scoped CSS */}
       {scopedCssCode && <style dangerouslySetInnerHTML={{ __html: scopedCssCode }} />}
 
-      {/* Dedicated Full-Bleed Background Engine Layer */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden z-0 flex items-center justify-center">
+      {/* Layer 0: Full-Viewport Background Engine Layer (100% edge-to-edge coverage, no aspect-ratio or rectangle bounds) */}
+      <div className="absolute inset-0 w-full h-full pointer-events-none overflow-hidden z-0">
+        {/* Base Color / Gradient / Mesh / Custom CSS Gradient */}
         <div
-          className="relative w-full h-full overflow-hidden transition-all duration-150"
-          style={getAspectRatioFramingStyle()}
-        >
-          {/* Base Color / Gradient / Mesh */}
+          className="absolute inset-0 w-full h-full"
+          style={getBaseBackgroundStyle()}
+        />
+
+        {/* MP4 / WebM Video Background */}
+        {background.type === "video" && background.videoUrl && (
           <div
-            className="absolute inset-0 w-full h-full"
-            style={getBaseBackgroundStyle()}
+            className="absolute inset-0 w-full h-full overflow-hidden"
+            style={{
+              filter: background.blur > 0 ? `blur(${background.blur}px)` : undefined,
+              opacity: (background.opacity ?? 100) / 100,
+            }}
+          >
+            <video
+              src={background.videoUrl}
+              poster={background.videoPoster}
+              autoPlay
+              loop
+              muted
+              playsInline
+              className="w-full h-full select-none"
+              style={{
+                transformOrigin: `${background.focalPoint?.x ?? 50}% ${background.focalPoint?.y ?? 50}%`,
+                transform: `translate(${background.offsetX ?? 0}px, ${background.offsetY ?? 0}px) scale(${(background.zoom ?? 100) / 100}) rotate(${background.rotation ?? 0}deg)`,
+                objectFit: (background.fitMode as any) || (background.size === "contain" ? "contain" : "cover"),
+                objectPosition: `${background.focalPoint?.x ?? 50}% ${background.focalPoint?.y ?? 50}%`,
+              }}
+            />
+          </div>
+        )}
+
+        {/* Transformable Image / Animated GIF Layer */}
+        {(background.type === "image" || background.type === "gif") && background.imageUrl && (
+          <div
+            className="absolute inset-0 w-full h-full overflow-hidden"
+            style={{
+              filter: background.blur > 0 ? `blur(${background.blur}px)` : undefined,
+              opacity: (background.opacity ?? 100) / 100,
+            }}
+          >
+            <img
+              src={background.imageUrl}
+              alt="Profile Background"
+              className="w-full h-full select-none"
+              style={{
+                transformOrigin: `${background.focalPoint?.x ?? 50}% ${background.focalPoint?.y ?? 50}%`,
+                transform: `translate(${background.offsetX ?? 0}px, ${background.offsetY ?? 0}px) scale(${(background.zoom ?? 100) / 100}) rotate(${background.rotation ?? 0}deg)`,
+                objectFit: (background.fitMode as any) || (background.size === "contain" ? "contain" : "cover"),
+                objectPosition: `${background.focalPoint?.x ?? 50}% ${background.focalPoint?.y ?? 50}%`,
+                ...(background.crop
+                  ? {
+                      clipPath: `inset(${background.crop.y}% ${100 - (background.crop.x + background.crop.width)}% ${100 - (background.crop.y + background.crop.height)}% ${background.crop.x}%)`,
+                    }
+                  : {}),
+              }}
+            />
+          </div>
+        )}
+
+        {/* Layer 1: Background Effects & Overlays */}
+        {/* Background Pattern Overlays */}
+        {background.pattern === "dots" && (
+          <div className="absolute inset-0 nt-dot-grid opacity-60 pointer-events-none z-[1]" />
+        )}
+        {background.pattern === "grid" && (
+          <div
+            className="absolute inset-0 pointer-events-none z-[1] opacity-20"
+            style={{
+              backgroundImage:
+                "linear-gradient(to right, #444 1px, transparent 1px), linear-gradient(to bottom, #444 1px, transparent 1px)",
+              backgroundSize: "28px 28px",
+            }}
           />
+        )}
+        {background.pattern === "scanlines" && (
+          <div
+            className="absolute inset-0 pointer-events-none z-[1] opacity-15"
+            style={{
+              backgroundImage: "linear-gradient(rgba(255,255,255,0.06) 50%, transparent 50%)",
+              backgroundSize: "100% 4px",
+            }}
+          />
+        )}
 
-          {/* Transformable Image / Animated GIF Layer */}
-          {(background.type === "image" || background.type === "gif") && background.imageUrl && (
-            <div
-              className="absolute inset-0 w-full h-full overflow-hidden"
-              style={{
-                filter: background.blur > 0 ? `blur(${background.blur}px)` : undefined,
-                opacity: (background.opacity ?? 100) / 100,
-              }}
-            >
-              <img
-                src={background.imageUrl}
-                alt="Profile Background"
-                className="w-full h-full select-none"
-                style={{
-                  transformOrigin: `${background.focalPoint?.x ?? 50}% ${background.focalPoint?.y ?? 50}%`,
-                  transform: `translate(${background.offsetX ?? 0}px, ${background.offsetY ?? 0}px) scale(${(background.zoom ?? 100) / 100}) rotate(${background.rotation ?? 0}deg)`,
-                  objectFit: background.fitMode || (background.size === "contain" ? "contain" : "cover"),
-                  objectPosition: `${background.focalPoint?.x ?? 50}% ${background.focalPoint?.y ?? 50}%`,
-                  ...(background.crop
-                    ? {
-                        clipPath: `inset(${background.crop.y}% ${100 - (background.crop.x + background.crop.width)}% ${100 - (background.crop.y + background.crop.height)}% ${background.crop.x}%)`,
-                      }
-                    : {}),
-                }}
-              />
-            </div>
-          )}
+        {/* Ambient Glow & Lighting Effects */}
+        {effects.ambientGlow && (
+          <div
+            className="absolute inset-0 pointer-events-none z-[1]"
+            style={{
+              background: `radial-gradient(circle at 50% 30%, ${effects.glowColor || "#22d3ee"}22 0%, transparent 70%)`,
+            }}
+          />
+        )}
 
-          {/* Background Pattern Overlays */}
-          {background.pattern === "dots" && (
-            <div className="absolute inset-0 nt-dot-grid opacity-60 pointer-events-none z-[1]" />
-          )}
-          {background.pattern === "grid" && (
-            <div
-              className="absolute inset-0 pointer-events-none z-[1] opacity-20"
-              style={{
-                backgroundImage:
-                  "linear-gradient(to right, #444 1px, transparent 1px), linear-gradient(to bottom, #444 1px, transparent 1px)",
-                backgroundSize: "28px 28px",
-              }}
-            />
-          )}
-          {background.pattern === "scanlines" && (
-            <div
-              className="absolute inset-0 pointer-events-none z-[1] opacity-15"
-              style={{
-                backgroundImage: "linear-gradient(rgba(255,255,255,0.06) 50%, transparent 50%)",
-                backgroundSize: "100% 4px",
-              }}
-            />
-          )}
+        {/* Particle Effects Canvas */}
+        {effects.particles !== "None" && (
+          <div className="absolute inset-0 pointer-events-none z-[2]">
+            <ParticlesCanvas effect={effects.particles} accentColor={effects.glowColor || "#ffffff"} />
+          </div>
+        )}
 
-          {/* Particle Effects Canvas */}
-          {effects.particles !== "None" && (
-            <div className="absolute inset-0 pointer-events-none z-[2]">
-              <ParticlesCanvas effect={effects.particles} accentColor={effects.glowColor || "#ffffff"} />
-            </div>
-          )}
+        {/* Noise overlay */}
+        {effects.noise && (
+          <div className="absolute inset-0 pointer-events-none z-[2] opacity-10 bg-repeat" style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E\")" }} />
+        )}
 
-          {/* Background Dim / Overlay */}
-          {background.overlayOpacity > 0 && (
-            <div
-              className="absolute inset-0 pointer-events-none z-[3]"
-              style={{
-                backgroundColor: background.overlayColor || "#000000",
-                opacity: background.overlayOpacity,
-              }}
-            />
-          )}
-        </div>
+        {/* Background Dim / Overlay */}
+        {background.overlayOpacity > 0 && (
+          <div
+            className="absolute inset-0 pointer-events-none z-[3]"
+            style={{
+              backgroundColor: background.overlayColor || "#000000",
+              opacity: background.overlayOpacity,
+            }}
+          />
+        )}
       </div>
 
       {/* Dynamic Profile Rendering: Multi-Embed Canvas Mode vs Structured Mode */}
