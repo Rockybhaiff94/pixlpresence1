@@ -63,6 +63,7 @@ interface StudioProfilePreviewProps {
   onSetInlineEditingId?: (id: string | null) => void;
   onUpdateElementProps?: (id: string, props: Record<string, any>) => void;
   scopeId?: string;
+  footerSlot?: React.ReactNode;
 }
 
 export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
@@ -76,6 +77,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
   onSetInlineEditingId,
   onUpdateElementProps,
   scopeId = "profile-preview-root",
+  footerSlot,
 }) => {
   const isPremiumUser = Boolean(isPremium || data.isPremium);
   const {
@@ -693,6 +695,13 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
           POWERED BY <span className="text-neutral-300 font-bold">PIXEL.GG STUDIO (01)</span> &bull; NOTHING OS
         </div>
       </motion.div>
+      )}
+
+      {/* Optional Integrated Floating Footer Slot */}
+      {footerSlot && (
+        <div className="w-full relative z-20 mt-auto pt-6 flex justify-center">
+          {footerSlot}
+        </div>
       )}
     </div>
   );

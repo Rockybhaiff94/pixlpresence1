@@ -363,30 +363,38 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
           isInteractiveEditor={false}
           isPremium={isPremium}
           scopeId="profile-page-root"
-        />
-      </div>
+          footerSlot={
+            <div className="w-full max-w-5xl px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] font-mono pointer-events-auto">
+              {/* Subtle Transparent Likes Pill */}
+              <button
+                onClick={handleToggleLike}
+                disabled={isLiking}
+                className={`group flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md transition-all cursor-pointer shadow-sm ${
+                  hasLiked
+                    ? "bg-rose-500/20 border border-rose-500/40 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.25)]"
+                    : "bg-black/30 hover:bg-black/50 border border-white/10 hover:border-white/25 text-white/80 hover:text-white"
+                }`}
+                title={hasLiked ? "Unlike profile" : "Like profile"}
+              >
+                <Heart
+                  size={12}
+                  className={`transition-transform group-hover:scale-110 ${
+                    hasLiked ? "fill-rose-500 text-rose-500" : "text-white/70 group-hover:text-white"
+                  }`}
+                />
+                <span className="font-semibold tracking-tight">{likes.toLocaleString()}</span>
+              </button>
 
-      {/* Global Minimalist Footer Bar */}
-      <div className="w-full py-3 px-6 border-t border-[#141414] text-[10px] text-neutral-600 flex items-center justify-between font-mono bg-[#050505] relative z-20">
-        <div className="flex items-center gap-3">
-          <span>IDENTITY SPEC // NOT-BIO-PX1</span>
-          <button
-            onClick={handleToggleLike}
-            disabled={isLiking}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-mono transition-all ${
-              hasLiked
-                ? "bg-rose-500/15 border-rose-500/40 text-rose-400"
-                : "bg-[#101010] border-[#222] text-neutral-400 hover:text-white hover:border-neutral-600"
-            }`}
-            title={hasLiked ? "Unlike profile" : "Like profile"}
-          >
-            <Heart size={11} className={hasLiked ? "fill-rose-500 text-rose-500" : ""} />
-            <span>{likes.toLocaleString()}</span>
-          </button>
-        </div>
-        <Link href="/register" className="text-neutral-400 hover:text-white transition-colors">
-          CLAIM YOUR OWN PROFILE ↗
-        </Link>
+              {/* Minimal Claim Profile Text Link */}
+              <Link
+                href="/register"
+                className="text-white/60 hover:text-white px-2.5 py-1 rounded-md backdrop-blur-sm bg-black/20 hover:bg-black/40 border border-white/5 hover:border-white/20 transition-all text-[11px] tracking-wide"
+              >
+                CLAIM YOUR OWN PROFILE ↗
+              </Link>
+            </div>
+          }
+        />
       </div>
     </div>
   );
