@@ -190,13 +190,21 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
     if (propShortcut) setLockShortcut(propShortcut);
   }, [propShortcut]);
 
-  // Dragging State Machine
-  const [isDragging, setIsDragging] = useState(false);
+  // SM-08: Unified Atomic Drag State Machine (eliminates desynchronization between isDragging and coordinates)
+  interface DragState {
+    isDragging: boolean;
+    currentPos: { x: number; y: number } | null;
+  }
+  const [dragState, setDragState] = useState<DragState>({
+    isDragging: false,
+    currentPos: null,
+  });
+  const isDragging = dragState.isDragging;
+  const dragCurrentPos = dragState.currentPos;
   const isPointerDownRef = useRef(false);
   const dragStartPointerRef = useRef({ x: 0, y: 0 });
   const dragStartDockPosRef = useRef({ x: 0, y: 0 });
   const hasMovedPastThresholdRef = useRef(false);
-  const [dragCurrentPos, setDragCurrentPos] = useState<{ x: number; y: number } | null>(null);
 
   // Re-render trigger on window / container resize to keep dock within bounds
   const [, setResizeTick] = useState(0);
@@ -312,14 +320,18 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [dockMode, setDockMode]);
 
-  // Sync with external isSettingsOpen: if settings opened from canvas, switch to settings mode
+  // SM-09: Synchronize with external isSettingsOpen via transition ref (prevents bidirectional loops)
+  const prevIsSettingsOpenRef = useRef(isSettingsOpen);
   useEffect(() => {
-    if (isSettingsOpen && dockMode === "main") {
-      setDockMode("settings");
-    } else if (!isSettingsOpen && dockMode === "settings") {
-      setDockMode("main");
+    if (prevIsSettingsOpenRef.current !== isSettingsOpen) {
+      prevIsSettingsOpenRef.current = isSettingsOpen;
+      if (isSettingsOpen && dockMode !== "settings") {
+        setDockMode("settings");
+      } else if (!isSettingsOpen && dockMode === "settings") {
+        setDockMode("main");
+      }
     }
-  }, [isSettingsOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isSettingsOpen, dockMode, setDockMode]);
 
   // Determine orientation: Left and Right are vertical; Top, Bottom and Float are horizontal
   const isVertical = edge === "left" || edge === "right";
@@ -568,7 +580,6 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
     // 4–6px Drag Threshold to separate clicks from drags
     if (!hasMovedPastThresholdRef.current && dist >= 5) {
       hasMovedPastThresholdRef.current = true;
-      setIsDragging(true);
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
       } catch {}
@@ -591,7 +602,10 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         Math.min(containerRect.height - dockHeight, dragStartDockPosRef.current.y + dy)
       );
 
-      setDragCurrentPos({ x: newX, y: newY });
+      setDragState({
+        isDragging: true,
+        currentPos: { x: newX, y: newY },
+      });
     }
   };
 
@@ -605,12 +619,13 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
 
     if (hasMovedPastThresholdRef.current) {
       // Completed drag gesture - calculate nearest edge
-      setIsDragging(false);
-
       const container = containerRef?.current || document.body;
       const containerRect = container.getBoundingClientRect();
       const dockEl = dockRef.current;
-      if (!dockEl) return;
+      if (!dockEl) {
+        setDragState({ isDragging: false, currentPos: null });
+        return;
+      }
 
       const dockRect = dockEl.getBoundingClientRect();
 
@@ -640,7 +655,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
 
       setEdge(newEdge);
       setRatio({ x: ratioX, y: ratioY });
-      setDragCurrentPos(null);
+      setDragState({ isDragging: false, currentPos: null });
 
       onPositionChange(newEdge);
 
@@ -653,8 +668,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
       } catch {}
     } else {
       // Click interaction: no drag
-      setIsDragging(false);
-      setDragCurrentPos(null);
+      setDragState({ isDragging: false, currentPos: null });
     }
   };
 
