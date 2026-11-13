@@ -222,6 +222,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
             buttons: { ...DEFAULT_DESIGN_CONFIG.buttons, ...(parsed.buttons || {}) },
             socials: { ...DEFAULT_DESIGN_CONFIG.socials, ...(parsed.socials || {}) },
             effects: { ...DEFAULT_DESIGN_CONFIG.effects, ...(parsed.effects || {}) },
+            advanced: { ...DEFAULT_DESIGN_CONFIG.advanced, ...(parsed.advanced || {}) },
             canvas: parsed.canvas || DEFAULT_DESIGN_CONFIG.canvas,
           };
         }

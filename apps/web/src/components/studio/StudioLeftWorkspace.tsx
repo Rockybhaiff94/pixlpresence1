@@ -30,6 +30,14 @@ import {
   Keyboard,
   RotateCcw,
   Maximize2,
+  Copy,
+  Trash2,
+  Plus,
+  Eye,
+  EyeOff,
+  Columns,
+  Square,
+  Check,
 } from "lucide-react";
 import {
   ProfileDesignConfig,
@@ -47,6 +55,8 @@ import {
   RpcStyle,
   RpcImageLayout,
   RpcImageSize,
+  CanvasEmbed,
+  CanvasElement,
 } from "@/types/studio";
 import { CURATED_FONTS } from "./fonts";
 import { validateCss } from "./cssUtils";
@@ -568,183 +578,1056 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
         {/* CATEGORIES VIEW */}
         {currentView === "categories" && (
           <div className="max-w-3xl space-y-6">
-            {/* 1. LAYOUT & STRUCTURE */}
-            {activeCategory === "layout" && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-sm font-bold text-white">LAYOUT & STRUCTURE</h3>
-                  <p className="text-neutral-400 text-[11px] pt-0.5">
-                    Configure structural presets, card max-width, alignment, and container padding.
-                  </p>
-                </div>
+            {/* 1. LAYOUT & STRUCTURE // EMBED BUILDER */}
+            {activeCategory === "layout" && (() => {
+              const canvasEmbeds = config.canvas?.embeds || [];
+              const primaryEmbed = canvasEmbeds.find((em) => em.id === "embed_primary") || canvasEmbeds[0] || null;
+              const activeEmbedId =
+                selectedId && canvasEmbeds.some((em) => em.id === selectedId)
+                  ? selectedId
+                  : (primaryEmbed ? primaryEmbed.id : "embed_primary");
+              const currentEmbed = canvasEmbeds.find((em) => em.id === activeEmbedId) || primaryEmbed;
 
-                {/* Preset Grid */}
-                <div className="space-y-2">
-                  <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
-                    Layout Structure Preset
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {(
-                      [
-                        "centered",
-                        "left",
-                        "right",
-                        "minimal",
-                        "card",
-                        "split",
-                        "wide",
-                        "compact",
-                      ] as LayoutPreset[]
-                    ).map((preset) => (
+              const selectedChildElement =
+                selectedId && !canvasEmbeds.some((em) => em.id === selectedId)
+                  ? config.canvas?.elements?.find((el) => el.id === selectedId) || null
+                  : null;
+              const parentEmbedOfChild =
+                selectedChildElement?.parentEmbedId
+                  ? canvasEmbeds.find((em) => em.id === selectedChildElement.parentEmbedId) || null
+                  : null;
+
+              const isPrimary = activeEmbedId === "embed_primary";
+              const embedWidth = isPrimary ? config.layout.maxWidth : (currentEmbed?.transform.width || 580);
+              const embedPadding = isPrimary ? config.layout.padding : (currentEmbed?.style.padding ?? 24);
+              const embedRadius = isPrimary ? config.discordRpc.borderRadius : (currentEmbed?.style.borderRadius ?? 24);
+              const embedGap = config.layout.gap ?? 22;
+              const appsSpacing = config.layout.appsSpacing ?? 12;
+
+              const childElementsOfCurrentEmbed = currentEmbed
+                ? (config.canvas?.elements || []).filter((el) => el.parentEmbedId === currentEmbed.id)
+                : [];
+
+              return (
+                <div className="space-y-6">
+                  {/* Header */}
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Layout size={16} className="text-white" />
+                        LAYOUT & STRUCTURE // EMBED BUILDER
+                      </h3>
+                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 font-mono font-bold">
+                        {canvasEmbeds.length} {canvasEmbeds.length === 1 ? "EMBED" : "EMBEDS"}
+                      </span>
+                    </div>
+                    <p className="text-neutral-400 text-[11px] pt-1">
+                      Manage root container embeds, structural layout presets, dimensions, padding, and parent-child hierarchy.
+                    </p>
+                  </div>
+
+                  {/* Context Banner: If a child element is currently selected */}
+                  {selectedChildElement && (
+                    <div className="p-3 rounded-xl border border-sky-500/30 bg-sky-950/20 flex items-center justify-between gap-3 text-xs">
+                      <div className="min-w-0">
+                        <span className="text-sky-300 font-semibold block truncate">
+                          Selected Component: {selectedChildElement.name || selectedChildElement.type}
+                        </span>
+                        <span className="text-[10px] text-neutral-400">
+                          Inside {parentEmbedOfChild ? parentEmbedOfChild.title : "Primary Embed"}
+                        </span>
+                      </div>
+                      {parentEmbedOfChild && (
+                        <button
+                          type="button"
+                          onClick={() => onSelectElement?.(parentEmbedOfChild.id)}
+                          className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 border border-sky-500/40 text-[10px] font-bold shrink-0 cursor-pointer transition-colors"
+                        >
+                          Select Container
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* SECTION A: EMBED SELECTOR & MANAGEMENT TOOLBAR */}
+                  <div className="p-4 rounded-xl border border-neutral-800 bg-[#101014] space-y-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold flex items-center gap-1.5">
+                        <Layers size={12} className="text-cyan-400" />
+                        Embed Containers
+                      </label>
                       <button
-                        key={preset}
-                        onClick={() =>
-                          updateConfig((prev) => ({
-                            ...prev,
-                            layout: {
-                              ...prev.layout,
-                              preset,
-                              alignment:
-                                preset === "left" ? "left" : preset === "right" ? "right" : "center",
-                            },
-                          }))
-                        }
-                        className={`p-2.5 rounded-xl border text-left transition-colors cursor-pointer ${config.layout.preset === preset
-                            ? "border-white bg-white text-black font-bold"
-                            : "border-neutral-800 bg-[#121214] text-neutral-300 hover:border-neutral-700"
-                          }`}
+                        type="button"
+                        onClick={() => onAddEmbed?.()}
+                        className="px-2.5 py-1 rounded-lg bg-white text-black font-bold text-[10px] flex items-center gap-1 hover:bg-neutral-200 cursor-pointer transition-colors"
                       >
-                        <div className="capitalize text-xs">{preset}</div>
-                        <div className="text-[9px] opacity-70">
-                          {preset === "split"
-                            ? "Two-column grid"
-                            : preset === "left"
-                              ? "Left-aligned"
-                              : preset === "wide"
-                                ? "720px wide"
-                                : "Centered profile"}
+                        <Plus size={12} /> Add Embed
+                      </button>
+                    </div>
+
+                    {/* Embed Tabs */}
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                      {canvasEmbeds.map((em, idx) => {
+                        const isCurrent = em.id === activeEmbedId;
+                        const childCount = (config.canvas?.elements || []).filter((el) => el.parentEmbedId === em.id).length;
+                        return (
+                          <button
+                            key={em.id}
+                            type="button"
+                            onClick={() => onSelectElement?.(em.id)}
+                            className={`px-3 py-1.5 rounded-lg border text-xs font-mono font-medium flex items-center gap-2 whitespace-nowrap cursor-pointer transition-all shrink-0 ${
+                              isCurrent
+                                ? "bg-white text-black border-white shadow-md font-bold"
+                                : "bg-neutral-900/90 text-neutral-400 border-neutral-800 hover:text-white hover:border-neutral-700"
+                            }`}
+                          >
+                            <span>{em.title || (em.id === "embed_primary" ? "Main Container" : `Embed #${idx + 1}`)}</span>
+                            <span
+                              className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
+                                isCurrent ? "bg-black/20 text-black" : "bg-neutral-800 text-neutral-400"
+                              }`}
+                            >
+                              {childCount}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Active Embed Configuration Strip */}
+                    {currentEmbed && (
+                      <div className="pt-2 border-t border-neutral-800/80 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                          <span className="text-[10px] text-neutral-500 font-mono uppercase">Title:</span>
+                          <input
+                            type="text"
+                            value={currentEmbed.title || ""}
+                            onChange={(e) => {
+                              const newTitle = e.target.value;
+                              updateConfig((prev) => {
+                                if (!prev.canvas) return prev;
+                                const updatedEmbeds = prev.canvas.embeds.map((em) =>
+                                  em.id === currentEmbed.id ? { ...em, title: newTitle } : em
+                                );
+                                const updatedLayers = prev.layers.map((l) =>
+                                  l.id === currentEmbed.id ? { ...l, label: newTitle } : l
+                                );
+                                return {
+                                  ...prev,
+                                  layers: updatedLayers,
+                                  canvas: { ...prev.canvas, embeds: updatedEmbeds },
+                                };
+                              });
+                            }}
+                            className="bg-black border border-neutral-800 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-white font-mono flex-1"
+                          />
                         </div>
-                      </button>
-                    ))}
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {/* Duplicate */}
+                          <button
+                            type="button"
+                            title="Duplicate Embed and its elements"
+                            onClick={() => {
+                              const newEmbedId = `embed_${Date.now()}`;
+                              const newTitle = `${currentEmbed.title || "Embed"} (Copy)`;
+                              updateConfig((prev) => {
+                                const currentCanvas = prev.canvas || { embeds: [], elements: [] };
+                                const newEmbed: CanvasEmbed = {
+                                  ...currentEmbed,
+                                  id: newEmbedId,
+                                  title: newTitle,
+                                  transform: {
+                                    ...currentEmbed.transform,
+                                    y: currentEmbed.transform.y + (currentEmbed.transform.height || 300) + 24,
+                                    zIndex: currentCanvas.embeds.length + 1,
+                                  },
+                                  childrenIds: [],
+                                };
+
+                                const sourceChildren = currentCanvas.elements.filter((el) => el.parentEmbedId === currentEmbed.id);
+                                const newChildren: CanvasElement[] = sourceChildren.map((el, i) => {
+                                  const newChildId = `${el.type}_${Date.now()}_${i}`;
+                                  newEmbed.childrenIds.push(newChildId);
+                                  return {
+                                    ...el,
+                                    id: newChildId,
+                                    parentEmbedId: newEmbedId,
+                                    name: `${el.name} (Copy)`,
+                                  };
+                                });
+
+                                return {
+                                  ...prev,
+                                  layers: [
+                                    ...prev.layers,
+                                    {
+                                      id: newEmbedId,
+                                      type: "container",
+                                      label: newTitle,
+                                      visible: true,
+                                      locked: false,
+                                    },
+                                  ],
+                                  canvas: {
+                                    ...currentCanvas,
+                                    embeds: [...currentCanvas.embeds, newEmbed],
+                                    elements: [...currentCanvas.elements, ...newChildren],
+                                    selectedId: newEmbedId,
+                                    selectedIds: [newEmbedId],
+                                  },
+                                };
+                              });
+                              onSelectElement?.(newEmbedId);
+                            }}
+                            className="p-1.5 rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-300 hover:text-white hover:border-neutral-700 cursor-pointer"
+                          >
+                            <Copy size={13} />
+                          </button>
+
+                          {/* Visibility Toggle */}
+                          <button
+                            type="button"
+                            title={currentEmbed.isVisible === false ? "Show Embed" : "Hide Embed"}
+                            onClick={() => {
+                              updateConfig((prev) => {
+                                if (!prev.canvas) return prev;
+                                const updatedEmbeds = prev.canvas.embeds.map((em) =>
+                                  em.id === currentEmbed.id ? { ...em, isVisible: em.isVisible === false ? true : false } : em
+                                );
+                                return {
+                                  ...prev,
+                                  canvas: { ...prev.canvas, embeds: updatedEmbeds },
+                                };
+                              });
+                            }}
+                            className={`p-1.5 rounded-lg border cursor-pointer ${
+                              currentEmbed.isVisible === false
+                                ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
+                                : "bg-neutral-900 border-neutral-800 text-neutral-300 hover:text-white"
+                            }`}
+                          >
+                            {currentEmbed.isVisible === false ? <EyeOff size={13} /> : <Eye size={13} />}
+                          </button>
+
+                          {/* Lock Toggle */}
+                          <button
+                            type="button"
+                            title={currentEmbed.isLocked ? "Unlock Embed" : "Lock Embed"}
+                            onClick={() => {
+                              updateConfig((prev) => {
+                                if (!prev.canvas) return prev;
+                                const updatedEmbeds = prev.canvas.embeds.map((em) =>
+                                  em.id === currentEmbed.id ? { ...em, isLocked: !em.isLocked } : em
+                                );
+                                return {
+                                  ...prev,
+                                  canvas: { ...prev.canvas, embeds: updatedEmbeds },
+                                };
+                              });
+                            }}
+                            className={`p-1.5 rounded-lg border cursor-pointer ${
+                              currentEmbed.isLocked
+                                ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
+                                : "bg-neutral-900 border-neutral-800 text-neutral-300 hover:text-white"
+                            }`}
+                          >
+                            {currentEmbed.isLocked ? <Lock size={13} /> : <Unlock size={13} />}
+                          </button>
+
+                          {/* Delete (disabled for primary) */}
+                          {!isPrimary && (
+                            <button
+                              type="button"
+                              title="Delete Embed"
+                              onClick={() => {
+                                updateConfig((prev) => {
+                                  if (!prev.canvas) return prev;
+                                  return {
+                                    ...prev,
+                                    layers: prev.layers.filter((l) => l.id !== currentEmbed.id),
+                                    canvas: {
+                                      ...prev.canvas,
+                                      embeds: prev.canvas.embeds.filter((em) => em.id !== currentEmbed.id),
+                                      elements: prev.canvas.elements.filter((el) => el.parentEmbedId !== currentEmbed.id),
+                                      selectedId: "embed_primary",
+                                      selectedIds: ["embed_primary"],
+                                    },
+                                  };
+                                });
+                                onSelectElement?.("embed_primary");
+                              }}
+                              className="p-1.5 rounded-lg border border-red-500/30 bg-red-950/20 text-red-400 hover:bg-red-900/40 cursor-pointer"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
+
+                  {/* SECTION B: LAYOUT STRUCTURE PRESETS (Center, Left, Right, Split, Wide, Compact) */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
+                        Structural Layout Presets
+                      </label>
+                      <span className="text-[9px] text-neutral-500 font-mono">
+                        Active: <strong className="text-white capitalize">{config.layout.preset || "centered"}</strong>
+                      </span>
+                    </div>
+
+                    <div className={`grid gap-2.5 ${is70OrBelow ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-2 sm:grid-cols-3"}`}>
+                      {[
+                        {
+                          id: "centered" as LayoutPreset,
+                          name: "Center",
+                          desc: "Centered profile composition",
+                          align: "center" as const,
+                          defaultWidth: 580,
+                        },
+                        {
+                          id: "left" as LayoutPreset,
+                          name: "Left",
+                          desc: "Clean left-aligned structure",
+                          align: "left" as const,
+                          defaultWidth: 580,
+                        },
+                        {
+                          id: "right" as LayoutPreset,
+                          name: "Right",
+                          desc: "Right-aligned composition",
+                          align: "right" as const,
+                          defaultWidth: 580,
+                        },
+                        {
+                          id: "split" as LayoutPreset,
+                          name: "Minimal Card Split",
+                          desc: "Balanced 2-column split (Bio vs Content)",
+                          align: "center" as const,
+                          defaultWidth: 760,
+                        },
+                        {
+                          id: "wide" as LayoutPreset,
+                          name: "Minimal Card Wide",
+                          desc: "Expanded horizontal header & 2-col buttons",
+                          align: "center" as const,
+                          defaultWidth: 860,
+                        },
+                        {
+                          id: "compact" as LayoutPreset,
+                          name: "Minimal Card Compact",
+                          desc: "Space-efficient Nothing OS HUD layout",
+                          align: "center" as const,
+                          defaultWidth: 480,
+                        },
+                      ].map((item) => {
+                        const isActive = config.layout.preset === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              updateConfig((prev) => {
+                                const newWidth =
+                                  item.id === "split" && prev.layout.maxWidth < 720
+                                    ? 760
+                                    : item.id === "wide" && prev.layout.maxWidth < 820
+                                    ? 860
+                                    : item.id === "compact"
+                                    ? 480
+                                    : prev.layout.maxWidth;
+
+                                const newPadding =
+                                  item.id === "compact" ? 18 : prev.layout.padding;
+
+                                const updatedEmbeds = prev.canvas?.embeds?.map((em) =>
+                                  em.id === "embed_primary"
+                                    ? {
+                                        ...em,
+                                        transform: { ...em.transform, width: newWidth },
+                                        style: { ...em.style, padding: newPadding },
+                                      }
+                                    : em
+                                );
+
+                                return {
+                                  ...prev,
+                                  layout: {
+                                    ...prev.layout,
+                                    preset: item.id,
+                                    alignment: item.align,
+                                    maxWidth: newWidth,
+                                    padding: newPadding,
+                                  },
+                                  identity: { ...prev.identity, alignment: item.align },
+                                  avatar: { ...prev.avatar, alignment: item.align },
+                                  ...(updatedEmbeds ? { canvas: { ...prev.canvas!, embeds: updatedEmbeds } } : {}),
+                                };
+                              });
+                            }}
+                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative overflow-hidden group ${
+                              isActive
+                                ? "border-white bg-white text-black shadow-lg"
+                                : "border-neutral-800 bg-[#121214] text-neutral-300 hover:border-neutral-700 hover:bg-[#161619]"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between pb-1">
+                              <span className="font-bold text-xs capitalize">{item.name}</span>
+                              {isActive && <Check size={12} className="text-black shrink-0" />}
+                            </div>
+                            <p className={`text-[10px] leading-tight ${isActive ? "text-neutral-700 font-medium" : "text-neutral-500"}`}>
+                              {item.desc}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* SECTION C: CONTAINER DIMENSIONS & SPACING (EXPANDED LIMITS) */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
+                        Dimensions & Spacing Limits ({isPrimary ? "Main Container" : currentEmbed?.title || "Embed"})
+                      </label>
+                      <span className="text-[9px] font-mono text-cyan-400">Expanded Ranges</span>
+                    </div>
+
+                    <div className={`grid gap-4 ${is70OrBelow ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"}`}>
+                      {/* 1. Container Max Width: 360px to 1600px */}
+                      <div className="space-y-2 p-3.5 rounded-xl border border-neutral-800 bg-[#101012]">
+                        <div className="flex justify-between items-center">
+                          <span className="text-neutral-400 text-[11px] font-semibold">Container Width</span>
+                          <span className="text-white font-mono font-bold text-xs">{embedWidth}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={360}
+                          max={1600}
+                          step={10}
+                          value={embedWidth}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateConfig((prev) => {
+                              if (isPrimary) {
+                                const updatedEmbeds = prev.canvas?.embeds?.map((em) =>
+                                  em.id === "embed_primary"
+                                    ? { ...em, transform: { ...em.transform, width: val } }
+                                    : em
+                                );
+                                return {
+                                  ...prev,
+                                  layout: { ...prev.layout, maxWidth: val },
+                                  ...(updatedEmbeds ? { canvas: { ...prev.canvas!, embeds: updatedEmbeds } } : {}),
+                                };
+                              } else if (currentEmbed && prev.canvas) {
+                                const updatedEmbeds = prev.canvas.embeds.map((em) =>
+                                  em.id === currentEmbed.id
+                                    ? { ...em, transform: { ...em.transform, width: val } }
+                                    : em
+                                );
+                                return {
+                                  ...prev,
+                                  canvas: { ...prev.canvas, embeds: updatedEmbeds },
+                                };
+                              }
+                              return prev;
+                            });
+                          }}
+                          className="w-full accent-white cursor-pointer"
+                        />
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {[480, 580, 760, 860, 1100, 1400].map((w) => (
+                            <button
+                              key={w}
+                              type="button"
+                              onClick={() => {
+                                updateConfig((prev) => {
+                                  if (isPrimary) {
+                                    const updatedEmbeds = prev.canvas?.embeds?.map((em) =>
+                                      em.id === "embed_primary"
+                                        ? { ...em, transform: { ...em.transform, width: w } }
+                                        : em
+                                    );
+                                    return {
+                                      ...prev,
+                                      layout: { ...prev.layout, maxWidth: w },
+                                      ...(updatedEmbeds ? { canvas: { ...prev.canvas!, embeds: updatedEmbeds } } : {}),
+                                    };
+                                  } else if (currentEmbed && prev.canvas) {
+                                    const updatedEmbeds = prev.canvas.embeds.map((em) =>
+                                      em.id === currentEmbed.id
+                                        ? { ...em, transform: { ...em.transform, width: w } }
+                                        : em
+                                    );
+                                    return {
+                                      ...prev,
+                                      canvas: { ...prev.canvas, embeds: updatedEmbeds },
+                                    };
+                                  }
+                                  return prev;
+                                });
+                              }}
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-mono border cursor-pointer ${
+                                embedWidth === w
+                                  ? "bg-white text-black border-white font-bold"
+                                  : "bg-black/60 text-neutral-400 border-neutral-800 hover:text-white"
+                              }`}
+                            >
+                              {w}px
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 2. Container Padding: 0px to 160px */}
+                      <div className="space-y-2 p-3.5 rounded-xl border border-neutral-800 bg-[#101012]">
+                        <div className="flex justify-between items-center">
+                          <span className="text-neutral-400 text-[11px] font-semibold">Container Padding</span>
+                          <span className="text-white font-mono font-bold text-xs">{embedPadding}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={160}
+                          step={2}
+                          value={embedPadding}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateConfig((prev) => {
+                              if (isPrimary) {
+                                const updatedEmbeds = prev.canvas?.embeds?.map((em) =>
+                                  em.id === "embed_primary"
+                                    ? { ...em, style: { ...em.style, padding: val } }
+                                    : em
+                                );
+                                return {
+                                  ...prev,
+                                  layout: { ...prev.layout, padding: val },
+                                  ...(updatedEmbeds ? { canvas: { ...prev.canvas!, embeds: updatedEmbeds } } : {}),
+                                };
+                              } else if (currentEmbed && prev.canvas) {
+                                const updatedEmbeds = prev.canvas.embeds.map((em) =>
+                                  em.id === currentEmbed.id
+                                    ? { ...em, style: { ...em.style, padding: val } }
+                                    : em
+                                );
+                                return {
+                                  ...prev,
+                                  canvas: { ...prev.canvas, embeds: updatedEmbeds },
+                                };
+                              }
+                              return prev;
+                            });
+                          }}
+                          className="w-full accent-white cursor-pointer"
+                        />
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {[0, 16, 28, 48, 72, 96].map((p) => (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() => {
+                                updateConfig((prev) => {
+                                  if (isPrimary) {
+                                    const updatedEmbeds = prev.canvas?.embeds?.map((em) =>
+                                      em.id === "embed_primary"
+                                        ? { ...em, style: { ...em.style, padding: p } }
+                                        : em
+                                    );
+                                    return {
+                                      ...prev,
+                                      layout: { ...prev.layout, padding: p },
+                                      ...(updatedEmbeds ? { canvas: { ...prev.canvas!, embeds: updatedEmbeds } } : {}),
+                                    };
+                                  } else if (currentEmbed && prev.canvas) {
+                                    const updatedEmbeds = prev.canvas.embeds.map((em) =>
+                                      em.id === currentEmbed.id
+                                        ? { ...em, style: { ...em.style, padding: p } }
+                                        : em
+                                    );
+                                    return {
+                                      ...prev,
+                                      canvas: { ...prev.canvas, embeds: updatedEmbeds },
+                                    };
+                                  }
+                                  return prev;
+                                });
+                              }}
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-mono border cursor-pointer ${
+                                embedPadding === p
+                                  ? "bg-white text-black border-white font-bold"
+                                  : "bg-black/60 text-neutral-400 border-neutral-800 hover:text-white"
+                              }`}
+                            >
+                              {p}px
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 3. Element Spacing Gap: 0px to 120px */}
+                      <div className="space-y-2 p-3.5 rounded-xl border border-neutral-800 bg-[#101012]">
+                        <div className="flex justify-between items-center">
+                          <span className="text-neutral-400 text-[11px] font-semibold">Element Spacing Gap</span>
+                          <span className="text-white font-mono font-bold text-xs">{embedGap}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={120}
+                          step={2}
+                          value={embedGap}
+                          onChange={(e) =>
+                            updateConfig((prev) => ({
+                              ...prev,
+                              layout: { ...prev.layout, gap: Number(e.target.value) },
+                            }))
+                          }
+                          className="w-full accent-white cursor-pointer"
+                        />
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {[8, 16, 24, 36, 48, 64].map((g) => (
+                            <button
+                              key={g}
+                              type="button"
+                              onClick={() =>
+                                updateConfig((prev) => ({
+                                  ...prev,
+                                  layout: { ...prev.layout, gap: g },
+                                }))
+                              }
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-mono border cursor-pointer ${
+                                embedGap === g
+                                  ? "bg-white text-black border-white font-bold"
+                                  : "bg-black/60 text-neutral-400 border-neutral-800 hover:text-white"
+                              }`}
+                            >
+                              {g}px
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 4. Apps & Socials Spacing: 0px to 80px */}
+                      <div className="space-y-2 p-3.5 rounded-xl border border-neutral-800 bg-[#101012]">
+                        <div className="flex justify-between items-center">
+                          <span className="text-neutral-400 text-[11px] font-semibold">Apps & Socials Spacing</span>
+                          <span className="text-white font-mono font-bold text-xs">{appsSpacing}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={80}
+                          step={2}
+                          value={appsSpacing}
+                          onChange={(e) =>
+                            updateConfig((prev) => ({
+                              ...prev,
+                              layout: { ...prev.layout, appsSpacing: Number(e.target.value) },
+                            }))
+                          }
+                          className="w-full accent-white cursor-pointer"
+                        />
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {[6, 12, 18, 24, 32, 44].map((s) => (
+                            <button
+                              key={s}
+                              type="button"
+                              onClick={() =>
+                                updateConfig((prev) => ({
+                                  ...prev,
+                                  layout: { ...prev.layout, appsSpacing: s },
+                                }))
+                              }
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-mono border cursor-pointer ${
+                                appsSpacing === s
+                                  ? "bg-white text-black border-white font-bold"
+                                  : "bg-black/60 text-neutral-400 border-neutral-800 hover:text-white"
+                              }`}
+                            >
+                              {s}px
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 5. Card Corner Radius: 0px to 80px */}
+                      <div className="space-y-2 p-3.5 rounded-xl border border-neutral-800 bg-[#101012]">
+                        <div className="flex justify-between items-center">
+                          <span className="text-neutral-400 text-[11px] font-semibold">Card Corner Radius</span>
+                          <span className="text-white font-mono font-bold text-xs">{embedRadius}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={80}
+                          step={2}
+                          value={embedRadius}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateConfig((prev) => {
+                              if (isPrimary) {
+                                const updatedEmbeds = prev.canvas?.embeds?.map((em) =>
+                                  em.id === "embed_primary"
+                                    ? { ...em, style: { ...em.style, borderRadius: val } }
+                                    : em
+                                );
+                                return {
+                                  ...prev,
+                                  discordRpc: { ...prev.discordRpc, borderRadius: val },
+                                  ...(updatedEmbeds ? { canvas: { ...prev.canvas!, embeds: updatedEmbeds } } : {}),
+                                };
+                              } else if (currentEmbed && prev.canvas) {
+                                const updatedEmbeds = prev.canvas.embeds.map((em) =>
+                                  em.id === currentEmbed.id
+                                    ? { ...em, style: { ...em.style, borderRadius: val } }
+                                    : em
+                                );
+                                return {
+                                  ...prev,
+                                  canvas: { ...prev.canvas, embeds: updatedEmbeds },
+                                };
+                              }
+                              return prev;
+                            });
+                          }}
+                          className="w-full accent-white cursor-pointer"
+                        />
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {[0, 12, 24, 36, 52, 72].map((r) => (
+                            <button
+                              key={r}
+                              type="button"
+                              onClick={() => {
+                                updateConfig((prev) => {
+                                  if (isPrimary) {
+                                    const updatedEmbeds = prev.canvas?.embeds?.map((em) =>
+                                      em.id === "embed_primary"
+                                        ? { ...em, style: { ...em.style, borderRadius: r } }
+                                        : em
+                                    );
+                                    return {
+                                      ...prev,
+                                      discordRpc: { ...prev.discordRpc, borderRadius: r },
+                                      ...(updatedEmbeds ? { canvas: { ...prev.canvas!, embeds: updatedEmbeds } } : {}),
+                                    };
+                                  } else if (currentEmbed && prev.canvas) {
+                                    const updatedEmbeds = prev.canvas.embeds.map((em) =>
+                                      em.id === currentEmbed.id
+                                        ? { ...em, style: { ...em.style, borderRadius: r } }
+                                        : em
+                                    );
+                                    return {
+                                      ...prev,
+                                      canvas: { ...prev.canvas, embeds: updatedEmbeds },
+                                    };
+                                  }
+                                  return prev;
+                                });
+                              }}
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-mono border cursor-pointer ${
+                                embedRadius === r
+                                  ? "bg-white text-black border-white font-bold"
+                                  : "bg-black/60 text-neutral-400 border-neutral-800 hover:text-white"
+                              }`}
+                            >
+                              {r}px
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 6. Profile Horizontal Alignment */}
+                      <div className="space-y-2 p-3.5 rounded-xl border border-neutral-800 bg-[#101012]">
+                        <span className="text-neutral-400 text-[11px] font-semibold">Container Alignment</span>
+                        <div className="grid grid-cols-3 gap-1.5 pt-1">
+                          {(["left", "center", "right"] as const).map((align) => (
+                            <button
+                              key={align}
+                              type="button"
+                              onClick={() =>
+                                updateConfig((prev) => ({
+                                  ...prev,
+                                  layout: { ...prev.layout, alignment: align },
+                                  identity: { ...prev.identity, alignment: align },
+                                  avatar: { ...prev.avatar, alignment: align },
+                                }))
+                              }
+                              className={`py-2 rounded-lg border text-center capitalize text-xs cursor-pointer transition-colors ${
+                                config.layout.alignment === align
+                                  ? "border-white bg-white text-black font-bold"
+                                  : "border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-700"
+                              }`}
+                            >
+                              {align}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SECTION D: CONTAINER APPEARANCE & STYLING */}
+                  {currentEmbed && (
+                    <div className="p-4 rounded-xl border border-neutral-800 bg-[#101014] space-y-4">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold flex items-center gap-1.5">
+                          <Palette size={12} className="text-cyan-400" />
+                          Container Appearance & Styling
+                        </label>
+                        <span className="text-[9px] font-mono text-neutral-500">
+                          {currentEmbed.title || "Embed"}
+                        </span>
+                      </div>
+
+                      <div className={`grid gap-4 ${is70OrBelow ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"}`}>
+                        {/* Background Color */}
+                        <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
+                          <div className="flex justify-between items-center text-[11px] text-neutral-400">
+                            <span>Background Fill</span>
+                            <span className="text-white font-mono text-[10px]">
+                              {currentEmbed.style.backgroundColor || "rgba(10, 10, 14, 0.85)"}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={
+                                currentEmbed.style.backgroundColor && currentEmbed.style.backgroundColor.startsWith("#")
+                                  ? currentEmbed.style.backgroundColor
+                                  : "#0a0a0e"
+                              }
+                              onChange={(e) => {
+                                const newColor = e.target.value;
+                                updateConfig((prev) => {
+                                  if (!prev.canvas) return prev;
+                                  const updatedEmbeds = prev.canvas.embeds.map((em) =>
+                                    em.id === currentEmbed.id
+                                      ? { ...em, style: { ...em.style, backgroundColor: newColor } }
+                                      : em
+                                  );
+                                  return { ...prev, canvas: { ...prev.canvas, embeds: updatedEmbeds } };
+                                });
+                              }}
+                              className="w-8 h-8 rounded border border-neutral-700 bg-transparent cursor-pointer shrink-0"
+                            />
+                            <div className="flex flex-wrap gap-1">
+                              {["rgba(10, 10, 14, 0.85)", "#050505", "#121216", "#18181b", "transparent"].map((bg) => (
+                                <button
+                                  key={bg}
+                                  type="button"
+                                  onClick={() => {
+                                    updateConfig((prev) => {
+                                      if (!prev.canvas) return prev;
+                                      const updatedEmbeds = prev.canvas.embeds.map((em) =>
+                                        em.id === currentEmbed.id
+                                          ? { ...em, style: { ...em.style, backgroundColor: bg } }
+                                          : em
+                                      );
+                                      return { ...prev, canvas: { ...prev.canvas, embeds: updatedEmbeds } };
+                                    });
+                                  }}
+                                  className="px-2 py-1 rounded text-[9px] font-mono border border-neutral-800 bg-black/60 text-neutral-300 hover:text-white"
+                                >
+                                  {bg === "transparent" ? "None" : bg.startsWith("rgba") ? "Glass" : bg}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Backdrop Blur */}
+                        <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
+                          <div className="flex justify-between items-center text-[11px] text-neutral-400">
+                            <span>Backdrop Blur</span>
+                            <span className="text-white font-mono text-[10px]">
+                              {currentEmbed.style.backdropBlur ?? 16}px
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={32}
+                            step={2}
+                            value={currentEmbed.style.backdropBlur ?? 16}
+                            onChange={(e) => {
+                              const b = Number(e.target.value);
+                              updateConfig((prev) => {
+                                if (!prev.canvas) return prev;
+                                const updatedEmbeds = prev.canvas.embeds.map((em) =>
+                                  em.id === currentEmbed.id
+                                    ? { ...em, style: { ...em.style, backdropBlur: b, blur: b } }
+                                    : em
+                                );
+                                return { ...prev, canvas: { ...prev.canvas, embeds: updatedEmbeds } };
+                              });
+                            }}
+                            className="w-full accent-white cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Border Width & Color */}
+                        <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
+                          <div className="flex justify-between items-center text-[11px] text-neutral-400">
+                            <span>Border Width & Color</span>
+                            <span className="text-white font-mono text-[10px]">
+                              {currentEmbed.style.borderWidth ?? 1}px
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="range"
+                              min={0}
+                              max={6}
+                              step={1}
+                              value={currentEmbed.style.borderWidth ?? 1}
+                              onChange={(e) => {
+                                const bw = Number(e.target.value);
+                                updateConfig((prev) => {
+                                  if (!prev.canvas) return prev;
+                                  const updatedEmbeds = prev.canvas.embeds.map((em) =>
+                                    em.id === currentEmbed.id
+                                      ? { ...em, style: { ...em.style, borderWidth: bw } }
+                                      : em
+                                  );
+                                  return { ...prev, canvas: { ...prev.canvas, embeds: updatedEmbeds } };
+                                });
+                              }}
+                              className="w-full accent-white cursor-pointer"
+                            />
+                            <input
+                              type="color"
+                              value={currentEmbed.style.borderColor || "#26262b"}
+                              onChange={(e) => {
+                                const bc = e.target.value;
+                                updateConfig((prev) => {
+                                  if (!prev.canvas) return prev;
+                                  const updatedEmbeds = prev.canvas.embeds.map((em) =>
+                                    em.id === currentEmbed.id
+                                      ? { ...em, style: { ...em.style, borderColor: bc } }
+                                      : em
+                                  );
+                                  return { ...prev, canvas: { ...prev.canvas, embeds: updatedEmbeds } };
+                                });
+                              }}
+                              className="w-7 h-7 rounded border border-neutral-700 bg-transparent cursor-pointer shrink-0"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Shadow Blur */}
+                        <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
+                          <div className="flex justify-between items-center text-[11px] text-neutral-400">
+                            <span>Outer Shadow Blur</span>
+                            <span className="text-white font-mono text-[10px]">
+                              {currentEmbed.style.shadowBlur ?? 24}px
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={60}
+                            step={2}
+                            value={currentEmbed.style.shadowBlur ?? 24}
+                            onChange={(e) => {
+                              const sb = Number(e.target.value);
+                              updateConfig((prev) => {
+                                if (!prev.canvas) return prev;
+                                const updatedEmbeds = prev.canvas.embeds.map((em) =>
+                                  em.id === currentEmbed.id
+                                    ? { ...em, style: { ...em.style, shadowBlur: sb } }
+                                    : em
+                                );
+                                return { ...prev, canvas: { ...prev.canvas, embeds: updatedEmbeds } };
+                              });
+                            }}
+                            className="w-full accent-white cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SECTION E: EMBED CHILD COMPONENTS & QUICK INSERTER */}
+                  {currentEmbed && (
+                    <div className="p-4 rounded-xl border border-neutral-800 bg-[#101014] space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
+                          Components Inside {currentEmbed.title || "This Embed"}
+                        </label>
+                        <span className="text-[9px] font-mono text-neutral-500">
+                          {childElementsOfCurrentEmbed.length} Items
+                        </span>
+                      </div>
+
+                      {/* Quick Add Component Buttons */}
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => onAddElement?.("heading")}
+                          className="px-2.5 py-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white text-[11px] font-mono flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus size={12} /> Add Text
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onAddElement?.("button")}
+                          className="px-2.5 py-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white text-[11px] font-mono flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus size={12} /> Add Button
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onAddElement?.("socialIcon")}
+                          className="px-2.5 py-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white text-[11px] font-mono flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus size={12} /> Add Social
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onAddElement?.("image")}
+                          className="px-2.5 py-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white text-[11px] font-mono flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus size={12} /> Add Image
+                        </button>
+                      </div>
+
+                      {/* Child Elements List */}
+                      {childElementsOfCurrentEmbed.length > 0 ? (
+                        <div className="space-y-1.5 pt-2 max-h-48 overflow-y-auto custom-scrollbar">
+                          {childElementsOfCurrentEmbed.map((el) => {
+                            const isElementSelected = selectedId === el.id;
+                            return (
+                              <div
+                                key={el.id}
+                                onClick={() => onSelectElement?.(el.id)}
+                                className={`px-3 py-2 rounded-lg border flex items-center justify-between text-xs cursor-pointer transition-all ${
+                                  isElementSelected
+                                    ? "bg-sky-500/15 border-sky-500/50 text-sky-200"
+                                    : "bg-black/60 border-neutral-800/80 text-neutral-300 hover:border-neutral-700 hover:text-white"
+                                }`}
+                              >
+                                <span className="font-mono truncate">{el.name || el.type}</span>
+                                <div className="flex items-center gap-1 text-[10px] text-neutral-500">
+                                  <span className="capitalize">{el.type}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-neutral-500 text-xs italic py-2 text-center">
+                          No child components in this embed yet. Use the buttons above to add one.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
-
-                {/* Profile Alignment */}
-                <div className="space-y-2">
-                  <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
-                    Profile Horizontal Alignment
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(["left", "center", "right"] as const).map((align) => (
-                      <button
-                        key={align}
-                        onClick={() =>
-                          updateConfig((prev) => ({
-                            ...prev,
-                            layout: { ...prev.layout, alignment: align },
-                            identity: { ...prev.identity, alignment: align },
-                            avatar: { ...prev.avatar, alignment: align },
-                          }))
-                        }
-                        className={`py-2 rounded-lg border text-center capitalize cursor-pointer transition-colors ${config.layout.alignment === align
-                            ? "border-white bg-white text-black font-bold"
-                            : "border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-700"
-                          }`}
-                      >
-                        {align}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Width & Padding Sliders */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
-                    <div className="flex justify-between">
-                      <span className="text-neutral-400 text-[11px]">Container Max Width</span>
-                      <span className="text-white font-bold">{config.layout.maxWidth}px</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={460}
-                      max={900}
-                      step={10}
-                      value={config.layout.maxWidth}
-                      onChange={(e) =>
-                        updateConfig((prev) => ({
-                          ...prev,
-                          layout: { ...prev.layout, maxWidth: Number(e.target.value) },
-                        }))
-                      }
-                      className="w-full accent-white cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
-                    <div className="flex justify-between">
-                      <span className="text-neutral-400 text-[11px]">Card Padding</span>
-                      <span className="text-white font-bold">{config.layout.padding}px</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={16}
-                      max={64}
-                      step={4}
-                      value={config.layout.padding}
-                      onChange={(e) =>
-                        updateConfig((prev) => ({
-                          ...prev,
-                          layout: { ...prev.layout, padding: Number(e.target.value) },
-                        }))
-                      }
-                      className="w-full accent-white cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
-                    <div className="flex justify-between">
-                      <span className="text-neutral-400 text-[11px]">Element Spacing Gap</span>
-                      <span className="text-white font-bold">{config.layout.gap}px</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={12}
-                      max={48}
-                      step={4}
-                      value={config.layout.gap}
-                      onChange={(e) =>
-                        updateConfig((prev) => ({
-                          ...prev,
-                          layout: { ...prev.layout, gap: Number(e.target.value) },
-                        }))
-                      }
-                      className="w-full accent-white cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
-                    <div className="flex justify-between">
-                      <span className="text-neutral-400 text-[11px]">Card Corner Radius</span>
-                      <span className="text-white font-bold">{config.discordRpc.borderRadius}px</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={32}
-                      step={2}
-                      value={config.discordRpc.borderRadius}
-                      onChange={(e) =>
-                        updateConfig((prev) => ({
-                          ...prev,
-                          discordRpc: { ...prev.discordRpc, borderRadius: Number(e.target.value) },
-                        }))
-                      }
-                      className="w-full accent-white cursor-pointer"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* 2. PROFILE IDENTITY */}
             {activeCategory === "identity" && (

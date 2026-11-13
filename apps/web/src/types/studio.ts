@@ -326,9 +326,12 @@ export interface ProfileDesignConfig {
   mode: "studio" | "classic";
   layout: {
     preset: LayoutPreset;
-    maxWidth: number; // in px: 480 to 900
-    padding: number;
-    gap: number;
+    maxWidth: number; // in px: 360 to 1600
+    padding: number; // in px: 0 to 160
+    gap: number; // in px: 0 to 120
+    appsSpacing?: number; // in px: 0 to 80
+    autoHeight?: boolean;
+    height?: number; // in px if fixed
     alignment: "left" | "center" | "right";
     elementOrder: string[];
   };
@@ -669,6 +672,7 @@ export const DEFAULT_DESIGN_CONFIG: ProfileDesignConfig = {
     maxWidth: 580,
     padding: 32,
     gap: 24,
+    appsSpacing: 12,
     alignment: "center",
     elementOrder: ["avatar", "identity", "rpc", "music", "buttons", "socials"],
   },

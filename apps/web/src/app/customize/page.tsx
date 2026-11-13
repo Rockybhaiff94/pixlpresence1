@@ -230,16 +230,102 @@ export default function CustomizePage() {
   const isDirtyRef = useRef(false);
   const [isDirty, setIsDirty] = useState(false);
 
-  // Push new config into history stack
+  // Push new config into history stack with automatic canvas synchronization
   const updateConfigWithHistory = useCallback(
     (updater: (prev: ProfileDesignConfig) => ProfileDesignConfig) => {
       isDirtyRef.current = true;
       setIsDirty(true);
       setConfig((prev) => {
         const next = updater(prev);
-        setHistory((h) => [...h.slice(0, historyIdx + 1), next].slice(-30));
+
+        let synchronizedCanvas = next.canvas;
+        if (synchronizedCanvas && synchronizedCanvas.embeds && synchronizedCanvas.embeds.length > 0) {
+          const maxWidth = next.layout?.maxWidth || 580;
+          const padding = next.layout?.padding || 28;
+          const borderRadius = next.discordRpc?.borderRadius ?? 24;
+          const avatarSize = next.avatar?.size || 96;
+
+          const titleFont = next.identity?.titleFont || next.typography?.headingFont || "Space Grotesk";
+          const titleColor = next.identity?.titleColor || "#ffffff";
+          const titleSize = next.identity?.titleSize || 26;
+          const titleWeight = next.identity?.titleWeight || 700;
+
+          const bioFont = next.identity?.bioFont || next.typography?.bodyFont || "Inter";
+          const bioColor = next.identity?.bioColor || "#a3a3a3";
+          const bioSize = next.identity?.bioSize || 14;
+
+          const embeds = synchronizedCanvas.embeds.map((em) => {
+            if (em.id === "embed_primary") {
+              return {
+                ...em,
+                transform: { ...em.transform, width: maxWidth },
+                style: { ...em.style, padding, borderRadius },
+              };
+            }
+            return em;
+          });
+
+          const elements = synchronizedCanvas.elements.map((el) => {
+            if (el.id === "avatar_1" || el.type === "avatar") {
+              return {
+                ...el,
+                transform: { ...el.transform, width: avatarSize, height: avatarSize },
+              };
+            }
+            if (el.style?.hasCustomTypographyOverride) return el;
+
+            if (el.id === "username_1" || el.type === "username" || el.type === "displayName") {
+              return {
+                ...el,
+                transform: { ...el.transform, width: Math.max(120, maxWidth - 60) },
+                style: {
+                  ...el.style,
+                  fontFamily: titleFont,
+                  fontSize: titleSize,
+                  fontWeight: titleWeight,
+                  color: titleColor,
+                },
+              };
+            }
+
+            if (el.id === "bio_1" || el.type === "bio") {
+              return {
+                ...el,
+                transform: { ...el.transform, width: Math.max(120, maxWidth - 60) },
+                style: {
+                  ...el.style,
+                  fontFamily: bioFont,
+                  fontSize: bioSize,
+                  color: bioColor,
+                },
+              };
+            }
+
+            if (el.id === "tagline_1" || el.type === "tagline") {
+              return {
+                ...el,
+                transform: { ...el.transform, width: Math.max(120, maxWidth - 60) },
+              };
+            }
+
+            return el;
+          });
+
+          synchronizedCanvas = {
+            ...synchronizedCanvas,
+            embeds,
+            elements,
+          };
+        }
+
+        const resolvedNext: ProfileDesignConfig = {
+          ...next,
+          ...(synchronizedCanvas ? { canvas: synchronizedCanvas } : {}),
+        };
+
+        setHistory((h) => [...h.slice(0, historyIdx + 1), resolvedNext].slice(-30));
         setHistoryIdx((i) => Math.min(i + 1, 29));
-        return next;
+        return resolvedNext;
       });
     },
     [historyIdx]
