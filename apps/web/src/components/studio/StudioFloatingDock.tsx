@@ -1204,7 +1204,9 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
             {/* Scrollable Directory Categorized Icon Grids (Scaled by panelScale) */}
             <div
               ref={directoryScrollRef}
-              className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-5"
+              className={`flex-1 overflow-y-auto custom-scrollbar space-y-5 ${
+                effectivePanelPct <= 60 ? "p-3" : "p-4"
+              }`}
             >
               {APP_GROUPS.map((group) => (
                 <div key={group.id} className="space-y-2">
@@ -1217,8 +1219,14 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                     </span>
                   </div>
 
-                  {/* 1:1 Perfect Square Application Icons */}
-                  <div className="grid grid-cols-4 sm:grid-cols-5 gap-2.5">
+                  {/* 1:1 Perfect Square Application Icons (Proportionally adapted grid) */}
+                  <div className={`grid gap-2.5 ${
+                    effectivePanelPct <= 55
+                      ? "grid-cols-3"
+                      : effectivePanelPct <= 75
+                      ? "grid-cols-4"
+                      : "grid-cols-5"
+                  }`}>
                     {group.items.map((item) => {
                       const Icon = item.icon;
                       const isHovered = hoveredTool === item.id;
@@ -1281,7 +1289,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                     Active: {edge}
                   </span>
                 </div>
-                <div className="grid grid-cols-5 gap-1.5">
+                <div className={`grid gap-1.5 ${effectivePanelPct <= 55 ? "grid-cols-3" : "grid-cols-5"}`}>
                   {(["bottom", "top", "left", "right", "float"] as DockPosition[]).map((pos) => (
                     <button
                       key={pos}

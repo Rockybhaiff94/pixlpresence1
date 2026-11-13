@@ -25,6 +25,7 @@ interface StudioTemplateManagerProps {
   currentConfig: ProfileDesignConfig;
   onApplyPreset: (preset: StudioTemplatePreset) => void;
   onApplyConfig: (config: ProfileDesignConfig) => void;
+  isCompact?: boolean;
 }
 
 interface CustomTemplate {
@@ -42,6 +43,7 @@ export const StudioTemplateManager: React.FC<StudioTemplateManagerProps> = ({
   currentConfig,
   onApplyPreset,
   onApplyConfig,
+  isCompact = false,
 }) => {
   // Load custom templates synchronously from storage to avoid render cascade
   const [customTemplates, setCustomTemplates] = useState<CustomTemplate[]>(() => {
@@ -258,7 +260,7 @@ export const StudioTemplateManager: React.FC<StudioTemplateManagerProps> = ({
           <h3 className="text-[11px] font-bold text-neutral-300 uppercase tracking-wider">
             Your Custom Templates ({customTemplates.length})
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className={`grid gap-3 ${isCompact ? "grid-cols-1" : "grid-cols-1 md:grid-cols-2"}`}>
             {customTemplates.map((tpl) => (
               <div
                 key={tpl.id}
@@ -320,7 +322,7 @@ export const StudioTemplateManager: React.FC<StudioTemplateManagerProps> = ({
         <h3 className="text-[11px] font-bold text-neutral-300 uppercase tracking-wider">
           Curated Starter Presets ({TEMPLATE_PRESETS.length})
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className={`grid gap-3 ${isCompact ? "grid-cols-1" : "grid-cols-1 md:grid-cols-2"}`}>
           {TEMPLATE_PRESETS.map((preset) => (
             <div
               key={preset.id}

@@ -1214,6 +1214,7 @@ export default function CustomizePage() {
                 setCurrentView={setCurrentView}
                 activeCategory={activeCategory}
                 setActiveCategory={setActiveCategory}
+                panelSize={config.advanced?.moreOptionsPanelSize ?? 100}
                 config={config}
                 updateConfig={updateConfigWithHistory}
                 displayName={displayName}
