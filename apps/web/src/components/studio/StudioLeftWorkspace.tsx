@@ -390,17 +390,19 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
     >
       {/* Top Navigation Row: Contextual Header in Floating Mode vs Sub-Tabs & Category Bar in Classic Mode */}
       {isFloatingContext ? (
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#101014] shrink-0">
-          <div className="flex items-center gap-2.5">
+        <div className={`flex items-center justify-between border-b border-white/10 bg-[#101014] shrink-0 ${
+          is40OrBelow ? "px-2.5 py-2" : is70OrBelow ? "px-3 py-2.5" : "px-4 py-3"
+        }`}>
+          <div className="flex items-center gap-2">
             {onBack && (
               <button
                 type="button"
                 onClick={onBack}
-                className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-neutral-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5 text-[11px] font-bold border border-white/10"
+                className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-neutral-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5 text-[11px] font-bold border border-white/10 shrink-0"
                 title="Back to App Directory"
               >
                 <ArrowLeft size={12} />
-                <span>Directory</span>
+                {!is40OrBelow && <span>Directory</span>}
               </button>
             )}
             <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-white">
@@ -542,7 +544,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
       {/* Main Content Area */}
       <div
         className={`flex-1 overflow-y-auto custom-scrollbar ${
-          is40OrBelow ? "p-2.5" : is80OrBelow ? "p-3 sm:p-4" : "p-4 sm:p-6"
+          is40OrBelow ? "p-2.5" : is70OrBelow ? "p-3" : is80OrBelow ? "p-4" : "p-5"
         }`}
       >
         {/* TEMPLATES VIEW */}
@@ -551,6 +553,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
             currentConfig={config}
             onApplyPreset={onApplyTemplatePreset}
             onApplyConfig={(newConfig) => updateConfig(() => newConfig)}
+            isCompact={is70OrBelow}
           />
         )}
 
@@ -577,7 +580,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
 
         {/* CATEGORIES VIEW */}
         {currentView === "categories" && (
-          <div className="max-w-3xl space-y-6">
+          <div className={`max-w-3xl ${is40OrBelow ? "space-y-3" : is70OrBelow ? "space-y-4" : "space-y-6"}`}>
             {/* 1. LAYOUT & STRUCTURE // EMBED BUILDER */}
             {activeCategory === "layout" && (() => {
               const canvasEmbeds = config.canvas?.embeds || [];
@@ -878,7 +881,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                       </span>
                     </div>
 
-                    <div className={`grid gap-2.5 ${is70OrBelow ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-2 sm:grid-cols-3"}`}>
+                    <div className={`grid gap-2.5 ${is70OrBelow ? "grid-cols-1" : is80OrBelow ? "grid-cols-2" : "grid-cols-3"}`}>
                       {[
                         {
                           id: "centered" as LayoutPreset,
@@ -973,13 +976,15 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                                 : "border-neutral-800 bg-[#121214] text-neutral-300 hover:border-neutral-700 hover:bg-[#161619]"
                             }`}
                           >
-                            <div className="flex items-center justify-between pb-1">
-                              <span className="font-bold text-xs capitalize">{item.name}</span>
-                              {isActive && <Check size={12} className="text-black shrink-0" />}
+                            <div className="flex items-start justify-between pb-1 gap-1">
+                              <span className="font-bold text-xs capitalize leading-tight break-words min-w-0">{item.name}</span>
+                              {isActive && <Check size={12} className="text-black shrink-0 mt-0.5" />}
                             </div>
-                            <p className={`text-[10px] leading-tight ${isActive ? "text-neutral-700 font-medium" : "text-neutral-500"}`}>
-                              {item.desc}
-                            </p>
+                            {!is70OrBelow && (
+                              <p className={`text-[10px] leading-tight line-clamp-2 ${isActive ? "text-neutral-700 font-medium" : "text-neutral-500"}`}>
+                                {item.desc}
+                              </p>
+                            )}
                           </button>
                         );
                       })}
@@ -995,10 +1000,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                       <span className="text-[9px] font-mono text-cyan-400">Expanded Ranges</span>
                     </div>
 
-                    <div className={`grid gap-4 ${is70OrBelow ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"}`}>
+                    <div className={`grid gap-3 ${is80OrBelow ? "grid-cols-1" : "grid-cols-2"}`}>
                       {/* 1. Container Max Width: 360px to 1600px */}
                       <div className="space-y-2 p-3.5 rounded-xl border border-neutral-800 bg-[#101012]">
-                        <div className="flex justify-between items-center">
+                        <div className="flex justify-between items-center flex-wrap gap-1">
                           <span className="text-neutral-400 text-[11px] font-semibold">Container Width</span>
                           <span className="text-white font-mono font-bold text-xs">{embedWidth}px</span>
                         </div>
@@ -1084,7 +1089,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
 
                       {/* 2. Container Padding: 0px to 160px */}
                       <div className="space-y-2 p-3.5 rounded-xl border border-neutral-800 bg-[#101012]">
-                        <div className="flex justify-between items-center">
+                        <div className="flex justify-between items-center flex-wrap gap-1">
                           <span className="text-neutral-400 text-[11px] font-semibold">Container Padding</span>
                           <span className="text-white font-mono font-bold text-xs">{embedPadding}px</span>
                         </div>
@@ -1170,7 +1175,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
 
                       {/* 3. Element Spacing Gap: 0px to 120px */}
                       <div className="space-y-2 p-3.5 rounded-xl border border-neutral-800 bg-[#101012]">
-                        <div className="flex justify-between items-center">
+                        <div className="flex justify-between items-center flex-wrap gap-1">
                           <span className="text-neutral-400 text-[11px] font-semibold">Element Spacing Gap</span>
                           <span className="text-white font-mono font-bold text-xs">{embedGap}px</span>
                         </div>
@@ -1213,7 +1218,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
 
                       {/* 4. Apps & Socials Spacing: 0px to 80px */}
                       <div className="space-y-2 p-3.5 rounded-xl border border-neutral-800 bg-[#101012]">
-                        <div className="flex justify-between items-center">
+                        <div className="flex justify-between items-center flex-wrap gap-1">
                           <span className="text-neutral-400 text-[11px] font-semibold">Apps & Socials Spacing</span>
                           <span className="text-white font-mono font-bold text-xs">{appsSpacing}px</span>
                         </div>
@@ -1256,7 +1261,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
 
                       {/* 5. Card Corner Radius: 0px to 80px */}
                       <div className="space-y-2 p-3.5 rounded-xl border border-neutral-800 bg-[#101012]">
-                        <div className="flex justify-between items-center">
+                        <div className="flex justify-between items-center flex-wrap gap-1">
                           <span className="text-neutral-400 text-[11px] font-semibold">Card Corner Radius</span>
                           <span className="text-white font-mono font-bold text-xs">{embedRadius}px</span>
                         </div>
@@ -1383,10 +1388,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                         </span>
                       </div>
 
-                      <div className={`grid gap-4 ${is70OrBelow ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"}`}>
+                      <div className={`grid gap-3 ${is80OrBelow ? "grid-cols-1" : "grid-cols-2"}`}>
                         {/* Background Color */}
                         <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
-                          <div className="flex justify-between items-center text-[11px] text-neutral-400">
+                          <div className="flex justify-between items-center flex-wrap gap-1 text-[11px] text-neutral-400">
                             <span>Background Fill</span>
                             <span className="text-white font-mono text-[10px]">
                               {currentEmbed.style.backgroundColor || "rgba(10, 10, 14, 0.85)"}
@@ -1668,7 +1673,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                 </div>
 
                 {/* Title Font & Sizing */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className={`grid gap-3 ${is80OrBelow ? "grid-cols-1" : "grid-cols-2"}`}>
                   <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
                     <label className="text-neutral-400 text-[11px]">Display Name Font</label>
                     <select
@@ -1690,7 +1695,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   </div>
 
                   <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center flex-wrap gap-1">
                       <span className="text-neutral-400 text-[11px]">Title Font Size</span>
                       <span className="text-white font-bold">{config.identity.titleSize}px</span>
                     </div>
@@ -1716,7 +1721,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
                     Profile Badge Style
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className={`grid gap-2 ${is70OrBelow ? "grid-cols-2" : "grid-cols-4"}`}>
                     {(["pill", "glyph", "neon", "hidden"] as BadgeStyle[]).map((style) => (
                       <button
                         key={style}
@@ -1819,7 +1824,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
                     Avatar Geometric Shape
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className={`grid gap-2 ${is70OrBelow ? "grid-cols-2" : "grid-cols-4"}`}>
                     {(["circle", "square", "rounded", "squircle"] as const).map((shape) => (
                       <button
                         key={shape}
@@ -1841,7 +1846,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                 </div>
 
                 {/* Alignment & Object Fit */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className={`grid gap-3 ${is80OrBelow ? "grid-cols-1" : "grid-cols-2"}`}>
                   <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
                     <label className="text-neutral-400 text-[11px]">Avatar Alignment</label>
                     <div className="grid grid-cols-3 gap-1.5">
@@ -1890,9 +1895,9 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                 </div>
 
                 {/* Sizing & Offset Sliders */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className={`grid gap-3 ${is80OrBelow ? "grid-cols-1" : "grid-cols-2"}`}>
                   <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center flex-wrap gap-1">
                       <span className="text-neutral-400 text-[11px]">Avatar Dimensions</span>
                       <span className="text-white font-bold">{config.avatar.size}px</span>
                     </div>
@@ -1913,7 +1918,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   </div>
 
                   <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center flex-wrap gap-1">
                       <span className="text-neutral-400 text-[11px]">Border Width</span>
                       <span className="text-white font-bold">{config.avatar.borderWidth}px</span>
                     </div>
@@ -1934,7 +1939,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   </div>
 
                   <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center flex-wrap gap-1">
                       <span className="text-neutral-400 text-[11px]">Vertical Offset</span>
                       <span className="text-white font-bold">{config.avatar.offsetY}px</span>
                     </div>
@@ -2011,7 +2016,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
                     Background Type
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  <div className={`grid gap-2 ${is60OrBelow ? "grid-cols-2" : is80OrBelow ? "grid-cols-3" : "grid-cols-5"}`}>
                     {(["solid", "gradient", "mesh", "image", "video"] as BackgroundType[]).map((type) => (
                       <button
                         key={type}
@@ -2074,7 +2079,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
                     Atmospheric Pattern Overlay
                   </label>
-                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                  <div className={`grid gap-2 ${is60OrBelow ? "grid-cols-2" : is80OrBelow ? "grid-cols-3" : "grid-cols-5"}`}>
                     {(["none", "dots", "grid", "scanlines", "matrix"] as PatternType[]).map((pat) => (
                       <button
                         key={pat}
@@ -2188,7 +2193,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                     </div>
 
                     {/* Quick Transformation Indicators */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[10px] font-mono">
+                    <div className={`grid gap-2 pt-1 text-[10px] font-mono ${is70OrBelow ? "grid-cols-2" : "grid-cols-4"}`}>
                       <div className="p-2 rounded bg-black/60 border border-neutral-800 text-neutral-400">
                         RATIO: <span className="text-white font-bold">{config.background.aspectRatio || "full"}</span>
                       </div>
@@ -2206,9 +2211,9 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                 )}
 
                 {/* Blur & Overlay Dimming */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className={`grid gap-3 ${is80OrBelow ? "grid-cols-1" : "grid-cols-2"}`}>
                   <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center flex-wrap gap-1">
                       <span className="text-neutral-400 text-[11px]">Backdrop Blur</span>
                       <span className="text-white font-bold">{config.background.blur}px</span>
                     </div>
@@ -2229,7 +2234,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   </div>
 
                   <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center flex-wrap gap-1">
                       <span className="text-neutral-400 text-[11px]">Overlay Dimming</span>
                       <span className="text-white font-bold">{config.background.opacity}%</span>
                     </div>
@@ -2266,7 +2271,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className={`grid gap-3 ${is80OrBelow ? "grid-cols-1" : "grid-cols-2"}`}>
                   <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
                     <label className="text-neutral-400 text-[11px]">Heading Font Family</label>
                     <select
@@ -2310,7 +2315,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   </div>
 
                   <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center flex-wrap gap-1">
                       <span className="text-neutral-400 text-[11px]">Letter Spacing</span>
                       <span className="text-white font-bold">{config.typography.letterSpacing}px</span>
                     </div>
@@ -2334,7 +2339,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   </div>
 
                   <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center flex-wrap gap-1">
                       <span className="text-neutral-400 text-[11px]">Line Height</span>
                       <span className="text-white font-bold">{config.typography.lineHeight}</span>
                     </div>
@@ -2510,7 +2515,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
                     RPC Card Visual Theme
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  <div className={`grid gap-2 ${is60OrBelow ? "grid-cols-2" : is80OrBelow ? "grid-cols-3" : "grid-cols-5"}`}>
                     {(["card", "glass", "minimal", "compact", "neon"] as RpcStyle[]).map((style) => (
                       <button
                         key={style}
@@ -2532,10 +2537,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                 </div>
 
                 {/* Image Layout & Size */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className={`grid gap-3 ${is80OrBelow ? "grid-cols-1" : "grid-cols-2"}`}>
                   <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
                     <label className="text-neutral-400 text-[11px]">Image Alignment Layout</label>
-                    <div className="grid grid-cols-4 gap-1">
+                    <div className={`grid gap-1 ${is70OrBelow ? "grid-cols-2" : "grid-cols-4"}`}>
                       {(["left", "right", "stacked", "hidden"] as RpcImageLayout[]).map((layout) => (
                         <button
                           key={layout}
@@ -2581,8 +2586,8 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                 </div>
 
                 {/* Telemetry & Elapsed Timer Toggles */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="p-3 rounded-xl border border-neutral-800 bg-[#101012] flex items-center justify-between">
+                <div className={`grid gap-3 ${is80OrBelow ? "grid-cols-1" : "grid-cols-2"}`}>
+                  <div className="p-3 rounded-xl border border-neutral-800 bg-[#101012] flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <span className="text-white font-semibold">Live Telemetry Badge</span>
                       <p className="text-[10px] text-neutral-500">Pulsing green live beacon</p>
@@ -2606,7 +2611,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                     </button>
                   </div>
 
-                  <div className="p-3 rounded-xl border border-neutral-800 bg-[#101012] flex items-center justify-between">
+                  <div className="p-3 rounded-xl border border-neutral-800 bg-[#101012] flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <span className="text-white font-semibold">Elapsed Timer</span>
                       <p className="text-[10px] text-neutral-500">Real-time ticking duration</p>
@@ -2648,7 +2653,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
                     Button Visual Style
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <div className={`grid gap-2 ${is60OrBelow ? "grid-cols-1" : is80OrBelow ? "grid-cols-2" : "grid-cols-3"}`}>
                     {(
                       [
                         "solid-white",
@@ -2683,7 +2688,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
                     Social Icons Visual Style
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  <div className={`grid gap-2 ${is60OrBelow ? "grid-cols-2" : is80OrBelow ? "grid-cols-3" : "grid-cols-5"}`}>
                     {(["minimal", "pill", "glass", "neon", "circle"] as SocialIconStyle[]).map(
                       (style) => (
                         <button
@@ -2707,9 +2712,9 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                 </div>
 
                 {/* Sliders for Buttons & Socials */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className={`grid gap-3 ${is80OrBelow ? "grid-cols-1" : "grid-cols-2"}`}>
                   <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center flex-wrap gap-1">
                       <span className="text-neutral-400 text-[11px]">Button Corner Radius</span>
                       <span className="text-white font-bold">{config.buttons.borderRadius}px</span>
                     </div>
@@ -2730,7 +2735,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   </div>
 
                   <div className="space-y-2 p-3 rounded-xl border border-neutral-800 bg-[#101012]">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center flex-wrap gap-1">
                       <span className="text-neutral-400 text-[11px]">Social Icon Size</span>
                       <span className="text-white font-bold">{config.socials.iconSize}px</span>
                     </div>
@@ -2768,7 +2773,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
                     Ambient Particle System
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <div className={`grid gap-2 ${is60OrBelow ? "grid-cols-2" : is80OrBelow ? "grid-cols-2" : "grid-cols-3"}`}>
                     {(["None", "Snow", "Stars", "Fireflies", "Rain", "Matrix"] as ParticleEffect[]).map(
                       (effect) => (
                         <button
@@ -2810,8 +2815,8 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                 </div>
 
                 {/* Glassmorphism & Toggles */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="p-3 rounded-xl border border-neutral-800 bg-[#101012] flex items-center justify-between">
+                <div className={`grid gap-3 ${is80OrBelow ? "grid-cols-1" : "grid-cols-2"}`}>
+                  <div className="p-3 rounded-xl border border-neutral-800 bg-[#101012] flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <span className="text-white font-semibold">Glassmorphic Frost</span>
                       <p className="text-[10px] text-neutral-500">Translucent frosted glass</p>
@@ -2832,7 +2837,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                     </button>
                   </div>
 
-                  <div className="p-3 rounded-xl border border-neutral-800 bg-[#101012] flex items-center justify-between">
+                  <div className="p-3 rounded-xl border border-neutral-800 bg-[#101012] flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <span className="text-white font-semibold">Ambient Edge Glow</span>
                       <p className="text-[10px] text-neutral-500">Diffused border bloom</p>
@@ -3123,7 +3128,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   </div>
 
                   <div className={`grid gap-2.5 pt-1 ${
-                    is70OrBelow ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"
+                    is70OrBelow ? "grid-cols-1" : "grid-cols-2"
                   }`}>
                     <div className="space-y-1 min-w-0">
                       <label className="text-[10px] text-neutral-400 flex items-center justify-between">
@@ -3698,7 +3703,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   </div>
                 </div>
 
-                <div className={`grid gap-3 ${is70OrBelow ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"}`}>
+                <div className={`grid gap-3 ${is70OrBelow ? "grid-cols-1" : "grid-cols-2"}`}>
                   <div className="p-3 rounded-xl border border-neutral-800 bg-[#101012] flex items-center justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <span className="text-white font-semibold text-xs truncate block">Wireframe Guides</span>
