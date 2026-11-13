@@ -43,8 +43,12 @@ import {
 
 export default function CustomizePage() {
   const { user, refreshUser } = useAuth();
-  const [saving, setSaving] = useState(false);
-  const [publishing, setPublishing] = useState(false);
+
+  // SM-01: Explicit Save / Publish State Machine
+  type SavePhase = "idle" | "saving" | "publishing";
+  const [savePhase, setSavePhase] = useState<SavePhase>("idle");
+  const saving = savePhase === "saving";
+  const publishing = savePhase === "publishing";
   const [msg, setMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   // Mode Selection: Studio Workspace vs Classic Customizer
@@ -80,9 +84,12 @@ export default function CustomizePage() {
 
   // Advanced Panel System & Workspace Preferences
   const [previewWidthPct, setPreviewWidthPct] = useState<number>(40);
-  const [isPreviewVisible, setIsPreviewVisible] = useState<boolean>(true);
-  const [isEditorVisible, setIsEditorVisible] = useState<boolean>(true);
-  const [isFullscreenPreview, setIsFullscreenPreview] = useState<boolean>(false);
+  // SM-02: Explicit Panel Layout State Machine (prevents impossible blank screen / desynced states)
+  type WorkspacePanelLayout = "split" | "fullscreen";
+  const [workspaceLayout, setWorkspaceLayout] = useState<WorkspacePanelLayout>("split");
+  const isFullscreenPreview = workspaceLayout === "fullscreen";
+  const isEditorVisible = workspaceLayout !== "fullscreen";
+  const isPreviewVisible = true; // Full-screen live preview canvas is always active
   const [transparencyMode, setTransparencyMode] = useState<WorkspaceTransparencyMode>("solid");
   const [panelOpacity, setPanelOpacity] = useState<number>(85);
   const [panelBlur, setPanelBlur] = useState<number>(12);
@@ -125,11 +132,10 @@ export default function CustomizePage() {
         if (typeof parsed.previewWidthPct === "number") {
           setPreviewWidthPct(Math.min(70, Math.max(20, parsed.previewWidthPct)));
         }
-        if (typeof parsed.isPreviewVisible === "boolean") {
-          setIsPreviewVisible(parsed.isPreviewVisible);
-        }
-        if (typeof parsed.isEditorVisible === "boolean") {
-          setIsEditorVisible(parsed.isEditorVisible);
+        if (parsed.workspaceLayout === "fullscreen" || parsed.isFullscreenPreview) {
+          setWorkspaceLayout("fullscreen");
+        } else if (parsed.workspaceLayout === "split") {
+          setWorkspaceLayout("split");
         }
         if (parsed.transparencyMode) {
           setTransparencyMode(parsed.transparencyMode);
@@ -161,8 +167,10 @@ export default function CustomizePage() {
     try {
       const prefs = {
         previewWidthPct,
-        isPreviewVisible,
-        isEditorVisible,
+        workspaceLayout,
+        isPreviewVisible: true,
+        isEditorVisible: workspaceLayout !== "fullscreen",
+        isFullscreenPreview: workspaceLayout === "fullscreen",
         transparencyMode,
         panelOpacity,
         panelBlur,
@@ -176,8 +184,7 @@ export default function CustomizePage() {
     }
   }, [
     previewWidthPct,
-    isPreviewVisible,
-    isEditorVisible,
+    workspaceLayout,
     transparencyMode,
     panelOpacity,
     panelBlur,
@@ -880,9 +887,11 @@ export default function CustomizePage() {
 
   // Save / Publish handlers synchronizing profile + independent RPC controls
   const executeSave = async (isPublish = false) => {
+    // Guard against concurrent invocations or rapid double-clicks (SM-01)
+    if (savePhase !== "idle") return;
+
     try {
-      if (isPublish) setPublishing(true);
-      else setSaving(true);
+      setSavePhase(isPublish ? "publishing" : "saving");
       setMsg(null);
 
       const profilePayload = {
@@ -936,22 +945,19 @@ export default function CustomizePage() {
     } catch (err: unknown) {
       setMsg({ text: (err as Error)?.message || "Failed to update profile", type: "error" });
     } finally {
-      setSaving(false);
-      setPublishing(false);
+      setSavePhase("idle");
     }
   };
 
   const handleSaveDraft = () => executeSave(false);
   const handlePublish = () => executeSave(true);
 
-  // Toggle fullscreen preview
+  // Toggle fullscreen focus mode preview (SM-02)
   const handleToggleFullscreenPreview = () => {
-    setIsFullscreenPreview((prev) => {
-      const next = !prev;
-      if (next) {
-        setIsEditorVisible(false);
-      } else {
-        setIsEditorVisible(true);
+    setWorkspaceLayout((prev) => {
+      const next = prev === "fullscreen" ? "split" : "fullscreen";
+      if (next === "fullscreen") {
+        setIsSettingsOpen(false);
       }
       return next;
     });
@@ -959,12 +965,8 @@ export default function CustomizePage() {
 
   const handleResetPanelSplit = () => {
     setPreviewWidthPct(40);
-    setIsEditorVisible(true);
-    setIsPreviewVisible(true);
-    setIsFullscreenPreview(false);
+    setWorkspaceLayout("split");
   };
-
-  const isBothPanelsVisible = isEditorVisible && isPreviewVisible && !isFullscreenPreview;
 
   // Dynamic Background Passthrough for Transparent, Glass, and Floating modes
   const getPassthroughBackgroundStyle = (): React.CSSProperties => {
