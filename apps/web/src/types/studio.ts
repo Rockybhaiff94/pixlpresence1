@@ -456,6 +456,8 @@ export interface ProfileDesignConfig {
   canvas?: CanvasEngineState;
 }
 
+export type StudioPreferences = NonNullable<ProfileDesignConfig["advanced"]>;
+
 export type WorkspaceTransparencyMode = "solid" | "transparent" | "glass" | "floating";
 
 export interface StudioWorkspacePrefs {

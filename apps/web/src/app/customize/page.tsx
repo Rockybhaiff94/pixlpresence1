@@ -230,20 +230,122 @@ export default function CustomizePage() {
   const [viewsCount, setViewsCount] = useState<number>(0);
   const [likesCount, setLikesCount] = useState<number>(0);
 
-  // Full Studio Design Config with Undo/Redo
-  const [config, setConfig] = useState<ProfileDesignConfig>(DEFAULT_DESIGN_CONFIG);
+  // FIX-01: Helper to retrieve stored Studio preferences from localStorage
+  const getStoredStudioPreferences = (): Partial<NonNullable<ProfileDesignConfig["advanced"]>> => {
+    if (typeof window === "undefined") return {};
+    try {
+      const savedPrefs = localStorage.getItem("pixel_studio_preferences_v1");
+      if (savedPrefs) {
+        return JSON.parse(savedPrefs);
+      }
+      const legacy: Partial<NonNullable<ProfileDesignConfig["advanced"]>> = {};
+      const savedLock = localStorage.getItem("pixel_studio_dock_locked");
+      if (savedLock !== null) legacy.dockLocked = savedLock === "true";
+      const savedShortcut = localStorage.getItem("pixel_studio_dock_shortcut");
+      if (savedShortcut) legacy.dockLockShortcut = savedShortcut;
+      const savedSize = localStorage.getItem("pixel_studio_dock_panel_size");
+      if (savedSize) legacy.moreOptionsPanelSize = Number(savedSize);
+      return legacy;
+    } catch {
+      return {};
+    }
+  };
+
+  // Full Studio Design Config with Undo/Redo - Studio Preferences restored synchronously on mount
+  const [config, setConfig] = useState<ProfileDesignConfig>(() => {
+    const storedPrefs = getStoredStudioPreferences();
+    return {
+      ...DEFAULT_DESIGN_CONFIG,
+      advanced: {
+        ...DEFAULT_DESIGN_CONFIG.advanced,
+        ...storedPrefs,
+      },
+    };
+  });
   const [history, setHistory] = useState<ProfileDesignConfig[]>([DEFAULT_DESIGN_CONFIG]);
   const [historyIdx, setHistoryIdx] = useState<number>(0);
   const isDirtyRef = useRef(false);
   const [isDirty, setIsDirty] = useState(false);
 
+  // FIX-01: Dedicated Studio Preferences update & automatic persistence pipeline
+  // Critical Architecture Rule: Preferences must NOT mark Profile Data as modified (no isDirty)
+  const updateStudioPreferences = useCallback(
+    (updater: (prev: NonNullable<ProfileDesignConfig["advanced"]>) => NonNullable<ProfileDesignConfig["advanced"]>) => {
+      setConfig((prev) => {
+        const currentAdv = prev.advanced || DEFAULT_DESIGN_CONFIG.advanced || {};
+        const nextAdv = updater(currentAdv);
+
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem("pixel_studio_preferences_v1", JSON.stringify(nextAdv));
+            if (nextAdv.moreOptionsPanelSize !== undefined) {
+              localStorage.setItem("pixel_studio_dock_panel_size", String(nextAdv.moreOptionsPanelSize));
+            }
+            if (nextAdv.dockLocked !== undefined) {
+              localStorage.setItem("pixel_studio_dock_locked", String(nextAdv.dockLocked));
+            }
+            if (nextAdv.dockLockShortcut !== undefined) {
+              localStorage.setItem("pixel_studio_dock_shortcut", nextAdv.dockLockShortcut);
+            }
+          } catch (err) {
+            console.error("[Preferences Autosave Error]", err);
+          }
+        }
+
+        return {
+          ...prev,
+          advanced: nextAdv,
+        };
+      });
+    },
+    []
+  );
+
   // Push new config into history stack with automatic canvas synchronization
   const updateConfigWithHistory = useCallback(
     (updater: (prev: ProfileDesignConfig) => ProfileDesignConfig) => {
-      isDirtyRef.current = true;
-      setIsDirty(true);
       setConfig((prev) => {
         const next = updater(prev);
+
+        // FIX-01: Detect if update is exclusively a Studio preference modification
+        const isPurePreferencesUpdate =
+          prev.layout === next.layout &&
+          prev.identity === next.identity &&
+          prev.avatar === next.avatar &&
+          prev.background === next.background &&
+          prev.typography === next.typography &&
+          prev.buttons === next.buttons &&
+          prev.effects === next.effects &&
+          prev.customCss === next.customCss &&
+          prev.canvas === next.canvas &&
+          prev.discordRpc === next.discordRpc &&
+          prev.layers === next.layers &&
+          prev.advanced !== next.advanced;
+
+        if (isPurePreferencesUpdate && next.advanced) {
+          // Auto-persist preferences without dirtying profile or pushing to history
+          if (typeof window !== "undefined") {
+            try {
+              localStorage.setItem("pixel_studio_preferences_v1", JSON.stringify(next.advanced));
+              if (next.advanced.moreOptionsPanelSize !== undefined) {
+                localStorage.setItem("pixel_studio_dock_panel_size", String(next.advanced.moreOptionsPanelSize));
+              }
+              if (next.advanced.dockLocked !== undefined) {
+                localStorage.setItem("pixel_studio_dock_locked", String(next.advanced.dockLocked));
+              }
+              if (next.advanced.dockLockShortcut !== undefined) {
+                localStorage.setItem("pixel_studio_dock_shortcut", next.advanced.dockLockShortcut);
+              }
+            } catch (err) {
+              console.error("[Preferences Autosave Error]", err);
+            }
+          }
+          return next;
+        }
+
+        // Profile content changed -> mark dirty and record in history stack
+        isDirtyRef.current = true;
+        setIsDirty(true);
 
         let synchronizedCanvas = next.canvas;
         if (synchronizedCanvas && synchronizedCanvas.embeds && synchronizedCanvas.embeds.length > 0) {
@@ -806,6 +908,7 @@ export default function CustomizePage() {
                   ? JSON.parse(p.designConfig)
                   : p.designConfig;
               if (parsed && typeof parsed === "object") {
+                const storedPrefs = getStoredStudioPreferences();
                 const merged: ProfileDesignConfig = {
                   ...DEFAULT_DESIGN_CONFIG,
                   ...parsed,
@@ -818,7 +921,11 @@ export default function CustomizePage() {
                   buttons: { ...DEFAULT_DESIGN_CONFIG.buttons, ...(parsed.buttons || {}) },
                   socials: { ...DEFAULT_DESIGN_CONFIG.socials, ...(parsed.socials || {}) },
                   effects: { ...DEFAULT_DESIGN_CONFIG.effects, ...(parsed.effects || {}) },
-                  advanced: { ...DEFAULT_DESIGN_CONFIG.advanced, ...(parsed.advanced || {}) },
+                  advanced: {
+                    ...DEFAULT_DESIGN_CONFIG.advanced,
+                    ...(parsed.advanced || {}),
+                    ...storedPrefs,
+                  },
                   canvas: parsed.canvas || DEFAULT_DESIGN_CONFIG.canvas,
                   customCss: p.customCss || parsed.customCss || "",
                 };
@@ -1199,13 +1306,9 @@ export default function CustomizePage() {
               dockLockShortcut={config.advanced?.dockLockShortcut || "CapsLock"}
               isDockLocked={config.advanced?.dockLocked ?? false}
               onDockLockChange={(locked) => {
-                updateConfigWithHistory((prev) => ({
+                updateStudioPreferences((prev) => ({
                   ...prev,
-                  advanced: {
-                    ...DEFAULT_DESIGN_CONFIG.advanced,
-                    ...(prev.advanced || {}),
-                    dockLocked: locked,
-                  },
+                  dockLocked: locked,
                 }));
               }}
               moreOptionsPanelSize={config.advanced?.moreOptionsPanelSize ?? 100}
@@ -1219,6 +1322,7 @@ export default function CustomizePage() {
                 panelSize={config.advanced?.moreOptionsPanelSize ?? 100}
                 config={config}
                 updateConfig={updateConfigWithHistory}
+                updatePreferences={updateStudioPreferences}
                 displayName={displayName}
                 setDisplayName={setDisplayName}
                 bio={bio}

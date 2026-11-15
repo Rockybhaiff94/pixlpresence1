@@ -74,6 +74,7 @@ interface StudioLeftWorkspaceProps {
   setActiveCategory: (cat: StudioTab) => void;
   config: ProfileDesignConfig;
   updateConfig: (updater: (prev: ProfileDesignConfig) => ProfileDesignConfig) => void;
+  updatePreferences?: (updater: (prev: NonNullable<ProfileDesignConfig["advanced"]>) => NonNullable<ProfileDesignConfig["advanced"]>) => void;
   displayName: string;
   setDisplayName: (val: string) => void;
   bio: string;
@@ -118,6 +119,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
   setActiveCategory,
   config,
   updateConfig,
+  updatePreferences,
   displayName,
   setDisplayName,
   bio,
@@ -222,6 +224,21 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
   const is60OrBelow = effectivePct <= 60;
   const is40OrBelow = effectivePct <= 45;
   const [shortcutConflictWarning, setShortcutConflictWarning] = useState<string | null>(null);
+
+  // FIX-01: Update Studio preferences without marking the profile dirty
+  const updateAdvancedPreferences = React.useCallback(
+    (advUpdater: (prev: NonNullable<ProfileDesignConfig["advanced"]>) => NonNullable<ProfileDesignConfig["advanced"]>) => {
+      if (updatePreferences) {
+        updatePreferences(advUpdater);
+      } else {
+        updateConfig((prev) => ({
+          ...prev,
+          advanced: advUpdater(prev.advanced || DEFAULT_DESIGN_CONFIG.advanced!),
+        }));
+      }
+    },
+    [updatePreferences, updateConfig]
+  );
 
   const checkShortcutConflict = (shortcut: string): string | null => {
     const norm = shortcut.toLowerCase().trim();
@@ -3041,13 +3058,9 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           key={mode}
                           type="button"
                           onClick={() =>
-                            updateConfig((prev) => ({
-                              ...prev,
-                              advanced: {
-                                ...DEFAULT_DESIGN_CONFIG.advanced,
-                                ...(prev.advanced || {}),
-                                embedScaling: mode,
-                              },
+                            updateAdvancedPreferences((adv) => ({
+                              ...adv,
+                              embedScaling: mode,
                             }))
                           }
                           className={`rounded-lg border text-left transition-all cursor-pointer ${
@@ -3106,13 +3119,9 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                     <button
                       type="button"
                       onClick={() =>
-                        updateConfig((prev) => ({
-                          ...prev,
-                          advanced: {
-                            ...DEFAULT_DESIGN_CONFIG.advanced,
-                            ...(prev.advanced || {}),
-                            precisionModifierEnabled: !(prev.advanced?.precisionModifierEnabled ?? true),
-                          },
+                        updateAdvancedPreferences((adv) => ({
+                          ...adv,
+                          precisionModifierEnabled: !(adv.precisionModifierEnabled ?? true),
                         }))
                       }
                       className={`px-2.5 py-1 rounded text-xs font-bold transition-colors cursor-pointer shrink-0 ${
@@ -3137,13 +3146,9 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                       <select
                         value={config.advanced?.precisionModifier || "Alt"}
                         onChange={(e) =>
-                          updateConfig((prev) => ({
-                            ...prev,
-                            advanced: {
-                              ...DEFAULT_DESIGN_CONFIG.advanced,
-                              ...(prev.advanced || {}),
-                              precisionModifier: e.target.value as any,
-                            },
+                          updateAdvancedPreferences((adv) => ({
+                            ...adv,
+                            precisionModifier: e.target.value as any,
                           }))
                         }
                         className="w-full bg-neutral-900 border border-neutral-700 rounded px-2.5 py-1.5 text-xs text-white cursor-pointer focus:border-amber-400 focus:outline-none"
@@ -3159,14 +3164,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                       <button
                         type="button"
                         onClick={() =>
-                          updateConfig((prev) => ({
-                            ...prev,
-                            advanced: {
-                              ...DEFAULT_DESIGN_CONFIG.advanced,
-                              ...(prev.advanced || {}),
-                              precisionModifier: "Alt",
-                              precisionModifierEnabled: true,
-                            },
+                          updateAdvancedPreferences((adv) => ({
+                            ...adv,
+                            precisionModifier: "Alt",
+                            precisionModifierEnabled: true,
                           }))
                         }
                         className="w-full py-1.5 px-3 rounded border border-neutral-700 bg-neutral-900 text-neutral-300 hover:text-white text-xs font-mono transition-colors flex items-center justify-center gap-1.5 cursor-pointer hover:border-neutral-500"
@@ -3213,17 +3214,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                       type="button"
                       onClick={() => {
                         const nextLock = !(config.advanced?.dockLocked ?? false);
-                        updateConfig((prev) => ({
-                          ...prev,
-                          advanced: {
-                            ...DEFAULT_DESIGN_CONFIG.advanced,
-                            ...(prev.advanced || {}),
-                            dockLocked: nextLock,
-                          },
+                        updateAdvancedPreferences((adv) => ({
+                          ...adv,
+                          dockLocked: nextLock,
                         }));
-                        try {
-                          localStorage.setItem("pixel_studio_dock_locked", String(nextLock));
-                        } catch {}
                       }}
                       className={`px-2.5 py-1 rounded text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
                         (config.advanced?.dockLocked ?? false)
@@ -3272,17 +3266,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            updateConfig((prev) => ({
-                              ...prev,
-                              advanced: {
-                                ...DEFAULT_DESIGN_CONFIG.advanced,
-                                ...(prev.advanced || {}),
-                                dockLockShortcut: "CapsLock",
-                              },
+                            updateAdvancedPreferences((adv) => ({
+                              ...adv,
+                              dockLockShortcut: "CapsLock",
                             }));
-                            try {
-                              localStorage.setItem("pixel_studio_dock_lock_shortcut", "CapsLock");
-                            } catch {}
                           }}
                           className="p-1 rounded text-neutral-500 hover:text-neutral-300 transition-colors cursor-pointer"
                           title="Reset to Default (CAPS LOCK)"
@@ -3329,17 +3316,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                             disabled={!recordedShortcut || !!shortcutConflictWarning || recordedShortcut.endsWith("...")}
                             onClick={() => {
                               if (recordedShortcut && !shortcutConflictWarning && !recordedShortcut.endsWith("...")) {
-                                updateConfig((prev) => ({
-                                  ...prev,
-                                  advanced: {
-                                    ...DEFAULT_DESIGN_CONFIG.advanced,
-                                    ...(prev.advanced || {}),
-                                    dockLockShortcut: recordedShortcut,
-                                  },
+                                updateAdvancedPreferences((adv) => ({
+                                  ...adv,
+                                  dockLockShortcut: recordedShortcut,
                                 }));
-                                try {
-                                  localStorage.setItem("pixel_studio_dock_lock_shortcut", recordedShortcut);
-                                } catch {}
                                 setIsRecordingLockShortcut(false);
                                 setRecordedShortcut("");
                               }
@@ -3379,17 +3359,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          updateConfig((prev) => ({
-                            ...prev,
-                            advanced: {
-                              ...DEFAULT_DESIGN_CONFIG.advanced,
-                              ...(prev.advanced || {}),
-                              moreOptionsPanelSize: 100,
-                            },
+                          updateAdvancedPreferences((adv) => ({
+                            ...adv,
+                            moreOptionsPanelSize: 100,
                           }));
-                          try {
-                            localStorage.setItem("pixel_studio_more_options_size", "100");
-                          } catch {}
                         }}
                         className="p-1 rounded text-neutral-500 hover:text-neutral-300 transition-colors cursor-pointer"
                         title="Reset to Default (100%)"
@@ -3410,17 +3383,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                       onChange={(e) => {
                         const raw = parseInt(e.target.value, 10);
                         const val = Math.max(40, Math.min(100, isNaN(raw) ? 100 : raw));
-                        updateConfig((prev) => ({
-                          ...prev,
-                          advanced: {
-                            ...DEFAULT_DESIGN_CONFIG.advanced,
-                            ...(prev.advanced || {}),
-                            moreOptionsPanelSize: val,
-                          },
+                        updateAdvancedPreferences((adv) => ({
+                          ...adv,
+                          moreOptionsPanelSize: val,
                         }));
-                        try {
-                          localStorage.setItem("pixel_studio_more_options_size", String(val));
-                        } catch {}
                       }}
                       className="w-full accent-emerald-400 cursor-pointer h-1.5 bg-neutral-800 rounded-lg"
                     />
@@ -3452,17 +3418,10 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                           key={preset.pct}
                           type="button"
                           onClick={() => {
-                            updateConfig((prev) => ({
-                              ...prev,
-                              advanced: {
-                                ...DEFAULT_DESIGN_CONFIG.advanced,
-                                ...(prev.advanced || {}),
-                                moreOptionsPanelSize: preset.pct,
-                              },
+                            updateAdvancedPreferences((adv) => ({
+                              ...adv,
+                              moreOptionsPanelSize: preset.pct,
                             }));
-                            try {
-                              localStorage.setItem("pixel_studio_more_options_size", String(preset.pct));
-                            } catch {}
                           }}
                           className={`py-1.5 px-1 rounded-lg border text-center transition-all cursor-pointer ${
                             isSelected
@@ -3502,15 +3461,11 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                     <button
                       type="button"
                       onClick={() =>
-                        updateConfig((prev) => ({
-                          ...prev,
-                          advanced: {
-                            ...DEFAULT_DESIGN_CONFIG.advanced,
-                            ...(prev.advanced || {}),
-                            gridSettings: {
-                              ...(prev.advanced?.gridSettings || DEFAULT_GRID_SETTINGS),
-                              showGrid: !(prev.advanced?.gridSettings?.showGrid ?? false),
-                            },
+                        updateAdvancedPreferences((adv) => ({
+                          ...adv,
+                          gridSettings: {
+                            ...(adv.gridSettings || DEFAULT_GRID_SETTINGS),
+                            showGrid: !(adv.gridSettings?.showGrid ?? false),
                           },
                         }))
                       }
@@ -3538,15 +3493,11 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                     <button
                       type="button"
                       onClick={() =>
-                        updateConfig((prev) => ({
-                          ...prev,
-                          advanced: {
-                            ...DEFAULT_DESIGN_CONFIG.advanced,
-                            ...(prev.advanced || {}),
-                            gridSettings: {
-                              ...(prev.advanced?.gridSettings || DEFAULT_GRID_SETTINGS),
-                              snapToGrid: !(prev.advanced?.gridSettings?.snapToGrid ?? true),
-                            },
+                        updateAdvancedPreferences((adv) => ({
+                          ...adv,
+                          gridSettings: {
+                            ...(adv.gridSettings || DEFAULT_GRID_SETTINGS),
+                            snapToGrid: !(adv.gridSettings?.snapToGrid ?? true),
                           },
                         }))
                       }
@@ -3574,15 +3525,11 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                     <button
                       type="button"
                       onClick={() =>
-                        updateConfig((prev) => ({
-                          ...prev,
-                          advanced: {
-                            ...DEFAULT_DESIGN_CONFIG.advanced,
-                            ...(prev.advanced || {}),
-                            gridSettings: {
-                              ...(prev.advanced?.gridSettings || DEFAULT_GRID_SETTINGS),
-                              smartGuides: !(prev.advanced?.gridSettings?.smartGuides ?? true),
-                            },
+                        updateAdvancedPreferences((adv) => ({
+                          ...adv,
+                          gridSettings: {
+                            ...(adv.gridSettings || DEFAULT_GRID_SETTINGS),
+                            smartGuides: !(adv.gridSettings?.smartGuides ?? true),
                           },
                         }))
                       }
@@ -3608,15 +3555,11 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                     <button
                       type="button"
                       onClick={() =>
-                        updateConfig((prev) => ({
-                          ...prev,
-                          advanced: {
-                            ...DEFAULT_DESIGN_CONFIG.advanced,
-                            ...(prev.advanced || {}),
-                            gridSettings: {
-                              ...(prev.advanced?.gridSettings || DEFAULT_GRID_SETTINGS),
-                              snapToElements: !(prev.advanced?.gridSettings?.snapToElements ?? true),
-                            },
+                        updateAdvancedPreferences((adv) => ({
+                          ...adv,
+                          gridSettings: {
+                            ...(adv.gridSettings || DEFAULT_GRID_SETTINGS),
+                            snapToElements: !(adv.gridSettings?.snapToElements ?? true),
                           },
                         }))
                       }
@@ -3655,15 +3598,11 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                         step={4}
                         value={config.advanced?.gridSettings?.gridSize ?? 16}
                         onChange={(e) =>
-                          updateConfig((prev) => ({
-                            ...prev,
-                            advanced: {
-                              ...DEFAULT_DESIGN_CONFIG.advanced,
-                              ...(prev.advanced || {}),
-                              gridSettings: {
-                                ...(prev.advanced?.gridSettings || DEFAULT_GRID_SETTINGS),
-                                gridSize: Number(e.target.value),
-                              },
+                          updateAdvancedPreferences((adv) => ({
+                            ...adv,
+                            gridSettings: {
+                              ...(adv.gridSettings || DEFAULT_GRID_SETTINGS),
+                              gridSize: Number(e.target.value),
                             },
                           }))
                         }
@@ -3685,15 +3624,11 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                         step={1}
                         value={config.advanced?.gridSettings?.snapSensitivity ?? 6}
                         onChange={(e) =>
-                          updateConfig((prev) => ({
-                            ...prev,
-                            advanced: {
-                              ...DEFAULT_DESIGN_CONFIG.advanced,
-                              ...(prev.advanced || {}),
-                              gridSettings: {
-                                ...(prev.advanced?.gridSettings || DEFAULT_GRID_SETTINGS),
-                                snapSensitivity: Number(e.target.value),
-                              },
+                          updateAdvancedPreferences((adv) => ({
+                            ...adv,
+                            gridSettings: {
+                              ...(adv.gridSettings || DEFAULT_GRID_SETTINGS),
+                              snapSensitivity: Number(e.target.value),
                             },
                           }))
                         }
@@ -3713,13 +3648,9 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                     </div>
                     <button
                       onClick={() =>
-                        updateConfig((prev) => ({
-                          ...prev,
-                          advanced: {
-                            ...DEFAULT_DESIGN_CONFIG.advanced,
-                            ...(prev.advanced || {}),
-                            wireframeMode: !prev.advanced?.wireframeMode,
-                          },
+                        updateAdvancedPreferences((adv) => ({
+                          ...adv,
+                          wireframeMode: !adv.wireframeMode,
                         }))
                       }
                       className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors shrink-0 ${config.advanced?.wireframeMode
@@ -3740,13 +3671,9 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                     </div>
                     <button
                       onClick={() =>
-                        updateConfig((prev) => ({
-                          ...prev,
-                          advanced: {
-                            ...DEFAULT_DESIGN_CONFIG.advanced,
-                            ...(prev.advanced || {}),
-                            watermark: !prev.advanced?.watermark,
-                          },
+                        updateAdvancedPreferences((adv) => ({
+                          ...adv,
+                          watermark: !adv.watermark,
                         }))
                       }
                       className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors shrink-0 ${config.advanced?.watermark
