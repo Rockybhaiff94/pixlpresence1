@@ -343,6 +343,54 @@ export default function CustomizePage() {
           return next;
         }
 
+        // FIX-04: Detect if update is exclusively a Discord RPC configuration update
+        // Check if layers change only affects 'rpc' visibility
+        const isLayersRpcOnly =
+          prev.layers === next.layers ||
+          (prev.layers.length === next.layers.length &&
+            prev.layers.every((l, idx) => {
+              const nextL = next.layers[idx];
+              if (l.id === "rpc") return true;
+              return l.id === nextL.id && l.visible === nextL.visible && l.locked === nextL.locked;
+            }));
+
+        const isPureRpcUpdate =
+          prev.layout === next.layout &&
+          prev.identity === next.identity &&
+          prev.avatar === next.avatar &&
+          prev.background === next.background &&
+          prev.typography === next.typography &&
+          prev.buttons === next.buttons &&
+          prev.effects === next.effects &&
+          prev.customCss === next.customCss &&
+          prev.canvas === next.canvas &&
+          prev.advanced === next.advanced &&
+          isLayersRpcOnly &&
+          prev.discordRpc !== next.discordRpc;
+
+        if (isPureRpcUpdate && next.discordRpc) {
+          // Auto-persist RPC switches and configuration to /api/rpc/me without dirtying profile
+          if (typeof window !== "undefined") {
+            try {
+              apiFetch("/api/rpc/me", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  showProfileRpc: next.discordRpc.showProfileRpc,
+                  enableDiscordRpc: next.discordRpc.enableDiscordRpc,
+                  style: next.discordRpc.style,
+                  imageLayout: next.discordRpc.imageLayout,
+                  imageSize: next.discordRpc.imageSize,
+                  borderRadius: next.discordRpc.borderRadius,
+                  showTelemetryBadge: next.discordRpc.showTelemetryBadge,
+                  showTimer: next.discordRpc.showTimer,
+                }),
+              }).catch(() => {});
+            } catch {}
+          }
+          return next;
+        }
+
         // Profile content changed -> mark dirty and record in history stack
         isDirtyRef.current = true;
         setIsDirty(true);

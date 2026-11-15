@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import {
   Gamepad2,
@@ -19,6 +19,7 @@ import {
   Flame,
   LayoutTemplate,
   CheckCircle2,
+  AlertCircle,
   Tv,
   Headphones,
   Trophy,
@@ -148,8 +149,6 @@ export default function AccountRpcStudioPage() {
   const [showToken, setShowToken] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [savedSuccess, setSavedSuccess] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(885); // 14:45 initial
   const [currentUser, setCurrentUser] = useState<{
@@ -215,11 +214,62 @@ export default function AccountRpcStudioPage() {
     return DEFAULT_RPC;
   });
 
-  // Helper to update RPC state and synchronously sync to localStorage
+  // FIX-04: Automatic Discord RPC Persistence & Live Synchronization Pipeline
+  type RpcSyncStatus = "idle" | "saving" | "synced" | "error";
+  const [syncStatus, setSyncStatus] = useState<RpcSyncStatus>("idle");
+  const [lastSyncedTime, setLastSyncedTime] = useState<string | null>(null);
+  const rpcVersionRef = useRef<number>(0);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const currentRpcRef = useRef<RpcConfig>(DEFAULT_RPC);
+
+  // Helper to execute debounced backend persistence and live socket synchronization
+  const executeAutoSaveAndSync = useCallback(async (version: number) => {
+    setSyncStatus("saving");
+    try {
+      const targetRpc = currentRpcRef.current;
+      const payload = {
+        ...targetRpc,
+        partySize: targetRpc.partySize ? Number(targetRpc.partySize) : null,
+        partyMax: targetRpc.partyMax ? Number(targetRpc.partyMax) : null,
+      };
+
+      const res = await apiFetch("/api/rpc/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      // Guard against stale response if a newer edit occurred in flight
+      if (version !== rpcVersionRef.current) return;
+
+      if (res.ok) {
+        isDirtyRef.current = false;
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem("pixel_rpc_config", JSON.stringify(payload));
+          } catch {}
+        }
+        setSyncStatus("synced");
+        setLastSyncedTime(
+          new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+        );
+      } else {
+        setSyncStatus("error");
+      }
+    } catch (err) {
+      if (version === rpcVersionRef.current) {
+        setSyncStatus("error");
+      }
+    }
+  }, []);
+
+  // Helper to update RPC state and synchronously sync to localStorage + auto-save/sync
   const updateRpc = (updates: Partial<RpcConfig>) => {
     isDirtyRef.current = true;
+    const version = ++rpcVersionRef.current;
     setRpc((prev) => {
       const next = { ...prev, ...updates };
+      currentRpcRef.current = next;
       if (typeof window !== "undefined") {
         try {
           localStorage.setItem("pixel_rpc_config", JSON.stringify(next));
@@ -229,7 +279,23 @@ export default function AccountRpcStudioPage() {
       }
       return next;
     });
+
+    setSyncStatus("saving");
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      executeAutoSaveAndSync(version);
+    }, 600);
   };
+
+  // Flush pending save on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        executeAutoSaveAndSync(rpcVersionRef.current);
+      }
+    };
+  }, [executeAutoSaveAndSync]);
 
   // Image Customizer Modal State
   const [customizerOpen, setCustomizerOpen] = useState(false);
@@ -608,43 +674,7 @@ export default function AccountRpcStudioPage() {
     }
   };
 
-  const handleSaveRpc = async () => {
-    setSaving(true);
-    setSavedSuccess(false);
-    try {
-      const payload = {
-        ...rpc,
-        partySize: rpc.partySize ? Number(rpc.partySize) : null,
-        partyMax: rpc.partyMax ? Number(rpc.partyMax) : null,
-      };
 
-      const res = await apiFetch("/api/rpc/me", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (res.ok) {
-        isDirtyRef.current = false;
-        if (typeof window !== "undefined") {
-          try {
-            localStorage.setItem("pixel_rpc_config", JSON.stringify(payload));
-          } catch {
-            // ignore storage errors
-          }
-        }
-        setSavedSuccess(true);
-        setTimeout(() => setSavedSuccess(false), 3500);
-      } else {
-        alert("Failed to save RPC settings. Please check your network connection.");
-      }
-    } catch (err) {
-      console.error("[RPC Studio] Save error:", err);
-      alert("Error saving RPC configuration.");
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const vencordConsoleSnippet = `// === PixelsRPC Vencord Quick-Start ===
 (() => {
@@ -712,21 +742,42 @@ export default function AccountRpcStudioPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            {savedSuccess && (
-              <span className="text-xs text-green-400 flex items-center gap-1 font-semibold animate-fade-in bg-green-500/10 border border-green-500/20 px-3 py-1.5 rounded-lg">
-                <CheckCircle2 size={14} /> PRESENCE SYNCHRONIZED
-              </span>
+          {/* FIX-04: Non-intrusive Live Synchronization Status Indicator (Manual Save/Sync controls removed) */}
+          <div className="flex items-center gap-2">
+            {syncStatus === "saving" && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-300 text-xs font-mono">
+                <RefreshCw className="animate-spin text-amber-400" size={13} />
+                <span>Syncing with Discord...</span>
+              </div>
             )}
-            <Button
-              onClick={handleSaveRpc}
-              disabled={saving}
-              variant="solid-white"
-              className="px-6 py-2.5 text-xs tracking-wider flex items-center gap-2"
-            >
-              {saving ? <RefreshCw className="animate-spin" size={14} /> : <Sparkles size={14} />}
-              {saving ? "SYNCHRONIZING..." : "SAVE & SYNC"}
-            </Button>
+            {syncStatus === "synced" && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-500/30 text-emerald-400 text-xs font-mono animate-fade-in">
+                <CheckCircle2 size={13} className="text-emerald-400" />
+                <span>Presence Synced</span>
+                {lastSyncedTime && (
+                  <span className="text-[10px] text-neutral-400 font-sans">({lastSyncedTime})</span>
+                )}
+              </div>
+            )}
+            {syncStatus === "error" && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-950/40 border border-red-500/30 text-red-400 text-xs font-mono">
+                <AlertCircle size={13} className="text-red-400" />
+                <span>Sync Failed</span>
+                <button
+                  type="button"
+                  onClick={() => executeAutoSaveAndSync(rpcVersionRef.current)}
+                  className="underline text-[10px] text-white hover:text-neutral-300 cursor-pointer ml-1"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+            {syncStatus === "idle" && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-400 text-xs font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span>Auto-Sync Active</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1922,7 +1973,7 @@ export default function AccountRpcStudioPage() {
                 <span>SOCKET.IO REAL-TIME DISPATCH</span>
               </div>
               <p className="leading-relaxed">
-                When you click <strong className="text-white">SAVE & SYNC</strong>, the backend transmits the update over WebSocket. The Vencord plugin updates Discord instantly without restarting your client.
+                When you modify any setting, changes <strong className="text-white">automatically save and synchronize</strong> over WebSocket. The Vencord plugin updates Discord instantly without restarting your client.
               </p>
             </div>
           </div>
