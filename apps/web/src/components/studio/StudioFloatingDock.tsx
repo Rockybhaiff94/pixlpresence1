@@ -142,6 +142,12 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
 
   const setDockMode = useCallback(
     (mode: DockMode) => {
+      if (mode !== "main") {
+        // FIX-02: FR-02.5 - Opening the dock during an active drag must immediately cancel movement
+        setDragState({ isDragging: false, currentPos: null });
+        isPointerDownRef.current = false;
+        hasMovedPastThresholdRef.current = false;
+      }
       if (onDockModeChange) {
         onDockModeChange(mode);
       } else {
@@ -540,11 +546,18 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
     // Only handle primary button (left click)
     if (e.button !== 0) return;
 
-    // If dock is locked, dragging is disabled entirely
+    // FIX-02: State B - Movement is strictly locked whenever the dock is open (settings or directory)
+    if (dockMode !== "main") return;
+
+    // If dock/keyboard lock is active, dragging is disabled entirely
     if (isLocked) return;
 
-    // Don't drag if interacting with an input/textarea/select
+    // FIX-02: FR-02.3 - Only the dedicated Move control may initiate dock movement
     const target = e.target as HTMLElement;
+    const isMoveControl = target.closest('[data-dock-move-handle="true"]');
+    if (!isMoveControl) return;
+
+    // Don't drag if interacting with an input/textarea/select
     if (
       target.tagName === "INPUT" ||
       target.tagName === "TEXTAREA" ||
@@ -571,7 +584,13 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isPointerDownRef.current || isLocked) return;
+    // FIX-02: Cancel/ignore if pointer is not down, dock is locked, or dock has opened
+    if (!isPointerDownRef.current || isLocked || dockMode !== "main") {
+      if (isDragging) {
+        setDragState({ isDragging: false, currentPos: null });
+      }
+      return;
+    }
 
     const dx = e.clientX - dragStartPointerRef.current.x;
     const dy = e.clientY - dragStartPointerRef.current.y;
@@ -1079,9 +1098,11 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
               isVertical ? "flex-col" : "flex-row"
             } items-center gap-1.5`}
           >
-            {/* Drag Handle or Subtle Lock Indicator (Sections 2 & 3) */}
+            {/* FIX-02: Dedicated Move Control with data-dock-move-handle attribute */}
             <div
+              data-dock-move-handle="true"
               onClick={() => {
+                if (hasMovedPastThresholdRef.current) return;
                 const nextLock = !isLocked;
                 setIsLocked(nextLock);
                 try {
@@ -1097,9 +1118,9 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
               title={
                 isLocked
                   ? `Dock is locked [${formatShortcutDisplay(lockShortcut)} to unlock]`
-                  : `Drag dock to move or snap to any screen edge [${formatShortcutDisplay(
+                  : `Drag to move dock. Click or press [${formatShortcutDisplay(
                       lockShortcut
-                    )} to lock]`
+                    )}] to lock.`
               }
             >
               {isLocked ? (
