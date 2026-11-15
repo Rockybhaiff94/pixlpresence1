@@ -173,8 +173,35 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   const [isLocked, setIsLocked] = useState<boolean>(propLocked ?? false);
   const [lockShortcut, setLockShortcut] = useState<string>(propShortcut || "CapsLock");
 
-  // More Options Panel Size (40% to 100%, default 100%)
-  const panelSize = Math.max(40, Math.min(100, propPanelSize ?? 100));
+  // FIX-03: More Options Panel Size (40% to 100%, default 100%) - persistent across movement and snapping
+  const [internalPanelSize, setInternalPanelSize] = useState<number>(() => {
+    if (typeof propPanelSize === "number") return propPanelSize;
+    if (typeof window !== "undefined") {
+      try {
+        const savedCoords = localStorage.getItem("pixel_studio_dock_coords");
+        if (savedCoords) {
+          const parsed = JSON.parse(savedCoords);
+          if (typeof parsed.panelSize === "number") return parsed.panelSize;
+        }
+        const savedPrefs = localStorage.getItem("pixel_studio_preferences_v1");
+        if (savedPrefs) {
+          const parsed = JSON.parse(savedPrefs);
+          if (typeof parsed.moreOptionsPanelSize === "number") return parsed.moreOptionsPanelSize;
+        }
+        const savedSize = localStorage.getItem("pixel_studio_dock_panel_size");
+        if (savedSize) return Number(savedSize);
+      } catch {}
+    }
+    return 100;
+  });
+
+  useEffect(() => {
+    if (typeof propPanelSize === "number") {
+      setInternalPanelSize(propPanelSize);
+    }
+  }, [propPanelSize]);
+
+  const panelSize = Math.max(40, Math.min(100, propPanelSize ?? internalPanelSize ?? 100));
   const panelScale = Math.max(0.4, Math.min(1.0, panelSize / 100));
 
   // Snapping distance threshold (default ~175px calibrated to 160–190 CSS pixels)
@@ -228,6 +255,9 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         }
         if (typeof parsed.ratioX === "number" && typeof parsed.ratioY === "number") {
           setRatio({ x: parsed.ratioX, y: parsed.ratioY });
+        }
+        if (typeof parsed.panelSize === "number") {
+          setInternalPanelSize(parsed.panelSize);
         }
       } else {
         const savedPos = localStorage.getItem("pixel_studio_dock_position") as DockPosition;
@@ -682,8 +712,9 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         localStorage.setItem("pixel_studio_dock_position", newEdge);
         localStorage.setItem(
           "pixel_studio_dock_coords",
-          JSON.stringify({ edge: newEdge, ratioX, ratioY })
+          JSON.stringify({ edge: newEdge, ratioX, ratioY, panelSize })
         );
+        localStorage.setItem("pixel_studio_dock_panel_size", String(panelSize));
       } catch {}
     } else {
       // Click interaction: no drag
@@ -1336,8 +1367,9 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                           localStorage.setItem("pixel_studio_dock_position", pos);
                           localStorage.setItem(
                             "pixel_studio_dock_coords",
-                            JSON.stringify({ edge: pos, ratioX: ratio.x, ratioY: ratio.y })
+                            JSON.stringify({ edge: pos, ratioX: ratio.x, ratioY: ratio.y, panelSize })
                           );
+                          localStorage.setItem("pixel_studio_dock_panel_size", String(panelSize));
                         } catch {}
                       }}
                       className={`py-1.5 px-2 rounded-xl text-[10px] font-bold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer border ${
@@ -1376,7 +1408,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
               {children ? (
                 React.cloneElement(children as React.ReactElement<any>, {
                   isFloatingContext: true,
-                  panelSize: effectivePanelPct,
+                  panelSize: panelSize,
                   dockWidth: effectiveExpandedWidth,
                   isVertical,
                   onBack: () => setDockMode("directory"),

@@ -937,8 +937,13 @@ export default function CustomizePage() {
             }
           } else {
             // Initialize from classic settings
+            const storedPrefs = getStoredStudioPreferences();
             const initial: ProfileDesignConfig = {
               ...DEFAULT_DESIGN_CONFIG,
+              advanced: {
+                ...DEFAULT_DESIGN_CONFIG.advanced,
+                ...storedPrefs,
+              },
               identity: {
                 ...DEFAULT_DESIGN_CONFIG.identity,
                 titleColor: p.accentColor || "#ffffff",
