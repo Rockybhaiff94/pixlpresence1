@@ -863,11 +863,13 @@ export function CanvasEngine({
             inlineEditingId,
             onSetInlineEditingId: setInlineEditingId,
             onUpdateElementProps: handleUpdateElementProps,
+            onUpdateCanvas,
+            zoom,
           })
         : children}
 
       {/* Interactive Selection Bounding Box, 8 Handles & Floating Toolbar */}
-      {isInteractive && selectedItem && (
+      {isInteractive && selectedItem && !isSelectedEmbed && (
         <div
           className="absolute pointer-events-none z-50 transition-all duration-75"
           style={{

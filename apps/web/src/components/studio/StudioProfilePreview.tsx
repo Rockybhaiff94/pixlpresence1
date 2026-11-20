@@ -57,13 +57,17 @@ interface StudioProfilePreviewProps {
   data: PreviewData;
   isInteractiveEditor?: boolean;
   isPremium?: boolean;
-  activeElementId?: string;
+  activeElementId?: string | null;
   inlineEditingId?: string | null;
-  onSelectElement?: (elementId: string) => void;
+  onSelectElement?: (elementId: string | null) => void;
   onSetInlineEditingId?: (id: string | null) => void;
   onUpdateElementProps?: (id: string, props: Record<string, any>) => void;
   scopeId?: string;
   footerSlot?: React.ReactNode;
+  zoom?: number;
+  onUpdateCanvas?: (updater: (prev: any) => any) => void;
+  onResizeEmbed?: (embedId: string, width: number, height: number) => void;
+  updateConfig?: (updater: (prev: ProfileDesignConfig) => ProfileDesignConfig) => void;
 }
 
 export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
@@ -78,6 +82,10 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
   onUpdateElementProps,
   scopeId = "profile-preview-root",
   footerSlot,
+  zoom = 100,
+  onUpdateCanvas,
+  onResizeEmbed,
+  updateConfig,
 }) => {
   const isPremiumUser = Boolean(isPremium || data.isPremium);
   const {
@@ -93,6 +101,55 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
     customCss,
     layers,
   } = config;
+
+  const handleResizeEmbed = (embedId: string, width: number, height: number) => {
+    if (onResizeEmbed) {
+      onResizeEmbed(embedId, width, height);
+      return;
+    }
+    if (onUpdateCanvas) {
+      onUpdateCanvas((prev: any) => {
+        const updatedEmbeds = prev.embeds?.map((em: any) =>
+          em.id === embedId
+            ? {
+                ...em,
+                transform: {
+                  ...em.transform,
+                  width,
+                  height,
+                },
+              }
+            : em
+        );
+        return {
+          ...prev,
+          embeds: updatedEmbeds,
+        };
+      });
+    }
+    if (updateConfig) {
+      updateConfig((prev) => {
+        const updatedEmbeds = prev.canvas?.embeds?.map((em) =>
+          em.id === embedId
+            ? {
+                ...em,
+                transform: {
+                  ...em.transform,
+                  width,
+                  height,
+                },
+              }
+            : em
+        );
+        const isPrimary = embedId === "embed_primary";
+        return {
+          ...prev,
+          ...(isPrimary ? { layout: { ...prev.layout, maxWidth: width, height, autoHeight: false } } : {}),
+          ...(updatedEmbeds ? { canvas: { ...prev.canvas!, embeds: updatedEmbeds } } : {}),
+        };
+      });
+    }
+  };
 
   // Dynamically load selected fonts
   useEffect(() => {
@@ -320,15 +377,29 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
           onSelectElement={onSelectElement}
           onSetInlineEditingId={onSetInlineEditingId}
           onUpdateElementProps={onUpdateElementProps}
+          zoom={zoom}
+          onResizeEmbed={handleResizeEmbed}
         />
       ) : (
         /* Main Container Card Fallback */
         <motion.div
           layout
           transition={{ duration: 0.25, ease: "easeOut" }}
-          className="profile-container w-full relative z-10 transition-all border shadow-2xl"
+          onClick={(e) => {
+            if (!isInteractiveEditor) return;
+            e.stopPropagation();
+            onSelectElement?.("layout");
+          }}
+          className={`profile-container w-full relative z-10 transition-all border shadow-2xl ${
+            isInteractiveEditor && (activeElementId === "layout" || activeElementId === "embed_primary" || activeElementId === "container")
+              ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-black"
+              : isInteractiveEditor
+                ? "hover:ring-1 hover:ring-white/30 cursor-pointer"
+                : ""
+          }`}
           style={{
             maxWidth: `${layout.maxWidth || 580}px`,
+            minHeight: layout.height ? `${layout.height}px` : undefined,
             padding: `${layout.padding || 32}px`,
             gap: `${layout.gap || 24}px`,
             borderRadius: `${discordRpc.borderRadius + 8}px`,

@@ -585,8 +585,18 @@ export default function CustomizePage() {
       updateConfigWithHistory((prev) => {
         const currentCanvas = prev.canvas || createDefaultCanvasState(prev);
         const updatedCanvas = updater(currentCanvas);
+        const primaryEmbed = updatedCanvas.embeds.find((em) => em.id === "embed_primary");
+        const nextLayout = primaryEmbed
+          ? {
+              ...prev.layout,
+              maxWidth: primaryEmbed.transform.width,
+              height: primaryEmbed.transform.height,
+              ...(primaryEmbed.transform.height ? { autoHeight: false } : {}),
+            }
+          : prev.layout;
         return {
           ...prev,
+          layout: nextLayout,
           canvas: updatedCanvas,
         };
       });
@@ -1307,6 +1317,7 @@ export default function CustomizePage() {
                   setIsSettingsOpen(true);
                 }}
                 onUpdateCanvas={handleUpdateCanvas}
+                updateConfig={updateConfigWithHistory}
                 selectedCanvasId={selectedCanvasId}
                 onSelectCanvasId={(id) => setSelectedCanvasId(id)}
                 onOpenSocialSelector={() => setIsSocialModalOpen(true)}

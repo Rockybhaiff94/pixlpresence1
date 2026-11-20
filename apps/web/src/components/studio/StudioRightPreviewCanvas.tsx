@@ -16,6 +16,7 @@ interface StudioRightPreviewCanvasProps {
   activeCategory: StudioTab;
   onSelectCategory: (cat: StudioTab) => void;
   onUpdateCanvas?: (updater: (prev: CanvasEngineState) => CanvasEngineState) => void;
+  updateConfig?: (updater: (prev: ProfileDesignConfig) => ProfileDesignConfig) => void;
   selectedCanvasId?: string | null;
   onSelectCanvasId?: (id: string | null) => void;
   onOpenSocialSelector?: () => void;
@@ -52,6 +53,7 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
   activeCategory,
   onSelectCategory,
   onUpdateCanvas,
+  updateConfig,
   selectedCanvasId,
   onSelectCanvasId,
   onOpenSocialSelector,
@@ -264,9 +266,12 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
                     data={previewData}
                     isInteractiveEditor={true}
                     activeElementId={selectedCanvasId || activeCategory}
+                    zoom={zoom}
+                    onUpdateCanvas={onUpdateCanvas}
+                    updateConfig={updateConfig}
                     onSelectElement={(id) => {
                       onSelectCanvasId?.(id);
-                      handleSelectElement(id);
+                      if (id) handleSelectElement(id);
                     }}
                     scopeId="studio-live-canvas"
                   />
@@ -276,8 +281,13 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
                   config={config}
                   data={previewData}
                   isInteractiveEditor={true}
-                  activeElementId={activeCategory}
-                  onSelectElement={handleSelectElement}
+                  activeElementId={selectedCanvasId || activeCategory}
+                  zoom={zoom}
+                  updateConfig={updateConfig}
+                  onSelectElement={(id) => {
+                    onSelectCanvasId?.(id);
+                    if (id) handleSelectElement(id);
+                  }}
                   scopeId="studio-live-canvas"
                 />
               )}
