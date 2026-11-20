@@ -49,7 +49,7 @@ platformRouter.post('/fulfill-order', async (req, res) => {
 
   const { userId, userEmail, itemType, paddleTransactionId, paddleCustomerId } = req.body;
   try {
-    let user = null;
+    let user: any = null;
     if (userId) {
       user = await prisma.user.findUnique({ where: { id: userId } });
     }
