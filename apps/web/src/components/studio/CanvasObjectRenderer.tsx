@@ -107,6 +107,12 @@ export function CanvasObjectRenderer({
     discordPresence,
   } = data;
 
+  const layoutPreset = config.layout?.preset || "centered";
+  const layoutAlignment =
+    config.layout?.alignment ||
+    (layoutPreset === "left" ? "left" : layoutPreset === "right" ? "right" : "center");
+  const layoutGap = config.layout?.gap ?? 22;
+
   const [hoveredElementId, setHoveredElementId] = React.useState<string | null>(null);
   const [activeModalTarget, setActiveModalTarget] = React.useState<ContextualModalTarget | null>(null);
   const [contentMenuEmbedId, setContentMenuEmbedId] = React.useState<string | null>(null);
@@ -675,10 +681,11 @@ export function CanvasObjectRenderer({
       : (transform.y || 0);
 
     const isMedia = el.type === "image" || el.type === "thumbnail" || el.type === "avatar";
+    const isChildElement = Boolean(el.parentEmbedId);
 
     const baseWrapperStyle: React.CSSProperties = {
       position: "relative",
-      width: el.parentEmbedId
+      width: isChildElement
         ? (isThisElementResizing ? `${currentW}px` : (el.type === "avatar" ? `${currentW}px` : "100%"))
         : `${currentW}px`,
       maxWidth: "100%",
@@ -688,8 +695,16 @@ export function CanvasObjectRenderer({
         : (el.type === "avatar" || el.type === "image" || el.type === "thumbnail" || el.type === "banner"
             ? (transform.height ? `${transform.height}px` : undefined)
             : undefined),
-      minHeight: `${currentH}px`,
-      transform: `translate3d(${currentX}px, ${currentY}px, 0) rotate(${transform.rotation || 0}deg)`,
+      minHeight: isThisElementResizing
+        ? `${currentH}px`
+        : (isChildElement
+            ? (el.type === "avatar" || el.type === "image" || el.type === "thumbnail" || el.type === "banner"
+                ? (transform.height ? `${transform.height}px` : undefined)
+                : undefined)
+            : `${currentH}px`),
+      transform: isChildElement
+        ? (transform.rotation ? `rotate(${transform.rotation}deg)` : undefined)
+        : `translate3d(${currentX}px, ${currentY}px, 0) rotate(${transform.rotation || 0}deg)`,
       zIndex: transform.zIndex || 2,
       cursor: isInteractive ? "pointer" : "default",
       transition: isThisElementResizing ? "none" : (effects.transition || "all 0.15s ease"),
@@ -936,7 +951,7 @@ export function CanvasObjectRenderer({
         color: gradient ? "transparent" : resolvedColor,
         letterSpacing: resolvedLetterSpacing,
         lineHeight: resolvedLineHeight,
-        textAlign: el.style?.textAlign || "left",
+        textAlign: el.style?.textAlign || (layoutAlignment === "left" ? "left" : layoutAlignment === "right" ? "right" : "center"),
         textTransform: el.style?.textTransform || "none",
         textDecoration: el.style?.textDecoration || "none",
         backgroundImage: gradient ? gradient : undefined,
@@ -1011,7 +1026,13 @@ export function CanvasObjectRenderer({
           ) : (
             <div
               style={typographyStyle}
-              className={`w-full select-none ${el.style?.textOverflow === "truncate"
+              className={`w-full select-none flex items-center gap-1.5 flex-wrap ${
+                layoutAlignment === "left"
+                  ? "justify-start"
+                  : layoutAlignment === "right"
+                  ? "justify-end"
+                  : "justify-center"
+              } ${el.style?.textOverflow === "truncate"
                   ? "truncate"
                   : el.style?.textOverflow === "hidden"
                     ? "overflow-hidden"
@@ -1023,6 +1044,37 @@ export function CanvasObjectRenderer({
                 themeAccentColor={config.identity?.titleColor || "#ffffff"}
                 allowBlockFormatting={isMultiline}
               />
+
+              {/* Inline badge variant for username/displayName if enabled and no standalone verification element exists */}
+              {(el.type === "displayName" || el.type === "username") &&
+                config.identity?.badgeStyle &&
+                !elements.some((e) => e.type === "verificationBadge" && e.parentEmbedId === el.parentEmbedId) && (
+                  <>
+                    {config.identity.badgeStyle === "pill" && (
+                      <span className="inline-flex items-center text-[10px] px-2 py-0.5 rounded-full bg-white text-black font-bold uppercase tracking-wider shrink-0">
+                        VERIFIED ✓
+                      </span>
+                    )}
+                    {config.identity.badgeStyle === "glyph" && (
+                      <span className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded border border-white/60 text-white font-mono gap-1 shrink-0">
+                        <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> (01)
+                      </span>
+                    )}
+                    {config.identity.badgeStyle === "neon" && (
+                      <span
+                        className="inline-flex items-center text-[10px] px-2 py-0.5 rounded-full font-bold uppercase shrink-0"
+                        style={{
+                          backgroundColor: `${config.effects?.glowColor || "#22d3ee"}25`,
+                          color: config.effects?.glowColor || "#22d3ee",
+                          border: `1px solid ${config.effects?.glowColor || "#22d3ee"}`,
+                          boxShadow: `0 0 10px ${config.effects?.glowColor || "#22d3ee"}40`,
+                        }}
+                      >
+                        PRO &bull; LIVE
+                      </span>
+                    )}
+                  </>
+                )}
             </div>
           )}
         </div>
@@ -1043,6 +1095,13 @@ export function CanvasObjectRenderer({
             ? (config.avatar?.size || transform.width || 96)
             : (transform.width || 96));
 
+        const avatarAlignClass =
+          (config.avatar?.alignment === "left" || (config.avatar?.alignment === undefined && layoutAlignment === "left"))
+            ? "self-start"
+            : (config.avatar?.alignment === "right" || (config.avatar?.alignment === undefined && layoutAlignment === "right"))
+            ? "self-end"
+            : "self-center";
+
         return (
           <div
             key={el.id}
@@ -1051,7 +1110,7 @@ export function CanvasObjectRenderer({
             onPointerEnter={() => isInteractive && setHoveredElementId(el.id)}
             onPointerLeave={() => isInteractive && setHoveredElementId((prev) => (prev === el.id ? null : prev))}
             style={{ ...baseWrapperStyle, width: `${avatarSize}px`, minHeight: `${avatarSize}px`, height: `${avatarSize}px` }}
-            className={`relative flex items-center justify-center p-1 rounded-2xl shrink-0 ${outlineClasses}`}
+            className={`relative flex items-center justify-center p-1 rounded-2xl shrink-0 ${avatarAlignClass} ${outlineClasses}`}
           >
             {renderHoverBadge()}
             {renderElementResizeHandles(el, avatarSize, avatarSize, currentX, currentY, true)}
@@ -1089,29 +1148,38 @@ export function CanvasObjectRenderer({
 
       // Profile Text Components
       case "displayName":
-      case "username":
+      case "username": {
+        const nameText = (el.type === "displayName" ? displayName : username) || "User";
+        const textJustify = layoutAlignment === "left" ? "justify-start" : layoutAlignment === "right" ? "justify-end" : "justify-center";
         return renderEditableTextNode(
-          (el.type === "displayName" ? displayName : username) || "User",
+          nameText,
           false,
-          "py-1 px-2 justify-center"
+          `py-0.5 px-2 ${textJustify}`
         );
+      }
 
       case "title":
-      case "heading":
-        return renderEditableTextNode("Heading Title", false, "py-1 px-2 justify-center");
+      case "heading": {
+        const textJustify = layoutAlignment === "left" ? "justify-start" : layoutAlignment === "right" ? "justify-end" : "justify-center";
+        return renderEditableTextNode("Heading Title", false, `py-0.5 px-2 ${textJustify}`);
+      }
 
       case "subtitle":
-      case "tagline":
-        return renderEditableTextNode("Digital Identity // Nothing OS", false, "py-0.5 px-2 justify-center");
+      case "tagline": {
+        const textJustify = layoutAlignment === "left" ? "justify-start" : layoutAlignment === "right" ? "justify-end" : "justify-center";
+        return renderEditableTextNode("Digital Identity // Nothing OS", false, `py-0.5 px-2 ${textJustify}`);
+      }
 
       case "bio":
       case "description":
-      case "text":
+      case "text": {
+        const textJustify = layoutAlignment === "left" ? "justify-start" : layoutAlignment === "right" ? "justify-end" : "justify-center";
         return renderEditableTextNode(
-          el.type === "bio" ? bio || "Biography text..." : "Custom text content...",
+          el.type === "bio" ? (bio || el.props?.text || "Biography text...") : (el.props?.text || "Custom text content..."),
           true,
-          "p-2.5 rounded-xl"
+          `p-1 rounded-xl ${textJustify}`
         );
+      }
 
       case "authorText":
       case "footerText":
@@ -1603,22 +1671,53 @@ export function CanvasObjectRenderer({
     // Non-primary embeds render elements with embed's natural vertical flow
     if (embed.id !== "embed_primary") {
       return (
-        <div className="flex flex-col w-full space-y-4">
+        <div className="flex flex-col w-full" style={{ gap: `${layoutGap}px` }}>
           {embedElements.map(renderElement)}
         </div>
       );
     }
 
     const preset = config.layout?.preset || "centered";
-    const alignment =
-      config.layout?.alignment ||
-      (preset === "left" ? "left" : preset === "right" ? "right" : "center");
-    const gap = config.layout?.gap ?? 22;
+    const alignment = layoutAlignment;
+    const gap = layoutGap;
+
+    const getCanonicalOrder = (type: string): number => {
+      switch (type) {
+        case "banner": return 5;
+        case "avatar": return 10;
+        case "displayName":
+        case "username": return 20;
+        case "verificationBadge": return 22;
+        case "tagline":
+        case "subtitle": return 30;
+        case "bio":
+        case "description": return 40;
+        case "rpc": return 50;
+        case "music": return 60;
+        case "button": return 70;
+        case "socials":
+        case "socialIcon":
+        case "linkedAccount": return 80;
+        case "divider": return 85;
+        case "footerText":
+        case "timestamp": return 90;
+        default: return 65;
+      }
+    };
+
+    const orderedElements = [...embedElements].sort((a, b) => {
+      const idxA = embed.childrenIds?.indexOf(a.id) ?? -1;
+      const idxB = embed.childrenIds?.indexOf(b.id) ?? -1;
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return getCanonicalOrder(a.type) - getCanonicalOrder(b.type);
+    });
 
     // 1. Minimal Card Split: Balanced 2-column layout (Left = Identity, Right = Activity & Content)
     if (preset === "split") {
-      const identityElements = embedElements.filter((el) => isIdentityElement(el.type));
-      const contentElements = embedElements.filter((el) => !isIdentityElement(el.type));
+      const identityElements = orderedElements.filter((el) => isIdentityElement(el.type));
+      const contentElements = orderedElements.filter((el) => !isIdentityElement(el.type));
 
       const colAlignClass =
         alignment === "left"
@@ -1629,10 +1728,10 @@ export function CanvasObjectRenderer({
 
       return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start w-full">
-          <div className={`flex flex-col space-y-3.5 w-full ${colAlignClass}`}>
+          <div className={`flex flex-col w-full ${colAlignClass}`} style={{ gap: `${Math.round(gap * 0.6)}px` }}>
             {identityElements.map(renderElement)}
           </div>
-          <div className="flex flex-col space-y-4 w-full">
+          <div className="flex flex-col w-full" style={{ gap: `${gap}px` }}>
             {contentElements.map(renderElement)}
           </div>
         </div>
@@ -1641,13 +1740,13 @@ export function CanvasObjectRenderer({
 
     // 2. Minimal Card Wide: Horizontal header banner with wide distribution
     if (preset === "wide") {
-      const avatarEl = embedElements.find((el) => el.type === "avatar");
-      const nameEl = embedElements.find((el) => el.type === "displayName" || el.type === "username");
-      const taglineEl = embedElements.find((el) => el.type === "subtitle" || el.type === "tagline");
-      const bioEl = embedElements.find((el) => el.type === "bio" || el.type === "description");
-      const rpcEl = embedElements.find((el) => el.type === "rpc");
-      const buttonEls = embedElements.filter((el) => el.type === "button");
-      const socialEls = embedElements.filter(
+      const avatarEl = orderedElements.find((el) => el.type === "avatar");
+      const nameEl = orderedElements.find((el) => el.type === "displayName" || el.type === "username");
+      const taglineEl = orderedElements.find((el) => el.type === "subtitle" || el.type === "tagline");
+      const bioEl = orderedElements.find((el) => el.type === "bio" || el.type === "description");
+      const rpcEl = orderedElements.find((el) => el.type === "rpc");
+      const buttonEls = orderedElements.filter((el) => el.type === "button");
+      const socialEls = orderedElements.filter(
         (el) => el.type === "socials" || el.type === "socialIcon" || el.type === "linkedAccount"
       );
       const handledIds = new Set(
@@ -1661,7 +1760,7 @@ export function CanvasObjectRenderer({
           ...socialEls.map((s) => s.id),
         ].filter(Boolean)
       );
-      const otherEls = embedElements.filter((el) => !handledIds.has(el.id));
+      const otherEls = orderedElements.filter((el) => !handledIds.has(el.id));
 
       const headerAlign =
         alignment === "left"
@@ -1671,11 +1770,11 @@ export function CanvasObjectRenderer({
           : "items-center text-center sm:items-start sm:text-left";
 
       return (
-        <div className="space-y-5 w-full">
+        <div className="flex flex-col w-full" style={{ gap: `${gap}px` }}>
           {/* Top Row: Horizontal Avatar + Identity header */}
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 w-full pb-3 border-b border-white/10">
             {avatarEl && <div className="shrink-0">{renderElement(avatarEl)}</div>}
-            <div className={`flex-1 flex flex-col space-y-1.5 min-w-0 ${headerAlign}`}>
+            <div className={`flex-1 flex flex-col min-w-0 ${headerAlign}`} style={{ gap: "6px" }}>
               {nameEl && renderElement(nameEl)}
               {taglineEl && renderElement(taglineEl)}
               {bioEl && renderElement(bioEl)}
@@ -1703,15 +1802,16 @@ export function CanvasObjectRenderer({
 
     // 3. Minimal Card Compact: Dense, space-efficient Nothing OS HUD layout
     if (preset === "compact") {
-      const avatarEl = embedElements.find((el) => el.type === "avatar");
-      const nameEl = embedElements.find((el) => el.type === "displayName" || el.type === "username");
-      const taglineEl = embedElements.find((el) => el.type === "subtitle" || el.type === "tagline");
-      const bioEl = embedElements.find((el) => el.type === "bio" || el.type === "description");
+      const avatarEl = orderedElements.find((el) => el.type === "avatar");
+      const nameEl = orderedElements.find((el) => el.type === "displayName" || el.type === "username");
+      const taglineEl = orderedElements.find((el) => el.type === "subtitle" || el.type === "tagline");
+      const bioEl = orderedElements.find((el) => el.type === "bio" || el.type === "description");
       const handledIds = new Set([avatarEl?.id, nameEl?.id, taglineEl?.id, bioEl?.id].filter(Boolean));
-      const remainingEls = embedElements.filter((el) => !handledIds.has(el.id));
+      const remainingEls = orderedElements.filter((el) => !handledIds.has(el.id));
+      const compactGap = Math.max(8, Math.round(gap * 0.5));
 
       return (
-        <div className="space-y-3 w-full">
+        <div className="flex flex-col w-full" style={{ gap: `${compactGap}px` }}>
           {/* Ultra-compact inline header */}
           <div className="flex items-center gap-3.5 w-full pb-2 border-b border-white/10">
             {avatarEl && (
@@ -1719,7 +1819,7 @@ export function CanvasObjectRenderer({
                 {renderElement(avatarEl)}
               </div>
             )}
-            <div className="flex-1 min-w-0 space-y-0.5">
+            <div className="flex-1 min-w-0 flex flex-col" style={{ gap: "2px" }}>
               {nameEl && renderElement(nameEl)}
               {taglineEl && renderElement(taglineEl)}
             </div>
@@ -1727,14 +1827,14 @@ export function CanvasObjectRenderer({
 
           {bioEl && <div className="w-full">{renderElement(bioEl)}</div>}
 
-          <div className="flex flex-col space-y-2.5 w-full">
+          <div className="flex flex-col w-full" style={{ gap: `${compactGap}px` }}>
             {remainingEls.map(renderElement)}
           </div>
         </div>
       );
     }
 
-    // 4. Standard Linear (Center, Left, Right, Card, Minimal)
+    // 4. Standard Linear (Center, Left, Right, Card, Minimal, Glass, Custom)
     const alignClass =
       alignment === "left"
         ? "items-start text-left"
@@ -1742,12 +1842,61 @@ export function CanvasObjectRenderer({
         ? "items-end text-right"
         : "items-center text-center";
 
+    // Group consecutive header elements (name, badge, tagline) with tight sub-gap
+    const identitySubGap = Math.min(8, Math.max(2, Math.round(gap * 0.2)));
+    const renderedNodes: React.ReactNode[] = [];
+    let i = 0;
+    while (i < orderedElements.length) {
+      const el = orderedElements[i];
+
+      const isName = el.type === "displayName" || el.type === "username";
+      if (isName) {
+        const next1 = orderedElements[i + 1];
+        const next2 = orderedElements[i + 2];
+        const isNext1Tagline = next1 && (next1.type === "tagline" || next1.type === "subtitle");
+        const isNext1Badge = next1 && next1.type === "verificationBadge";
+        const isNext2Tagline = isNext1Badge && next2 && (next2.type === "tagline" || next2.type === "subtitle");
+
+        if (isNext1Tagline) {
+          renderedNodes.push(
+            <div
+              key={`header_group_${el.id}`}
+              className={`flex flex-col w-full ${alignClass}`}
+              style={{ gap: `${identitySubGap}px` }}
+            >
+              {renderElement(el)}
+              {renderElement(next1)}
+            </div>
+          );
+          i += 2;
+          continue;
+        } else if (isNext2Tagline) {
+          renderedNodes.push(
+            <div
+              key={`header_group_${el.id}`}
+              className={`flex flex-col w-full ${alignClass}`}
+              style={{ gap: `${identitySubGap}px` }}
+            >
+              {renderElement(el)}
+              {renderElement(next1)}
+              {renderElement(next2)}
+            </div>
+          );
+          i += 3;
+          continue;
+        }
+      }
+
+      renderedNodes.push(renderElement(el));
+      i++;
+    }
+
     return (
       <div
         className={`flex flex-col w-full ${alignClass}`}
         style={{ gap: `${gap}px` }}
       >
-        {embedElements.map(renderElement)}
+        {renderedNodes}
       </div>
     );
   };
@@ -1905,7 +2054,7 @@ export function CanvasObjectRenderer({
               transition: (isThisResizing || isThisMoving) ? "none" : (effects.transition || "all 0.15s ease"),
               cursor: isInteractive ? (embed.isLocked ? "not-allowed" : (isSelectedEmbed ? "move" : "pointer")) : "default",
             }}
-            className={`space-y-4 w-full max-w-full select-none ${isSelectedEmbed
+            className={`w-full max-w-full select-none ${isSelectedEmbed
                 ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-black"
                 : isInteractive
                   ? "hover:ring-1 hover:ring-white/30"
