@@ -118,6 +118,7 @@ export interface CanvasElementStyle {
   borderColor?: string;
   borderWidth?: number;
   borderRadius?: number;
+  objectFit?: "cover" | "contain" | "fill" | "none" | "scale-down";
   opacity?: number;
   shadowBlur?: number;
   shadowColor?: string;

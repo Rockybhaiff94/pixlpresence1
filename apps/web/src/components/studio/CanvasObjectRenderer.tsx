@@ -60,6 +60,7 @@ interface CanvasObjectRendererProps {
   onOpenComponentLibrary?: (parentEmbedId: string) => void;
   zoom?: number;
   onResizeEmbed?: (embedId: string, width: number, height: number, x?: number, y?: number) => void;
+  onResizeElement?: (elementId: string, width: number, height: number, x?: number, y?: number) => void;
   onDuplicateEmbed?: (embedId: string) => void;
   onDeleteEmbed?: (embedId: string) => void;
   onDeleteElement?: (elementId: string) => void;
@@ -86,6 +87,7 @@ export function CanvasObjectRenderer({
   onOpenComponentLibrary,
   zoom = 100,
   onResizeEmbed,
+  onResizeElement,
   onDuplicateEmbed,
   onDeleteEmbed,
   onDeleteElement,
@@ -175,15 +177,27 @@ export function CanvasObjectRenderer({
         }
 
         const targetElement = elements.find((el) => el.id === selectedId);
-        if (targetElement && onUpdateElementProps) {
+        if (targetElement) {
           const currentTransform = targetElement.transform || { x: 0, y: 0 };
-          onUpdateElementProps(targetElement.id, {
-            transform: {
-              ...currentTransform,
-              x: (currentTransform.x || 0) + deltaX,
-              y: (currentTransform.y || 0) + deltaY,
-            },
-          });
+          const newX = (currentTransform.x || 0) + deltaX;
+          const newY = (currentTransform.y || 0) + deltaY;
+          if (onResizeElement) {
+            onResizeElement(
+              targetElement.id,
+              targetElement.transform.width,
+              targetElement.transform.height,
+              newX,
+              newY
+            );
+          } else if (onUpdateElementProps) {
+            onUpdateElementProps(targetElement.id, {
+              transform: {
+                ...currentTransform,
+                x: newX,
+                y: newY,
+              },
+            });
+          }
           return;
         }
       }
@@ -236,6 +250,18 @@ export function CanvasObjectRenderer({
     currentY: number;
     isShiftPressed: boolean;
     isAltPressed: boolean;
+  } | null>(null);
+
+  const [resizingElement, setResizingElement] = React.useState<{
+    elementId: string;
+    handle: "tl" | "tc" | "tr" | "ml" | "mr" | "bl" | "bc" | "br";
+    currentWidth: number;
+    currentHeight: number;
+    currentX: number;
+    currentY: number;
+    isShiftPressed: boolean;
+    isAltPressed: boolean;
+    isMedia: boolean;
   } | null>(null);
 
   const [movingEmbed, setMovingEmbed] = React.useState<{
@@ -399,6 +425,158 @@ export function CanvasObjectRenderer({
     targetEl.addEventListener("pointercancel", onPointerUp);
   };
 
+  const handleElementResizePointerDown = (
+    e: React.PointerEvent,
+    elementId: string,
+    handle: "tl" | "tc" | "tr" | "ml" | "mr" | "bl" | "bc" | "br",
+    initialW: number,
+    initialH: number,
+    initialX: number = 0,
+    initialY: number = 0,
+    isMedia: boolean = false
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const zoomScale = Math.max(0.2, (zoom || 100) / 100);
+    const initialAspect = initialW / Math.max(1, initialH);
+
+    const targetEl = e.currentTarget as HTMLElement;
+    try {
+      targetEl.setPointerCapture(e.pointerId);
+    } catch {}
+
+    let lastW = initialW;
+    let lastH = initialH;
+    let lastX = initialX;
+    let lastY = initialY;
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const deltaX = (ev.clientX - startX) / zoomScale;
+      const deltaY = (ev.clientY - startY) / zoomScale;
+      const isShift = ev.shiftKey;
+      const isAlt = ev.altKey;
+
+      let nextW = initialW;
+      let nextH = initialH;
+      let nextX = initialX;
+      let nextY = initialY;
+
+      // Media elements preserve aspect ratio by default; Shift temporarily unlocks.
+      // Other elements are unconstrained by default; Shift temporarily locks.
+      const shouldLockAspect = isMedia ? !isShift : isShift;
+
+      // 1. HEIGHT RESIZING (Independent vertical boundaries)
+      if (handle === "bc" || handle === "bl" || handle === "br") {
+        if (isAlt) {
+          nextH = Math.round(initialH + deltaY * 2);
+          nextY = Math.round(initialY - deltaY);
+        } else {
+          nextH = Math.round(initialH + deltaY);
+          nextY = initialY;
+        }
+      } else if (handle === "tc" || handle === "tl" || handle === "tr") {
+        if (isAlt) {
+          nextH = Math.round(initialH - deltaY * 2);
+          nextY = Math.round(initialY + deltaY);
+        } else {
+          nextH = Math.round(initialH - deltaY);
+          nextY = Math.round(initialY + deltaY);
+        }
+      }
+
+      // 2. WIDTH RESIZING (Horizontal boundaries)
+      if (handle === "mr" || handle === "tr" || handle === "br") {
+        if (isAlt) {
+          nextW = Math.round(initialW + deltaX * 2);
+          nextX = Math.round(initialX - deltaX);
+        } else {
+          nextW = Math.round(initialW + deltaX);
+          nextX = initialX;
+        }
+      } else if (handle === "ml" || handle === "tl" || handle === "bl") {
+        if (isAlt) {
+          nextW = Math.round(initialW - deltaX * 2);
+          nextX = Math.round(initialX + deltaX);
+        } else {
+          nextW = Math.round(initialW - deltaX);
+          nextX = Math.round(initialX + deltaX);
+        }
+      }
+
+      // 3. Proportional aspect ratio preservation on corner handles
+      if (shouldLockAspect && (handle === "tl" || handle === "tr" || handle === "bl" || handle === "br")) {
+        const proposedH = Math.round(nextW / initialAspect);
+        if (handle === "tl" || handle === "tr") {
+          nextY = initialY + initialH - proposedH;
+        }
+        nextH = proposedH;
+      }
+
+      // 4. Element bounds: min 32x24, max 1600x1200
+      if (nextW < 32) {
+        if (handle === "ml" || handle === "tl" || handle === "bl") {
+          nextX = isAlt ? initialX + (initialW - 32) / 2 : initialX + initialW - 32;
+        }
+        nextW = 32;
+      } else if (nextW > 1600) {
+        if (handle === "ml" || handle === "tl" || handle === "bl") {
+          nextX = isAlt ? initialX - (1600 - initialW) / 2 : initialX - (1600 - initialW);
+        }
+        nextW = 1600;
+      }
+
+      if (nextH < 24) {
+        if (handle === "tc" || handle === "tl" || handle === "tr") {
+          nextY = isAlt ? initialY + (initialH - 24) / 2 : initialY + initialH - 24;
+        }
+        nextH = 24;
+      } else if (nextH > 1200) {
+        if (handle === "tc" || handle === "tl" || handle === "tr") {
+          nextY = isAlt ? initialY - (1200 - initialH) / 2 : initialY - (1200 - initialH);
+        }
+        nextH = 1200;
+      }
+
+      lastW = nextW;
+      lastH = nextH;
+      lastX = nextX;
+      lastY = nextY;
+
+      setResizingElement({
+        elementId,
+        handle,
+        currentWidth: nextW,
+        currentHeight: nextH,
+        currentX: nextX,
+        currentY: nextY,
+        isShiftPressed: isShift,
+        isAltPressed: isAlt,
+        isMedia,
+      });
+
+      onResizeElement?.(elementId, nextW, nextH, nextX, nextY);
+    };
+
+    const onPointerUp = (ev: PointerEvent) => {
+      try {
+        targetEl.releasePointerCapture(ev.pointerId);
+      } catch {}
+      targetEl.removeEventListener("pointermove", onPointerMove);
+      targetEl.removeEventListener("pointerup", onPointerUp);
+      targetEl.removeEventListener("pointercancel", onPointerUp);
+
+      onResizeElement?.(elementId, lastW, lastH, lastX, lastY);
+      setResizingElement(null);
+    };
+
+    targetEl.addEventListener("pointermove", onPointerMove);
+    targetEl.addEventListener("pointerup", onPointerUp);
+    targetEl.addEventListener("pointercancel", onPointerUp);
+  };
+
   const handleMovePointerDown = (
     e: React.PointerEvent,
     embedId: string,
@@ -479,19 +657,42 @@ export function CanvasObjectRenderer({
     if (el.isVisible === false) return null;
 
     const isSelected = isInteractive && selectedId === el.id;
+    const isThisElementResizing = resizingElement && resizingElement.elementId === el.id;
     const transform = el.transform;
     const effects = computeElementEffects(el.style, config.identity?.titleColor || "#ffffff");
 
+    const currentW = isThisElementResizing
+      ? resizingElement.currentWidth
+      : (el.type === "avatar" ? (config.avatar?.size || transform.width || 96) : (transform.width || 120));
+    const currentH = isThisElementResizing
+      ? resizingElement.currentHeight
+      : (el.type === "avatar" ? (config.avatar?.size || transform.height || 96) : (transform.height || 48));
+    const currentX = isThisElementResizing
+      ? resizingElement.currentX
+      : (transform.x || 0);
+    const currentY = isThisElementResizing
+      ? resizingElement.currentY
+      : (transform.y || 0);
+
+    const isMedia = el.type === "image" || el.type === "thumbnail" || el.type === "avatar";
+
     const baseWrapperStyle: React.CSSProperties = {
       position: "relative",
-      width: el.parentEmbedId ? "100%" : `${transform.width}px`,
+      width: el.parentEmbedId
+        ? (isThisElementResizing ? `${currentW}px` : (el.type === "avatar" ? `${currentW}px` : "100%"))
+        : `${currentW}px`,
       maxWidth: "100%",
       boxSizing: "border-box",
-      minHeight: `${transform.height}px`,
-      transform: `rotate(${transform.rotation || 0}deg)`,
+      height: isThisElementResizing
+        ? `${currentH}px`
+        : (el.type === "avatar" || el.type === "image" || el.type === "thumbnail" || el.type === "banner"
+            ? (transform.height ? `${transform.height}px` : undefined)
+            : undefined),
+      minHeight: `${currentH}px`,
+      transform: `translate3d(${currentX}px, ${currentY}px, 0) rotate(${transform.rotation || 0}deg)`,
       zIndex: transform.zIndex || 2,
       cursor: isInteractive ? "pointer" : "default",
-      transition: effects.transition || "all 0.15s ease",
+      transition: isThisElementResizing ? "none" : (effects.transition || "all 0.15s ease"),
       boxShadow: isSelected ? "0 0 14px rgba(56, 189, 248, 0.45)" : effects.boxShadow,
       background: effects.background,
       backdropFilter: effects.backdropFilter,
@@ -599,6 +800,93 @@ export function CanvasObjectRenderer({
       );
     };
 
+    const renderElementResizeHandles = (
+      targetElement: CanvasElement,
+      width: number,
+      height: number,
+      posX: number,
+      posY: number,
+      isMediaType: boolean
+    ) => {
+      if (!isInteractive || selectedId !== targetElement.id || targetElement.isLocked) {
+        return null;
+      }
+      return (
+        <>
+          {/* 4 Corner Handles */}
+          <div
+            onPointerDown={(e) =>
+              handleElementResizePointerDown(e, targetElement.id, "tl", width, height, posX, posY, isMediaType)
+            }
+            title="Resize Corner (NW) - Aspect ratio preserved for media"
+            className="resize-handle absolute -top-1.5 -left-1.5 w-2.5 h-2.5 bg-white border-2 border-sky-400 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-nwse-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
+          />
+          <div
+            onPointerDown={(e) =>
+              handleElementResizePointerDown(e, targetElement.id, "tr", width, height, posX, posY, isMediaType)
+            }
+            title="Resize Corner (NE) - Aspect ratio preserved for media"
+            className="resize-handle absolute -top-1.5 -right-1.5 w-2.5 h-2.5 bg-white border-2 border-sky-400 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-nesw-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
+          />
+          <div
+            onPointerDown={(e) =>
+              handleElementResizePointerDown(e, targetElement.id, "bl", width, height, posX, posY, isMediaType)
+            }
+            title="Resize Corner (SW) - Aspect ratio preserved for media"
+            className="resize-handle absolute -bottom-1.5 -left-1.5 w-2.5 h-2.5 bg-white border-2 border-sky-400 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-nesw-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
+          />
+          <div
+            onPointerDown={(e) =>
+              handleElementResizePointerDown(e, targetElement.id, "br", width, height, posX, posY, isMediaType)
+            }
+            title="Resize Corner (SE) - Aspect ratio preserved for media"
+            className="resize-handle absolute -bottom-1.5 -right-1.5 w-2.5 h-2.5 bg-white border-2 border-sky-400 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-nwse-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
+          />
+
+          {/* 4 Edge Handles */}
+          <div
+            onPointerDown={(e) =>
+              handleElementResizePointerDown(e, targetElement.id, "tc", width, height, posX, posY, false)
+            }
+            title="Resize Height (North)"
+            className="resize-handle absolute -top-1.5 left-1/2 -translate-x-1/2 w-2.5 h-2.5 bg-white border-2 border-sky-400 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-ns-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
+          />
+          <div
+            onPointerDown={(e) =>
+              handleElementResizePointerDown(e, targetElement.id, "bc", width, height, posX, posY, false)
+            }
+            title="Resize Height (South)"
+            className="resize-handle absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-2.5 h-2.5 bg-white border-2 border-sky-400 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-ns-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
+          />
+          <div
+            onPointerDown={(e) =>
+              handleElementResizePointerDown(e, targetElement.id, "ml", width, height, posX, posY, false)
+            }
+            title="Resize Width (West)"
+            className="resize-handle absolute top-1/2 -left-1.5 -translate-y-1/2 w-2.5 h-2.5 bg-white border-2 border-sky-400 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-ew-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
+          />
+          <div
+            onPointerDown={(e) =>
+              handleElementResizePointerDown(e, targetElement.id, "mr", width, height, posX, posY, false)
+            }
+            title="Resize Width (East)"
+            className="resize-handle absolute top-1/2 -right-1.5 -translate-y-1/2 w-2.5 h-2.5 bg-white border-2 border-sky-400 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-ew-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
+          />
+
+          {/* Dimension Tag */}
+          <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded bg-black/90 border border-sky-400 text-sky-300 font-mono text-[9px] font-bold shadow-lg flex items-center gap-1.5 pointer-events-none select-none z-40 whitespace-nowrap">
+            <span>{Math.round(width)} × {Math.round(height)} px</span>
+            {isMediaType && (
+              <>
+                <span className="text-neutral-500">•</span>
+                <span>{(width / Math.max(1, height)).toFixed(2)}:1</span>
+              </>
+            )}
+          </div>
+        </>
+      );
+    };
+
     // Helper for all text-based elements supporting typography, Markdown, and direct inline editing
     const renderEditableTextNode = (
       defaultText: string,
@@ -679,6 +967,7 @@ export function CanvasObjectRenderer({
           className={`relative flex items-center ${extraWrapperClass} ${outlineClasses}`}
         >
           {renderHoverBadge()}
+          {renderElementResizeHandles(el, currentW, currentH, currentX, currentY, false)}
           {isEditing ? (
             isMultiline ? (
               <textarea
@@ -748,9 +1037,11 @@ export function CanvasObjectRenderer({
         else if (shape === "square") radius = "0px";
         else if (shape === "squircle") radius = "32%";
 
-        const avatarSize = (el.id === "avatar_1" || el.type === "avatar")
-          ? (config.avatar?.size || transform.width || 96)
-          : (transform.width || 96);
+        const avatarSize = isThisElementResizing
+          ? currentW
+          : ((el.id === "avatar_1" || el.type === "avatar")
+            ? (config.avatar?.size || transform.width || 96)
+            : (transform.width || 96));
 
         return (
           <div
@@ -759,10 +1050,11 @@ export function CanvasObjectRenderer({
             onPointerDown={handlePointerDown}
             onPointerEnter={() => isInteractive && setHoveredElementId(el.id)}
             onPointerLeave={() => isInteractive && setHoveredElementId((prev) => (prev === el.id ? null : prev))}
-            style={{ ...baseWrapperStyle, width: `${avatarSize}px`, minHeight: `${avatarSize}px` }}
-            className={`relative flex items-center justify-center p-1 rounded-2xl ${outlineClasses}`}
+            style={{ ...baseWrapperStyle, width: `${avatarSize}px`, minHeight: `${avatarSize}px`, height: `${avatarSize}px` }}
+            className={`relative flex items-center justify-center p-1 rounded-2xl shrink-0 ${outlineClasses}`}
           >
             {renderHoverBadge()}
+            {renderElementResizeHandles(el, avatarSize, avatarSize, currentX, currentY, true)}
             <div
               className="relative overflow-hidden group shadow-xl"
               style={{
@@ -870,6 +1162,7 @@ export function CanvasObjectRenderer({
             className={`relative w-full ${outlineClasses}`}
           >
             {renderHoverBadge()}
+            {renderElementResizeHandles(el, currentW, currentH, currentX, currentY, false)}
             <DiscordRpcCard
               config={config.discordRpc}
               data={discordPresence}
@@ -896,6 +1189,7 @@ export function CanvasObjectRenderer({
             className={`relative w-full flex flex-col p-1 ${outlineClasses}`}
           >
             {renderHoverBadge()}
+            {renderElementResizeHandles(el, currentW, currentH, currentX, currentY, false)}
             {buttonList.map((btn) => (
               <a
                 key={btn.id}
@@ -942,6 +1236,7 @@ export function CanvasObjectRenderer({
             className={`relative w-full flex items-center justify-center py-2 flex-wrap ${outlineClasses}`}
           >
             {renderHoverBadge()}
+            {renderElementResizeHandles(el, currentW, currentH, currentX, currentY, false)}
             {(socialLinks.length > 0
               ? socialLinks
               : [{ id: "l1", label: "Discord", url: "https://discord.gg", icon: "discord", color: "#5865F2", visibility: true }]
@@ -1185,6 +1480,7 @@ export function CanvasObjectRenderer({
 
       case "banner": {
         const src = el.props?.src || el.props?.url || config.background?.imageUrl || "/placeholder.png";
+        const bannerH = isThisElementResizing ? currentH : (transform.height || 140);
         return (
           <div
             key={el.id}
@@ -1192,10 +1488,11 @@ export function CanvasObjectRenderer({
             onPointerDown={handlePointerDown}
             onPointerEnter={() => isInteractive && setHoveredElementId(el.id)}
             onPointerLeave={() => isInteractive && setHoveredElementId((prev) => (prev === el.id ? null : prev))}
-            style={{ ...baseWrapperStyle, width: "100%", height: el.transform?.height ? `${el.transform.height}px` : "140px" }}
+            style={{ ...baseWrapperStyle, width: "100%", height: `${bannerH}px`, minHeight: `${bannerH}px` }}
             className={`relative overflow-hidden rounded-xl shadow-lg ${outlineClasses}`}
           >
             {renderHoverBadge()}
+            {renderElementResizeHandles(el, 580, bannerH, currentX, currentY, false)}
             <img
               src={src}
               alt="Banner Graphic"
@@ -1211,6 +1508,8 @@ export function CanvasObjectRenderer({
       case "image":
       case "thumbnail": {
         const src = el.props?.src || el.props?.url || "/placeholder.png";
+        const imgH = isThisElementResizing ? currentH : (transform.height || 200);
+        const imgW = isThisElementResizing ? currentW : (transform.width || (el.parentEmbedId ? "100%" : 300));
         return (
           <div
             key={el.id}
@@ -1218,15 +1517,22 @@ export function CanvasObjectRenderer({
             onPointerDown={handlePointerDown}
             onPointerEnter={() => isInteractive && setHoveredElementId(el.id)}
             onPointerLeave={() => isInteractive && setHoveredElementId((prev) => (prev === el.id ? null : prev))}
-            style={baseWrapperStyle}
+            style={{
+              ...baseWrapperStyle,
+              width: typeof imgW === "number" ? `${imgW}px` : imgW,
+              height: `${imgH}px`,
+              minHeight: `${imgH}px`,
+            }}
             className={`relative overflow-hidden rounded-xl shadow-lg ${outlineClasses}`}
           >
             {renderHoverBadge()}
+            {renderElementResizeHandles(el, typeof imgW === "number" ? imgW : 300, imgH, currentX, currentY, true)}
             <img
               src={src}
               alt={el.name}
               className="w-full h-full object-cover select-none pointer-events-none"
               style={{
+                objectFit: el.style?.objectFit || "cover",
                 borderRadius: el.style?.borderRadius ? `${el.style.borderRadius}px` : undefined,
               }}
             />
@@ -1523,11 +1829,17 @@ export function CanvasObjectRenderer({
             : undefined);
 
         const isAutoHeight = config.layout?.autoHeight !== false;
+        const resolvedHeight = isThisResizing
+          ? `${resizingEmbed.currentHeight}px`
+          : (!isAutoHeight && currentH ? `${currentH}px` : undefined);
         const resolvedMinHeight = isThisResizing
           ? `${resizingEmbed.currentHeight}px`
           : (isAutoHeight
               ? (embedElements.length === 0 ? "180px" : undefined)
               : (config.layout?.height ? `${config.layout.height}px` : `${currentH}px`));
+        const resolvedMaxHeight = isThisResizing
+          ? `${resizingEmbed.currentHeight}px`
+          : (!isAutoHeight && currentH ? `${currentH}px` : undefined);
 
         const resolvedWidth = isThisResizing
           ? `${resizingEmbed.currentWidth}px`
@@ -1570,7 +1882,10 @@ export function CanvasObjectRenderer({
               position: "relative",
               width: resolvedWidth,
               maxWidth: resolvedMaxWidth,
+              height: resolvedHeight,
               minHeight: resolvedMinHeight,
+              maxHeight: resolvedMaxHeight,
+              overflow: isThisResizing || !isAutoHeight ? "hidden" : "visible",
               boxSizing: "border-box",
               margin: "0 auto 32px auto",
               transform: `translate3d(${currentX}px, ${currentY}px, 0) rotate(${embed.transform.rotation || 0}deg)`,

@@ -67,6 +67,7 @@ interface StudioProfilePreviewProps {
   zoom?: number;
   onUpdateCanvas?: (updater: (prev: any) => any) => void;
   onResizeEmbed?: (embedId: string, width: number, height: number, x?: number, y?: number) => void;
+  onResizeElement?: (elementId: string, width: number, height: number, x?: number, y?: number) => void;
   onDuplicateEmbed?: (embedId: string) => void;
   onDeleteEmbed?: (embedId: string) => void;
   onToggleLockEmbed?: (embedId: string) => void;
@@ -89,6 +90,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
   zoom = 100,
   onUpdateCanvas,
   onResizeEmbed,
+  onResizeElement,
   onDuplicateEmbed,
   onDeleteEmbed,
   onToggleLockEmbed,
@@ -158,6 +160,57 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
           ...prev,
           ...(isPrimary ? { layout: { ...prev.layout, maxWidth: width, height, autoHeight: false } } : {}),
           ...(updatedEmbeds ? { canvas: { ...prev.canvas!, embeds: updatedEmbeds } } : {}),
+        };
+      });
+    }
+  };
+
+  const handleResizeElement = (elementId: string, width: number, height: number, x?: number, y?: number) => {
+    if (onResizeElement) {
+      onResizeElement(elementId, width, height, x, y);
+      return;
+    }
+    if (onUpdateCanvas) {
+      onUpdateCanvas((prev: any) => ({
+        ...prev,
+        elements: prev.elements?.map((el: any) =>
+          el.id === elementId
+            ? {
+                ...el,
+                transform: {
+                  ...el.transform,
+                  width,
+                  height,
+                  ...(x !== undefined ? { x } : {}),
+                  ...(y !== undefined ? { y } : {}),
+                },
+              }
+            : el
+        ),
+      }));
+    }
+    if (updateConfig) {
+      updateConfig((prev) => {
+        const updatedElements = prev.canvas?.elements?.map((el) =>
+          el.id === elementId
+            ? {
+                ...el,
+                transform: {
+                  ...el.transform,
+                  width,
+                  height,
+                  ...(x !== undefined ? { x } : {}),
+                  ...(y !== undefined ? { y } : {}),
+                },
+              }
+            : el
+        );
+        const targetEl = prev.canvas?.elements?.find((el) => el.id === elementId);
+        const isAvatar = targetEl?.type === "avatar" || elementId === "avatar_1";
+        return {
+          ...prev,
+          ...(isAvatar ? { avatar: { ...prev.avatar, size: width } } : {}),
+          ...(updatedElements ? { canvas: { ...prev.canvas!, elements: updatedElements } } : {}),
         };
       });
     }
@@ -711,6 +764,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
             onUpdateElementProps={onUpdateElementProps}
             zoom={zoom}
             onResizeEmbed={handleResizeEmbed}
+            onResizeElement={handleResizeElement}
             onDuplicateEmbed={handleDuplicateEmbed}
             onDeleteEmbed={handleDeleteEmbed}
             onDeleteElement={handleDeleteElement}
