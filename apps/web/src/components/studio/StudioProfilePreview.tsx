@@ -66,7 +66,20 @@ interface StudioProfilePreviewProps {
   footerSlot?: React.ReactNode;
   zoom?: number;
   onUpdateCanvas?: (updater: (prev: any) => any) => void;
-  onResizeEmbed?: (embedId: string, width: number, height: number, x?: number, y?: number) => void;
+  onResizeEmbed?: (
+    embedId: string,
+    width: number,
+    height: number,
+    x?: number,
+    y?: number,
+    scaleOptions?: {
+      scaleFactor?: number;
+      gap?: number;
+      padding?: number;
+      avatarSize?: number;
+      isSideSpacing?: boolean;
+    }
+  ) => void;
   onResizeElement?: (elementId: string, width: number, height: number, x?: number, y?: number) => void;
   onDuplicateEmbed?: (embedId: string) => void;
   onDeleteEmbed?: (embedId: string) => void;
@@ -112,12 +125,97 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
     layers,
   } = config;
 
-  const handleResizeEmbed = (embedId: string, width: number, height: number, x?: number, y?: number) => {
+  const handleResizeEmbed = (
+    embedId: string,
+    width: number,
+    height: number,
+    x?: number,
+    y?: number,
+    scaleOptions?: {
+      scaleFactor?: number;
+      gap?: number;
+      padding?: number;
+      avatarSize?: number;
+      isSideSpacing?: boolean;
+    }
+  ) => {
     if (onResizeEmbed) {
-      onResizeEmbed(embedId, width, height, x, y);
+      onResizeEmbed(embedId, width, height, x, y, scaleOptions);
       return;
     }
-    if (onUpdateCanvas) {
+    const isPrimary = embedId === "embed_primary";
+    const isSideSpacing = Boolean(scaleOptions?.isSideSpacing);
+
+    if (updateConfig) {
+      updateConfig((prev) => {
+        // If this is a side spacing adjustment (tc, bc, ml, mr), do not change outer embed dimensions!
+        if (isSideSpacing) {
+          return {
+            ...prev,
+            layout: {
+              ...prev.layout,
+              ...(scaleOptions?.gap !== undefined ? { gap: scaleOptions.gap } : {}),
+              ...(scaleOptions?.padding !== undefined ? { padding: scaleOptions.padding } : {}),
+            },
+          };
+        }
+
+        // Corner scaling: update outer dimensions, scaleFactor, gap, padding, and avatar proportionally
+        const currentCanvas = prev.canvas ? { ...prev.canvas } : createDefaultCanvasState(prev);
+        const updatedEmbeds = currentCanvas.embeds.map((em) =>
+          em.id === embedId
+            ? {
+                ...em,
+                transform: {
+                  ...em.transform,
+                  width,
+                  height,
+                  ...(x !== undefined ? { x } : {}),
+                  ...(y !== undefined ? { y } : {}),
+                },
+              }
+            : em
+        );
+
+        const scaleFactor = scaleOptions?.scaleFactor;
+        const updatedElements =
+          scaleFactor && scaleFactor !== 1
+            ? currentCanvas.elements.map((el) => {
+                if (el.parentEmbedId !== embedId) return el;
+                return {
+                  ...el,
+                  transform: {
+                    ...el.transform,
+                    width: Math.round(el.transform.width * scaleFactor),
+                    height: Math.round(el.transform.height * scaleFactor),
+                  },
+                };
+              })
+            : currentCanvas.elements;
+
+        return {
+          ...prev,
+          ...(isPrimary
+            ? {
+                layout: {
+                  ...prev.layout,
+                  maxWidth: width,
+                  height,
+                  autoHeight: false,
+                  ...(scaleOptions?.gap !== undefined ? { gap: scaleOptions.gap } : {}),
+                  ...(scaleOptions?.padding !== undefined ? { padding: scaleOptions.padding } : {}),
+                },
+                ...(scaleOptions?.avatarSize ? { avatar: { ...prev.avatar, size: scaleOptions.avatarSize } } : {}),
+              }
+            : {}),
+          canvas: {
+            ...currentCanvas,
+            embeds: updatedEmbeds,
+            elements: updatedElements,
+          },
+        };
+      });
+    } else if (onUpdateCanvas && !isSideSpacing) {
       onUpdateCanvas((prev: any) => {
         const updatedEmbeds = prev.embeds?.map((em: any) =>
           em.id === embedId
@@ -136,30 +234,6 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
         return {
           ...prev,
           embeds: updatedEmbeds,
-        };
-      });
-    }
-    if (updateConfig) {
-      updateConfig((prev) => {
-        const updatedEmbeds = prev.canvas?.embeds?.map((em) =>
-          em.id === embedId
-            ? {
-                ...em,
-                transform: {
-                  ...em.transform,
-                  width,
-                  height,
-                  ...(x !== undefined ? { x } : {}),
-                  ...(y !== undefined ? { y } : {}),
-                },
-              }
-            : em
-        );
-        const isPrimary = embedId === "embed_primary";
-        return {
-          ...prev,
-          ...(isPrimary ? { layout: { ...prev.layout, maxWidth: width, height, autoHeight: false } } : {}),
-          ...(updatedEmbeds ? { canvas: { ...prev.canvas!, embeds: updatedEmbeds } } : {}),
         };
       });
     }

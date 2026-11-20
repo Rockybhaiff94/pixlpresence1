@@ -123,7 +123,7 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
         onSelectCategory("effects");
         break;
       default:
-        onSelectCategory("layout");
+        // Do not force-open dock settings for embed container selections; keeps canvas handles unobstructed
         break;
     }
   };
