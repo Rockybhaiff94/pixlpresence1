@@ -570,6 +570,27 @@ export const COMPONENT_REGISTRY: Record<CanvasElementType, ComponentDefinition> 
   // ==========================================
   // D. MEDIA COMPONENTS
   // ==========================================
+  banner: {
+    type: "banner",
+    category: "media",
+    name: "Banner Graphic",
+    description: "Header banner image or profile hero graphic",
+    icon: ImageIcon,
+    defaultTransform: { width: 480, height: 140, rotation: 0, zIndex: 2 },
+    defaultStyle: { borderRadius: 16 },
+    createInstance: (parentEmbedId) => ({
+      id: `banner_${Date.now()}`,
+      type: "banner",
+      name: "Banner Graphic",
+      parentEmbedId: parentEmbedId || null,
+      transform: { x: 0, y: 0, width: 480, height: 140, rotation: 0, zIndex: 2 },
+      style: { borderRadius: 16 },
+      props: { url: "" },
+      isVisible: true,
+      isLocked: false,
+    }),
+  },
+
   image: {
     type: "image",
     category: "media",

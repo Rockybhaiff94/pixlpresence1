@@ -316,6 +316,152 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
     }
   };
 
+  const handleToggleHideEmbed = (embedId: string) => {
+    if (onUpdateCanvas) {
+      onUpdateCanvas((prev: any) => ({
+        ...prev,
+        embeds: prev.embeds?.map((em: any) =>
+          em.id === embedId ? { ...em, isVisible: em.isVisible === false ? true : false } : em
+        ),
+      }));
+    }
+    if (updateConfig) {
+      updateConfig((prev) => ({
+        ...prev,
+        canvas: {
+          ...prev.canvas!,
+          embeds: prev.canvas?.embeds?.map((em) =>
+            em.id === embedId ? { ...em, isVisible: em.isVisible === false ? true : false } : em
+          ) || [],
+        },
+      }));
+    }
+  };
+
+  const handleInsertElement = (embedId: string, type: any) => {
+    const newId = `${type}_${Date.now()}`;
+    const newEl = {
+      id: newId,
+      type,
+      name: `${type.charAt(0).toUpperCase() + type.slice(1)} Block`,
+      parentEmbedId: embedId,
+      transform: {
+        x: 0,
+        y: 0,
+        width: 480,
+        height: type === "divider" ? 2 : type === "bio" ? 64 : 40,
+        rotation: 0,
+        zIndex: 2,
+      },
+      props: {
+        text: type === "bio" ? "Biography text content..." : `${type} content`,
+        url: type === "button" ? "https://pixel.gg" : "",
+      },
+      isVisible: true,
+      isLocked: false,
+    };
+
+    if (onUpdateCanvas) {
+      onUpdateCanvas((prev: any) => ({
+        ...prev,
+        elements: [...(prev.elements || []), newEl],
+        embeds: prev.embeds?.map((em: any) =>
+          em.id === embedId ? { ...em, childrenIds: [...(em.childrenIds || []), newId] } : em
+        ),
+      }));
+    }
+    if (updateConfig) {
+      updateConfig((prev) => ({
+        ...prev,
+        canvas: {
+          ...prev.canvas!,
+          elements: [...(prev.canvas?.elements || []), newEl],
+          embeds: prev.canvas?.embeds?.map((em) =>
+            em.id === embedId ? { ...em, childrenIds: [...(em.childrenIds || []), newId] } : em
+          ) || [],
+        },
+      }));
+    }
+    onSelectElement?.(newId);
+  };
+
+  const handleContextualSave = (target: any, updatedData: any) => {
+    if (!updateConfig) return;
+    if (target.type === "rpc") {
+      updateConfig((prev) => ({
+        ...prev,
+        discordRpc: {
+          ...prev.discordRpc,
+          ...(updatedData.appName ? { appName: updatedData.appName } : {}),
+          ...(updatedData.details !== undefined ? { details: updatedData.details } : {}),
+          ...(updatedData.state !== undefined ? { state: updatedData.state } : {}),
+          ...(updatedData.largeImage !== undefined ? { largeImage: updatedData.largeImage } : {}),
+          ...(updatedData.smallImage !== undefined ? { smallImage: updatedData.smallImage } : {}),
+          ...(updatedData.partySize !== undefined ? { partySize: updatedData.partySize } : {}),
+          ...(updatedData.partyMax !== undefined ? { partyMax: updatedData.partyMax } : {}),
+          ...(updatedData.buttons !== undefined ? { buttons: updatedData.buttons } : {}),
+          ...(updatedData.isStandalone !== undefined
+            ? {
+                customLayout: updatedData.isStandalone
+                  ? (prev.discordRpc?.customLayout || { enabled: true, elements: [] })
+                  : undefined,
+              }
+            : {}),
+          ...(updatedData.showProfileRpc !== undefined ? { showProfileRpc: updatedData.showProfileRpc } : {}),
+        },
+      }));
+    } else if (target.type === "info") {
+      updateConfig((prev) => {
+        const titleColor = updatedData.accentColor ?? prev.identity?.titleColor;
+        const updatedElements = prev.canvas?.elements?.map((el) => {
+          if (el.type === "displayName" || el.id === "username_1") {
+            return {
+              ...el,
+              props: { ...el.props, text: updatedData.displayName || el.props?.text },
+            };
+          }
+          return el;
+        });
+        return {
+          ...prev,
+          identity: {
+            ...prev.identity,
+            titleColor,
+          },
+          ...(updatedElements ? { canvas: { ...prev.canvas!, elements: updatedElements } } : {}),
+        };
+      });
+    } else if (target.type === "bio") {
+      updateConfig((prev) => {
+        const updatedElements = prev.canvas?.elements?.map((el) => {
+          if (el.type === "bio") {
+            return {
+              ...el,
+              props: { ...el.props, text: updatedData.bio || el.props?.text },
+            };
+          }
+          return el;
+        });
+        return {
+          ...prev,
+          ...(updatedElements ? { canvas: { ...prev.canvas!, elements: updatedElements } } : {}),
+        };
+      });
+    } else if (target.type === "banner") {
+      updateConfig((prev) => ({
+        ...prev,
+        background: {
+          ...prev.background,
+          imageUrl: updatedData.bannerUrl ?? prev.background?.imageUrl,
+        },
+      }));
+    } else if (target.type === "image" || target.type === "text") {
+      if (target.elementId && onUpdateElementProps) {
+        onUpdateElementProps(target.elementId, updatedData);
+      }
+    }
+  };
+
   // Dynamically load selected fonts
   useEffect(() => {
     if (typography.headingFont) ensureFontLoaded(typography.headingFont);
@@ -535,7 +681,10 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
           onDuplicateEmbed={handleDuplicateEmbed}
           onDeleteEmbed={handleDeleteEmbed}
           onToggleLockEmbed={handleToggleLockEmbed}
+          onToggleHideEmbed={handleToggleHideEmbed}
           onChangeZIndexEmbed={handleChangeZIndexEmbed}
+          onInsertElement={handleInsertElement}
+          onContextualSave={handleContextualSave}
         />
       ) : (
         /* Main Container Card Fallback */

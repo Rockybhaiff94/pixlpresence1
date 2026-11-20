@@ -35,7 +35,14 @@ import {
   ArrowUp,
   ArrowDown,
   Move,
+  Eye,
+  EyeOff,
+  MoreHorizontal,
+  Edit2,
 } from "lucide-react";
+import { EmbedAdjustmentPanel } from "./EmbedAdjustmentPanel";
+import { ContentInsertionMenu } from "./ContentInsertionMenu";
+import { ContextualEditModal, ContextualModalTarget } from "./ContextualEditModal";
 
 interface CanvasObjectRendererProps {
   embeds: CanvasEmbed[];
@@ -56,7 +63,10 @@ interface CanvasObjectRendererProps {
   onDuplicateEmbed?: (embedId: string) => void;
   onDeleteEmbed?: (embedId: string) => void;
   onToggleLockEmbed?: (embedId: string) => void;
+  onToggleHideEmbed?: (embedId: string) => void;
   onChangeZIndexEmbed?: (embedId: string, delta: number) => void;
+  onInsertElement?: (embedId: string, type: any) => void;
+  onContextualSave?: (target: ContextualModalTarget, updatedData: any) => void;
 }
 
 export function CanvasObjectRenderer({
@@ -78,7 +88,10 @@ export function CanvasObjectRenderer({
   onDuplicateEmbed,
   onDeleteEmbed,
   onToggleLockEmbed,
+  onToggleHideEmbed,
   onChangeZIndexEmbed,
+  onInsertElement,
+  onContextualSave,
 }: CanvasObjectRendererProps) {
   const {
     username,
@@ -89,6 +102,51 @@ export function CanvasObjectRenderer({
     links = [],
     discordPresence,
   } = data;
+
+  const [hoveredElementId, setHoveredElementId] = React.useState<string | null>(null);
+  const [activeModalTarget, setActiveModalTarget] = React.useState<ContextualModalTarget | null>(null);
+  const [contentMenuEmbedId, setContentMenuEmbedId] = React.useState<string | null>(null);
+  const [advancedPanelEmbedId, setAdvancedPanelEmbedId] = React.useState<string | null>(null);
+
+  // Global Escape key handler
+  React.useEffect(() => {
+    if (!isInteractive) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (activeModalTarget) {
+          setActiveModalTarget(null);
+          return;
+        }
+        if (contentMenuEmbedId) {
+          setContentMenuEmbedId(null);
+          return;
+        }
+        if (advancedPanelEmbedId) {
+          setAdvancedPanelEmbedId(null);
+          return;
+        }
+        if (inlineEditingId) {
+          onSetInlineEditingId?.(null);
+          return;
+        }
+        if (selectedId) {
+          onSelectElement?.(null);
+          return;
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    isInteractive,
+    activeModalTarget,
+    contentMenuEmbedId,
+    advancedPanelEmbedId,
+    inlineEditingId,
+    selectedId,
+    onSetInlineEditingId,
+    onSelectElement,
+  ]);
 
   const [resizingEmbed, setResizingEmbed] = React.useState<{
     embedId: string;
@@ -379,6 +437,89 @@ export function CanvasObjectRenderer({
         ? "hover:ring-1 hover:ring-white/40"
         : "";
 
+    const isHovered = isInteractive && hoveredElementId === el.id && !inlineEditingId;
+    let contextualBadgeLabel = "EDIT TEXT";
+    if (el.type === "avatar" || el.type === "username" || el.type === "displayName") {
+      contextualBadgeLabel = "EDIT NAME & ICON";
+    } else if (el.type === "bio" || el.type === "description") {
+      contextualBadgeLabel = "EDIT BIO";
+    } else if (el.type === "rpc") {
+      contextualBadgeLabel = "EDIT RPC";
+    } else if (el.type === "banner") {
+      contextualBadgeLabel = "EDIT BANNER";
+    } else if (el.type === "image") {
+      contextualBadgeLabel = "EDIT IMAGE";
+    } else if (el.type === "button") {
+      contextualBadgeLabel = "EDIT BUTTON";
+    } else if (el.type === "socials") {
+      contextualBadgeLabel = "EDIT SOCIALS";
+    }
+
+    const renderHoverBadge = () => {
+      if (!isHovered) return null;
+      return (
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            if (el.type === "avatar" || el.type === "username" || el.type === "displayName") {
+              setActiveModalTarget({
+                type: "info",
+                title: "Edit Name & Profile Icon",
+                data: { displayName, username, avatarUrl, accentColor: config.identity?.titleColor || "#ffffff" },
+              });
+            } else if (el.type === "bio" || el.type === "description") {
+              setActiveModalTarget({
+                type: "bio",
+                title: "Edit Biography",
+                data: { bio: bio || el.props?.text || "" },
+              });
+            } else if (el.type === "rpc") {
+              setActiveModalTarget({
+                type: "rpc",
+                title: "Customize Discord Rich Presence",
+                data: {
+                  appName: discordPresence?.appName || discordPresence?.name || "Visual Studio Code",
+                  details: discordPresence?.details || "",
+                  state: discordPresence?.state || "",
+                  largeImage: discordPresence?.largeImage || "",
+                  smallImage: discordPresence?.smallImage || "",
+                  partySize: discordPresence?.partySize || 1,
+                  partyMax: discordPresence?.partyMax || 5,
+                  buttons: discordPresence?.buttons || [{ label: "Join Project", url: "https://pixel.gg", visible: true }],
+                  isStandalone: Boolean(config.discordRpc?.customLayout),
+                  showProfileRpc: config.discordRpc?.showProfileRpc !== false,
+                },
+              });
+            } else if (el.type === "banner") {
+              setActiveModalTarget({
+                type: "banner",
+                title: "Edit Banner Graphic",
+                data: { bannerUrl: config.background?.imageUrl || "" },
+              });
+            } else if (el.type === "image") {
+              setActiveModalTarget({
+                type: "image",
+                title: "Edit Image Graphic",
+                elementId: el.id,
+                data: { url: el.props?.url || "" },
+              });
+            } else {
+              setActiveModalTarget({
+                type: "text",
+                title: "Edit Text Block",
+                elementId: el.id,
+                data: { text: el.props?.text || el.props?.content || "" },
+              });
+            }
+          }}
+          className="contextual-edit-badge absolute -top-3 left-1/2 -translate-x-1/2 z-40 px-2 py-0.5 rounded-full bg-black/90 border border-amber-400 text-amber-300 font-mono text-[9px] font-bold shadow-lg flex items-center gap-1 cursor-pointer hover:bg-amber-400 hover:text-black transition-all select-none"
+        >
+          <Edit2 size={9} />
+          <span>{contextualBadgeLabel}</span>
+        </div>
+      );
+    };
+
     // Helper for all text-based elements supporting typography, Markdown, and direct inline editing
     const renderEditableTextNode = (
       defaultText: string,
@@ -453,9 +594,12 @@ export function CanvasObjectRenderer({
           onClick={handleClick}
           onDoubleClick={handleDoubleClick}
           onPointerDown={handlePointerDown}
+          onPointerEnter={() => isInteractive && setHoveredElementId(el.id)}
+          onPointerLeave={() => isInteractive && setHoveredElementId((prev) => (prev === el.id ? null : prev))}
           style={baseWrapperStyle}
-          className={`flex items-center ${extraWrapperClass} ${outlineClasses}`}
+          className={`relative flex items-center ${extraWrapperClass} ${outlineClasses}`}
         >
+          {renderHoverBadge()}
           {isEditing ? (
             isMultiline ? (
               <textarea
@@ -534,9 +678,12 @@ export function CanvasObjectRenderer({
             key={el.id}
             onClick={handleClick}
             onPointerDown={handlePointerDown}
+            onPointerEnter={() => isInteractive && setHoveredElementId(el.id)}
+            onPointerLeave={() => isInteractive && setHoveredElementId((prev) => (prev === el.id ? null : prev))}
             style={{ ...baseWrapperStyle, width: `${avatarSize}px`, minHeight: `${avatarSize}px` }}
-            className={`flex items-center justify-center p-1 rounded-2xl ${outlineClasses}`}
+            className={`relative flex items-center justify-center p-1 rounded-2xl ${outlineClasses}`}
           >
+            {renderHoverBadge()}
             <div
               className="relative overflow-hidden group shadow-xl"
               style={{
@@ -638,9 +785,12 @@ export function CanvasObjectRenderer({
             key={el.id}
             onClick={handleClick}
             onPointerDown={handlePointerDown}
+            onPointerEnter={() => isInteractive && setHoveredElementId(el.id)}
+            onPointerLeave={() => isInteractive && setHoveredElementId((prev) => (prev === el.id ? null : prev))}
             style={baseWrapperStyle}
-            className={`w-full ${outlineClasses}`}
+            className={`relative w-full ${outlineClasses}`}
           >
+            {renderHoverBadge()}
             <DiscordRpcCard
               config={config.discordRpc}
               data={discordPresence}
@@ -661,9 +811,12 @@ export function CanvasObjectRenderer({
             key={el.id}
             onClick={handleClick}
             onPointerDown={handlePointerDown}
+            onPointerEnter={() => isInteractive && setHoveredElementId(el.id)}
+            onPointerLeave={() => isInteractive && setHoveredElementId((prev) => (prev === el.id ? null : prev))}
             style={{ ...baseWrapperStyle, gap: `${config.layout?.appsSpacing ?? 10}px` }}
-            className={`w-full flex flex-col p-1 ${outlineClasses}`}
+            className={`relative w-full flex flex-col p-1 ${outlineClasses}`}
           >
+            {renderHoverBadge()}
             {buttonList.map((btn) => (
               <a
                 key={btn.id}
@@ -704,9 +857,12 @@ export function CanvasObjectRenderer({
             key={el.id}
             onClick={handleClick}
             onPointerDown={handlePointerDown}
+            onPointerEnter={() => isInteractive && setHoveredElementId(el.id)}
+            onPointerLeave={() => isInteractive && setHoveredElementId((prev) => (prev === el.id ? null : prev))}
             style={{ ...baseWrapperStyle, gap: `${config.layout?.appsSpacing ?? 12}px` }}
-            className={`w-full flex items-center justify-center py-2 flex-wrap ${outlineClasses}`}
+            className={`relative w-full flex items-center justify-center py-2 flex-wrap ${outlineClasses}`}
           >
+            {renderHoverBadge()}
             {(socialLinks.length > 0
               ? socialLinks
               : [{ id: "l1", label: "Discord", url: "https://discord.gg", icon: "discord", color: "#5865F2", visibility: true }]
@@ -948,17 +1104,45 @@ export function CanvasObjectRenderer({
         );
       }
 
-      case "image":
-      case "thumbnail": {
-        const src = el.props?.src || "/placeholder.png";
+      case "banner": {
+        const src = el.props?.src || el.props?.url || config.background?.imageUrl || "/placeholder.png";
         return (
           <div
             key={el.id}
             onClick={handleClick}
             onPointerDown={handlePointerDown}
-            style={baseWrapperStyle}
-            className={`overflow-hidden rounded-xl shadow-lg ${outlineClasses}`}
+            onPointerEnter={() => isInteractive && setHoveredElementId(el.id)}
+            onPointerLeave={() => isInteractive && setHoveredElementId((prev) => (prev === el.id ? null : prev))}
+            style={{ ...baseWrapperStyle, width: "100%", height: el.transform?.height ? `${el.transform.height}px` : "140px" }}
+            className={`relative overflow-hidden rounded-xl shadow-lg ${outlineClasses}`}
           >
+            {renderHoverBadge()}
+            <img
+              src={src}
+              alt="Banner Graphic"
+              className="w-full h-full object-cover select-none pointer-events-none"
+              style={{
+                borderRadius: el.style?.borderRadius ? `${el.style.borderRadius}px` : undefined,
+              }}
+            />
+          </div>
+        );
+      }
+
+      case "image":
+      case "thumbnail": {
+        const src = el.props?.src || el.props?.url || "/placeholder.png";
+        return (
+          <div
+            key={el.id}
+            onClick={handleClick}
+            onPointerDown={handlePointerDown}
+            onPointerEnter={() => isInteractive && setHoveredElementId(el.id)}
+            onPointerLeave={() => isInteractive && setHoveredElementId((prev) => (prev === el.id ? null : prev))}
+            style={baseWrapperStyle}
+            className={`relative overflow-hidden rounded-xl shadow-lg ${outlineClasses}`}
+          >
+            {renderHoverBadge()}
             <img
               src={src}
               alt={el.name}
@@ -1199,7 +1383,8 @@ export function CanvasObjectRenderer({
 
       {/* 1. Embed Containers */}
       {embeds.map((embed) => {
-        if (embed.isVisible === false) return null;
+        if (!isInteractive && embed.isVisible === false) return null;
+        const isHiddenInEditor = isInteractive && embed.isVisible === false;
 
         const isSelectedEmbed = isInteractive && (selectedId === embed.id || (embed.id === "embed_primary" && (selectedId === "layout" || selectedId === "container")));
         const isThisMoving = movingEmbed && movingEmbed.embedId === embed.id;
@@ -1285,7 +1470,9 @@ export function CanvasObjectRenderer({
                 target.closest("a") ||
                 target.closest(".resize-handle") ||
                 target.closest(".embed-toolbar") ||
-                target.closest(".embed-inspector")
+                target.closest(".embed-inspector") ||
+                target.closest(".embed-adjustment-panel") ||
+                target.closest(".content-insertion-menu")
               ) {
                 return;
               }
@@ -1301,9 +1488,12 @@ export function CanvasObjectRenderer({
               transform: `translate3d(${currentX}px, ${currentY}px, 0) rotate(${embed.transform.rotation || 0}deg)`,
               zIndex: embed.transform.zIndex || 1,
               backgroundColor: resolvedEmbedBg,
-              border: `${embed.style.borderWidth ?? 1}px solid ${embed.style.borderColor || "rgba(255, 255, 255, 0.1)"}`,
+              border: isHiddenInEditor
+                ? "1px dashed rgba(255, 255, 255, 0.4)"
+                : `${embed.style.borderWidth ?? 1}px solid ${embed.style.borderColor || "rgba(255, 255, 255, 0.1)"}`,
               borderRadius: `${embed.id === "embed_primary" ? (config.discordRpc?.borderRadius ?? embed.style.borderRadius ?? 24) : (embed.style.borderRadius ?? 24)}px`,
               padding: `${embed.id === "embed_primary" ? (config.layout?.padding ?? embed.style.padding ?? 24) : (embed.style.padding ?? 24)}px`,
+              opacity: isHiddenInEditor ? 0.35 : undefined,
               boxShadow: isSelectedEmbed
                 ? "0 0 24px rgba(251, 191, 36, 0.55), inset 0 0 12px rgba(251, 191, 36, 0.15)"
                 : effects.boxShadow,
@@ -1319,7 +1509,15 @@ export function CanvasObjectRenderer({
                   : ""
               }`}
           >
-            {/* Canva-Style Floating Contextual Toolbar on Selected Embed */}
+            {/* Hidden Embed Indicator in Editor */}
+            {isHiddenInEditor && (
+              <div className="absolute top-2 right-2 z-40 px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-700 text-neutral-400 font-mono text-[9px] flex items-center gap-1.5 pointer-events-none">
+                <EyeOff size={10} />
+                <span>HIDDEN (Click to Unhide)</span>
+              </div>
+            )}
+
+            {/* Embed Selection Toolbar: 4 Primary Controls (Hide, Lock, Add, More) */}
             {isSelectedEmbed && (
               <div
                 onClick={(e) => e.stopPropagation()}
@@ -1329,7 +1527,65 @@ export function CanvasObjectRenderer({
                 }}
                 className="embed-toolbar absolute left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-[#121216]/95 backdrop-blur-md border border-neutral-700/80 shadow-[0_8px_24px_rgba(0,0,0,0.65)] select-none pointer-events-auto"
               >
-                {/* Drag / Move coordinates badge */}
+                {/* 1. Hide / Unhide */}
+                <button
+                  type="button"
+                  title={embed.isVisible === false ? "Unhide embed" : "Hide embed from preview"}
+                  onClick={() => onToggleHideEmbed?.(embed.id)}
+                  className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                    embed.isVisible === false
+                      ? "text-amber-400 bg-amber-500/20 font-bold"
+                      : "text-neutral-300 hover:text-white hover:bg-neutral-800"
+                  }`}
+                >
+                  {embed.isVisible === false ? <EyeOff size={13} /> : <Eye size={13} />}
+                </button>
+
+                {/* 2. Lock / Unlock */}
+                <button
+                  type="button"
+                  title={embed.isLocked ? "Unlock embed position & size" : "Lock embed position & size"}
+                  onClick={() => onToggleLockEmbed?.(embed.id)}
+                  className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                    embed.isLocked
+                      ? "text-amber-400 bg-amber-500/20 font-bold"
+                      : "text-neutral-300 hover:text-white hover:bg-neutral-800"
+                  }`}
+                >
+                  {embed.isLocked ? <Lock size={13} /> : <Unlock size={13} />}
+                </button>
+
+                {/* 3. Add (+) */}
+                <button
+                  type="button"
+                  title="Add content to embed"
+                  onClick={() => setContentMenuEmbedId(contentMenuEmbedId === embed.id ? null : embed.id)}
+                  className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                    contentMenuEmbedId === embed.id
+                      ? "bg-amber-400 text-black font-bold"
+                      : "text-neutral-300 hover:text-white hover:bg-neutral-800"
+                  }`}
+                >
+                  <Plus size={13} />
+                </button>
+
+                {/* 4. More / Advanced Adjustments */}
+                <button
+                  type="button"
+                  title="Advanced Adjustments (floating panel)"
+                  onClick={() => setAdvancedPanelEmbedId(advancedPanelEmbedId === embed.id ? null : embed.id)}
+                  className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                    advancedPanelEmbedId === embed.id
+                      ? "text-cyan-400 bg-cyan-500/20 font-bold"
+                      : "text-neutral-300 hover:text-white hover:bg-neutral-800"
+                  }`}
+                >
+                  <MoreHorizontal size={13} />
+                </button>
+
+                <div className="w-[1px] h-3.5 bg-neutral-800 mx-0.5" />
+
+                {/* Drag / Move Coordinates Badge */}
                 <div
                   title="Drag embed anywhere on canvas"
                   className="flex items-center gap-1.5 px-1.5 py-0.5 text-neutral-400 font-mono text-[10px] cursor-move"
@@ -1370,30 +1626,6 @@ export function CanvasObjectRenderer({
                   <ArrowDown size={13} />
                 </button>
 
-                {/* Lock / Unlock */}
-                <button
-                  type="button"
-                  title={embed.isLocked ? "Unlock embed" : "Lock embed position"}
-                  onClick={() => onToggleLockEmbed?.(embed.id)}
-                  className={`p-1 rounded-md transition-colors cursor-pointer ${
-                    embed.isLocked ? "text-amber-400 bg-amber-500/15" : "text-neutral-300 hover:text-white hover:bg-neutral-800"
-                  }`}
-                >
-                  {embed.isLocked ? <Lock size={13} /> : <Unlock size={13} />}
-                </button>
-
-                {/* Compact Inspector Toggle */}
-                <button
-                  type="button"
-                  title="Dimensions & Quick Presets"
-                  onClick={() => setShowInspectorEmbedId(showInspectorEmbedId === embed.id ? null : embed.id)}
-                  className={`p-1 rounded-md transition-colors cursor-pointer ${
-                    showInspectorEmbedId === embed.id ? "text-cyan-400 bg-cyan-500/15" : "text-neutral-300 hover:text-white hover:bg-neutral-800"
-                  }`}
-                >
-                  <Sliders size={13} />
-                </button>
-
                 {/* Delete */}
                 <button
                   type="button"
@@ -1406,72 +1638,8 @@ export function CanvasObjectRenderer({
               </div>
             )}
 
-            {/* Compact Floating Inspector Popout */}
-            {isSelectedEmbed && showInspectorEmbedId === embed.id && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
-                style={{
-                  top: currentY < 48 ? "calc(100% + 56px)" : "-102px",
-                }}
-                className="embed-inspector absolute left-1/2 -translate-x-1/2 z-50 p-2 rounded-xl bg-[#121216]/98 backdrop-blur-md border border-neutral-700/80 shadow-[0_12px_32px_rgba(0,0,0,0.7)] flex items-center gap-2 select-none text-xs pointer-events-auto"
-              >
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-neutral-400 font-mono">W:</span>
-                  <input
-                    type="number"
-                    min={320}
-                    max={1600}
-                    value={Math.round(currentW)}
-                    onChange={(e) => {
-                      const val = Number(e.target.value);
-                      if (val >= 320 && val <= 1600) {
-                        onResizeEmbed?.(embed.id, val, currentH, currentX, currentY);
-                      }
-                    }}
-                    className="w-16 px-1.5 py-0.5 rounded bg-black/80 border border-neutral-700 text-white font-mono text-xs focus:outline-none focus:border-amber-400"
-                  />
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-neutral-400 font-mono">H:</span>
-                  <input
-                    type="number"
-                    min={160}
-                    max={2000}
-                    value={Math.round(currentH)}
-                    onChange={(e) => {
-                      const val = Number(e.target.value);
-                      if (val >= 160 && val <= 2000) {
-                        onResizeEmbed?.(embed.id, currentW, val, currentX, currentY);
-                      }
-                    }}
-                    className="w-16 px-1.5 py-0.5 rounded bg-black/80 border border-neutral-700 text-white font-mono text-xs focus:outline-none focus:border-amber-400"
-                  />
-                </div>
-                <div className="px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/40 text-cyan-300 font-mono text-[10px] font-bold">
-                  {(currentW / Math.max(1, currentH)).toFixed(2)}:1
-                </div>
-                <div className="flex items-center gap-1 border-l border-neutral-800 pl-2">
-                  {[480, 580, 760, 860].map((pw) => (
-                    <button
-                      key={pw}
-                      type="button"
-                      onClick={() => onResizeEmbed?.(embed.id, pw, currentH, currentX, currentY)}
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono border cursor-pointer ${
-                        Math.round(currentW) === pw
-                          ? "bg-amber-400 text-black border-amber-400 font-bold"
-                          : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-white"
-                      }`}
-                    >
-                      {pw}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* 8-Point Figma / Photoshop Resize Handles */}
-            {isSelectedEmbed && (
+            {/* 8-Point Figma / Photoshop Resize Handles (Only when unlocked) */}
+            {isSelectedEmbed && !embed.isLocked && (
               <>
                 {/* 4 Corner Handles */}
                 <div
@@ -1572,6 +1740,61 @@ export function CanvasObjectRenderer({
 
       {/* 2. Free-floating Elements */}
       {freeElements.map(renderElement)}
+
+      {/* 3. On-Canvas Content Insertion Menu */}
+      {contentMenuEmbedId && (
+        <ContentInsertionMenu
+          embedId={contentMenuEmbedId}
+          onSelectContentType={(type) => {
+            onInsertElement?.(contentMenuEmbedId, type);
+            setContentMenuEmbedId(null);
+          }}
+          onClose={() => setContentMenuEmbedId(null)}
+        />
+      )}
+
+      {/* 4. Floating Embed Adjustment Panel */}
+      {advancedPanelEmbedId && (() => {
+        const targetEmbed = embeds.find((em) => em.id === advancedPanelEmbedId);
+        if (!targetEmbed) return null;
+        const currentW = targetEmbed.transform.width;
+        const currentH = targetEmbed.transform.height;
+        const currentX = targetEmbed.transform.x || 0;
+        const currentY = targetEmbed.transform.y || 0;
+        return (
+          <EmbedAdjustmentPanel
+            embed={targetEmbed}
+            currentWidth={currentW}
+            currentHeight={currentH}
+            currentX={currentX}
+            currentY={currentY}
+            isLocked={Boolean(targetEmbed.isLocked)}
+            onUpdateTransform={(t) => {
+              onResizeEmbed?.(
+                targetEmbed.id,
+                t.width ?? currentW,
+                t.height ?? currentH,
+                t.x ?? currentX,
+                t.y ?? currentY
+              );
+            }}
+            onToggleLock={() => onToggleLockEmbed?.(targetEmbed.id)}
+            onChangeZIndex={(delta) => onChangeZIndexEmbed?.(targetEmbed.id, delta)}
+            onClose={() => setAdvancedPanelEmbedId(null)}
+          />
+        );
+      })()}
+
+      {/* 5. Centered Contextual Edit Modal */}
+      <ContextualEditModal
+        target={activeModalTarget}
+        isOpen={Boolean(activeModalTarget)}
+        onClose={() => setActiveModalTarget(null)}
+        onSave={(target, updatedData) => {
+          onContextualSave?.(target, updatedData);
+          setActiveModalTarget(null);
+        }}
+      />
     </div>
   );
 }

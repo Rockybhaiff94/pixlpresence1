@@ -26,6 +26,7 @@ export type RpcImageSize = "small" | "medium" | "large";
 export type CanvasElementType =
   | "embed"
   | "avatar"
+  | "banner"
   | "displayName"
   | "username"
   | "tagline"

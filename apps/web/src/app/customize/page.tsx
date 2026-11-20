@@ -1122,6 +1122,28 @@ export default function CustomizePage() {
   const handleSaveDraft = () => executeSave(false);
   const handlePublish = () => executeSave(true);
 
+  // Debounced Autosave (1000ms): saves draft automatically when changes occur without requiring manual save
+  const debouncedSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (!isDirty || savePhase !== "idle") return;
+
+    if (debouncedSaveTimeoutRef.current) {
+      clearTimeout(debouncedSaveTimeoutRef.current);
+    }
+
+    debouncedSaveTimeoutRef.current = setTimeout(() => {
+      if (isDirtyRef.current && savePhase === "idle") {
+        executeSave(false);
+      }
+    }, 1000);
+
+    return () => {
+      if (debouncedSaveTimeoutRef.current) {
+        clearTimeout(debouncedSaveTimeoutRef.current);
+      }
+    };
+  }, [config, isDirty, savePhase]);
+
   // Toggle fullscreen focus mode preview (SM-02)
   const handleToggleFullscreenPreview = () => {
     setWorkspaceLayout((prev) => {
