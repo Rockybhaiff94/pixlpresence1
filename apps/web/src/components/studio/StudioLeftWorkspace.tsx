@@ -38,6 +38,7 @@ import {
   Columns,
   Square,
   Check,
+  Move,
 } from "lucide-react";
 import {
   ProfileDesignConfig,
@@ -1019,50 +1020,65 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                       <span className="text-[9px] font-mono text-cyan-400">Expanded Ranges</span>
                     </div>
 
+                    {/* Canva-Style Direct Manipulation Banner */}
+                    <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-950/20 text-neutral-300 text-xs space-y-1.5 select-none">
+                      <div className="flex items-center gap-1.5 text-amber-400 font-semibold text-xs">
+                        <Move size={13} />
+                        <span>Direct Canvas Manipulation Active</span>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 leading-relaxed">
+                        Click & drag any embed directly on the preview canvas to position it freely. Grab edge handles to adjust height or width independently, or corner handles to resize. Hold <kbd className="px-1 py-0.5 rounded bg-black/60 border border-neutral-700 text-amber-300 font-mono text-[9px]">Shift</kbd> to lock aspect ratio, or <kbd className="px-1 py-0.5 rounded bg-black/60 border border-neutral-700 text-cyan-300 font-mono text-[9px]">Alt</kbd> for symmetric expansion.
+                      </p>
+                    </div>
+
                     <div className={`grid gap-3 ${is80OrBelow ? "grid-cols-1" : "grid-cols-2"}`}>
-                      {/* 1. Container Max Width: 360px to 1600px */}
-                      <div className="space-y-2 p-3.5 rounded-xl border border-neutral-800 bg-[#101012]">
+                      {/* 1. Container Width: Compact Numeric Inspector & Presets */}
+                      <div className="space-y-2.5 p-3.5 rounded-xl border border-neutral-800 bg-[#101012]">
                         <div className="flex justify-between items-center flex-wrap gap-1">
                           <span className="text-neutral-400 text-[11px] font-semibold">Container Width</span>
-                          <span className="text-white font-mono font-bold text-xs">{embedWidth}px</span>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min={320}
+                              max={1600}
+                              step={10}
+                              value={embedWidth}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                if (!val || val < 100) return;
+                                updateConfig((prev) => {
+                                  if (isPrimary) {
+                                    const updatedEmbeds = prev.canvas?.embeds?.map((em) =>
+                                      em.id === "embed_primary"
+                                        ? { ...em, transform: { ...em.transform, width: val } }
+                                        : em
+                                    );
+                                    return {
+                                      ...prev,
+                                      layout: { ...prev.layout, maxWidth: val },
+                                      ...(updatedEmbeds ? { canvas: { ...prev.canvas!, embeds: updatedEmbeds } } : {}),
+                                    };
+                                  } else if (currentEmbed && prev.canvas) {
+                                    const updatedEmbeds = prev.canvas.embeds.map((em) =>
+                                      em.id === currentEmbed.id
+                                        ? { ...em, transform: { ...em.transform, width: val } }
+                                        : em
+                                    );
+                                    return {
+                                      ...prev,
+                                      canvas: { ...prev.canvas, embeds: updatedEmbeds },
+                                    };
+                                  }
+                                  return prev;
+                                });
+                              }}
+                              className="w-18 px-2 py-1 rounded bg-black/70 border border-neutral-700 text-white font-mono font-bold text-xs text-right focus:outline-none focus:border-amber-400"
+                            />
+                            <span className="text-neutral-500 font-mono text-xs">px</span>
+                          </div>
                         </div>
-                        <input
-                          type="range"
-                          min={360}
-                          max={1600}
-                          step={10}
-                          value={embedWidth}
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            updateConfig((prev) => {
-                              if (isPrimary) {
-                                const updatedEmbeds = prev.canvas?.embeds?.map((em) =>
-                                  em.id === "embed_primary"
-                                    ? { ...em, transform: { ...em.transform, width: val } }
-                                    : em
-                                );
-                                return {
-                                  ...prev,
-                                  layout: { ...prev.layout, maxWidth: val },
-                                  ...(updatedEmbeds ? { canvas: { ...prev.canvas!, embeds: updatedEmbeds } } : {}),
-                                };
-                              } else if (currentEmbed && prev.canvas) {
-                                const updatedEmbeds = prev.canvas.embeds.map((em) =>
-                                  em.id === currentEmbed.id
-                                    ? { ...em, transform: { ...em.transform, width: val } }
-                                    : em
-                                );
-                                return {
-                                  ...prev,
-                                  canvas: { ...prev.canvas, embeds: updatedEmbeds },
-                                };
-                              }
-                              return prev;
-                            });
-                          }}
-                          className="w-full accent-white cursor-pointer"
-                        />
-                        <div className="flex flex-wrap gap-1 pt-1">
+
+                        <div className="flex flex-wrap gap-1 pt-0.5">
                           {[480, 580, 760, 860, 1100, 1400].map((w) => (
                             <button
                               key={w}
@@ -1106,54 +1122,56 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                         </div>
                       </div>
 
-                      {/* 2. Container Height & Aspect Ratio (Figma / Photoshop Direct Synchronization) */}
-                      <div className="space-y-2 p-3.5 rounded-xl border border-neutral-800 bg-[#101012]">
+                      {/* 2. Container Height & Aspect Ratio: Compact Numeric Inspector & Presets */}
+                      <div className="space-y-2.5 p-3.5 rounded-xl border border-neutral-800 bg-[#101012]">
                         <div className="flex justify-between items-center flex-wrap gap-1">
                           <span className="text-neutral-400 text-[11px] font-semibold">Container Height</span>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5">
                             <span className="text-[10px] text-cyan-400 font-mono font-bold bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-800/40">
                               {currentAspect}:1
                             </span>
-                            <span className="text-white font-mono font-bold text-xs">{embedHeight}px</span>
+                            <input
+                              type="number"
+                              min={160}
+                              max={2000}
+                              step={10}
+                              value={embedHeight}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                if (!val || val < 100) return;
+                                updateConfig((prev) => {
+                                  if (isPrimary) {
+                                    const updatedEmbeds = prev.canvas?.embeds?.map((em) =>
+                                      em.id === "embed_primary"
+                                        ? { ...em, transform: { ...em.transform, height: val } }
+                                        : em
+                                    );
+                                    return {
+                                      ...prev,
+                                      layout: { ...prev.layout, height: val, autoHeight: false },
+                                      ...(updatedEmbeds ? { canvas: { ...prev.canvas!, embeds: updatedEmbeds } } : {}),
+                                    };
+                                  } else if (currentEmbed && prev.canvas) {
+                                    const updatedEmbeds = prev.canvas.embeds.map((em) =>
+                                      em.id === currentEmbed.id
+                                        ? { ...em, transform: { ...em.transform, height: val } }
+                                        : em
+                                    );
+                                    return {
+                                      ...prev,
+                                      canvas: { ...prev.canvas, embeds: updatedEmbeds },
+                                    };
+                                  }
+                                  return prev;
+                                });
+                              }}
+                              className="w-18 px-2 py-1 rounded bg-black/70 border border-neutral-700 text-white font-mono font-bold text-xs text-right focus:outline-none focus:border-amber-400"
+                            />
+                            <span className="text-neutral-500 font-mono text-xs">px</span>
                           </div>
                         </div>
-                        <input
-                          type="range"
-                          min={160}
-                          max={2000}
-                          step={10}
-                          value={embedHeight}
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            updateConfig((prev) => {
-                              if (isPrimary) {
-                                const updatedEmbeds = prev.canvas?.embeds?.map((em) =>
-                                  em.id === "embed_primary"
-                                    ? { ...em, transform: { ...em.transform, height: val } }
-                                    : em
-                                );
-                                return {
-                                  ...prev,
-                                  layout: { ...prev.layout, height: val, autoHeight: false },
-                                  ...(updatedEmbeds ? { canvas: { ...prev.canvas!, embeds: updatedEmbeds } } : {}),
-                                };
-                              } else if (currentEmbed && prev.canvas) {
-                                const updatedEmbeds = prev.canvas.embeds.map((em) =>
-                                  em.id === currentEmbed.id
-                                    ? { ...em, transform: { ...em.transform, height: val } }
-                                    : em
-                                );
-                                return {
-                                  ...prev,
-                                  canvas: { ...prev.canvas, embeds: updatedEmbeds },
-                                };
-                              }
-                              return prev;
-                            });
-                          }}
-                          className="w-full accent-white cursor-pointer"
-                        />
-                        <div className="flex flex-wrap gap-1 pt-1">
+
+                        <div className="flex flex-wrap gap-1 pt-0.5">
                           {[380, 540, 680, 820, 1000].map((h) => (
                             <button
                               key={h}

@@ -27,6 +27,14 @@ import {
   Play,
   Share2,
   Tv,
+  Copy,
+  Trash2,
+  Lock,
+  Unlock,
+  Sliders,
+  ArrowUp,
+  ArrowDown,
+  Move,
 } from "lucide-react";
 
 interface CanvasObjectRendererProps {
@@ -44,7 +52,11 @@ interface CanvasObjectRendererProps {
   onPointerDownElement?: (e: React.PointerEvent, id: string, isEmbed: boolean) => void;
   onOpenComponentLibrary?: (parentEmbedId: string) => void;
   zoom?: number;
-  onResizeEmbed?: (embedId: string, width: number, height: number) => void;
+  onResizeEmbed?: (embedId: string, width: number, height: number, x?: number, y?: number) => void;
+  onDuplicateEmbed?: (embedId: string) => void;
+  onDeleteEmbed?: (embedId: string) => void;
+  onToggleLockEmbed?: (embedId: string) => void;
+  onChangeZIndexEmbed?: (embedId: string, delta: number) => void;
 }
 
 export function CanvasObjectRenderer({
@@ -63,6 +75,10 @@ export function CanvasObjectRenderer({
   onOpenComponentLibrary,
   zoom = 100,
   onResizeEmbed,
+  onDuplicateEmbed,
+  onDeleteEmbed,
+  onToggleLockEmbed,
+  onChangeZIndexEmbed,
 }: CanvasObjectRendererProps) {
   const {
     username,
@@ -79,15 +95,33 @@ export function CanvasObjectRenderer({
     handle: "tl" | "tc" | "tr" | "ml" | "mr" | "bl" | "bc" | "br";
     currentWidth: number;
     currentHeight: number;
+    currentX: number;
+    currentY: number;
     isShiftPressed: boolean;
+    isAltPressed: boolean;
   } | null>(null);
+
+  const [movingEmbed, setMovingEmbed] = React.useState<{
+    embedId: string;
+    startX: number;
+    startY: number;
+    initialX: number;
+    initialY: number;
+    currentX: number;
+    currentY: number;
+    isSnappedX: boolean;
+  } | null>(null);
+
+  const [showInspectorEmbedId, setShowInspectorEmbedId] = React.useState<string | null>(null);
 
   const handleResizePointerDown = (
     e: React.PointerEvent,
     embedId: string,
     handle: "tl" | "tc" | "tr" | "ml" | "mr" | "bl" | "bc" | "br",
     initialW: number,
-    initialH: number
+    initialH: number,
+    initialX: number = 0,
+    initialY: number = 0
   ) => {
     e.stopPropagation();
     e.preventDefault();
@@ -95,9 +129,6 @@ export function CanvasObjectRenderer({
     const startX = e.clientX;
     const startY = e.clientY;
     const zoomScale = Math.max(0.2, (zoom || 100) / 100);
-    const parentEl = (e.currentTarget.parentElement as HTMLElement);
-    const rect = parentEl?.getBoundingClientRect();
-    const centerX = rect ? rect.left + rect.width / 2 : startX;
     const initialAspect = initialW / Math.max(1, initialH);
 
     const targetEl = e.currentTarget as HTMLElement;
@@ -105,52 +136,113 @@ export function CanvasObjectRenderer({
 
     let lastW = initialW;
     let lastH = initialH;
+    let lastX = initialX;
+    let lastY = initialY;
 
     const onPointerMove = (ev: PointerEvent) => {
       const deltaX = (ev.clientX - startX) / zoomScale;
       const deltaY = (ev.clientY - startY) / zoomScale;
       const isShift = ev.shiftKey;
+      const isAlt = ev.altKey;
 
       let nextW = initialW;
       let nextH = initialH;
+      let nextX = initialX;
+      let nextY = initialY;
 
-      // Horizontal resizing: symmetric from center for clean centered layouts
-      if (handle === "mr" || handle === "tr" || handle === "br") {
-        const dist = Math.abs(ev.clientX - centerX) / zoomScale;
-        nextW = Math.round(dist * 2);
-      } else if (handle === "ml" || handle === "tl" || handle === "bl") {
-        const dist = Math.abs(ev.clientX - centerX) / zoomScale;
-        nextW = Math.round(dist * 2);
-      }
-
-      // Vertical resizing:
+      // 1. HEIGHT RESIZING (Independent top vs bottom boundary control)
       if (handle === "bc" || handle === "bl" || handle === "br") {
-        nextH = Math.round(initialH + deltaY);
+        if (isAlt) {
+          // Alt: symmetric vertical expansion around center
+          nextH = Math.round(initialH + deltaY * 2);
+          nextY = Math.round(initialY - deltaY);
+        } else {
+          // Standard: bottom boundary moves; top stays 100% fixed
+          nextH = Math.round(initialH + deltaY);
+          nextY = initialY;
+        }
       } else if (handle === "tc" || handle === "tl" || handle === "tr") {
-        nextH = Math.round(initialH - deltaY);
+        if (isAlt) {
+          // Alt: symmetric vertical expansion around center
+          nextH = Math.round(initialH - deltaY * 2);
+          nextY = Math.round(initialY + deltaY);
+        } else {
+          // Standard: top boundary moves; bottom stays 100% fixed
+          nextH = Math.round(initialH - deltaY);
+          nextY = Math.round(initialY + deltaY);
+        }
       }
 
-      // Proportional aspect ratio preservation on corner handles with Shift:
+      // 2. WIDTH RESIZING (Horizontal boundary control)
+      if (handle === "mr" || handle === "tr" || handle === "br") {
+        if (isAlt) {
+          nextW = Math.round(initialW + deltaX * 2);
+          nextX = Math.round(initialX - deltaX);
+        } else {
+          nextW = Math.round(initialW + deltaX);
+          nextX = initialX;
+        }
+      } else if (handle === "ml" || handle === "tl" || handle === "bl") {
+        if (isAlt) {
+          nextW = Math.round(initialW - deltaX * 2);
+          nextX = Math.round(initialX + deltaX);
+        } else {
+          nextW = Math.round(initialW - deltaX);
+          nextX = Math.round(initialX + deltaX);
+        }
+      }
+
+      // 3. Proportional aspect ratio preservation on corner handles with Shift
       if (isShift && (handle === "tl" || handle === "tr" || handle === "bl" || handle === "br")) {
-        nextH = Math.round(nextW / initialAspect);
+        const proposedH = Math.round(nextW / initialAspect);
+        if (handle === "tl" || handle === "tr") {
+          nextY = initialY + initialH - proposedH;
+        }
+        nextH = proposedH;
       }
 
-      // Enforce bounds: min 320x160, max 1600x2000
-      nextW = Math.max(320, Math.min(1600, nextW));
-      nextH = Math.max(160, Math.min(2000, nextH));
+      // 4. Enforce strict bounds: min 320x160, max 1600x2000
+      if (nextW < 320) {
+        if (handle === "ml" || handle === "tl" || handle === "bl") {
+          nextX = isAlt ? initialX + (initialW - 320) / 2 : initialX + initialW - 320;
+        }
+        nextW = 320;
+      } else if (nextW > 1600) {
+        if (handle === "ml" || handle === "tl" || handle === "bl") {
+          nextX = isAlt ? initialX - (1600 - initialW) / 2 : initialX - (1600 - initialW);
+        }
+        nextW = 1600;
+      }
+
+      if (nextH < 160) {
+        if (handle === "tc" || handle === "tl" || handle === "tr") {
+          nextY = isAlt ? initialY + (initialH - 160) / 2 : initialY + initialH - 160;
+        }
+        nextH = 160;
+      } else if (nextH > 2000) {
+        if (handle === "tc" || handle === "tl" || handle === "tr") {
+          nextY = isAlt ? initialY - (2000 - initialH) / 2 : initialY - (2000 - initialH);
+        }
+        nextH = 2000;
+      }
 
       lastW = nextW;
       lastH = nextH;
+      lastX = nextX;
+      lastY = nextY;
 
       setResizingEmbed({
         embedId,
         handle,
         currentWidth: nextW,
         currentHeight: nextH,
+        currentX: nextX,
+        currentY: nextY,
         isShiftPressed: isShift,
+        isAltPressed: isAlt,
       });
 
-      onResizeEmbed?.(embedId, nextW, nextH);
+      onResizeEmbed?.(embedId, nextW, nextH, nextX, nextY);
     };
 
     const onPointerUp = (ev: PointerEvent) => {
@@ -161,8 +253,83 @@ export function CanvasObjectRenderer({
       targetEl.removeEventListener("pointerup", onPointerUp);
       targetEl.removeEventListener("pointercancel", onPointerUp);
 
-      onResizeEmbed?.(embedId, lastW, lastH);
+      onResizeEmbed?.(embedId, lastW, lastH, lastX, lastY);
       setResizingEmbed(null);
+    };
+
+    targetEl.addEventListener("pointermove", onPointerMove);
+    targetEl.addEventListener("pointerup", onPointerUp);
+    targetEl.addEventListener("pointercancel", onPointerUp);
+  };
+
+  const handleMovePointerDown = (
+    e: React.PointerEvent,
+    embedId: string,
+    initialX: number = 0,
+    initialY: number = 0
+  ) => {
+    // Only drag with primary pointer button
+    if (e.button !== 0) return;
+    e.stopPropagation();
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const zoomScale = Math.max(0.2, (zoom || 100) / 100);
+    const targetEl = e.currentTarget as HTMLElement;
+
+    try {
+      targetEl.setPointerCapture(e.pointerId);
+    } catch {}
+
+    let lastX = initialX;
+    let lastY = initialY;
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const deltaX = (ev.clientX - startX) / zoomScale;
+      const deltaY = (ev.clientY - startY) / zoomScale;
+
+      let nextX = Math.round(initialX + deltaX);
+      let nextY = Math.round(initialY + deltaY);
+
+      // Snap to canvas center (x = 0) within 12px threshold
+      const isSnappedX = Math.abs(nextX) <= 12;
+      if (isSnappedX) {
+        nextX = 0;
+      }
+
+      lastX = nextX;
+      lastY = nextY;
+
+      setMovingEmbed({
+        embedId,
+        startX,
+        startY,
+        initialX,
+        initialY,
+        currentX: nextX,
+        currentY: nextY,
+        isSnappedX,
+      });
+
+      const currentEmbed = embeds.find((em) => em.id === embedId);
+      const curW = currentEmbed?.transform.width || 580;
+      const curH = currentEmbed?.transform.height || 540;
+      onResizeEmbed?.(embedId, curW, curH, nextX, nextY);
+    };
+
+    const onPointerUp = (ev: PointerEvent) => {
+      try {
+        targetEl.releasePointerCapture(ev.pointerId);
+      } catch {}
+      targetEl.removeEventListener("pointermove", onPointerMove);
+      targetEl.removeEventListener("pointerup", onPointerUp);
+      targetEl.removeEventListener("pointercancel", onPointerUp);
+
+      const currentEmbed = embeds.find((em) => em.id === embedId);
+      const curW = currentEmbed?.transform.width || 580;
+      const curH = currentEmbed?.transform.height || 540;
+      onResizeEmbed?.(embedId, curW, curH, lastX, lastY);
+      setMovingEmbed(null);
     };
 
     targetEl.addEventListener("pointermove", onPointerMove);
@@ -1018,18 +1185,40 @@ export function CanvasObjectRenderer({
 
   return (
     <div className="relative w-full h-full">
+      {/* Visual Alignment Guides */}
+      {movingEmbed?.isSnappedX && (
+        <div
+          className="absolute top-0 bottom-0 left-1/2 w-[2px] bg-cyan-400 pointer-events-none z-50 shadow-[0_0_10px_rgba(34,211,238,0.9)]"
+          style={{ transform: "translateX(-50%)" }}
+        >
+          <div className="sticky top-6 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-400 text-[10px] font-mono font-bold text-cyan-200 shadow-lg">
+            CENTER SNAP (X: 0)
+          </div>
+        </div>
+      )}
+
       {/* 1. Embed Containers */}
       {embeds.map((embed) => {
         if (embed.isVisible === false) return null;
 
         const isSelectedEmbed = isInteractive && (selectedId === embed.id || (embed.id === "embed_primary" && (selectedId === "layout" || selectedId === "container")));
+        const isThisMoving = movingEmbed && movingEmbed.embedId === embed.id;
         const isThisResizing = resizingEmbed && resizingEmbed.embedId === embed.id;
+
+        const currentX = isThisMoving
+          ? movingEmbed.currentX
+          : (isThisResizing ? resizingEmbed.currentX : (embed.transform.x || 0));
+        const currentY = isThisMoving
+          ? movingEmbed.currentY
+          : (isThisResizing ? resizingEmbed.currentY : (embed.transform.y || 0));
+
         const currentW = isThisResizing
           ? resizingEmbed.currentWidth
           : (embed.id === "embed_primary" ? (config.layout?.maxWidth || embed.transform.width || 580) : embed.transform.width);
         const currentH = isThisResizing
           ? resizingEmbed.currentHeight
           : (embed.transform.height || config.layout?.height || 540);
+
         const embedElements = elements.filter((el) => el.parentEmbedId === embed.id);
         const effects = computeElementEffects(embed.style, config.identity?.titleColor || "#ffffff");
 
@@ -1087,7 +1276,20 @@ export function CanvasObjectRenderer({
             }}
             onPointerDown={(e) => {
               if (!isInteractive) return;
-              onPointerDownElement?.(e, embed.id, true);
+              if (embed.isLocked) return;
+              const target = e.target as HTMLElement;
+              if (
+                target.closest("button") ||
+                target.closest("input") ||
+                target.closest("textarea") ||
+                target.closest("a") ||
+                target.closest(".resize-handle") ||
+                target.closest(".embed-toolbar") ||
+                target.closest(".embed-inspector")
+              ) {
+                return;
+              }
+              handleMovePointerDown(e, embed.id, currentX, currentY);
             }}
             style={{
               position: "relative",
@@ -1096,7 +1298,8 @@ export function CanvasObjectRenderer({
               minHeight: resolvedMinHeight,
               boxSizing: "border-box",
               margin: "0 auto 32px auto",
-              transform: `rotate(${embed.transform.rotation || 0}deg)`,
+              transform: `translate3d(${currentX}px, ${currentY}px, 0) rotate(${embed.transform.rotation || 0}deg)`,
+              zIndex: embed.transform.zIndex || 1,
               backgroundColor: resolvedEmbedBg,
               border: `${embed.style.borderWidth ?? 1}px solid ${embed.style.borderColor || "rgba(255, 255, 255, 0.1)"}`,
               borderRadius: `${embed.id === "embed_primary" ? (config.discordRpc?.borderRadius ?? embed.style.borderRadius ?? 24) : (embed.style.borderRadius ?? 24)}px`,
@@ -1106,61 +1309,212 @@ export function CanvasObjectRenderer({
                 : effects.boxShadow,
               backdropFilter: resolvedBackdropFilter,
               animation: effects.animation,
-              transition: isThisResizing ? "none" : (effects.transition || "all 0.15s ease"),
-              cursor: isInteractive ? "pointer" : "default",
+              transition: (isThisResizing || isThisMoving) ? "none" : (effects.transition || "all 0.15s ease"),
+              cursor: isInteractive ? (embed.isLocked ? "not-allowed" : (isSelectedEmbed ? "move" : "pointer")) : "default",
             }}
-            className={`space-y-4 w-full max-w-full ${isSelectedEmbed
+            className={`space-y-4 w-full max-w-full select-none ${isSelectedEmbed
                 ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-black"
                 : isInteractive
                   ? "hover:ring-1 hover:ring-white/30"
                   : ""
               }`}
           >
+            {/* Canva-Style Floating Contextual Toolbar on Selected Embed */}
+            {isSelectedEmbed && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{
+                  top: currentY < 48 ? "calc(100% + 14px)" : "-44px",
+                }}
+                className="embed-toolbar absolute left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-[#121216]/95 backdrop-blur-md border border-neutral-700/80 shadow-[0_8px_24px_rgba(0,0,0,0.65)] select-none pointer-events-auto"
+              >
+                {/* Drag / Move coordinates badge */}
+                <div
+                  title="Drag embed anywhere on canvas"
+                  className="flex items-center gap-1.5 px-1.5 py-0.5 text-neutral-400 font-mono text-[10px] cursor-move"
+                >
+                  <Move size={11} className="text-amber-400" />
+                  <span className="font-semibold text-neutral-300">
+                    X:{Math.round(currentX)} Y:{Math.round(currentY)}
+                  </span>
+                </div>
+
+                <div className="w-[1px] h-3.5 bg-neutral-800 mx-0.5" />
+
+                {/* Duplicate */}
+                <button
+                  type="button"
+                  title="Duplicate embed"
+                  onClick={() => onDuplicateEmbed?.(embed.id)}
+                  className="p-1 rounded-md text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+                >
+                  <Copy size={13} />
+                </button>
+
+                {/* Layer order: Bring Forward / Send Backward */}
+                <button
+                  type="button"
+                  title="Bring forward (Z-Index +1)"
+                  onClick={() => onChangeZIndexEmbed?.(embed.id, 1)}
+                  className="p-1 rounded-md text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+                >
+                  <ArrowUp size={13} />
+                </button>
+                <button
+                  type="button"
+                  title="Send backward (Z-Index -1)"
+                  onClick={() => onChangeZIndexEmbed?.(embed.id, -1)}
+                  className="p-1 rounded-md text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+                >
+                  <ArrowDown size={13} />
+                </button>
+
+                {/* Lock / Unlock */}
+                <button
+                  type="button"
+                  title={embed.isLocked ? "Unlock embed" : "Lock embed position"}
+                  onClick={() => onToggleLockEmbed?.(embed.id)}
+                  className={`p-1 rounded-md transition-colors cursor-pointer ${
+                    embed.isLocked ? "text-amber-400 bg-amber-500/15" : "text-neutral-300 hover:text-white hover:bg-neutral-800"
+                  }`}
+                >
+                  {embed.isLocked ? <Lock size={13} /> : <Unlock size={13} />}
+                </button>
+
+                {/* Compact Inspector Toggle */}
+                <button
+                  type="button"
+                  title="Dimensions & Quick Presets"
+                  onClick={() => setShowInspectorEmbedId(showInspectorEmbedId === embed.id ? null : embed.id)}
+                  className={`p-1 rounded-md transition-colors cursor-pointer ${
+                    showInspectorEmbedId === embed.id ? "text-cyan-400 bg-cyan-500/15" : "text-neutral-300 hover:text-white hover:bg-neutral-800"
+                  }`}
+                >
+                  <Sliders size={13} />
+                </button>
+
+                {/* Delete */}
+                <button
+                  type="button"
+                  title="Delete embed"
+                  onClick={() => onDeleteEmbed?.(embed.id)}
+                  className="p-1 rounded-md text-neutral-400 hover:text-rose-400 hover:bg-rose-500/15 transition-colors cursor-pointer"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            )}
+
+            {/* Compact Floating Inspector Popout */}
+            {isSelectedEmbed && showInspectorEmbedId === embed.id && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{
+                  top: currentY < 48 ? "calc(100% + 56px)" : "-102px",
+                }}
+                className="embed-inspector absolute left-1/2 -translate-x-1/2 z-50 p-2 rounded-xl bg-[#121216]/98 backdrop-blur-md border border-neutral-700/80 shadow-[0_12px_32px_rgba(0,0,0,0.7)] flex items-center gap-2 select-none text-xs pointer-events-auto"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-neutral-400 font-mono">W:</span>
+                  <input
+                    type="number"
+                    min={320}
+                    max={1600}
+                    value={Math.round(currentW)}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      if (val >= 320 && val <= 1600) {
+                        onResizeEmbed?.(embed.id, val, currentH, currentX, currentY);
+                      }
+                    }}
+                    className="w-16 px-1.5 py-0.5 rounded bg-black/80 border border-neutral-700 text-white font-mono text-xs focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-neutral-400 font-mono">H:</span>
+                  <input
+                    type="number"
+                    min={160}
+                    max={2000}
+                    value={Math.round(currentH)}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      if (val >= 160 && val <= 2000) {
+                        onResizeEmbed?.(embed.id, currentW, val, currentX, currentY);
+                      }
+                    }}
+                    className="w-16 px-1.5 py-0.5 rounded bg-black/80 border border-neutral-700 text-white font-mono text-xs focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+                <div className="px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/40 text-cyan-300 font-mono text-[10px] font-bold">
+                  {(currentW / Math.max(1, currentH)).toFixed(2)}:1
+                </div>
+                <div className="flex items-center gap-1 border-l border-neutral-800 pl-2">
+                  {[480, 580, 760, 860].map((pw) => (
+                    <button
+                      key={pw}
+                      type="button"
+                      onClick={() => onResizeEmbed?.(embed.id, pw, currentH, currentX, currentY)}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono border cursor-pointer ${
+                        Math.round(currentW) === pw
+                          ? "bg-amber-400 text-black border-amber-400 font-bold"
+                          : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-white"
+                      }`}
+                    >
+                      {pw}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* 8-Point Figma / Photoshop Resize Handles */}
             {isSelectedEmbed && (
               <>
                 {/* 4 Corner Handles */}
                 <div
-                  onPointerDown={(e) => handleResizePointerDown(e, embed.id, "tl", currentW, currentH)}
-                  title="Resize (NW)"
-                  className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-amber-500 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-nwse-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
+                  onPointerDown={(e) => handleResizePointerDown(e, embed.id, "tl", currentW, currentH, currentX, currentY)}
+                  title="Resize Corner (NW) - Hold Shift to preserve aspect ratio, Alt for symmetric scaling"
+                  className="resize-handle absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-amber-500 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-nwse-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
                 />
                 <div
-                  onPointerDown={(e) => handleResizePointerDown(e, embed.id, "tr", currentW, currentH)}
-                  title="Resize (NE)"
-                  className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-amber-500 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-nesw-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
+                  onPointerDown={(e) => handleResizePointerDown(e, embed.id, "tr", currentW, currentH, currentX, currentY)}
+                  title="Resize Corner (NE) - Hold Shift to preserve aspect ratio, Alt for symmetric scaling"
+                  className="resize-handle absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-amber-500 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-nesw-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
                 />
                 <div
-                  onPointerDown={(e) => handleResizePointerDown(e, embed.id, "bl", currentW, currentH)}
-                  title="Resize (SW)"
-                  className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-amber-500 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-nesw-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
+                  onPointerDown={(e) => handleResizePointerDown(e, embed.id, "bl", currentW, currentH, currentX, currentY)}
+                  title="Resize Corner (SW) - Hold Shift to preserve aspect ratio, Alt for symmetric scaling"
+                  className="resize-handle absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-amber-500 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-nesw-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
                 />
                 <div
-                  onPointerDown={(e) => handleResizePointerDown(e, embed.id, "br", currentW, currentH)}
-                  title="Resize (SE)"
-                  className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-amber-500 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-nwse-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
+                  onPointerDown={(e) => handleResizePointerDown(e, embed.id, "br", currentW, currentH, currentX, currentY)}
+                  title="Resize Corner (SE) - Hold Shift to preserve aspect ratio, Alt for symmetric scaling"
+                  className="resize-handle absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-amber-500 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-nwse-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
                 />
 
                 {/* 4 Edge Handles */}
                 <div
-                  onPointerDown={(e) => handleResizePointerDown(e, embed.id, "tc", currentW, currentH)}
-                  title="Resize Height (North)"
-                  className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-amber-500 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-ns-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
+                  onPointerDown={(e) => handleResizePointerDown(e, embed.id, "tc", currentW, currentH, currentX, currentY)}
+                  title="Resize Top Edge (North) - Independent: bottom remains fixed. Hold Alt for symmetric scaling."
+                  className="resize-handle absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-amber-500 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-ns-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
                 />
                 <div
-                  onPointerDown={(e) => handleResizePointerDown(e, embed.id, "bc", currentW, currentH)}
-                  title="Resize Height (South)"
-                  className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-amber-500 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-ns-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
+                  onPointerDown={(e) => handleResizePointerDown(e, embed.id, "bc", currentW, currentH, currentX, currentY)}
+                  title="Resize Bottom Edge (South) - Independent: top remains fixed. Hold Alt for symmetric scaling."
+                  className="resize-handle absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-amber-500 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-ns-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
                 />
                 <div
-                  onPointerDown={(e) => handleResizePointerDown(e, embed.id, "ml", currentW, currentH)}
-                  title="Resize Width (West)"
-                  className="absolute top-1/2 -left-1.5 -translate-y-1/2 w-3 h-3 bg-white border-2 border-amber-500 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-ew-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
+                  onPointerDown={(e) => handleResizePointerDown(e, embed.id, "ml", currentW, currentH, currentX, currentY)}
+                  title="Resize Left Edge (West) - Hold Alt for symmetric scaling"
+                  className="resize-handle absolute top-1/2 -left-1.5 -translate-y-1/2 w-3 h-3 bg-white border-2 border-amber-500 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-ew-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
                 />
                 <div
-                  onPointerDown={(e) => handleResizePointerDown(e, embed.id, "mr", currentW, currentH)}
-                  title="Resize Width (East)"
-                  className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 bg-white border-2 border-amber-500 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-ew-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
+                  onPointerDown={(e) => handleResizePointerDown(e, embed.id, "mr", currentW, currentH, currentX, currentY)}
+                  title="Resize Right Edge (East) - Hold Alt for symmetric scaling"
+                  className="resize-handle absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 bg-white border-2 border-amber-500 rounded-[2px] shadow-[0_1px_4px_rgba(0,0,0,0.6)] cursor-ew-resize hover:scale-125 transition-transform z-40 pointer-events-auto"
                 />
 
                 {/* Floating Dimension & Aspect Ratio Tag */}
@@ -1170,7 +1524,12 @@ export function CanvasObjectRenderer({
                   <span>{(currentW / Math.max(1, currentH)).toFixed(2)}:1</span>
                   {resizingEmbed?.isShiftPressed && (
                     <span className="bg-amber-500/20 text-amber-400 px-1 rounded text-[8px] uppercase">
-                      SHIFT LOCKED
+                      SHIFT: ASPECT LOCKED
+                    </span>
+                  )}
+                  {resizingEmbed?.isAltPressed && (
+                    <span className="bg-cyan-500/20 text-cyan-400 px-1 rounded text-[8px] uppercase">
+                      ALT: SYMMETRIC
                     </span>
                   )}
                 </div>
@@ -1182,7 +1541,7 @@ export function CanvasObjectRenderer({
               <div className="flex items-center justify-between text-[10px] font-mono text-neutral-400 border-b border-neutral-800/80 pb-2 select-none">
                 <span className="font-bold text-neutral-300 uppercase tracking-wider">{embed.title}</span>
                 <span className="text-[9px] text-neutral-500">
-                  {Math.round(embed.transform.width)} × {Math.round(embed.transform.height)}
+                  {Math.round(currentW)} × {Math.round(currentH)} px (X:{Math.round(currentX)} Y:{Math.round(currentY)})
                 </span>
               </div>
             )}

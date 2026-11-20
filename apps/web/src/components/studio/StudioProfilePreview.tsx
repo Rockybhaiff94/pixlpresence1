@@ -66,7 +66,11 @@ interface StudioProfilePreviewProps {
   footerSlot?: React.ReactNode;
   zoom?: number;
   onUpdateCanvas?: (updater: (prev: any) => any) => void;
-  onResizeEmbed?: (embedId: string, width: number, height: number) => void;
+  onResizeEmbed?: (embedId: string, width: number, height: number, x?: number, y?: number) => void;
+  onDuplicateEmbed?: (embedId: string) => void;
+  onDeleteEmbed?: (embedId: string) => void;
+  onToggleLockEmbed?: (embedId: string) => void;
+  onChangeZIndexEmbed?: (embedId: string, delta: number) => void;
   updateConfig?: (updater: (prev: ProfileDesignConfig) => ProfileDesignConfig) => void;
 }
 
@@ -85,6 +89,10 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
   zoom = 100,
   onUpdateCanvas,
   onResizeEmbed,
+  onDuplicateEmbed,
+  onDeleteEmbed,
+  onToggleLockEmbed,
+  onChangeZIndexEmbed,
   updateConfig,
 }) => {
   const isPremiumUser = Boolean(isPremium || data.isPremium);
@@ -102,9 +110,9 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
     layers,
   } = config;
 
-  const handleResizeEmbed = (embedId: string, width: number, height: number) => {
+  const handleResizeEmbed = (embedId: string, width: number, height: number, x?: number, y?: number) => {
     if (onResizeEmbed) {
-      onResizeEmbed(embedId, width, height);
+      onResizeEmbed(embedId, width, height, x, y);
       return;
     }
     if (onUpdateCanvas) {
@@ -117,6 +125,8 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
                   ...em.transform,
                   width,
                   height,
+                  ...(x !== undefined ? { x } : {}),
+                  ...(y !== undefined ? { y } : {}),
                 },
               }
             : em
@@ -137,6 +147,8 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
                   ...em.transform,
                   width,
                   height,
+                  ...(x !== undefined ? { x } : {}),
+                  ...(y !== undefined ? { y } : {}),
                 },
               }
             : em
@@ -148,6 +160,159 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
           ...(updatedEmbeds ? { canvas: { ...prev.canvas!, embeds: updatedEmbeds } } : {}),
         };
       });
+    }
+  };
+
+  const handleDuplicateEmbed = (embedId: string) => {
+    if (onDuplicateEmbed) {
+      onDuplicateEmbed(embedId);
+      return;
+    }
+    if (onUpdateCanvas) {
+      onUpdateCanvas((prev: any) => {
+        const target = prev.embeds?.find((em: any) => em.id === embedId);
+        if (!target) return prev;
+        const newEmbedId = `embed_${Date.now()}`;
+        const newChildren: any[] = [];
+        prev.elements?.filter((el: any) => el.parentEmbedId === embedId).forEach((child: any) => {
+          newChildren.push({
+            ...child,
+            id: `${child.type}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            parentEmbedId: newEmbedId,
+            transform: { ...child.transform, x: (child.transform.x || 0) + 20, y: (child.transform.y || 0) + 20 },
+          });
+        });
+        const clonedEmbed = {
+          ...target,
+          id: newEmbedId,
+          title: `${target.title} (Copy)`,
+          transform: {
+            ...target.transform,
+            x: (target.transform.x || 0) + 24,
+            y: (target.transform.y || 0) + 24,
+          },
+          childrenIds: newChildren.map((c: any) => c.id),
+        };
+        return {
+          ...prev,
+          embeds: [...prev.embeds, clonedEmbed],
+          elements: [...prev.elements, ...newChildren],
+          selectedId: newEmbedId,
+        };
+      });
+    }
+    if (updateConfig) {
+      updateConfig((prev) => {
+        const target = prev.canvas?.embeds?.find((em) => em.id === embedId);
+        if (!target) return prev;
+        const newEmbedId = `embed_${Date.now()}`;
+        const newChildren: any[] = [];
+        prev.canvas?.elements?.filter((el) => el.parentEmbedId === embedId).forEach((child) => {
+          newChildren.push({
+            ...child,
+            id: `${child.type}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            parentEmbedId: newEmbedId,
+            transform: { ...child.transform, x: (child.transform.x || 0) + 20, y: (child.transform.y || 0) + 20 },
+          });
+        });
+        const clonedEmbed = {
+          ...target,
+          id: newEmbedId,
+          title: `${target.title} (Copy)`,
+          transform: {
+            ...target.transform,
+            x: (target.transform.x || 0) + 24,
+            y: (target.transform.y || 0) + 24,
+          },
+          childrenIds: newChildren.map((c) => c.id),
+        };
+        return {
+          ...prev,
+          canvas: {
+            ...prev.canvas!,
+            embeds: [...(prev.canvas?.embeds || []), clonedEmbed],
+            elements: [...(prev.canvas?.elements || []), ...newChildren],
+          },
+        };
+      });
+    }
+  };
+
+  const handleDeleteEmbed = (embedId: string) => {
+    if (onDeleteEmbed) {
+      onDeleteEmbed(embedId);
+      return;
+    }
+    if (onUpdateCanvas) {
+      onUpdateCanvas((prev: any) => ({
+        ...prev,
+        embeds: prev.embeds?.filter((em: any) => em.id !== embedId),
+        elements: prev.elements?.filter((el: any) => el.parentEmbedId !== embedId),
+        selectedId: null,
+      }));
+    }
+    if (updateConfig) {
+      updateConfig((prev) => ({
+        ...prev,
+        canvas: {
+          ...prev.canvas!,
+          embeds: prev.canvas?.embeds?.filter((em) => em.id !== embedId) || [],
+          elements: prev.canvas?.elements?.filter((el) => el.parentEmbedId !== embedId) || [],
+        },
+      }));
+    }
+    onSelectElement?.(null);
+  };
+
+  const handleToggleLockEmbed = (embedId: string) => {
+    if (onToggleLockEmbed) {
+      onToggleLockEmbed(embedId);
+      return;
+    }
+    if (onUpdateCanvas) {
+      onUpdateCanvas((prev: any) => ({
+        ...prev,
+        embeds: prev.embeds?.map((em: any) =>
+          em.id === embedId ? { ...em, isLocked: !em.isLocked, transform: { ...em.transform, isLocked: !em.isLocked } } : em
+        ),
+      }));
+    }
+    if (updateConfig) {
+      updateConfig((prev) => ({
+        ...prev,
+        canvas: {
+          ...prev.canvas!,
+          embeds: prev.canvas?.embeds?.map((em) =>
+            em.id === embedId ? { ...em, isLocked: !em.isLocked, transform: { ...em.transform, isLocked: !em.isLocked } } : em
+          ) || [],
+        },
+      }));
+    }
+  };
+
+  const handleChangeZIndexEmbed = (embedId: string, delta: number) => {
+    if (onChangeZIndexEmbed) {
+      onChangeZIndexEmbed(embedId, delta);
+      return;
+    }
+    if (onUpdateCanvas) {
+      onUpdateCanvas((prev: any) => ({
+        ...prev,
+        embeds: prev.embeds?.map((em: any) =>
+          em.id === embedId ? { ...em, transform: { ...em.transform, zIndex: Math.max(1, (em.transform.zIndex || 1) + delta) } } : em
+        ),
+      }));
+    }
+    if (updateConfig) {
+      updateConfig((prev) => ({
+        ...prev,
+        canvas: {
+          ...prev.canvas!,
+          embeds: prev.canvas?.embeds?.map((em) =>
+            em.id === embedId ? { ...em, transform: { ...em.transform, zIndex: Math.max(1, (em.transform.zIndex || 1) + delta) } } : em
+          ) || [],
+        },
+      }));
     }
   };
 
@@ -367,6 +532,10 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
           onUpdateElementProps={onUpdateElementProps}
           zoom={zoom}
           onResizeEmbed={handleResizeEmbed}
+          onDuplicateEmbed={handleDuplicateEmbed}
+          onDeleteEmbed={handleDeleteEmbed}
+          onToggleLockEmbed={handleToggleLockEmbed}
+          onChangeZIndexEmbed={handleChangeZIndexEmbed}
         />
       ) : (
         /* Main Container Card Fallback */
