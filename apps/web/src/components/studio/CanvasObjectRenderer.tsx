@@ -62,6 +62,7 @@ interface CanvasObjectRendererProps {
   onResizeEmbed?: (embedId: string, width: number, height: number, x?: number, y?: number) => void;
   onDuplicateEmbed?: (embedId: string) => void;
   onDeleteEmbed?: (embedId: string) => void;
+  onDeleteElement?: (elementId: string) => void;
   onToggleLockEmbed?: (embedId: string) => void;
   onToggleHideEmbed?: (embedId: string) => void;
   onChangeZIndexEmbed?: (embedId: string, delta: number) => void;
@@ -87,6 +88,7 @@ export function CanvasObjectRenderer({
   onResizeEmbed,
   onDuplicateEmbed,
   onDeleteEmbed,
+  onDeleteElement,
   onToggleLockEmbed,
   onToggleHideEmbed,
   onChangeZIndexEmbed,
@@ -108,10 +110,17 @@ export function CanvasObjectRenderer({
   const [contentMenuEmbedId, setContentMenuEmbedId] = React.useState<string | null>(null);
   const [advancedPanelEmbedId, setAdvancedPanelEmbedId] = React.useState<string | null>(null);
 
-  // Global Escape key handler
+  // Global Keyboard Navigation (Escape, Arrow Nudge, Delete)
   React.useEffect(() => {
     if (!isInteractive) return;
     const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const isInputActive =
+        activeEl &&
+        (activeEl.tagName === "INPUT" ||
+          activeEl.tagName === "TEXTAREA" ||
+          (activeEl as HTMLElement).isContentEditable);
+
       if (e.key === "Escape") {
         if (activeModalTarget) {
           setActiveModalTarget(null);
@@ -134,7 +143,71 @@ export function CanvasObjectRenderer({
           return;
         }
       }
+
+      // Do not nudge or delete if user is typing in an input/textarea
+      if (isInputActive || inlineEditingId) return;
+
+      // Nudge with Arrow keys when an embed or element is selected
+      if (
+        selectedId &&
+        (e.key === "ArrowLeft" ||
+          e.key === "ArrowRight" ||
+          e.key === "ArrowUp" ||
+          e.key === "ArrowDown")
+      ) {
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        const deltaX = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+        const deltaY = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+
+        const targetEmbed = embeds.find((em) => em.id === selectedId);
+        if (targetEmbed && onResizeEmbed) {
+          const newX = (targetEmbed.transform.x || 0) + deltaX;
+          const newY = (targetEmbed.transform.y || 0) + deltaY;
+          onResizeEmbed(
+            targetEmbed.id,
+            targetEmbed.transform.width,
+            targetEmbed.transform.height,
+            newX,
+            newY
+          );
+          return;
+        }
+
+        const targetElement = elements.find((el) => el.id === selectedId);
+        if (targetElement && onUpdateElementProps) {
+          const currentTransform = targetElement.transform || { x: 0, y: 0 };
+          onUpdateElementProps(targetElement.id, {
+            transform: {
+              ...currentTransform,
+              x: (currentTransform.x || 0) + deltaX,
+              y: (currentTransform.y || 0) + deltaY,
+            },
+          });
+          return;
+        }
+      }
+
+      // Delete / Backspace key deletes selected item (if not locked)
+      if (selectedId && (e.key === "Delete" || e.key === "Backspace")) {
+        const targetEmbed = embeds.find((em) => em.id === selectedId);
+        if (targetEmbed && !targetEmbed.isLocked && targetEmbed.id !== "embed_primary") {
+          e.preventDefault();
+          onDeleteEmbed?.(targetEmbed.id);
+          onSelectElement?.(null);
+          return;
+        }
+
+        const targetElement = elements.find((el) => el.id === selectedId);
+        if (targetElement && !targetElement.isLocked) {
+          e.preventDefault();
+          onDeleteElement?.(targetElement.id);
+          onSelectElement?.(null);
+          return;
+        }
+      }
     };
+
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
@@ -144,8 +217,14 @@ export function CanvasObjectRenderer({
     advancedPanelEmbedId,
     inlineEditingId,
     selectedId,
+    embeds,
+    elements,
     onSetInlineEditingId,
     onSelectElement,
+    onResizeEmbed,
+    onDeleteEmbed,
+    onDeleteElement,
+    onUpdateElementProps,
   ]);
 
   const [resizingEmbed, setResizingEmbed] = React.useState<{
@@ -1368,7 +1447,16 @@ export function CanvasObjectRenderer({
   };
 
   return (
-    <div className="relative w-full h-full">
+    <div
+      data-studio-canvas="true"
+      onClick={(e) => {
+        if (!isInteractive) return;
+        if (e.target === e.currentTarget) {
+          onSelectElement?.(null);
+        }
+      }}
+      className="canvas-object-root relative w-full h-full min-h-[500px]"
+    >
       {/* Visual Alignment Guides */}
       {movingEmbed?.isSnappedX && (
         <div
@@ -1725,9 +1813,9 @@ export function CanvasObjectRenderer({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onOpenComponentLibrary?.(embed.id);
+                      setContentMenuEmbedId(embed.id);
                     }}
-                    className="px-3 py-1.5 rounded-lg bg-white text-black font-bold text-xs hover:bg-neutral-200 transition-colors inline-flex items-center gap-1.5"
+                    className="px-3 py-1.5 rounded-lg bg-white text-black font-bold text-xs hover:bg-neutral-200 transition-colors inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <Plus size={12} /> Add First Element
                   </button>

@@ -797,6 +797,7 @@ export const DEFAULT_DESIGN_CONFIG: ProfileDesignConfig = {
     { id: "buttons", type: "buttons", label: "Action Buttons", visible: true, locked: false },
     { id: "badges", type: "badges", label: "Custom Elements / Badges", visible: true, locked: false },
   ],
+  canvas: createDefaultCanvasState(),
 };
 
 // ==========================================

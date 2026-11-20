@@ -256,6 +256,7 @@ export default function CustomizePage() {
     const storedPrefs = getStoredStudioPreferences();
     return {
       ...DEFAULT_DESIGN_CONFIG,
+      canvas: DEFAULT_DESIGN_CONFIG.canvas || createDefaultCanvasState(DEFAULT_DESIGN_CONFIG),
       advanced: {
         ...DEFAULT_DESIGN_CONFIG.advanced,
         ...storedPrefs,
@@ -984,7 +985,9 @@ export default function CustomizePage() {
                     ...(parsed.advanced || {}),
                     ...storedPrefs,
                   },
-                  canvas: parsed.canvas || DEFAULT_DESIGN_CONFIG.canvas,
+                  canvas: (parsed.canvas && Array.isArray(parsed.canvas.embeds) && parsed.canvas.embeds.length > 0)
+                    ? parsed.canvas
+                    : createDefaultCanvasState(parsed),
                   customCss: p.customCss || parsed.customCss || "",
                 };
                 setConfig(merged);

@@ -264,6 +264,34 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
     onSelectElement?.(null);
   };
 
+  const handleDeleteElement = (elementId: string) => {
+    if (onUpdateCanvas) {
+      onUpdateCanvas((prev: any) => ({
+        ...prev,
+        elements: prev.elements?.filter((el: any) => el.id !== elementId),
+        embeds: prev.embeds?.map((em: any) => ({
+          ...em,
+          childrenIds: em.childrenIds?.filter((cid: string) => cid !== elementId),
+        })),
+        selectedId: null,
+      }));
+    }
+    if (updateConfig) {
+      updateConfig((prev) => ({
+        ...prev,
+        canvas: {
+          ...prev.canvas!,
+          elements: prev.canvas?.elements?.filter((el) => el.id !== elementId) || [],
+          embeds: prev.canvas?.embeds?.map((em) => ({
+            ...em,
+            childrenIds: em.childrenIds?.filter((cid) => cid !== elementId),
+          })) || [],
+        },
+      }));
+    }
+    onSelectElement?.(null);
+  };
+
   const handleToggleLockEmbed = (embedId: string) => {
     if (onToggleLockEmbed) {
       onToggleLockEmbed(embedId);
@@ -663,30 +691,37 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
       </div>
 
       {/* Dynamic Profile Rendering: Multi-Embed Canvas Mode vs Structured Mode */}
-      {config.canvas && config.canvas.embeds && config.canvas.embeds.length > 0 ? (
-        <CanvasObjectRenderer
-          embeds={config.canvas.embeds}
-          elements={config.canvas.elements}
-          config={config}
-          data={data}
-          isInteractive={isInteractiveEditor}
-          isPremium={isPremiumUser}
-          selectedId={activeElementId}
-          inlineEditingId={inlineEditingId}
-          onSelectElement={onSelectElement}
-          onSetInlineEditingId={onSetInlineEditingId}
-          onUpdateElementProps={onUpdateElementProps}
-          zoom={zoom}
-          onResizeEmbed={handleResizeEmbed}
-          onDuplicateEmbed={handleDuplicateEmbed}
-          onDeleteEmbed={handleDeleteEmbed}
-          onToggleLockEmbed={handleToggleLockEmbed}
-          onToggleHideEmbed={handleToggleHideEmbed}
-          onChangeZIndexEmbed={handleChangeZIndexEmbed}
-          onInsertElement={handleInsertElement}
-          onContextualSave={handleContextualSave}
-        />
-      ) : (
+      {isInteractiveEditor || (config.canvas && config.canvas.embeds && config.canvas.embeds.length > 0) ? (() => {
+        const activeCanvas = (config.canvas && config.canvas.embeds && config.canvas.embeds.length > 0)
+          ? config.canvas
+          : createDefaultCanvasState(config);
+
+        return (
+          <CanvasObjectRenderer
+            embeds={activeCanvas.embeds}
+            elements={activeCanvas.elements}
+            config={config}
+            data={data}
+            isInteractive={isInteractiveEditor}
+            isPremium={isPremiumUser}
+            selectedId={activeElementId}
+            inlineEditingId={inlineEditingId}
+            onSelectElement={onSelectElement}
+            onSetInlineEditingId={onSetInlineEditingId}
+            onUpdateElementProps={onUpdateElementProps}
+            zoom={zoom}
+            onResizeEmbed={handleResizeEmbed}
+            onDuplicateEmbed={handleDuplicateEmbed}
+            onDeleteEmbed={handleDeleteEmbed}
+            onDeleteElement={handleDeleteElement}
+            onToggleLockEmbed={handleToggleLockEmbed}
+            onToggleHideEmbed={handleToggleHideEmbed}
+            onChangeZIndexEmbed={handleChangeZIndexEmbed}
+            onInsertElement={handleInsertElement}
+            onContextualSave={handleContextualSave}
+          />
+        );
+      })() : (
         /* Main Container Card Fallback */
         <motion.div
           layout

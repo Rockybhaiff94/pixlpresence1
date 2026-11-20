@@ -5,7 +5,6 @@ import { DeviceMode } from "./StudioTopBar";
 import { ProfileDesignConfig, StudioTab, WorkspaceTransparencyMode, CanvasEngineState, DEFAULT_GRID_SETTINGS } from "@/types/studio";
 import { StudioProfilePreview, PreviewData } from "./StudioProfilePreview";
 import { FloatingPreviewToolbar } from "./FloatingPreviewToolbar";
-import { CanvasEngine } from "./CanvasEngine";
 import { PanelLeftOpen } from "lucide-react";
 
 interface StudioRightPreviewCanvasProps {
@@ -231,66 +230,22 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
               </div>
             )}
 
-            {/* Live Profile Engine (Multi-Embed Canvas or Classic Structured) */}
+            {/* Live Profile Engine (Direct Interactive Canvas with StudioProfilePreview & CanvasObjectRenderer) */}
             <div className={`w-full h-full min-h-full flex-1 flex flex-col ${showWireframe ? "wireframe-debug" : ""}`}>
-              {config.canvas && onUpdateCanvas ? (
-                <CanvasEngine
-                  canvasState={config.canvas}
-                  onUpdateCanvas={onUpdateCanvas}
-                  zoom={zoom}
-                  isInteractive={true}
-                  modifierKey={config.advanced?.precisionModifier || "Alt"}
-                  scalingMode={config.advanced?.embedScaling || "hybrid"}
-                  gridSettings={config.advanced?.gridSettings || DEFAULT_GRID_SETTINGS}
-                  isPremium={isPremium}
-                  themeAccentColor={config.identity?.titleColor || "#ffffff"}
-                  activeLinks={previewData.links}
-                  onOpenSocialSelector={onOpenSocialSelector}
-                  onOpenRpcCustomizer={onOpenRpcCustomizer}
-                  onUndo={onUndo}
-                  onRedo={onRedo}
-                  onSelectElement={(id) => {
-                    onSelectCanvasId?.(id);
-                    if (id) {
-                      // Map to category tab if recognized
-                      if (id.startsWith("avatar")) onSelectCategory("avatar");
-                      else if (id.startsWith("username") || id.startsWith("bio") || id.startsWith("tagline")) onSelectCategory("identity");
-                      else if (id.startsWith("rpc")) onSelectCategory("rpc");
-                      else if (id.startsWith("button") || id.startsWith("socials")) onSelectCategory("buttons");
-                      else if (id.startsWith("embed")) onSelectCategory("layout");
-                    }
-                  }}
-                >
-                  <StudioProfilePreview
-                    config={config}
-                    data={previewData}
-                    isInteractiveEditor={true}
-                    activeElementId={selectedCanvasId || activeCategory}
-                    zoom={zoom}
-                    onUpdateCanvas={onUpdateCanvas}
-                    updateConfig={updateConfig}
-                    onSelectElement={(id) => {
-                      onSelectCanvasId?.(id);
-                      if (id) handleSelectElement(id);
-                    }}
-                    scopeId="studio-live-canvas"
-                  />
-                </CanvasEngine>
-              ) : (
-                <StudioProfilePreview
-                  config={config}
-                  data={previewData}
-                  isInteractiveEditor={true}
-                  activeElementId={selectedCanvasId || activeCategory}
-                  zoom={zoom}
-                  updateConfig={updateConfig}
-                  onSelectElement={(id) => {
-                    onSelectCanvasId?.(id);
-                    if (id) handleSelectElement(id);
-                  }}
-                  scopeId="studio-live-canvas"
-                />
-              )}
+              <StudioProfilePreview
+                config={config}
+                data={previewData}
+                isInteractiveEditor={true}
+                activeElementId={selectedCanvasId ?? null}
+                zoom={zoom}
+                onUpdateCanvas={onUpdateCanvas}
+                updateConfig={updateConfig}
+                onSelectElement={(id) => {
+                  onSelectCanvasId?.(id);
+                  if (id) handleSelectElement(id);
+                }}
+                scopeId="studio-live-canvas"
+              />
             </div>
 
             {/* Mobile Home Bar */}
