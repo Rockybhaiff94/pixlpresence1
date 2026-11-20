@@ -1,6 +1,6 @@
-<#
+﻿<#
 .SYNOPSIS
-    PixelsRPC CLI — Native Vencord & Discord Rich Presence Manager for PIXEL.GG
+    PixelsRPC CLI - Native Vencord & Discord Rich Presence Manager for PIXEL.GG
 .DESCRIPTION
     Automates downloading, building, injecting, repairing, rolling back,
     and uninstalling Vencord with the PixelsRPC plugin natively integrated.
@@ -43,13 +43,10 @@ $script:TargetDiscordClient = $null
 # ANSI Styling & Colors
 function Write-BrandedHeader {
     Write-Host ""
-    Write-Host "  ██████╗ ██╗██╗  ██╗███████╗██╗     ███████╗██████╗ ██████╗  ██████╗ " -ForegroundColor Red
-    Write-Host "  ██╔══██╗██║╚██╗██╔╝██╔════╝██║     ██╔════╝██╔══██╗██╔══██╗██╔════╝ " -ForegroundColor Red
-    Write-Host "  ██████╔╝██║ ╚███╔╝ █████╗  ██║     ███████╗██████╔╝██████╔╝██║      " -ForegroundColor White
-    Write-Host "  ██╔═══╝ ██║ ██╔██╗ ██╔══╝  ██║     ╚════██║██╔══██╗██╔═══╝ ██║      " -ForegroundColor White
-    Write-Host "  ██║     ██║██╔╝ ██╗███████╗███████╗███████║██║  ██║██║     ╚██████╗ " -ForegroundColor DarkGray
-    Write-Host "  ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝      ╚═════╝ " -ForegroundColor DarkGray
-    Write-Host "  PIXEL.GG STUDIO OS 2.5 // NATIVE VENCORD RICH PRESENCE INSTALLER" -ForegroundColor DarkGray
+    Write-Host "  ================================================================" -ForegroundColor Red
+    Write-Host "   PIXEL.GG STUDIO // PIXELSRPC VENCORD RICH PRESENCE INSTALLER   " -ForegroundColor White
+    Write-Host "  ================================================================" -ForegroundColor Red
+    Write-Host "  Version: $PIXEL_VERSION | System: Windows x64 | Engine: Vencord" -ForegroundColor DarkGray
     Write-Host "  ----------------------------------------------------------------" -ForegroundColor DarkGray
     Write-Host ""
 }
@@ -72,9 +69,9 @@ function Write-Err([string]$msg) {
 
 function Write-Preflight([string]$name, [string]$status, [string]$detail = "") {
     switch ($status) {
-        "pass" { Write-Host "  [✓] $name" -ForegroundColor Green }
+        "pass" { Write-Host "  [+] $name" -ForegroundColor Green }
         "fail" {
-            Write-Host "  [✗] $name" -ForegroundColor Red
+            Write-Host "  [x] $name" -ForegroundColor Red
             if ($detail) {
                 Write-Host ""
                 Write-Host "      Reason:" -ForegroundColor DarkRed
@@ -700,7 +697,7 @@ function Show-Status {
                 } catch { }
             }
             $statusText = if ($isPatched) { "Vencord Patched [Active]" } else { "Unpatched / Stock" }
-            Write-Host "Discord Client : $($d.Name) ($($d.Version)) — $statusText" -ForegroundColor White
+            Write-Host "Discord Client : $($d.Name) ($($d.Version)) - $statusText" -ForegroundColor White
         }
     }
 

@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    PixelsRPC CLI — Native Vencord & Discord Rich Presence Manager for PIXEL.GG
+    PixelsRPC CLI - Native Vencord & Discord Rich Presence Manager for PIXEL.GG
 .DESCRIPTION
     Automates downloading, building, injecting, repairing, rolling back,
     and uninstalling Vencord with the PixelsRPC plugin natively integrated.
@@ -43,13 +43,10 @@ $script:TargetDiscordClient = $null
 # ANSI Styling & Colors
 function Write-BrandedHeader {
     Write-Host ""
-    Write-Host "  ██████╗ ██╗██╗  ██╗███████╗██╗     ███████╗██████╗ ██████╗  ██████╗ " -ForegroundColor Red
-    Write-Host "  ██╔══██╗██║╚██╗██╔╝██╔════╝██║     ██╔════╝██╔══██╗██╔══██╗██╔════╝ " -ForegroundColor Red
-    Write-Host "  ██████╔╝██║ ╚███╔╝ █████╗  ██║     ███████╗██████╔╝██████╔╝██║      " -ForegroundColor White
-    Write-Host "  ██╔═══╝ ██║ ██╔██╗ ██╔══╝  ██║     ╚════██║██╔══██╗██╔═══╝ ██║      " -ForegroundColor White
-    Write-Host "  ██║     ██║██╔╝ ██╗███████╗███████╗███████║██║  ██║██║     ╚██████╗ " -ForegroundColor DarkGray
-    Write-Host "  ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝      ╚═════╝ " -ForegroundColor DarkGray
-    Write-Host "  PIXEL.GG STUDIO OS 2.5 // NATIVE VENCORD RICH PRESENCE INSTALLER" -ForegroundColor DarkGray
+    Write-Host "  ================================================================" -ForegroundColor Red
+    Write-Host "   PIXEL.GG STUDIO // PIXELSRPC VENCORD RICH PRESENCE INSTALLER   " -ForegroundColor White
+    Write-Host "  ================================================================" -ForegroundColor Red
+    Write-Host "  Version: $PIXEL_VERSION | System: Windows x64 | Engine: Vencord" -ForegroundColor DarkGray
     Write-Host "  ----------------------------------------------------------------" -ForegroundColor DarkGray
     Write-Host ""
 }
@@ -72,9 +69,9 @@ function Write-Err([string]$msg) {
 
 function Write-Preflight([string]$name, [string]$status, [string]$detail = "") {
     switch ($status) {
-        "pass" { Write-Host "  [✓] $name" -ForegroundColor Green }
+        "pass" { Write-Host "  [+] $name" -ForegroundColor Green }
         "fail" {
-            Write-Host "  [✗] $name" -ForegroundColor Red
+            Write-Host "  [x] $name" -ForegroundColor Red
             if ($detail) {
                 Write-Host ""
                 Write-Host "      Reason:" -ForegroundColor DarkRed
@@ -331,6 +328,7 @@ function Integrate-PixelsRpcPlugin {
             "index.ts",
             "settings.ts",
             "types.ts",
+            "native.ts",
             "styles.css",
             "components/StatusCard.tsx",
             "components/ActionControls.tsx",
@@ -378,6 +376,27 @@ function Integrate-PixelsRpcPlugin {
         exit 1
     }
     Write-Preflight "Plugin imports validated" "pass"
+
+    # Whitelist PixelsRPC domains in Vencord Content Security Policy (CSP)
+    $cspPath = Join-Path $VENCORD_DIR "src\main\csp\index.ts"
+    if (Test-Path $cspPath) {
+        $cspText = Get-Content $cspPath -Raw
+        if ($cspText -notmatch "pixlpresence1-web\.vercel\.app") {
+            $policySnippet = @'
+    // PIXEL.GG & PixelsRPC endpoints (Web dashboard, API & assets)
+    "pixlpresence1-web.vercel.app": ImageAndCssSrc,
+    "pixelgg-api.onrender.com": ImageAndCssSrc,
+    "*.pixel.gg": ImageAndCssSrc,
+    "pixel.gg": ImageAndCssSrc,
+};
+'@
+            $cspText = $cspText -replace '\};\s*$', $policySnippet
+            Set-Content -Path $cspPath -Value $cspText -Encoding UTF8
+            Write-Preflight "Vencord CSP whitelisted for PIXEL.GG" "pass"
+        } else {
+            Write-Preflight "Vencord CSP whitelisted for PIXEL.GG" "pass"
+        }
+    }
 }
 
 # 7. Install Dependencies and Build Vencord with PixelsRPC
@@ -678,7 +697,7 @@ function Show-Status {
                 } catch { }
             }
             $statusText = if ($isPatched) { "Vencord Patched [Active]" } else { "Unpatched / Stock" }
-            Write-Host "Discord Client : $($d.Name) ($($d.Version)) — $statusText" -ForegroundColor White
+            Write-Host "Discord Client : $($d.Name) ($($d.Version)) - $statusText" -ForegroundColor White
         }
     }
 

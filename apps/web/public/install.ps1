@@ -36,14 +36,20 @@ try {
     Invoke-RestMethod -Uri $RemoteCmdUrl -OutFile $CmdDest -TimeoutSec 10
     $downloaded = $true
 } catch {
-    Write-Host " [!] Remote fetch timed out, checking local workspace payload..." -ForegroundColor Yellow
-    if ($PSScriptRoot) {
-        $LocalScript = Join-Path $PSScriptRoot "pixelsrpc.ps1"
-        $LocalCmd = Join-Path $PSScriptRoot "pixelsrpc.cmd"
-        if (Test-Path $LocalScript) {
-            Copy-Item -Path $LocalScript -Destination $ScriptDest -Force
-            if (Test-Path $LocalCmd) { Copy-Item -Path $LocalCmd -Destination $CmdDest -Force }
-            $downloaded = $true
+    try {
+        Invoke-RestMethod -Uri "https://pixlpresence1-web.vercel.app/pixelsrpc.ps1" -OutFile $ScriptDest -TimeoutSec 10
+        Invoke-RestMethod -Uri "https://pixlpresence1-web.vercel.app/pixelsrpc.cmd" -OutFile $CmdDest -TimeoutSec 10
+        $downloaded = $true
+    } catch {
+        Write-Host " [!] Remote fetch timed out, checking local workspace payload..." -ForegroundColor Yellow
+        if ($PSScriptRoot) {
+            $LocalScript = Join-Path $PSScriptRoot "pixelsrpc.ps1"
+            $LocalCmd = Join-Path $PSScriptRoot "pixelsrpc.cmd"
+            if (Test-Path $LocalScript) {
+                Copy-Item -Path $LocalScript -Destination $ScriptDest -Force
+                if (Test-Path $LocalCmd) { Copy-Item -Path $LocalCmd -Destination $CmdDest -Force }
+                $downloaded = $true
+            }
         }
     }
 }
