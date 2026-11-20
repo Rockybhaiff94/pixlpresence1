@@ -52,3 +52,49 @@ export function validateCss(css: string): { valid: boolean; error?: string } {
 
   return { valid: true };
 }
+
+/**
+ * Computes base background styling (solid, gradient, mesh, custom CSS gradient, repeat, attachment, position)
+ * for seamless full-page and canvas background synchronization.
+ */
+export function computeBaseBackgroundStyle(
+  background?: any,
+  identityTitleColor: string = "#ffffff",
+  effectsGlowColor: string = "#ffffff"
+): React.CSSProperties {
+  if (!background) {
+    return { backgroundColor: "#050505" };
+  }
+
+  const base: React.CSSProperties = {
+    backgroundColor: background.color || "#050505",
+  };
+
+  if (background.customCssGradient) {
+    base.backgroundImage = background.customCssGradient;
+  } else if (
+    background.type === "gradient" &&
+    background.gradient?.stops &&
+    background.gradient.stops.length >= 2
+  ) {
+    const stops = background.gradient.stops.map((s: any) => `${s.color} ${s.offset}%`).join(", ");
+    base.backgroundImage =
+      background.gradient.type === "radial"
+        ? `radial-gradient(circle at center, ${stops})`
+        : `linear-gradient(${background.gradient.angle || 135}deg, ${stops})`;
+  } else if (background.type === "mesh") {
+    base.backgroundImage = `radial-gradient(at 10% 20%, ${identityTitleColor}15 0px, transparent 50%), radial-gradient(at 90% 80%, ${effectsGlowColor}20 0px, transparent 50%)`;
+  }
+
+  if (background.repeat) {
+    base.backgroundRepeat = background.repeat;
+  }
+  if (background.attachment) {
+    base.backgroundAttachment = background.attachment;
+  }
+  if (background.position) {
+    base.backgroundPosition = background.position;
+  }
+
+  return base;
+}

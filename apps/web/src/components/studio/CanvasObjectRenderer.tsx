@@ -180,7 +180,9 @@ export function CanvasObjectRenderer({
 
     const baseWrapperStyle: React.CSSProperties = {
       position: "relative",
-      width: `${transform.width}px`,
+      width: el.parentEmbedId ? "100%" : `${transform.width}px`,
+      maxWidth: "100%",
+      boxSizing: "border-box",
       minHeight: `${transform.height}px`,
       transform: `rotate(${transform.rotation || 0}deg)`,
       zIndex: transform.zIndex || 2,
@@ -1031,6 +1033,50 @@ export function CanvasObjectRenderer({
         const embedElements = elements.filter((el) => el.parentEmbedId === embed.id);
         const effects = computeElementEffects(embed.style, config.identity?.titleColor || "#ffffff");
 
+        const isPrimary = embed.id === "embed_primary";
+        const hasExplicitCustomBg =
+          Boolean(embed.style?.backgroundColor) &&
+          embed.style.backgroundColor !== "rgba(10, 10, 14, 0.85)" &&
+          embed.style.backgroundColor !== "#0c0c0c" &&
+          embed.style.backgroundColor !== "rgba(12, 12, 12, 0.9)" &&
+          embed.style.backgroundColor !== "#050505";
+
+        const glassOpacity = Math.round(((config.effects?.opacity ?? 70) / 100) * 0.65 * 1000) / 1000;
+        const solidOpacity = Math.round(((config.effects?.opacity ?? 85) / 100) * 1000) / 1000;
+
+        const resolvedEmbedBg =
+          effects.background ||
+          (hasExplicitCustomBg ? embed.style.backgroundColor : undefined) ||
+          (isPrimary
+            ? (config.effects?.glassmorphism !== false
+                ? `rgba(12, 12, 16, ${glassOpacity})`
+                : `rgba(12, 12, 16, ${solidOpacity})`)
+            : (embed.style.backgroundColor || `rgba(12, 12, 16, ${glassOpacity})`));
+
+        const resolvedBackdropFilter =
+          effects.backdropFilter ||
+          (embed.style.backdropBlur ? `blur(${embed.style.backdropBlur}px)` : undefined) ||
+          (isPrimary && (config.effects?.blur ?? 16) > 0
+            ? `blur(${config.effects.blur || 16}px) saturate(180%)`
+            : undefined);
+
+        const isAutoHeight = config.layout?.autoHeight !== false;
+        const resolvedMinHeight = isThisResizing
+          ? `${resizingEmbed.currentHeight}px`
+          : (isAutoHeight
+              ? (embedElements.length === 0 ? "180px" : undefined)
+              : (config.layout?.height ? `${config.layout.height}px` : `${currentH}px`));
+
+        const resolvedWidth = isThisResizing
+          ? `${resizingEmbed.currentWidth}px`
+          : "100%";
+
+        const resolvedMaxWidth = isThisResizing
+          ? `${resizingEmbed.currentWidth}px`
+          : (isPrimary
+              ? `min(${currentW}px, 100%)`
+              : `min(${currentW}px, 100%)`);
+
         return (
           <div
             key={embed.id}
@@ -1045,23 +1091,25 @@ export function CanvasObjectRenderer({
             }}
             style={{
               position: "relative",
-              width: `${currentW}px`,
-              minHeight: `${currentH}px`,
+              width: resolvedWidth,
+              maxWidth: resolvedMaxWidth,
+              minHeight: resolvedMinHeight,
+              boxSizing: "border-box",
               margin: "0 auto 32px auto",
               transform: `rotate(${embed.transform.rotation || 0}deg)`,
-              backgroundColor: effects.background || embed.style.backgroundColor || "rgba(10, 10, 14, 0.85)",
-              border: `${embed.style.borderWidth ?? 1}px solid ${embed.style.borderColor || "#26262b"}`,
+              backgroundColor: resolvedEmbedBg,
+              border: `${embed.style.borderWidth ?? 1}px solid ${embed.style.borderColor || "rgba(255, 255, 255, 0.1)"}`,
               borderRadius: `${embed.id === "embed_primary" ? (config.discordRpc?.borderRadius ?? embed.style.borderRadius ?? 24) : (embed.style.borderRadius ?? 24)}px`,
               padding: `${embed.id === "embed_primary" ? (config.layout?.padding ?? embed.style.padding ?? 24) : (embed.style.padding ?? 24)}px`,
               boxShadow: isSelectedEmbed
                 ? "0 0 24px rgba(251, 191, 36, 0.55), inset 0 0 12px rgba(251, 191, 36, 0.15)"
                 : effects.boxShadow,
-              backdropFilter: effects.backdropFilter || (embed.style.backdropBlur ? `blur(${embed.style.backdropBlur}px)` : undefined),
+              backdropFilter: resolvedBackdropFilter,
               animation: effects.animation,
               transition: isThisResizing ? "none" : (effects.transition || "all 0.15s ease"),
               cursor: isInteractive ? "pointer" : "default",
             }}
-            className={`space-y-4 ${isSelectedEmbed
+            className={`space-y-4 w-full max-w-full ${isSelectedEmbed
                 ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-black"
                 : isInteractive
                   ? "hover:ring-1 hover:ring-white/30"

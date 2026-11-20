@@ -11,6 +11,7 @@ import { getApiBaseUrl, apiFetch } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { ProfileDesignConfig, DEFAULT_DESIGN_CONFIG } from "@/types/studio";
 import { StudioProfilePreview } from "@/components/studio/StudioProfilePreview";
+import { computeBaseBackgroundStyle } from "@/components/studio/cssUtils";
 
 interface ProfileButton {
   id: string;
@@ -266,6 +267,14 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
     return base;
   }, [designConfig, customCss, accentColor, bannerUrl, blur, opacity, roundedCorners]);
 
+  const baseBgStyle = React.useMemo(() => {
+    return computeBaseBackgroundStyle(
+      activeConfig.background,
+      activeConfig.identity?.titleColor,
+      activeConfig.effects?.glowColor
+    );
+  }, [activeConfig.background, activeConfig.identity?.titleColor, activeConfig.effects?.glowColor]);
+
   const handleEnterScreen = () => {
     setEntered(true);
     if (musicUrl && audioRef.current) {
@@ -281,9 +290,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
   return (
     <div
       className="min-h-screen text-[#ededed] font-mono relative overflow-x-hidden flex flex-col justify-between selection:bg-white selection:text-black"
-      style={{
-        backgroundColor: activeConfig.background?.color || "#050505",
-      }}
+      style={baseBgStyle}
     >
       {/* Hidden Audio Element */}
       {musicUrl && (
@@ -342,7 +349,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
       </AnimatePresence>
 
       {/* Main Profile Layout — Rendered via Studio Engine */}
-      <div className="w-full flex-1 flex flex-col items-center justify-center relative z-10">
+      <div className="w-full min-h-screen flex-1 flex flex-col items-center justify-between relative z-10">
         <StudioProfilePreview
           config={activeConfig}
           data={{

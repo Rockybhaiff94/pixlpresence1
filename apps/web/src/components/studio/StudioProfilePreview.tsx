@@ -13,7 +13,7 @@ import {
 import { motion } from "framer-motion";
 import { ProfileDesignConfig } from "@/types/studio";
 import { ensureFontLoaded } from "./fonts";
-import { scopeAndSanitizeCss } from "./cssUtils";
+import { scopeAndSanitizeCss, computeBaseBackgroundStyle } from "./cssUtils";
 import { ParticlesCanvas } from "./ParticlesCanvas";
 import { PlatformIcon } from "@/components/links/PlatformIcons";
 import { DiscordRpcCard } from "./DiscordRpcCard";
@@ -197,33 +197,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
 
   // Compute base background styling (solid, gradient, mesh, custom CSS gradient)
   const getBaseBackgroundStyle = (): React.CSSProperties => {
-    const base: React.CSSProperties = {
-      backgroundColor: background.color || "#050505",
-    };
-
-    if (background.customCssGradient) {
-      base.backgroundImage = background.customCssGradient;
-    } else if (background.type === "gradient" && background.gradient?.stops?.length >= 2) {
-      const stops = background.gradient.stops.map((s) => `${s.color} ${s.offset}%`).join(", ");
-      base.backgroundImage =
-        background.gradient.type === "radial"
-          ? `radial-gradient(circle at center, ${stops})`
-          : `linear-gradient(${background.gradient.angle || 135}deg, ${stops})`;
-    } else if (background.type === "mesh") {
-      base.backgroundImage = `radial-gradient(at 10% 20%, ${identity.titleColor}15 0px, transparent 50%), radial-gradient(at 90% 80%, ${effects.glowColor}20 0px, transparent 50%)`;
-    }
-
-    if (background.repeat) {
-      base.backgroundRepeat = background.repeat;
-    }
-    if (background.attachment) {
-      base.backgroundAttachment = background.attachment;
-    }
-    if (background.position) {
-      base.backgroundPosition = background.position;
-    }
-
-    return base;
+    return computeBaseBackgroundStyle(background, identity.titleColor, effects.glowColor);
   };
 
   const scopedCssCode = customCss ? scopeAndSanitizeCss(customCss, `.${scopeId}`) : "";
@@ -231,7 +205,11 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
   return (
     <div
       id={scopeId}
-      className={`${scopeId} relative min-h-full w-full flex flex-col items-center justify-center p-4 sm:p-8 overflow-hidden select-none transition-colors duration-300`}
+      className={`${scopeId} relative ${
+        isInteractiveEditor ? "min-h-full" : "min-h-screen"
+      } w-full flex-1 flex flex-col items-center justify-between p-4 sm:p-8 ${
+        isInteractiveEditor ? "overflow-hidden" : "overflow-x-hidden"
+      } select-none transition-colors duration-300`}
       style={{
         backgroundColor: background.color || "#050505",
         fontFamily: typography.bodyFont ? `"${typography.bodyFont}", sans-serif` : "inherit",
@@ -328,6 +306,16 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
             }}
           />
         )}
+        {background.pattern === "matrix" && (
+          <div
+            className="absolute inset-0 pointer-events-none z-[1] opacity-20"
+            style={{
+              backgroundImage:
+                "linear-gradient(rgba(34, 197, 94, 0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(34, 197, 94, 0.15) 1px, transparent 1px)",
+              backgroundSize: "16px 16px",
+            }}
+          />
+        )}
 
         {/* Ambient Glow & Lighting Effects */}
         {effects.ambientGlow && (
@@ -390,7 +378,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
             e.stopPropagation();
             onSelectElement?.("layout");
           }}
-          className={`profile-container w-full relative z-10 transition-all border shadow-2xl ${
+          className={`profile-container w-full relative z-10 transition-all border shadow-2xl box-border ${
             isInteractiveEditor && (activeElementId === "layout" || activeElementId === "embed_primary" || activeElementId === "container")
               ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-black"
               : isInteractiveEditor
@@ -398,16 +386,17 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
                 : ""
           }`}
           style={{
+            width: "100%",
             maxWidth: `${layout.maxWidth || 580}px`,
-            minHeight: layout.height ? `${layout.height}px` : undefined,
+            minHeight: layout.autoHeight === false && layout.height ? `${layout.height}px` : undefined,
             padding: `${layout.padding || 32}px`,
             gap: `${layout.gap || 24}px`,
             borderRadius: `${discordRpc.borderRadius + 8}px`,
             backgroundColor: effects.glassmorphism
-              ? `rgba(12, 12, 12, ${effects.opacity / 100})`
-              : "#0c0c0c",
-            backdropFilter: effects.blur > 0 ? `blur(${effects.blur}px)` : undefined,
-            borderColor: effects.ambientGlow ? effects.glowColor : "#242424",
+              ? `rgba(12, 12, 16, ${Math.round(((effects.opacity ?? 70) / 100) * 0.65 * 1000) / 1000})`
+              : `rgba(12, 12, 16, ${Math.round(((effects.opacity ?? 85) / 100) * 1000) / 1000})`,
+            backdropFilter: (effects.blur ?? 16) > 0 ? `blur(${effects.blur || 16}px) saturate(180%)` : undefined,
+            borderColor: effects.ambientGlow ? effects.glowColor : "rgba(255, 255, 255, 0.1)",
             boxShadow: effects.ambientGlow
               ? `0 0 35px ${effects.glowColor}25, 0 20px 40px rgba(0,0,0,0.8)`
               : "0 25px 50px -12px rgba(0, 0, 0, 0.7)",
