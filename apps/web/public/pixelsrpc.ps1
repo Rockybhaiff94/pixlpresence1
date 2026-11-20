@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     PixelsRPC CLI - Native Vencord & Discord Rich Presence Manager for PIXEL.GG
 .DESCRIPTION
@@ -28,7 +28,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 $PIXEL_VERSION = "2.5.1"
-$REPO_URL = "https://github.com/Rockybhaiff94/pixlpresence1.git"
 $VENCORD_REPO = "https://github.com/Vendicated/Vencord.git"
 $INSTALL_ROOT = Join-Path $env:LOCALAPPDATA "PixelsRPC"
 $VENCORD_DIR = Join-Path $INSTALL_ROOT "vencord"
@@ -286,7 +285,7 @@ function Sync-VencordSource {
 }
 
 # 6. Integrate and Validate PixelsRPC Plugin Source
-function Integrate-PixelsRpcPlugin {
+function Install-PixelsRpcPlugin {
     $userpluginsDir = Join-Path $VENCORD_DIR "src\userplugins"
     if (-not (Test-Path $userpluginsDir)) {
         New-Item -ItemType Directory -Path $userpluginsDir -Force | Out-Null
@@ -400,7 +399,7 @@ function Integrate-PixelsRpcPlugin {
 }
 
 # 7. Install Dependencies and Build Vencord with PixelsRPC
-function Build-VencordWithValidation {
+function Invoke-VencordBuild {
     if ($SkipBuild) {
         Write-Preflight "Build completed (skipped via -SkipBuild)" "warn"
         return
@@ -424,7 +423,8 @@ function Build-VencordWithValidation {
         } else {
             Invoke-NativeProcess "compile Vencord" { npx pnpm@12.15.0 build }
         }
-        Write-Preflight "Build completed" "pass"
+        $elapsed = [Math]::Round(((Get-Date) - $buildStartTime).TotalSeconds, 1)
+        Write-Preflight "Build completed (${elapsed}s)" "pass"
 
     } catch {
         Write-Preflight "Build completed" "fail" "$_"
@@ -483,7 +483,7 @@ function Backup-DiscordInstallation([PSCustomObject]$Target) {
 }
 
 # 9. Rollback Helper
-function Rollback-Discord([PSCustomObject]$Target, [string]$BackupPath) {
+function Restore-Discord([PSCustomObject]$Target, [string]$BackupPath) {
     if (-not $BackupPath -or -not (Test-Path $BackupPath)) {
         Write-Warn "No active backup path to restore from."
         return
@@ -500,7 +500,7 @@ function Rollback-Discord([PSCustomObject]$Target, [string]$BackupPath) {
 }
 
 # 10. Inject Vencord Using Supported Installer CLI
-function Patch-DiscordInstallation([PSCustomObject]$Target) {
+function Update-DiscordInstallation([PSCustomObject]$Target) {
     Write-Step "Preparing to patch $($Target.Name)..."
 
     # Close Discord processes before file operations
@@ -539,7 +539,7 @@ function Patch-DiscordInstallation([PSCustomObject]$Target) {
         }
     } catch {
         Write-Preflight "Installation verified" "fail" "$_"
-        Rollback-Discord $Target $script:CurrentBackupPath
+        Restore-Discord $Target $script:CurrentBackupPath
         Pop-Location
         exit 1
     } finally {
@@ -550,7 +550,7 @@ function Patch-DiscordInstallation([PSCustomObject]$Target) {
     $appAsar = Join-Path $Target.AppPath "resources\app.asar"
     if (-not (Test-Path $appAsar)) {
         Write-Preflight "Installation verified" "fail" "Target app.asar not found after patching."
-        Rollback-Discord $Target $script:CurrentBackupPath
+        Restore-Discord $Target $script:CurrentBackupPath
         exit 1
     }
 
@@ -560,12 +560,12 @@ function Patch-DiscordInstallation([PSCustomObject]$Target) {
         $asarText = [System.Text.Encoding]::UTF8.GetString($asarBytes)
         if (-not $asarText.Contains("patcher.js")) {
             Write-Preflight "Installation verified" "fail" "app.asar does not contain Vencord patcher reference."
-            Rollback-Discord $Target $script:CurrentBackupPath
+            Restore-Discord $Target $script:CurrentBackupPath
             exit 1
         }
     } catch {
         Write-Preflight "Installation verified" "fail" "Could not read patched app.asar: $_"
-        Rollback-Discord $Target $script:CurrentBackupPath
+        Restore-Discord $Target $script:CurrentBackupPath
         exit 1
     }
 
@@ -573,7 +573,7 @@ function Patch-DiscordInstallation([PSCustomObject]$Target) {
 }
 
 # 11. Setup Global CLI Command in PATH (Safe Self-Copy)
-function Setup-CliEnvironment {
+function Initialize-CliEnvironment {
     if (-not (Test-Path $BIN_DIR)) {
         New-Item -ItemType Directory -Path $BIN_DIR -Force | Out-Null
     }
@@ -606,7 +606,7 @@ function Setup-CliEnvironment {
 }
 
 # 12. Master Preflight & Install Execution
-function Execute-Install {
+function Invoke-Install {
     Write-BrandedHeader
     Write-Host "PIXELS RPC PREFLIGHT VALIDATION" -ForegroundColor Cyan
     Write-Host "-------------------------------" -ForegroundColor DarkGray
@@ -615,8 +615,8 @@ function Execute-Install {
     Assert-BuildPrerequisites
     Sync-VencordSource
     Assert-PnpmVersionManagement
-    Integrate-PixelsRpcPlugin
-    Build-VencordWithValidation
+    Install-PixelsRpcPlugin
+    Invoke-VencordBuild
 
     # Select Discord Target
     $discords = Get-DiscordInstallations
@@ -653,8 +653,8 @@ function Execute-Install {
     Write-Step "Targeting $($target.Name) (version $($target.Version))..."
 
     Backup-DiscordInstallation $target
-    Patch-DiscordInstallation $target
-    Setup-CliEnvironment
+    Update-DiscordInstallation $target
+    Initialize-CliEnvironment
 
     Write-Host ""
     Write-Host "==================================================================" -ForegroundColor Green
@@ -730,7 +730,7 @@ function Repair-PixelsRpc {
     $installerCli = Join-Path $VENCORD_DIR "dist\Installer\VencordInstallerCli.exe"
     if (-not (Test-Path $installerCli) -or -not (Test-Path (Join-Path $VENCORD_DIR "dist\renderer.js"))) {
         Write-Warn "Vencord build missing or incomplete. Running full installation..."
-        Execute-Install
+        Invoke-Install
         return
     }
 
@@ -750,7 +750,7 @@ function Repair-PixelsRpc {
 }
 
 # 15. Rollback Command
-function Execute-Rollback {
+function Invoke-Rollback {
     Write-BrandedHeader
     Write-Step "Searching for previous Discord backups..."
 
@@ -779,7 +779,7 @@ function Execute-Rollback {
 
     $selectedBackup = $backups[0]
     Write-Step "Restoring $($target.Name) from latest backup: $($selectedBackup.Name)..."
-    Rollback-Discord $target $selectedBackup.FullName
+    Restore-Discord $target $selectedBackup.FullName
 }
 
 # 16. Uninstall Command
@@ -823,10 +823,10 @@ function Uninstall-PixelsRpc {
 
 # Entrypoint Switch
 switch ($Command.ToLower()) {
-    "install"   { Execute-Install }
-    "update"    { Execute-Install }
+    "install"   { Invoke-Install }
+    "update"    { Invoke-Install }
     "repair"    { Repair-PixelsRpc }
-    "rollback"  { Execute-Rollback }
+    "rollback"  { Invoke-Rollback }
     "uninstall" { Uninstall-PixelsRpc }
     "status"    { Show-Status }
     "version"   { Write-Host "PixelsRPC CLI v$PIXEL_VERSION" -ForegroundColor Green }
@@ -834,5 +834,5 @@ switch ($Command.ToLower()) {
         Write-BrandedHeader
         Write-Host "Usage: pixelsrpc [install|update|repair|rollback|uninstall|status|version]" -ForegroundColor White
     }
-    default     { Execute-Install }
+    default     { Invoke-Install }
 }
