@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { StudioTab } from "@/types/studio";
 import { StudioView } from "./StudioTopBar";
+import { DockPortalTooltip, DockTooltipData } from "./DockPortalTooltip";
 
 export type DockMode = "main" | "directory" | "settings";
 export type DockPosition = "bottom" | "top" | "left" | "right" | "float";
@@ -161,8 +162,49 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   );
 
   const [hoveredTool, setHoveredTool] = useState<string | null>(null);
+  const [dockTooltip, setDockTooltip] = useState<DockTooltipData | null>(null);
   const dockRef = useRef<HTMLDivElement>(null);
   const directoryScrollRef = useRef<HTMLDivElement>(null);
+
+  const showTooltip = useCallback(
+    (
+      e: React.MouseEvent<HTMLElement> | React.FocusEvent<HTMLElement>,
+      data: {
+        id: string;
+        label: string;
+        desc?: string;
+        hotkey?: string;
+        preferredSide?: "top" | "bottom" | "left" | "right";
+      }
+    ) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      setDockTooltip({
+        id: data.id,
+        label: data.label,
+        desc: data.desc,
+        hotkey: data.hotkey,
+        targetRect: rect,
+        preferredSide: data.preferredSide,
+      });
+    },
+    []
+  );
+
+  const hideTooltip = useCallback(() => {
+    setDockTooltip(null);
+  }, []);
+
+  // Dismiss tooltip on external scroll or resize
+  useEffect(() => {
+    if (!dockTooltip) return;
+    const handleDismiss = () => setDockTooltip(null);
+    window.addEventListener("scroll", handleDismiss, true);
+    window.addEventListener("resize", handleDismiss);
+    return () => {
+      window.removeEventListener("scroll", handleDismiss, true);
+      window.removeEventListener("resize", handleDismiss);
+    };
+  }, [dockTooltip]);
 
   // Position & Edge Attachment State
   const [edge, setEdge] = useState<DockPosition>(externalPosition || "bottom");
@@ -1141,6 +1183,28 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                 } catch {}
                 onDockLockChange?.(nextLock);
               }}
+              onMouseEnter={(e) =>
+                showTooltip(e, {
+                  id: "dock-lock",
+                  label: isLocked ? "Dock is Locked" : "Move Dock",
+                  desc: isLocked
+                    ? `Dock is locked in place. Click or press [${formatShortcutDisplay(lockShortcut)}] to unlock.`
+                    : `Drag handle to move dock. Click or press [${formatShortcutDisplay(lockShortcut)}] to lock.`,
+                  hotkey: formatShortcutDisplay(lockShortcut),
+                })
+              }
+              onMouseLeave={hideTooltip}
+              onFocus={(e) =>
+                showTooltip(e, {
+                  id: "dock-lock",
+                  label: isLocked ? "Dock is Locked" : "Move Dock",
+                  desc: isLocked
+                    ? `Dock is locked in place. Click or press [${formatShortcutDisplay(lockShortcut)}] to unlock.`
+                    : `Drag handle to move dock. Click or press [${formatShortcutDisplay(lockShortcut)}] to lock.`,
+                  hotkey: formatShortcutDisplay(lockShortcut),
+                })
+              }
+              onBlur={hideTooltip}
               className={`transition-colors flex items-center justify-center shrink-0 cursor-pointer ${
                 isLocked
                   ? "text-amber-400 hover:text-amber-300"
@@ -1177,8 +1241,41 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
+                      hideTooltip();
                       handlePrimaryClick(tool.id);
                     }}
+                    onMouseEnter={(e) =>
+                      showTooltip(e, {
+                        id: tool.id,
+                        label: tool.label,
+                        desc:
+                          tool.id === "layout"
+                            ? "Canvas dimensions, padding & structure"
+                            : tool.id === "identity"
+                            ? "Display name, bio & verification badges"
+                            : tool.id === "typography"
+                            ? "Font families, styles & text hierarchy"
+                            : "Live Discord telemetry & rich presence card",
+                        hotkey: tool.hotkey,
+                      })
+                    }
+                    onMouseLeave={hideTooltip}
+                    onFocus={(e) =>
+                      showTooltip(e, {
+                        id: tool.id,
+                        label: tool.label,
+                        desc:
+                          tool.id === "layout"
+                            ? "Canvas dimensions, padding & structure"
+                            : tool.id === "identity"
+                            ? "Display name, bio & verification badges"
+                            : tool.id === "typography"
+                            ? "Font families, styles & text hierarchy"
+                            : "Live Discord telemetry & rich presence card",
+                        hotkey: tool.hotkey,
+                      })
+                    }
+                    onBlur={hideTooltip}
                     aria-label={tool.label}
                     className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer ${
                       isActive
@@ -1208,8 +1305,25 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
+                  hideTooltip();
                   handleToggleMore();
                 }}
+                onMouseEnter={(e) =>
+                  showTooltip(e, {
+                    id: "more-directory",
+                    label: "All Applications",
+                    desc: "Open complete app directory & dock placement controls",
+                  })
+                }
+                onMouseLeave={hideTooltip}
+                onFocus={(e) =>
+                  showTooltip(e, {
+                    id: "more-directory",
+                    label: "All Applications",
+                    desc: "Open complete app directory & dock placement controls",
+                  })
+                }
+                onBlur={hideTooltip}
                 aria-label="More Options (Expand App Directory)"
                 className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer text-neutral-400 hover:text-white hover:bg-white/10"
               >
@@ -1257,9 +1371,28 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setDockMode("main")}
+                  onClick={() => {
+                    hideTooltip();
+                    setDockMode("main");
+                  }}
+                  onMouseEnter={(e) =>
+                    showTooltip(e, {
+                      id: "collapse-directory",
+                      label: "Collapse Directory",
+                      desc: "Return to compact dock view",
+                    })
+                  }
+                  onMouseLeave={hideTooltip}
+                  onFocus={(e) =>
+                    showTooltip(e, {
+                      id: "collapse-directory",
+                      label: "Collapse Directory",
+                      desc: "Return to compact dock view",
+                    })
+                  }
+                  onBlur={hideTooltip}
                   className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-neutral-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5 text-[10px] font-bold border border-white/10"
-                  title="Collapse to Main Dock"
+                  aria-label="Collapse to Main Dock"
                 >
                   <X size={12} />
                   <span>Collapse</span>
@@ -1295,7 +1428,6 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                   }`}>
                     {group.items.map((item) => {
                       const Icon = item.icon;
-                      const isHovered = hoveredTool === item.id;
                       const isSelected =
                         isSettingsOpen &&
                         ((item.type === "settings" && activeCategory === item.tab) ||
@@ -1305,11 +1437,34 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                         <div key={item.id} className="relative flex flex-col items-center">
                           <button
                             type="button"
-                            onClick={() => handleDirectoryItemClick(item)}
-                            onMouseEnter={() => setHoveredTool(item.id)}
-                            onMouseLeave={() => setHoveredTool(null)}
-                            onFocus={() => setHoveredTool(item.id)}
-                            onBlur={() => setHoveredTool(null)}
+                            onClick={() => {
+                              hideTooltip();
+                              handleDirectoryItemClick(item);
+                            }}
+                            onMouseEnter={(e) => {
+                              setHoveredTool(item.id);
+                              showTooltip(e, {
+                                id: item.id,
+                                label: item.label,
+                                desc: item.desc,
+                              });
+                            }}
+                            onMouseLeave={() => {
+                              setHoveredTool(null);
+                              hideTooltip();
+                            }}
+                            onFocus={(e) => {
+                              setHoveredTool(item.id);
+                              showTooltip(e, {
+                                id: item.id,
+                                label: item.label,
+                                desc: item.desc,
+                              });
+                            }}
+                            onBlur={() => {
+                              setHoveredTool(null);
+                              hideTooltip();
+                            }}
                             aria-label={item.label}
                             className={`w-full aspect-square rounded-2xl flex items-center justify-center relative transition-all duration-200 cursor-pointer border ${
                               isSelected
@@ -1319,24 +1474,6 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                           >
                             <Icon size={22} className="shrink-0" />
                           </button>
-
-                          {/* Tooltip on Hover or Focus (Non-Permanent Label) */}
-                          <AnimatePresence>
-                            {isHovered && (
-                              <motion.div
-                                initial={{ opacity: 0, y: 4 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0 }}
-                                transition={{ duration: 0.12 }}
-                                className="absolute -top-10 z-50 pointer-events-none px-2.5 py-1 rounded-lg bg-neutral-900 border border-neutral-700 text-white text-[10px] font-mono tracking-wider whitespace-nowrap shadow-2xl flex items-center gap-1.5"
-                              >
-                                <span className="font-bold">{item.label}</span>
-                                <span className="text-[9px] text-neutral-400">
-                                  // {item.desc}
-                                </span>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
                         </div>
                       );
                     })}
@@ -1361,6 +1498,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                       key={pos}
                       type="button"
                       onClick={() => {
+                        hideTooltip();
                         setEdge(pos);
                         onPositionChange(pos);
                         try {
@@ -1372,6 +1510,28 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                           localStorage.setItem("pixel_studio_dock_panel_size", String(panelSize));
                         } catch {}
                       }}
+                      onMouseEnter={(e) =>
+                        showTooltip(e, {
+                          id: `edge-${pos}`,
+                          label: `${pos.toUpperCase()} Dock`,
+                          desc:
+                            pos === "float"
+                              ? "Freely position dock anywhere on canvas"
+                              : `Snap and anchor dock to the ${pos} wall`,
+                        })
+                      }
+                      onMouseLeave={hideTooltip}
+                      onFocus={(e) =>
+                        showTooltip(e, {
+                          id: `edge-${pos}`,
+                          label: `${pos.toUpperCase()} Dock`,
+                          desc:
+                            pos === "float"
+                              ? "Freely position dock anywhere on canvas"
+                              : `Snap and anchor dock to the ${pos} wall`,
+                        })
+                      }
+                      onBlur={hideTooltip}
                       className={`py-1.5 px-2 rounded-xl text-[10px] font-bold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer border ${
                         edge === pos
                           ? "bg-white text-black border-white shadow"
@@ -1423,6 +1583,9 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
           </motion.div>
         )}
       </div>
+
+      {/* Portaled Collision-Aware Floating Tooltip */}
+      <DockPortalTooltip tooltip={dockTooltip} dockEdge={edge} />
     </div>
   );
 };
