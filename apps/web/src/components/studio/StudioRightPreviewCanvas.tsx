@@ -102,29 +102,29 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
 
   // Map element IDs to category tabs
   const handleSelectElement = (elementId: string) => {
-    switch (elementId) {
-      case "avatar":
-        onSelectCategory("avatar");
-        break;
-      case "identity":
-        onSelectCategory("identity");
-        break;
-      case "rpc":
-        onSelectCategory("rpc");
-        break;
-      case "buttons":
-      case "socials":
-        onSelectCategory("buttons");
-        break;
-      case "background":
-        onSelectCategory("background");
-        break;
-      case "music":
-        onSelectCategory("effects");
-        break;
-      default:
-        // Do not force-open dock settings for embed container selections; keeps canvas handles unobstructed
-        break;
+    if (elementId === "avatar" || elementId.startsWith("avatar_")) {
+      onSelectCategory("avatar");
+    } else if (
+      elementId === "identity" ||
+      elementId.startsWith("username") ||
+      elementId.startsWith("displayName") ||
+      elementId.startsWith("title") ||
+      elementId.startsWith("bio")
+    ) {
+      onSelectCategory("identity");
+    } else if (elementId === "rpc" || elementId.startsWith("rpc_")) {
+      onSelectCategory("rpc");
+    } else if (
+      elementId === "buttons" ||
+      elementId.startsWith("button_") ||
+      elementId === "socials" ||
+      elementId.startsWith("social_")
+    ) {
+      onSelectCategory("buttons");
+    } else if (elementId === "background") {
+      onSelectCategory("background");
+    } else if (elementId === "music") {
+      onSelectCategory("effects");
     }
   };
 

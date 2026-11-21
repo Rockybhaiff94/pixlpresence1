@@ -74,10 +74,16 @@ interface StudioProfilePreviewProps {
     y?: number,
     scaleOptions?: {
       scaleFactor?: number;
+      isCornerScaling?: boolean;
+      isEdgeResizing?: boolean;
+      isSymmetric?: boolean;
       gap?: number;
       padding?: number;
       avatarSize?: number;
-      isSideSpacing?: boolean;
+      titleSize?: number;
+      bioSize?: number;
+      borderRadius?: number;
+      socialIconSize?: number;
     }
   ) => void;
   onResizeElement?: (elementId: string, width: number, height: number, x?: number, y?: number) => void;
@@ -133,10 +139,16 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
     y?: number,
     scaleOptions?: {
       scaleFactor?: number;
+      isCornerScaling?: boolean;
+      isEdgeResizing?: boolean;
+      isSymmetric?: boolean;
       gap?: number;
       padding?: number;
       avatarSize?: number;
-      isSideSpacing?: boolean;
+      titleSize?: number;
+      bioSize?: number;
+      borderRadius?: number;
+      socialIconSize?: number;
     }
   ) => {
     if (onResizeEmbed) {
@@ -144,23 +156,10 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
       return;
     }
     const isPrimary = embedId === "embed_primary";
-    const isSideSpacing = Boolean(scaleOptions?.isSideSpacing);
+    const isEdgeResizing = Boolean(scaleOptions?.isEdgeResizing);
 
     if (updateConfig) {
       updateConfig((prev) => {
-        // If this is a side spacing adjustment (tc, bc, ml, mr), do not change outer embed dimensions!
-        if (isSideSpacing) {
-          return {
-            ...prev,
-            layout: {
-              ...prev.layout,
-              ...(scaleOptions?.gap !== undefined ? { gap: scaleOptions.gap } : {}),
-              ...(scaleOptions?.padding !== undefined ? { padding: scaleOptions.padding } : {}),
-            },
-          };
-        }
-
-        // Corner scaling: update outer dimensions, scaleFactor, gap, padding, and avatar proportionally
         const currentCanvas = prev.canvas ? { ...prev.canvas } : createDefaultCanvasState(prev);
         const updatedEmbeds = currentCanvas.embeds.map((em) =>
           em.id === embedId
@@ -177,7 +176,30 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
             : em
         );
 
-        const scaleFactor = scaleOptions?.scaleFactor;
+        if (isEdgeResizing) {
+          // OPERATION B & C: ONLY OUTER CONTAINER DIMENSIONS CHANGE
+          // Internal content, typography, avatar, gap, and padding are 100% UNTOUCHED!
+          return {
+            ...prev,
+            ...(isPrimary
+              ? {
+                  layout: {
+                    ...prev.layout,
+                    maxWidth: width,
+                    height,
+                    autoHeight: false,
+                  },
+                }
+              : {}),
+            canvas: {
+              ...currentCanvas,
+              embeds: updatedEmbeds,
+            },
+          };
+        }
+
+        // OPERATION A: CORNER SCALING — Scale outer embed and all nested elements proportionally
+        const scaleFactor = scaleOptions?.scaleFactor ?? (width / (prev.layout?.maxWidth || 580));
         const updatedElements =
           scaleFactor && scaleFactor !== 1
             ? currentCanvas.elements.map((el) => {
@@ -189,6 +211,14 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
                     width: Math.round(el.transform.width * scaleFactor),
                     height: Math.round(el.transform.height * scaleFactor),
                   },
+                  ...(el.style?.fontSize
+                    ? {
+                        style: {
+                          ...el.style,
+                          fontSize: Math.max(7, Math.round(el.style.fontSize * scaleFactor)),
+                        },
+                      }
+                    : {}),
                 };
               })
             : currentCanvas.elements;
@@ -206,6 +236,13 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
                   ...(scaleOptions?.padding !== undefined ? { padding: scaleOptions.padding } : {}),
                 },
                 ...(scaleOptions?.avatarSize ? { avatar: { ...prev.avatar, size: scaleOptions.avatarSize } } : {}),
+                identity: {
+                  ...prev.identity,
+                  ...(scaleOptions?.titleSize ? { titleSize: scaleOptions.titleSize } : {}),
+                  ...(scaleOptions?.bioSize ? { bioSize: scaleOptions.bioSize } : {}),
+                },
+                ...(scaleOptions?.borderRadius ? { discordRpc: { ...prev.discordRpc, borderRadius: scaleOptions.borderRadius } } : {}),
+                ...(scaleOptions?.socialIconSize ? { socials: { ...prev.socials, iconSize: scaleOptions.socialIconSize } } : {}),
               }
             : {}),
           canvas: {
@@ -215,7 +252,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
           },
         };
       });
-    } else if (onUpdateCanvas && !isSideSpacing) {
+    } else if (onUpdateCanvas) {
       onUpdateCanvas((prev: any) => {
         const updatedEmbeds = prev.embeds?.map((em: any) =>
           em.id === embedId
@@ -630,9 +667,9 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
     return layer ? layer.visible : true;
   };
 
-  const getElementSelectProps = (elementId: string) => {
-    if (!isInteractiveEditor) return {};
-    const isSelected = activeElementId === elementId;
+  const getElementSelectProps = (elementId: string, extraClassName: string = "") => {
+    if (!isInteractiveEditor) return { className: extraClassName };
+    const isSelected = activeElementId === elementId || (elementId === "avatar" && (activeElementId === "avatar" || activeElementId === "avatar_1"));
     return {
       onClick: (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -640,9 +677,9 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
       },
       className: `relative transition-all cursor-pointer rounded-xl ${
         isSelected
-          ? "ring-2 ring-white ring-offset-2 ring-offset-black"
+          ? "ring-2 ring-sky-400 ring-offset-2 ring-offset-black"
           : "hover:ring-1 hover:ring-white/40"
-      }`,
+      } ${extraClassName}`.trim(),
     };
   };
 
@@ -945,8 +982,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
               return (
                 <div
                   key="avatar"
-                  {...getElementSelectProps("avatar")}
-                  className={`shrink-0 ${alignClass}`}
+                  {...getElementSelectProps("avatar", `shrink-0 ${alignClass}`)}
                   style={{
                     transform: avatar.offsetY ? `translateY(${avatar.offsetY}px)` : undefined,
                   }}
@@ -989,14 +1025,16 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
               return (
                 <div
                   key="identity"
-                  {...getElementSelectProps("identity")}
-                  className={`profile-identity w-full space-y-1.5 flex flex-col ${
-                    layout.alignment === "left"
-                      ? "items-start text-left"
-                      : layout.alignment === "right"
-                      ? "items-end text-right"
-                      : "items-center text-center"
-                  }`}
+                  {...getElementSelectProps(
+                    "identity",
+                    `profile-identity w-full space-y-1.5 flex flex-col ${
+                      layout.alignment === "left"
+                        ? "items-start text-left"
+                        : layout.alignment === "right"
+                        ? "items-end text-right"
+                        : "items-center text-center"
+                    }`
+                  )}
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <h1
@@ -1065,7 +1103,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
               }
 
               return (
-                <div key="rpc" {...getElementSelectProps("rpc")} className="w-full">
+                <div key="rpc" {...getElementSelectProps("rpc", "w-full")}>
                   <DiscordRpcCard
                     config={discordRpc}
                     data={data.discordPresence}
@@ -1079,7 +1117,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
             // 4. Music Player Dock
             if (elementId === "music") {
               return (
-                <div key="music" {...getElementSelectProps("music")} className="w-full">
+                <div key="music" {...getElementSelectProps("music", "w-full")}>
                   <div className="bg-[#111111] border border-[#242424] rounded-2xl p-3.5 space-y-2.5 font-mono text-xs w-full">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5 truncate">
@@ -1120,7 +1158,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
               ];
 
               return (
-                <div key="buttons" {...getElementSelectProps("buttons")} className="w-full space-y-2">
+                <div key="buttons" {...getElementSelectProps("buttons", "w-full space-y-2")}>
                   {buttonsList.map((btn) => (
                     <div
                       key={btn.id}
@@ -1179,14 +1217,16 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
               return (
                 <div
                   key="socials"
-                  {...getElementSelectProps("socials")}
-                  className={`profile-socials flex flex-wrap gap-2 pt-1 ${
-                    socials.alignment === "left"
-                      ? "justify-start"
-                      : socials.alignment === "right"
-                      ? "justify-end"
-                      : "justify-center"
-                  }`}
+                  {...getElementSelectProps(
+                    "socials",
+                    `profile-socials flex flex-wrap gap-2 pt-1 ${
+                      socials.alignment === "left"
+                        ? "justify-start"
+                        : socials.alignment === "right"
+                        ? "justify-end"
+                        : "justify-center"
+                    }`
+                  )}
                 >
                   {linksList
                     .filter((l) => l.visibility)

@@ -67,10 +67,16 @@ interface CanvasObjectRendererProps {
     y?: number,
     scaleOptions?: {
       scaleFactor?: number;
+      isCornerScaling?: boolean;
+      isEdgeResizing?: boolean;
+      isSymmetric?: boolean;
       gap?: number;
       padding?: number;
       avatarSize?: number;
-      isSideSpacing?: boolean;
+      titleSize?: number;
+      bioSize?: number;
+      borderRadius?: number;
+      socialIconSize?: number;
     }
   ) => void;
   onResizeElement?: (elementId: string, width: number, height: number, x?: number, y?: number) => void;
@@ -269,9 +275,14 @@ export function CanvasObjectRenderer({
     isShiftPressed?: boolean;
     isAltPressed?: boolean;
     scaleFactor?: number;
+    isCornerScaling?: boolean;
+    isEdgeResizing?: boolean;
+    isSymmetric?: boolean;
     currentGap?: number;
     currentPadding?: number;
-    isSideSpacing?: boolean;
+    scaledAvatarSize?: number;
+    scaledTitleSize?: number;
+    scaledBioSize?: number;
   } | null>(null);
 
   const effectiveGap =
@@ -324,21 +335,33 @@ export function CanvasObjectRenderer({
     e.stopPropagation();
     e.preventDefault();
 
+    const isRightClick = e.button === 2;
     const startX = e.clientX;
     const startY = e.clientY;
     const zoomScale = Math.max(0.2, (zoom || 100) / 100);
     const initialGap = config.layout?.gap ?? 24;
     const initialPadding = config.layout?.padding ?? 28;
     const initialAvatarSize = config.avatar?.size ?? 96;
+    const initialTitleSize = config.identity?.titleSize ?? 26;
+    const initialBioSize = config.identity?.bioSize ?? 14;
+    const initialBorderRadius = config.discordRpc?.borderRadius ?? 24;
+    const initialSocialIconSize = config.socials?.iconSize ?? 14;
 
-    const isSideVertical = handle === "tc" || handle === "bc";
-    const isSideHorizontal = handle === "ml" || handle === "mr";
-    console.log('[DEBUG_DOWN] handle:', handle, 'initialW:', initialW, 'initialH:', initialH);
+    const isEdge = handle === "tc" || handle === "bc" || handle === "ml" || handle === "mr";
 
     const targetEl = e.currentTarget as HTMLElement;
     try {
       targetEl.setPointerCapture(e.pointerId);
     } catch {}
+
+    // Context menu suppression during active right-click drag
+    const preventContextMenu = (ev: MouseEvent) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+    };
+    if (isRightClick) {
+      window.addEventListener("contextmenu", preventContextMenu, { capture: true });
+    }
 
     let lastW = initialW;
     let lastH = initialH;
@@ -348,76 +371,120 @@ export function CanvasObjectRenderer({
     let lastGap = initialGap;
     let lastPadding = initialPadding;
     let lastAvatarSize = initialAvatarSize;
+    let lastTitleSize = initialTitleSize;
+    let lastBioSize = initialBioSize;
+    let lastBorderRadius = initialBorderRadius;
+    let lastSocialIconSize = initialSocialIconSize;
 
     const onPointerMove = (ev: PointerEvent) => {
       const deltaX = (ev.clientX - startX) / zoomScale;
       const deltaY = (ev.clientY - startY) / zoomScale;
       const isShift = ev.shiftKey;
-      const isAlt = ev.altKey;
+      const isAlt = ev.altKey || isRightClick;
 
-      if (isSideVertical) {
-        // TOP-CENTER or BOTTOM-CENTER: adjust vertical spacing (gap) only.
-        // Outer dimensions remain 100% UNCHANGED.
-        const gapDelta = handle === "bc" ? deltaY : -deltaY;
-        const proposedGap = Math.round(initialGap + gapDelta);
-        // Automatic stopping system: clamp to safe non-colliding, non-overflowing range [4, 80]
-        const clampedGap = Math.max(4, Math.min(80, proposedGap));
+      if (isEdge) {
+        // OPERATION B & C: EDGE RESIZING (OUTER CONTAINER ONLY - INTERNAL ELEMENTS UNTOUCHED)
+        let nextW = initialW;
+        let nextH = initialH;
+        let nextX = initialX;
+        let nextY = initialY;
 
-        lastGap = clampedGap;
+        if (isRightClick) {
+          // OPERATION C: SYMMETRICAL CONTAINER RESIZING (Center Fixed)
+          if (handle === "mr") {
+            const proposedW = Math.round(initialW + 2 * deltaX);
+            nextW = Math.max(320, Math.min(1400, proposedW));
+            nextH = initialH;
+            nextX = initialX; // Center fixed
+            nextY = initialY;
+          } else if (handle === "ml") {
+            const proposedW = Math.round(initialW - 2 * deltaX);
+            nextW = Math.max(320, Math.min(1400, proposedW));
+            nextH = initialH;
+            nextX = initialX; // Center fixed
+            nextY = initialY;
+          } else if (handle === "bc") {
+            const proposedH = Math.round(initialH + 2 * deltaY);
+            nextH = Math.max(200, Math.min(1800, proposedH));
+            nextW = initialW;
+            nextX = initialX;
+            nextY = Math.round(initialY - (nextH - initialH) / 2); // Center Y preserved
+          } else if (handle === "tc") {
+            const proposedH = Math.round(initialH - 2 * deltaY);
+            nextH = Math.max(200, Math.min(1800, proposedH));
+            nextW = initialW;
+            nextX = initialX;
+            nextY = Math.round(initialY - (nextH - initialH) / 2); // Center Y preserved
+          }
+        } else {
+          // OPERATION B: ANCHORED CONTAINER RESIZING (Opposite Edge Fixed)
+          if (handle === "mr") {
+            // Drag right/left: increases/decreases width. Left edge anchored.
+            const proposedW = Math.round(initialW + deltaX);
+            nextW = Math.max(320, Math.min(1400, proposedW));
+            nextH = initialH;
+            nextX = Math.round(initialX + (nextW - initialW) / 2); // Left edge pinned
+            nextY = initialY;
+          } else if (handle === "ml") {
+            // Drag left/right: increases/decreases width. Right edge anchored.
+            const proposedW = Math.round(initialW - deltaX);
+            nextW = Math.max(320, Math.min(1400, proposedW));
+            nextH = initialH;
+            nextX = Math.round(initialX - (nextW - initialW) / 2); // Right edge pinned
+            nextY = initialY;
+          } else if (handle === "bc") {
+            // Drag down/up: increases/decreases height. Top edge anchored.
+            const proposedH = Math.round(initialH + deltaY);
+            nextH = Math.max(200, Math.min(1800, proposedH));
+            nextW = initialW;
+            nextX = initialX;
+            nextY = initialY; // Top edge naturally anchored
+          } else if (handle === "tc") {
+            // Drag up/down: increases/decreases height. Bottom edge anchored.
+            const proposedH = Math.round(initialH - deltaY);
+            nextH = Math.max(200, Math.min(1800, proposedH));
+            nextW = initialW;
+            nextX = initialX;
+            nextY = Math.round(initialY + initialH - nextH); // Bottom edge pinned
+          }
+        }
+
+        lastW = nextW;
+        lastH = nextH;
+        lastX = nextX;
+        lastY = nextY;
+        lastScale = 1;
+
         setResizingEmbed({
           embedId,
           handle,
-          currentWidth: initialW,
-          currentHeight: initialH,
-          currentX: initialX,
-          currentY: initialY,
+          currentWidth: nextW,
+          currentHeight: nextH,
+          currentX: nextX,
+          currentY: nextY,
           isShiftPressed: isShift,
           isAltPressed: isAlt,
-          currentGap: clampedGap,
-          currentPadding: initialPadding,
           scaleFactor: 1,
-          isSideSpacing: true,
-        });
-
-        onResizeEmbed?.(embedId, initialW, initialH, initialX, initialY, {
-          isSideSpacing: true,
-          gap: clampedGap,
-        });
-        return;
-      }
-
-      if (isSideHorizontal) {
-        // LEFT-CENTER or RIGHT-CENTER: adjust horizontal spacing (padding) only.
-        // Outer dimensions remain 100% UNCHANGED.
-        const paddingDelta = handle === "mr" ? deltaX : -deltaX;
-        const proposedPadding = Math.round(initialPadding + paddingDelta);
-        // Automatic stopping system: clamp to safe range [8, 80]
-        const clampedPadding = Math.max(8, Math.min(80, proposedPadding));
-
-        lastPadding = clampedPadding;
-        setResizingEmbed({
-          embedId,
-          handle,
-          currentWidth: initialW,
-          currentHeight: initialH,
-          currentX: initialX,
-          currentY: initialY,
-          isShiftPressed: isShift,
-          isAltPressed: isAlt,
+          isCornerScaling: false,
+          isEdgeResizing: true,
+          isSymmetric: isRightClick,
           currentGap: initialGap,
-          currentPadding: clampedPadding,
-          scaleFactor: 1,
-          isSideSpacing: true,
+          currentPadding: initialPadding,
+          scaledAvatarSize: initialAvatarSize,
+          scaledTitleSize: initialTitleSize,
+          scaledBioSize: initialBioSize,
         });
 
-        onResizeEmbed?.(embedId, initialW, initialH, initialX, initialY, {
-          isSideSpacing: true,
-          padding: clampedPadding,
+        onResizeEmbed?.(embedId, nextW, nextH, nextX, nextY, {
+          scaleFactor: 1,
+          isCornerScaling: false,
+          isEdgeResizing: true,
+          isSymmetric: isRightClick,
         });
         return;
       }
 
-      // CORNER HANDLES: COMPLETE PROPORTIONAL EMBED SCALING
+      // OPERATION A: CORNER RESIZING — SCALE THE ENTIRE EMBED OBJECT & TYPOGRAPHY
       let scale = 1;
       let nextW = initialW;
       let nextH = initialH;
@@ -427,15 +494,15 @@ export function CanvasObjectRenderer({
       if (handle === "br") {
         const scaleX = (initialW + deltaX) / initialW;
         const scaleY = (initialH + deltaY) / initialH;
-        scale = Math.max(0.25, (scaleX + scaleY) / 2);
+        scale = Math.max(0.2, (scaleX + scaleY) / 2);
         nextW = Math.round(initialW * scale);
         nextH = Math.round(initialH * scale);
-        nextX = initialX;
+        nextX = isAlt ? initialX : initialX;
         nextY = initialY;
       } else if (handle === "bl") {
         const scaleX = (initialW - deltaX) / initialW;
         const scaleY = (initialH + deltaY) / initialH;
-        scale = Math.max(0.25, (scaleX + scaleY) / 2);
+        scale = Math.max(0.2, (scaleX + scaleY) / 2);
         nextW = Math.round(initialW * scale);
         nextH = Math.round(initialH * scale);
         nextX = isAlt ? initialX : Math.round(initialX + (initialW - nextW) / 2);
@@ -443,7 +510,7 @@ export function CanvasObjectRenderer({
       } else if (handle === "tr") {
         const scaleX = (initialW + deltaX) / initialW;
         const scaleY = (initialH - deltaY) / initialH;
-        scale = Math.max(0.25, (scaleX + scaleY) / 2);
+        scale = Math.max(0.2, (scaleX + scaleY) / 2);
         nextW = Math.round(initialW * scale);
         nextH = Math.round(initialH * scale);
         nextX = isAlt ? initialX : Math.round(initialX - (initialW - nextW) / 2);
@@ -451,14 +518,14 @@ export function CanvasObjectRenderer({
       } else if (handle === "tl") {
         const scaleX = (initialW - deltaX) / initialW;
         const scaleY = (initialH - deltaY) / initialH;
-        scale = Math.max(0.25, (scaleX + scaleY) / 2);
+        scale = Math.max(0.2, (scaleX + scaleY) / 2);
         nextW = Math.round(initialW * scale);
         nextH = Math.round(initialH * scale);
         nextX = isAlt ? initialX : Math.round(initialX + (initialW - nextW) / 2);
         nextY = isAlt ? initialY : Math.round(initialY + initialH - nextH);
       }
 
-      // Content visibility protection: enforce safe physical bounds [320x240, 1400x1800]
+      // Safe bounds clamping
       if (nextW < 320) {
         const minScale = 320 / initialW;
         nextW = 320;
@@ -477,9 +544,14 @@ export function CanvasObjectRenderer({
         scale = maxScale;
       }
 
+      // Proportionally scale every nested element and typographic property
       const scaledGap = Math.max(4, Math.min(80, Math.round(initialGap * scale)));
       const scaledPadding = Math.max(8, Math.min(100, Math.round(initialPadding * scale)));
-      const scaledAvatarSize = Math.max(36, Math.min(220, Math.round(initialAvatarSize * scale)));
+      const scaledAvatarSize = Math.max(24, Math.min(240, Math.round(initialAvatarSize * scale)));
+      const scaledTitleSize = Math.max(10, Math.min(72, Math.round(initialTitleSize * scale)));
+      const scaledBioSize = Math.max(7, Math.min(36, Math.round(initialBioSize * scale)));
+      const scaledBorderRadius = Math.max(4, Math.min(48, Math.round(initialBorderRadius * scale)));
+      const scaledSocialIconSize = Math.max(8, Math.min(32, Math.round(initialSocialIconSize * scale)));
 
       lastW = nextW;
       lastH = nextH;
@@ -489,6 +561,10 @@ export function CanvasObjectRenderer({
       lastGap = scaledGap;
       lastPadding = scaledPadding;
       lastAvatarSize = scaledAvatarSize;
+      lastTitleSize = scaledTitleSize;
+      lastBioSize = scaledBioSize;
+      lastBorderRadius = scaledBorderRadius;
+      lastSocialIconSize = scaledSocialIconSize;
 
       setResizingEmbed({
         embedId,
@@ -500,17 +576,27 @@ export function CanvasObjectRenderer({
         isShiftPressed: isShift,
         isAltPressed: isAlt,
         scaleFactor: scale,
+        isCornerScaling: true,
+        isEdgeResizing: false,
+        isSymmetric: false,
         currentGap: scaledGap,
         currentPadding: scaledPadding,
-        isSideSpacing: false,
+        scaledAvatarSize: scaledAvatarSize,
+        scaledTitleSize: scaledTitleSize,
+        scaledBioSize: scaledBioSize,
       });
 
       onResizeEmbed?.(embedId, nextW, nextH, nextX, nextY, {
         scaleFactor: scale,
+        isCornerScaling: true,
+        isEdgeResizing: false,
         gap: scaledGap,
         padding: scaledPadding,
         avatarSize: scaledAvatarSize,
-        isSideSpacing: false,
+        titleSize: scaledTitleSize,
+        bioSize: scaledBioSize,
+        borderRadius: scaledBorderRadius,
+        socialIconSize: scaledSocialIconSize,
       });
     };
 
@@ -525,28 +611,42 @@ export function CanvasObjectRenderer({
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
 
+      if (isRightClick) {
+        window.removeEventListener("contextmenu", preventContextMenu, { capture: true });
+        const blockContextMenuOnce = (ev2: MouseEvent) => {
+          ev2.preventDefault();
+          ev2.stopPropagation();
+        };
+        window.addEventListener("contextmenu", blockContextMenuOnce, { capture: true, once: true });
+        setTimeout(() => {
+          window.removeEventListener("contextmenu", blockContextMenuOnce, { capture: true });
+        }, 200);
+      }
+
       isResizingJustFinishedRef.current = true;
       setTimeout(() => {
         isResizingJustFinishedRef.current = false;
       }, 350);
 
-      if (isSideVertical) {
-        onResizeEmbed?.(embedId, initialW, initialH, initialX, initialY, {
-          isSideSpacing: true,
-          gap: lastGap,
-        });
-      } else if (isSideHorizontal) {
-        onResizeEmbed?.(embedId, initialW, initialH, initialX, initialY, {
-          isSideSpacing: true,
-          padding: lastPadding,
+      if (isEdge) {
+        onResizeEmbed?.(embedId, lastW, lastH, lastX, lastY, {
+          scaleFactor: 1,
+          isCornerScaling: false,
+          isEdgeResizing: true,
+          isSymmetric: isRightClick,
         });
       } else {
         onResizeEmbed?.(embedId, lastW, lastH, lastX, lastY, {
           scaleFactor: lastScale,
+          isCornerScaling: true,
+          isEdgeResizing: false,
           gap: lastGap,
           padding: lastPadding,
           avatarSize: lastAvatarSize,
-          isSideSpacing: false,
+          titleSize: lastTitleSize,
+          bioSize: lastBioSize,
+          borderRadius: lastBorderRadius,
+          socialIconSize: lastSocialIconSize,
         });
       }
 
@@ -814,7 +914,13 @@ export function CanvasObjectRenderer({
   const renderElement = (el: CanvasElement) => {
     if (el.isVisible === false) return null;
 
-    const isSelected = isInteractive && selectedId === el.id;
+    const isSelected = isInteractive && (
+      selectedId === el.id ||
+      (el.type === "avatar" && (selectedId === "avatar" || selectedId === "avatar_1")) ||
+      (el.type === "username" && (selectedId === "username" || selectedId === "identity" || selectedId === "username_1")) ||
+      (el.type === "displayName" && (selectedId === "displayName" || selectedId === "identity" || selectedId === "displayName_1")) ||
+      (el.type === "rpc" && (selectedId === "rpc" || selectedId === "rpc_1"))
+    );
     const isThisElementResizing = resizingElement && resizingElement.elementId === el.id;
     const transform = el.transform;
     const effects = computeElementEffects(el.style, config.identity?.titleColor || "#ffffff");
@@ -1098,9 +1204,14 @@ export function CanvasObjectRenderer({
         }
       }
 
+      // OPERATION A: CORNER OBJECT SCALING — Scale typography proportionally
+      const isCornerScalingActive = Boolean(resizingEmbed && resizingEmbed.isCornerScaling && resizingEmbed.scaleFactor);
+      const activeScale = isCornerScalingActive ? (resizingEmbed?.scaleFactor ?? 1) : 1;
+      const effectiveFontSize = Math.max(7, Math.round(resolvedFontSize * activeScale));
+
       const typographyStyle: React.CSSProperties = {
         fontFamily: resolvedFontFamily,
-        fontSize: `${resolvedFontSize}px`,
+        fontSize: `${effectiveFontSize}px`,
         fontWeight: resolvedFontWeight,
         color: gradient ? "transparent" : resolvedColor,
         letterSpacing: resolvedLetterSpacing,
@@ -1245,11 +1356,15 @@ export function CanvasObjectRenderer({
         else if (shape === "square") radius = "0px";
         else if (shape === "squircle") radius = "32%";
 
+        const isCornerScalingActive = Boolean(resizingEmbed && resizingEmbed.isCornerScaling && resizingEmbed.scaleFactor);
+        const activeScale = isCornerScalingActive ? (resizingEmbed?.scaleFactor ?? 1) : 1;
+
+        const avatarBaseSize = (el.id === "avatar_1" || el.type === "avatar")
+          ? (config.avatar?.size || transform.width || 96)
+          : (transform.width || 96);
         const avatarSize = isThisElementResizing
           ? currentW
-          : ((el.id === "avatar_1" || el.type === "avatar")
-            ? (config.avatar?.size || transform.width || 96)
-            : (transform.width || 96));
+          : Math.max(20, Math.round(avatarBaseSize * activeScale));
 
         const avatarAlignClass =
           (config.avatar?.alignment === "left" || (config.avatar?.alignment === undefined && layoutAlignment === "left"))
@@ -1358,6 +1473,8 @@ export function CanvasObjectRenderer({
         );
 
       case "verificationBadge": {
+        const isCornerScalingActive = Boolean(resizingEmbed && resizingEmbed.isCornerScaling && resizingEmbed.scaleFactor);
+        const activeScale = isCornerScalingActive ? (resizingEmbed?.scaleFactor ?? 1) : 1;
         return (
           <div
             key={el.id}
@@ -1368,8 +1485,11 @@ export function CanvasObjectRenderer({
             style={baseWrapperStyle}
             className={`flex items-center justify-center ${outlineClasses}`}
           >
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/15 border border-sky-500/40 text-sky-400 text-[10px] font-bold font-mono">
-              <BadgeCheck size={12} className="shrink-0" />
+            <span
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/15 border border-sky-500/40 text-sky-400 font-bold font-mono"
+              style={{ fontSize: `${Math.max(7, Math.round(10 * activeScale))}px` }}
+            >
+              <BadgeCheck size={Math.max(8, Math.round(12 * activeScale))} className="shrink-0" />
               VERIFIED
             </span>
           </div>
@@ -1378,6 +1498,8 @@ export function CanvasObjectRenderer({
 
       case "rpc": {
         if (!config.discordRpc?.showProfileRpc && !isInteractive) return null;
+        const isCornerScalingActive = Boolean(resizingEmbed && resizingEmbed.isCornerScaling && resizingEmbed.scaleFactor);
+        const activeScale = isCornerScalingActive ? (resizingEmbed?.scaleFactor ?? 1) : 1;
 
         return (
           <div
@@ -1393,12 +1515,30 @@ export function CanvasObjectRenderer({
           >
             {renderHoverBadge()}
             {renderElementResizeHandles(el, currentW, currentH, currentX, currentY, false)}
-            <DiscordRpcCard
-              config={config.discordRpc}
-              data={discordPresence}
-              isInteractiveEditor={isInteractive}
-              isPremium={isPremium || data?.isPremium}
-            />
+            {activeScale !== 1 ? (
+              <div
+                style={{
+                  transform: `scale(${activeScale})`,
+                  transformOrigin: "top center",
+                  width: `${100 / activeScale}%`,
+                  marginBottom: `-${Math.round((1 - activeScale) * 110)}px`,
+                }}
+              >
+                <DiscordRpcCard
+                  config={config.discordRpc}
+                  data={discordPresence}
+                  isInteractiveEditor={isInteractive}
+                  isPremium={isPremium || data?.isPremium}
+                />
+              </div>
+            ) : (
+              <DiscordRpcCard
+                config={config.discordRpc}
+                data={discordPresence}
+                isInteractiveEditor={isInteractive}
+                isPremium={isPremium || data?.isPremium}
+              />
+            )}
           </div>
         );
       }
@@ -1407,6 +1547,8 @@ export function CanvasObjectRenderer({
         const buttonList = buttons.length > 0 ? buttons : [
           { id: "b1", title: "WEBSITE", subtitle: "Visit Official Domain", url: "https://pixel.gg" },
         ];
+        const isCornerScalingActive = Boolean(resizingEmbed && resizingEmbed.isCornerScaling && resizingEmbed.scaleFactor);
+        const activeScale = isCornerScalingActive ? (resizingEmbed?.scaleFactor ?? 1) : 1;
 
         return (
           <div
@@ -1417,7 +1559,7 @@ export function CanvasObjectRenderer({
             onPointerDown={handlePointerDown}
             onPointerEnter={() => isInteractive && setHoveredElementId(el.id)}
             onPointerLeave={() => isInteractive && setHoveredElementId((prev) => (prev === el.id ? null : prev))}
-            style={{ ...baseWrapperStyle, gap: `${config.layout?.appsSpacing ?? 10}px` }}
+            style={{ ...baseWrapperStyle, gap: `${Math.round((config.layout?.appsSpacing ?? 10) * activeScale)}px` }}
             className={`relative w-full flex flex-col p-1 ${outlineClasses}`}
           >
             {renderHoverBadge()}
@@ -1431,18 +1573,32 @@ export function CanvasObjectRenderer({
                 onClick={(e) => {
                   if (isInteractive) e.preventDefault();
                 }}
-                className="w-full p-3 rounded-xl bg-white text-black font-bold flex items-center justify-between hover:bg-neutral-200 transition-all shadow-md group"
+                className="w-full rounded-xl bg-white text-black font-bold flex items-center justify-between hover:bg-neutral-200 transition-all shadow-md group"
                 style={{
-                  borderRadius: `${config.buttons?.borderRadius || 14}px`,
+                  padding: `${Math.max(6, Math.round(12 * activeScale))}px`,
+                  borderRadius: `${Math.max(4, Math.round((config.buttons?.borderRadius || 14) * activeScale))}px`,
                 }}
               >
                 <div className="flex flex-col text-left truncate">
-                  <span className="text-xs uppercase tracking-wider">{btn.title}</span>
+                  <span
+                    className="uppercase tracking-wider"
+                    style={{ fontSize: `${Math.max(8, Math.round(12 * activeScale))}px` }}
+                  >
+                    {btn.title}
+                  </span>
                   {btn.subtitle && (
-                    <span className="text-[10px] text-neutral-600 font-normal">{btn.subtitle}</span>
+                    <span
+                      className="text-neutral-600 font-normal"
+                      style={{ fontSize: `${Math.max(7, Math.round(10 * activeScale))}px` }}
+                    >
+                      {btn.subtitle}
+                    </span>
                   )}
                 </div>
-                <ExternalLink size={14} className="text-neutral-500 group-hover:text-black transition-colors shrink-0" />
+                <ExternalLink
+                  size={Math.max(8, Math.round(14 * activeScale))}
+                  className="text-neutral-500 group-hover:text-black transition-colors shrink-0"
+                />
               </a>
             ))}
           </div>
@@ -2376,12 +2532,13 @@ export function CanvasObjectRenderer({
             {/* 8-Point Figma / Photoshop Resize Handles (Only when unlocked) */}
             {isSelectedEmbed && !embed.isLocked && (
               <>
-                {/* 4 Corner Handles: Full Proportional Embed Scaling */}
+                {/* 4 Corner Handles: Operation A — Object Scaling (Embed + Typography & Content) */}
                 <div
                   data-handle="tl"
                   onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                  onContextMenu={(e) => { e.stopPropagation(); e.preventDefault(); }}
                   onPointerDown={(e) => handleResizePointerDown(e, embed.id, "tl", currentW, currentH, currentX, currentY)}
-                  title="Resize Corner (NW) - Scales embed & internal content proportionally (Anchors SE corner)"
+                  title="Scale Entire Embed (NW Corner) - Proportional object & typography scaling (SE Anchor)"
                   className="resize-handle group absolute -top-3.5 -left-3.5 w-7 h-7 flex items-center justify-center cursor-nwse-resize z-55 pointer-events-auto"
                 >
                   <div className="w-3.5 h-3.5 bg-white border-2 border-amber-500 rounded-[3px] shadow-[0_1px_5px_rgba(0,0,0,0.7)] group-hover:scale-125 group-hover:bg-amber-100 transition-transform" />
@@ -2389,8 +2546,9 @@ export function CanvasObjectRenderer({
                 <div
                   data-handle="tr"
                   onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                  onContextMenu={(e) => { e.stopPropagation(); e.preventDefault(); }}
                   onPointerDown={(e) => handleResizePointerDown(e, embed.id, "tr", currentW, currentH, currentX, currentY)}
-                  title="Resize Corner (NE) - Scales embed & internal content proportionally (Anchors SW corner)"
+                  title="Scale Entire Embed (NE Corner) - Proportional object & typography scaling (SW Anchor)"
                   className="resize-handle group absolute -top-3.5 -right-3.5 w-7 h-7 flex items-center justify-center cursor-nesw-resize z-55 pointer-events-auto"
                 >
                   <div className="w-3.5 h-3.5 bg-white border-2 border-amber-500 rounded-[3px] shadow-[0_1px_5px_rgba(0,0,0,0.7)] group-hover:scale-125 group-hover:bg-amber-100 transition-transform" />
@@ -2398,8 +2556,9 @@ export function CanvasObjectRenderer({
                 <div
                   data-handle="bl"
                   onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                  onContextMenu={(e) => { e.stopPropagation(); e.preventDefault(); }}
                   onPointerDown={(e) => handleResizePointerDown(e, embed.id, "bl", currentW, currentH, currentX, currentY)}
-                  title="Resize Corner (SW) - Scales embed & internal content proportionally (Anchors NE corner)"
+                  title="Scale Entire Embed (SW Corner) - Proportional object & typography scaling (NE Anchor)"
                   className="resize-handle group absolute -bottom-3.5 -left-3.5 w-7 h-7 flex items-center justify-center cursor-nesw-resize z-55 pointer-events-auto"
                 >
                   <div className="w-3.5 h-3.5 bg-white border-2 border-amber-500 rounded-[3px] shadow-[0_1px_5px_rgba(0,0,0,0.7)] group-hover:scale-125 group-hover:bg-amber-100 transition-transform" />
@@ -2407,63 +2566,68 @@ export function CanvasObjectRenderer({
                 <div
                   data-handle="br"
                   onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                  onContextMenu={(e) => { e.stopPropagation(); e.preventDefault(); }}
                   onPointerDown={(e) => handleResizePointerDown(e, embed.id, "br", currentW, currentH, currentX, currentY)}
-                  title="Resize Corner (SE) - Scales embed & internal content proportionally (Anchors NW corner)"
+                  title="Scale Entire Embed (SE Corner) - Proportional object & typography scaling (NW Anchor)"
                   className="resize-handle group absolute -bottom-3.5 -right-3.5 w-7 h-7 flex items-center justify-center cursor-nwse-resize z-55 pointer-events-auto"
                 >
                   <div className="w-3.5 h-3.5 bg-white border-2 border-amber-500 rounded-[3px] shadow-[0_1px_5px_rgba(0,0,0,0.7)] group-hover:scale-125 group-hover:bg-amber-100 transition-transform" />
                 </div>
 
-                {/* 4 Edge Handles: Internal Spacing Adjusters (Outer Dimensions Fixed) */}
+                {/* 4 Edge Handles: Operation B (Anchored Container) & Operation C (Symmetrical Container) */}
                 <div
                   data-handle="tc"
                   onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                  onContextMenu={(e) => { e.stopPropagation(); e.preventDefault(); }}
                   onPointerDown={(e) => handleResizePointerDown(e, embed.id, "tc", currentW, currentH, currentX, currentY)}
-                  title="Adjust Vertical Spacing (Top) - Drag to adjust element gap (Fixed outer dimensions)"
+                  title="Resize Height (Top Edge) - Drag to resize container height | Right-click drag for symmetrical resize (Bottom Anchor)"
                   className="resize-handle group absolute -top-3.5 left-1/2 -translate-x-1/2 w-7 h-7 flex items-center justify-center cursor-ns-resize z-55 pointer-events-auto"
                 >
-                  <div className="w-5 h-2 bg-neutral-900 border border-cyan-400 rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.7)] group-hover:bg-cyan-500/30 group-hover:border-cyan-300 transition-all" />
+                  <div className="w-6 h-2 bg-neutral-900 border border-cyan-400 rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.7)] group-hover:bg-cyan-500/30 group-hover:border-cyan-300 transition-all" />
                 </div>
                 <div
                   data-handle="bc"
                   onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                  onContextMenu={(e) => { e.stopPropagation(); e.preventDefault(); }}
                   onPointerDown={(e) => handleResizePointerDown(e, embed.id, "bc", currentW, currentH, currentX, currentY)}
-                  title="Adjust Vertical Spacing (Bottom) - Drag to adjust element gap (Fixed outer dimensions)"
+                  title="Resize Height (Bottom Edge) - Drag to resize container height | Right-click drag for symmetrical resize (Top Anchor)"
                   className="resize-handle group absolute -bottom-3.5 left-1/2 -translate-x-1/2 w-7 h-7 flex items-center justify-center cursor-ns-resize z-55 pointer-events-auto"
                 >
-                  <div className="w-5 h-2 bg-neutral-900 border border-cyan-400 rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.7)] group-hover:bg-cyan-500/30 group-hover:border-cyan-300 transition-all" />
+                  <div className="w-6 h-2 bg-neutral-900 border border-cyan-400 rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.7)] group-hover:bg-cyan-500/30 group-hover:border-cyan-300 transition-all" />
                 </div>
                 <div
                   data-handle="ml"
                   onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                  onContextMenu={(e) => { e.stopPropagation(); e.preventDefault(); }}
                   onPointerDown={(e) => handleResizePointerDown(e, embed.id, "ml", currentW, currentH, currentX, currentY)}
-                  title="Adjust Horizontal Spacing (Left) - Drag to adjust container padding (Fixed outer dimensions)"
+                  title="Resize Width (Left Edge) - Drag to resize container width | Right-click drag for symmetrical resize (Right Anchor)"
                   className="resize-handle group absolute top-1/2 -left-3.5 -translate-y-1/2 w-7 h-7 flex items-center justify-center cursor-ew-resize z-55 pointer-events-auto"
                 >
-                  <div className="w-2 h-5 bg-neutral-900 border border-cyan-400 rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.7)] group-hover:bg-cyan-500/30 group-hover:border-cyan-300 transition-all" />
+                  <div className="w-2 h-6 bg-neutral-900 border border-cyan-400 rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.7)] group-hover:bg-cyan-500/30 group-hover:border-cyan-300 transition-all" />
                 </div>
                 <div
                   data-handle="mr"
                   onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                  onContextMenu={(e) => { e.stopPropagation(); e.preventDefault(); }}
                   onPointerDown={(e) => handleResizePointerDown(e, embed.id, "mr", currentW, currentH, currentX, currentY)}
-                  title="Adjust Horizontal Spacing (Right) - Drag to adjust container padding (Fixed outer dimensions)"
+                  title="Resize Width (Right Edge) - Drag to resize container width | Right-click drag for symmetrical resize (Left Anchor)"
                   className="resize-handle group absolute top-1/2 -right-3.5 -translate-y-1/2 w-7 h-7 flex items-center justify-center cursor-ew-resize z-55 pointer-events-auto"
                 >
-                  <div className="w-2 h-5 bg-neutral-900 border border-cyan-400 rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.7)] group-hover:bg-cyan-500/30 group-hover:border-cyan-300 transition-all" />
+                  <div className="w-2 h-6 bg-neutral-900 border border-cyan-400 rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.7)] group-hover:bg-cyan-500/30 group-hover:border-cyan-300 transition-all" />
                 </div>
 
-                {/* Floating Dimension & Spacing Tag */}
+                {/* Floating Dimension & Resizing Mode Tag */}
                 <div className="absolute -bottom-9 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-md bg-[#121216]/95 backdrop-blur-md border border-neutral-700/80 text-neutral-200 font-mono text-[10px] font-bold shadow-xl flex items-center gap-2 pointer-events-none select-none z-55 whitespace-nowrap">
-                  {resizingEmbed?.isSideSpacing ? (
-                    resizingEmbed.handle === "tc" || resizingEmbed.handle === "bc" ? (
+                  {resizingEmbed?.isEdgeResizing ? (
+                    resizingEmbed.isSymmetric ? (
                       <span className="text-cyan-400 flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                        Vertical Spacing (Gap): {resizingEmbed.currentGap}px
+                        SYMMETRIC: {Math.round(currentW)} × {Math.round(currentH)} px (Center Fixed)
                       </span>
                     ) : (
-                      <span className="text-cyan-400 flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                        Horizontal Spacing (Padding): {resizingEmbed.currentPadding}px
+                      <span className="text-amber-400 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                        CONTAINER: {Math.round(currentW)} × {Math.round(currentH)} px (Internal Elements Untouched)
                       </span>
                     )
                   ) : (

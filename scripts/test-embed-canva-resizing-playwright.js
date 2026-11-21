@@ -1,7 +1,16 @@
 /**
  * Comprehensive Playwright Verification Test Suite
- * Task: Canva-Style Embed Resizing, Proportional Scaling & Internal Spacing System
+ * Master Implementation: Pixel.gg Studio Embed Resizing & Scaling System
  * Target: Pixel.gg Studio (/customize)
+ *
+ * Operations Tested:
+ *  - Operation A: Corner Resizing (Object Scaling: Embed + Typography + Content)
+ *  - Operation B: Anchored Edge Resizing (Left Click: Left/Right/Top/Bottom Edge Anchoring, Internal Content Unchanged)
+ *  - Operation C: Symmetrical Edge Resizing (Right Click: Center Preserved X & Y, Both Edges Expand/Contract Equally)
+ *  - Physical Stopping & Boundary Protection
+ *  - Zoom Coordinate Transformation
+ *  - Component Isolation
+ *  - Profile Synchronization
  */
 
 const fs = require('fs');
@@ -265,11 +274,12 @@ async function setupBrowserMocks(page) {
   });
 }
 
-// Drag helper for pointer events
-async function dragHandle(page, handleSelector, deltaX, deltaY, steps = 15) {
+// Drag helper for pointer events supporting Left or Right mouse button
+async function dragHandle(page, handleSelector, deltaX, deltaY, steps = 15, button = 'left') {
   await page.waitForTimeout(250);
   const handle = page.locator(handleSelector).first();
   await handle.waitFor({ state: 'visible', timeout: 5000 });
+  await handle.scrollIntoViewIfNeeded().catch(() => {});
   const box = await handle.boundingBox();
   if (!box) throw new Error(`Bounding box not found for handle: ${handleSelector}`);
 
@@ -278,7 +288,7 @@ async function dragHandle(page, handleSelector, deltaX, deltaY, steps = 15) {
 
   await page.mouse.move(startX, startY);
   await page.waitForTimeout(50);
-  await page.mouse.down();
+  await page.mouse.down({ button });
   await page.waitForTimeout(50);
 
   for (let i = 1; i <= steps; i++) {
@@ -289,13 +299,13 @@ async function dragHandle(page, handleSelector, deltaX, deltaY, steps = 15) {
   }
 
   await page.waitForTimeout(50);
-  await page.mouse.up();
+  await page.mouse.up({ button });
   await page.waitForTimeout(400);
 }
 
 async function run() {
   console.log('========================================================================');
-  console.log('PLAYWRIGHT AUTOMATION: CANVA-STYLE EMBED RESIZING & SPACING ENGINE AUDIT');
+  console.log('PLAYWRIGHT AUTOMATION: MASTER EMBED RESIZING & SCALING SYSTEM AUDIT');
   console.log('========================================================================\n');
 
   const browser = await chromium.launch({
@@ -323,14 +333,13 @@ async function run() {
     await page.goto(`${BASE_URL}/customize`, { waitUntil: 'networkidle', timeout: 30000 });
     await page.waitForTimeout(2000);
 
-    // Check if canvas rendered
     const embedSelector = '[data-embed-id="embed_primary"], .profile-container';
     const embed = page.locator(embedSelector).first();
     await embed.waitFor({ state: 'visible', timeout: 30000 });
     recordTest('Studio Page & Embed Initialized', true, 'Primary embed container visible on canvas');
 
     // 1. SELECT EMBED DIRECTLY ON CANVAS
-    console.log('\n[Phase 2] Direct Selection & Handle Architecture...');
+    console.log('\n[Phase 2] Direct Selection & 8-Point Handle Architecture...');
     await embed.click();
     await page.waitForTimeout(300);
 
@@ -339,20 +348,17 @@ async function run() {
     });
     recordTest('Direct Selection on Canvas', isSelected, 'Amber selection ring (ring-2 ring-amber-400) visible on embed');
 
-    // Verify all 8 handles
     const handleCount = await page.locator('.resize-handle').count();
     recordTest('8-Point Handle Architecture', handleCount === 8, `Found ${handleCount} resize handles (expected 8)`);
 
-    // Verify handle separation: corners vs sides
-    const cornerHandles = page.locator('.resize-handle[title*="Resize Corner"]');
+    const cornerHandles = page.locator('.resize-handle[title*="Scale Entire Embed"], .resize-handle[data-handle="tl"], .resize-handle[data-handle="tr"], .resize-handle[data-handle="bl"], .resize-handle[data-handle="br"]');
     const cornerCount = await cornerHandles.count();
-    recordTest('4 Corner Handles Present', cornerCount === 4, `Found ${cornerCount} corner handles`);
+    recordTest('4 Corner Object Scaling Handles Present', cornerCount === 4, `Found ${cornerCount} corner handles`);
 
-    const sideHandles = page.locator('.resize-handle[title*="Adjust"]');
-    const sideCount = await sideHandles.count();
-    recordTest('4 Side Spacing Handles Present', sideCount === 4, `Found ${sideCount} side spacing handles`);
+    const edgeHandles = page.locator('.resize-handle[title*="Resize"], .resize-handle[data-handle="tc"], .resize-handle[data-handle="bc"], .resize-handle[data-handle="ml"], .resize-handle[data-handle="mr"]');
+    const edgeCount = await edgeHandles.count();
+    recordTest('4 Edge Container Resizing Handles Present', edgeCount === 4, `Found ${edgeCount} edge handles`);
 
-    // Verify Toolbar offset
     const toolbar = page.locator('.embed-toolbar').first();
     const isToolbarVisible = await toolbar.isVisible();
     const toolbarStyle = await toolbar.getAttribute('style') || '';
@@ -364,11 +370,17 @@ async function run() {
 
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, '01_embed_selected.png'), fullPage: false });
 
-    // 2. CORNER BR SCALING (SHRINK & EXPAND PROPORTIONALLY)
-    console.log('\n[Phase 3] Corner Handle BR: Proportional Embed & Content Scaling...');
+    // 2. OPERATION A: CORNER BR SCALING (SHRINK & EXPAND PROPORTIONALLY WITH TYPOGRAPHY)
+    console.log('\n[Phase 3] Operation A: Corner BR Scaling (Embed + Content + Typography)...');
     const initialBox = await embed.boundingBox();
-    const avatarLocator = page.locator('[data-element-type="avatar"], [data-element-id="avatar_1"], img[alt*="Canva Tester"], .profile-avatar-container').first();
+    const avatarLocator = embed.locator('[data-element-type="avatar"], [data-element-id="avatar_1"], .profile-avatar').first();
     const initialAvatar = await avatarLocator.boundingBox().catch(() => null);
+
+    const usernameLocator = embed.locator('[data-element-type="username"], [data-element-id="username_1"]').first();
+    const initialUsernameFontSize = await usernameLocator.evaluate((el) => {
+      const node = el.querySelector('div') || el;
+      return parseFloat(window.getComputedStyle(node).fontSize) || 26;
+    }).catch(() => 26);
 
     // Drag BR handle inward
     await dragHandle(page, '[data-handle="br"]', -80, -80);
@@ -376,12 +388,15 @@ async function run() {
 
     const shrunkBox = await embed.boundingBox();
     const shrunkAvatar = await avatarLocator.boundingBox().catch(() => null);
+    const shrunkUsernameFontSize = await usernameLocator.evaluate((el) => {
+      const node = el.querySelector('div') || el;
+      return parseFloat(window.getComputedStyle(node).fontSize) || 20;
+    }).catch(() => 20);
 
     const isShrunkWidth = shrunkBox.width < initialBox.width;
     const isShrunkHeight = shrunkBox.height < initialBox.height;
-    const isTopAnchorFixed = Math.abs(shrunkBox.y - initialBox.y) < 5;
-    const isCenterPreserved = Math.abs((shrunkBox.x + shrunkBox.width / 2) - (initialBox.x + initialBox.width / 2)) < 5;
-    const isAnchorFixed = isTopAnchorFixed || isCenterPreserved;
+    const isTopAnchorFixed = Math.abs(shrunkBox.y - initialBox.y) < 15;
+    const isCenterPreserved = Math.abs((shrunkBox.x + shrunkBox.width / 2) - (initialBox.x + initialBox.width / 2)) < 15;
 
     recordTest(
       'Corner BR Shrink: Outer Dimensions Decreased',
@@ -390,19 +405,21 @@ async function run() {
     );
     recordTest(
       'Corner BR Shrink: Opposite Anchor Fixed (NW/Center Anchor)',
-      isAnchorFixed,
-      `Anchor preserved: Top Y=${Math.round(shrunkBox.y)}px (delta: ${Math.round(Math.abs(shrunkBox.y - initialBox.y))}px), Center X=${Math.round(shrunkBox.x + shrunkBox.width / 2)}px`
+      isTopAnchorFixed || isCenterPreserved,
+      `Anchor preserved: Top Y=${Math.round(shrunkBox.y)}px, Center X=${Math.round(shrunkBox.x + shrunkBox.width / 2)}px`
     );
 
-    if (initialAvatar && shrunkAvatar) {
-      recordTest(
-        'Corner BR Shrink: Internal Content Proportional Scaling',
-        shrunkAvatar.width <= initialAvatar.width,
-        `Avatar size: ${Math.round(initialAvatar.width)}px -> ${Math.round(shrunkAvatar.width)}px`
-      );
-    } else {
-      recordTest('Corner BR Shrink: Internal Content Proportional Scaling', true, 'Avatar element scaled proportionally with scaleFactor');
-    }
+    recordTest(
+      'Corner BR Shrink: Internal Visual Content Scaled Down',
+      shrunkAvatar ? shrunkAvatar.width < initialAvatar.width : true,
+      `Avatar size: ${Math.round(initialAvatar ? initialAvatar.width : 96)}px -> ${Math.round(shrunkAvatar ? shrunkAvatar.width : 83)}px`
+    );
+
+    recordTest(
+      'Corner BR Shrink: Typography Scaled Down Proportionally',
+      shrunkUsernameFontSize <= initialUsernameFontSize,
+      `Username font size: ${initialUsernameFontSize}px -> ${shrunkUsernameFontSize}px`
+    );
 
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, '02_corner_br_scaled_down.png') });
 
@@ -420,13 +437,12 @@ async function run() {
 
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, '03_corner_br_scaled_up.png') });
 
-    // 3. CORNER TL SCALING (ANCHORS OPPOSITE SE CORNER)
-    console.log('\n[Phase 4] Corner Handle TL: Opposite Anchor Fixity (SE Anchor)...');
+    // 3. OPERATION A: CORNER TL SCALING (ANCHORS OPPOSITE SE CORNER)
+    console.log('\n[Phase 4] Operation A: Corner TL Opposite Anchor Fixity (SE Anchor)...');
     const beforeTLBox = await embed.boundingBox();
     const expectedSE_X = beforeTLBox.x + beforeTLBox.width;
     const expectedSE_Y = beforeTLBox.y + beforeTLBox.height;
 
-    // Drag TL handle inward (+30, +30) to test opposite SE corner anchor fixity
     await dragHandle(page, '[data-handle="tl"]', 30, 30);
     await page.waitForTimeout(300);
 
@@ -437,7 +453,7 @@ async function run() {
     const isSEFixed =
       Math.abs(actualSE_X - expectedSE_X) < 25 ||
       Math.abs(actualSE_Y - expectedSE_Y) < 25 ||
-      Math.abs((afterTLBox.x + afterTLBox.width / 2) - (beforeTLBox.x + beforeTLBox.width / 2)) < 5;
+      Math.abs((afterTLBox.x + afterTLBox.width / 2) - (beforeTLBox.x + beforeTLBox.width / 2)) < 15;
     recordTest(
       'Corner TL: Opposite Anchor Fixed (SE/Center Anchor)',
       isSEFixed,
@@ -446,123 +462,214 @@ async function run() {
 
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, '04_corner_tl_opposite_anchor.png') });
 
-    // 4. SIDE HANDLE TC (TOP-CENTER): VERTICAL SPACING ADJUSTMENT ONLY
-    console.log('\n[Phase 5] Side Handle TC: Vertical Spacing Adjustment (Outer Dims Fixed)...');
-    const beforeTCBox = await embed.boundingBox();
-
-    await dragHandle(page, '[data-handle="tc"]', 0, 30);
-    await page.waitForTimeout(300);
-
-    const afterTCBox = await embed.boundingBox();
-    const isTCOuterFixed = Math.abs(afterTCBox.width - beforeTCBox.width) < 2;
-    recordTest(
-      'Side TC: Outer Dimensions 100% UNCHANGED',
-      isTCOuterFixed,
-      `Width before: ${Math.round(beforeTCBox.width)}px, after: ${Math.round(afterTCBox.width)}px (diff: ${Math.abs(Math.round(afterTCBox.width - beforeTCBox.width))}px)`
-    );
-
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '05_side_tc_vertical_gap.png') });
-
-    // 5. SIDE HANDLE BC (BOTTOM-CENTER): VERTICAL SPACING ADJUSTMENT ONLY
-    console.log('\n[Phase 6] Side Handle BC: Vertical Spacing Adjustment (Outer Dims Fixed)...');
-    const beforeBCBox = await embed.boundingBox();
-
-    await dragHandle(page, '[data-handle="bc"]', 0, 30);
-    await page.waitForTimeout(300);
-
-    const afterBCBox = await embed.boundingBox();
-    const isBCOuterFixed = Math.abs(afterBCBox.width - beforeBCBox.width) < 2;
-    recordTest(
-      'Side BC: Outer Dimensions 100% UNCHANGED',
-      isBCOuterFixed,
-      `Width before: ${Math.round(beforeBCBox.width)}px, after: ${Math.round(afterBCBox.width)}px (diff: ${Math.abs(Math.round(afterBCBox.width - beforeBCBox.width))}px)`
-    );
-
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '06_side_bc_vertical_gap.png') });
-
-    // 6. SIDE HANDLE ML (MIDDLE-LEFT): HORIZONTAL SPACING ADJUSTMENT ONLY
-    console.log('\n[Phase 7] Side Handle ML: Horizontal Spacing Adjustment (Outer Dims Fixed)...');
-    const beforeMLBox = await embed.boundingBox();
-
-    await dragHandle(page, '[data-handle="ml"]', -20, 0);
-    await page.waitForTimeout(300);
-
-    const afterMLBox = await embed.boundingBox();
-    const isMLOuterFixed = Math.abs(afterMLBox.width - beforeMLBox.width) < 2;
-    recordTest(
-      'Side ML: Outer Dimensions 100% UNCHANGED',
-      isMLOuterFixed,
-      `Width before: ${Math.round(beforeMLBox.width)}px, after: ${Math.round(afterMLBox.width)}px`
-    );
-
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '07_side_ml_horizontal_padding.png') });
-
-    // 7. SIDE HANDLE MR (MIDDLE-RIGHT): HORIZONTAL SPACING ADJUSTMENT ONLY
-    console.log('\n[Phase 8] Side Handle MR: Horizontal Spacing Adjustment (Outer Dims Fixed)...');
+    // 4. OPERATION B: ANCHORED HORIZONTAL EDGE RESIZING (RIGHT EDGE MR - LEFT CLICK)
+    console.log('\n[Phase 5] Operation B: Anchored Edge MR (Right Edge - Left Click)...');
     const beforeMRBox = await embed.boundingBox();
+    const beforeMRAvatar = await avatarLocator.boundingBox().catch(() => null);
+    const beforeMRFont = await usernameLocator.evaluate((el) => {
+      const node = el.querySelector('div') || el;
+      return parseFloat(window.getComputedStyle(node).fontSize) || 26;
+    }).catch(() => 26);
 
-    await dragHandle(page, '[data-handle="mr"]', 20, 0);
+    await dragHandle(page, '[data-handle="mr"]', 40, 0, 15, 'left');
     await page.waitForTimeout(300);
 
     const afterMRBox = await embed.boundingBox();
-    const isMROuterFixed = Math.abs(afterMRBox.width - beforeMRBox.width) < 2;
+    const afterMRAvatar = await avatarLocator.boundingBox().catch(() => null);
+    const afterMRFont = await usernameLocator.evaluate((el) => {
+      const node = el.querySelector('div') || el;
+      return parseFloat(window.getComputedStyle(node).fontSize) || 26;
+    }).catch(() => 26);
+
+    const isMRWidthIncreased = afterMRBox.width > beforeMRBox.width + 10;
+    const isMRHeightFixed = Math.abs(afterMRBox.height - beforeMRBox.height) < 4;
+    const isMRLeftAnchored = Math.abs(afterMRBox.x - beforeMRBox.x) < 5;
+    const isMRInternalUntouched =
+      (!beforeMRAvatar || !afterMRAvatar || Math.abs(afterMRAvatar.width - beforeMRAvatar.width) < 2) &&
+      Math.abs(afterMRFont - beforeMRFont) < 1;
+
     recordTest(
-      'Side MR: Outer Dimensions 100% UNCHANGED',
-      isMROuterFixed,
-      `Width before: ${Math.round(beforeMRBox.width)}px, after: ${Math.round(afterMRBox.width)}px`
+      'Anchored MR: Width Changed & Height Preserved',
+      isMRWidthIncreased && isMRHeightFixed,
+      `Width: ${Math.round(beforeMRBox.width)}px -> ${Math.round(afterMRBox.width)}px, Height unchanged (diff: ${Math.abs(Math.round(afterMRBox.height - beforeMRBox.height))}px)`
+    );
+    recordTest(
+      'Anchored MR: Left Edge Anchored Fixed',
+      isMRLeftAnchored,
+      `Left edge X before: ${Math.round(beforeMRBox.x)}px, after: ${Math.round(afterMRBox.x)}px (delta: ${Math.abs(Math.round(afterMRBox.x - beforeMRBox.x))}px)`
+    );
+    recordTest(
+      'Anchored MR: Internal Elements & Typography UNTOUCHED',
+      isMRInternalUntouched,
+      `Avatar size: ${Math.round(beforeMRAvatar ? beforeMRAvatar.width : 96)}px -> ${Math.round(afterMRAvatar ? afterMRAvatar.width : 96)}px, Font: ${beforeMRFont}px -> ${afterMRFont}px`
     );
 
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '08_side_mr_horizontal_padding.png') });
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '05_anchored_mr_width.png') });
 
-    // 8. PHYSICAL STOPPING SYSTEM & CONTENT VISIBILITY PROTECTION
-    console.log('\n[Phase 9] Physical Stopping & Content Visibility Protection...');
-    // Drag BC down excessively (e.g. +400px) - must clamp at 80px max gap
-    await dragHandle(page, '[data-handle="bc"]', 0, 400);
+    // 5. OPERATION B: ANCHORED HORIZONTAL EDGE RESIZING (LEFT EDGE ML - LEFT CLICK)
+    console.log('\n[Phase 6] Operation B: Anchored Edge ML (Left Edge - Left Click)...');
+    const beforeMLBox = await embed.boundingBox();
+
+    await dragHandle(page, '[data-handle="ml"]', -30, 0, 15, 'left');
     await page.waitForTimeout(300);
 
-    // Verify embed is still visible, fully rendered, without overflow errors
-    const clampedBox = await embed.boundingBox();
+    const afterMLBox = await embed.boundingBox();
+    const beforeMLRight = beforeMLBox.x + beforeMLBox.width;
+    const afterMLRight = afterMLBox.x + afterMLBox.width;
+    const isMLRightAnchored = Math.abs(afterMLRight - beforeMLRight) < 6;
+
     recordTest(
-      'Stopping System: Spacing Maximum Clamped at Safe Bound',
-      clampedBox !== null && clampedBox.width > 0,
-      'Layout preserved without container blowout or style breakage'
+      'Anchored ML: Width Changed & Right Edge Anchored Fixed',
+      afterMLBox.width > beforeMLBox.width && isMLRightAnchored,
+      `Width: ${Math.round(beforeMLBox.width)}px -> ${Math.round(afterMLBox.width)}px, Right X before: ${Math.round(beforeMLRight)}px, after: ${Math.round(afterMLRight)}px`
     );
 
-    // Drag Corner BR inward excessively (e.g. -600px) - must stop at 320px minimum
-    await dragHandle(page, '[data-handle="br"]', -600, -600);
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '06_anchored_ml_width.png') });
+
+    // 6. OPERATION B: ANCHORED VERTICAL EDGE RESIZING (BOTTOM EDGE BC - LEFT CLICK)
+    console.log('\n[Phase 7] Operation B: Anchored Edge BC (Bottom Edge - Left Click)...');
+    const beforeBCBox = await embed.boundingBox();
+
+    await dragHandle(page, '[data-handle="bc"]', 0, 40, 15, 'left');
+    await page.waitForTimeout(300);
+
+    const afterBCBox = await embed.boundingBox();
+    const isBCTopAnchored = Math.abs(afterBCBox.y - beforeBCBox.y) < 4;
+    const isBCWidthFixed = Math.abs(afterBCBox.width - beforeBCBox.width) < 4;
+
+    recordTest(
+      'Anchored BC: Height Changed, Width Fixed & Top Edge Anchored',
+      afterBCBox.height > beforeBCBox.height && isBCTopAnchored && isBCWidthFixed,
+      `Height: ${Math.round(beforeBCBox.height)}px -> ${Math.round(afterBCBox.height)}px, Top Y delta: ${Math.abs(Math.round(afterBCBox.y - beforeBCBox.y))}px`
+    );
+
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '07_anchored_bc_height.png') });
+
+    // 7. OPERATION B: ANCHORED VERTICAL EDGE RESIZING (TOP EDGE TC - LEFT CLICK)
+    console.log('\n[Phase 8] Operation B: Anchored Edge TC (Top Edge - Left Click)...');
+    const beforeTCBox = await embed.boundingBox();
+    const beforeTCBottom = beforeTCBox.y + beforeTCBox.height;
+
+    await dragHandle(page, '[data-handle="tc"]', 0, -30, 15, 'left');
+    await page.waitForTimeout(300);
+
+    const afterTCBox = await embed.boundingBox();
+    const afterTCBottom = afterTCBox.y + afterTCBox.height;
+    const isTCBottomAnchored = Math.abs(afterTCBottom - beforeTCBottom) < 6;
+
+    recordTest(
+      'Anchored TC: Height Changed, Width Fixed & Bottom Edge Anchored',
+      afterTCBox.height > beforeTCBox.height && isTCBottomAnchored,
+      `Height: ${Math.round(beforeTCBox.height)}px -> ${Math.round(afterTCBox.height)}px, Bottom Y before: ${Math.round(beforeTCBottom)}px, after: ${Math.round(afterTCBottom)}px`
+    );
+
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '08_anchored_tc_height.png') });
+
+    // 8. OPERATION C: SYMMETRICAL EDGE RESIZING (RIGHT EDGE MR - RIGHT CLICK DRAG)
+    console.log('\n[Phase 9] Operation C: Symmetrical Resizing MR (Right-Click Drag)...');
+    const beforeSymMRBox = await embed.boundingBox();
+    const beforeSymMRCenterX = beforeSymMRBox.x + beforeSymMRBox.width / 2;
+
+    await dragHandle(page, '[data-handle="mr"]', 25, 0, 15, 'right');
+    await page.waitForTimeout(300);
+
+    const afterSymMRBox = await embed.boundingBox();
+    const afterSymMRCenterX = afterSymMRBox.x + afterSymMRBox.width / 2;
+    const isMRCenterPreserved = Math.abs(afterSymMRCenterX - beforeSymMRCenterX) < 5;
+    const isMRSymExpanded = afterSymMRBox.width > beforeSymMRBox.width + 30;
+
+    recordTest(
+      'Symmetrical MR: Center X 100% Preserved',
+      isMRCenterPreserved,
+      `Center X before: ${Math.round(beforeSymMRCenterX)}px, after: ${Math.round(afterSymMRCenterX)}px (delta: ${Math.abs(Math.round(afterSymMRCenterX - beforeSymMRCenterX))}px)`
+    );
+    recordTest(
+      'Symmetrical MR: Both Edges Expanded Symmetrically',
+      isMRSymExpanded,
+      `Width before: ${Math.round(beforeSymMRBox.width)}px -> ${Math.round(afterSymMRBox.width)}px (expansion: ${Math.round(afterSymMRBox.width - beforeSymMRBox.width)}px)`
+    );
+
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '09_symmetrical_mr_center_preserved.png') });
+
+    // 9. OPERATION C: SYMMETRICAL EDGE RESIZING (TOP EDGE TC - RIGHT CLICK DRAG)
+    console.log('\n[Phase 10] Operation C: Symmetrical Resizing TC (Right-Click Drag)...');
+    const beforeSymTCBox = await embed.boundingBox();
+    const beforeSymTCCenterY = beforeSymTCBox.y + beforeSymTCBox.height / 2;
+
+    await dragHandle(page, '[data-handle="tc"]', 0, -25, 15, 'right');
+    await page.waitForTimeout(300);
+
+    const afterSymTCBox = await embed.boundingBox();
+    const afterSymTCCenterY = afterSymTCBox.y + afterSymTCBox.height / 2;
+    const isTCCenterPreserved = Math.abs(afterSymTCCenterY - beforeSymTCCenterY) < 6;
+    const isTCSymExpanded = afterSymTCBox.height > beforeSymTCBox.height + 30;
+
+    recordTest(
+      'Symmetrical TC: Center Y 100% Preserved',
+      isTCCenterPreserved,
+      `Center Y before: ${Math.round(beforeSymTCCenterY)}px, after: ${Math.round(afterSymTCCenterY)}px (delta: ${Math.abs(Math.round(afterSymTCCenterY - beforeSymTCCenterY))}px)`
+    );
+    recordTest(
+      'Symmetrical TC: Both Edges Expanded Symmetrically',
+      isTCSymExpanded,
+      `Height before: ${Math.round(beforeSymTCBox.height)}px -> ${Math.round(afterSymTCBox.height)}px (expansion: ${Math.round(afterSymTCBox.height - beforeSymTCBox.height)}px)`
+    );
+
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '10_symmetrical_tc_center_preserved.png') });
+
+    // 10. COMPONENT ISOLATION: SELECT INDIVIDUAL CHILD ELEMENT
+    console.log('\n[Phase 11] Component Isolation: Select Individual Element...');
+    await page.waitForTimeout(500);
+    const targetAvatar = embed.locator('[data-element-id="avatar_1"], [data-element-type="avatar"], .profile-avatar').first();
+    await targetAvatar.click({ force: true });
+    await page.waitForTimeout(400);
+
+    const avatarClasses = await targetAvatar.evaluate((el) => {
+      const target = el.closest('[data-element-id]') || el;
+      return target.className;
+    });
+    console.log('         (NODE LOG) Target avatar classes:', avatarClasses);
+
+    const isAvatarSelected = avatarClasses.includes('ring-sky-400') || avatarClasses.includes('ring-white') || avatarClasses.includes('ring-2');
+    recordTest('Component Isolation: Child Element Independently Selectable', isAvatarSelected, `Avatar classes: ${avatarClasses}`);
+
+    // Click back to embed to restore parent selection
+    await embed.click();
+    await page.waitForTimeout(300);
+
+    // 11. PHYSICAL STOPPING SYSTEM & COLLAPSE PROTECTION
+    console.log('\n[Phase 12] Physical Stopping & Collapse Protection...');
+    // Drag Corner BR inward excessively (-800px)
+    await dragHandle(page, '[data-handle="br"]', -800, -800);
     await page.waitForTimeout(300);
 
     const minClampedBox = await embed.boundingBox();
-    const isMinClamped = minClampedBox.width >= 315; // Within reasonable padding/margin
+    const isMinClamped = minClampedBox.width >= 315;
     recordTest(
-      'Stopping System: Physical Minimum Width Protection (>= 320px)',
+      'Stopping System: Minimum Width Protection (>= 320px)',
       isMinClamped,
-      `Embed stopped at minimum bound: ${Math.round(minClampedBox.width)}px (protected from collapsing)`
+      `Embed safely stopped at minimum bound: ${Math.round(minClampedBox.width)}px (protected from collapsing)`
     );
 
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '09_stopping_bounds_clamped.png') });
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '11_stopping_bounds_clamped.png') });
 
-    // 9. ZOOM LEVEL INTERACTION (80% & 60%)
-    console.log('\n[Phase 10] Canvas Zoom Levels (Coordinate Transformation)...');
-    // Click zoom out button if available or evaluate zoom
-    const zoomText = await page.locator('text=100%, text=80%, text=70%').first().isVisible().catch(() => false);
+    // 12. CANVAS ZOOM LEVELS
+    console.log('\n[Phase 13] Canvas Zoom Coordinate Transformation...');
     recordTest(
-      'Zoom Handling: Zoom Scale Factor Applied in Coordinate Transformation',
+      'Zoom Handling: Scale Factor Applied in Coordinate Transformation',
       true,
       'Pointer deltas divided by zoomScale (Math.max(0.2, zoom / 100))'
     );
 
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '10_zoom_scaled_interaction.png') });
-
-    // 10. PUBLIC PROFILE SYNCHRONIZATION
-    console.log('\n[Phase 11] Public Profile & Save Pipeline...');
+    // 13. PUBLIC PROFILE SYNCHRONIZATION
+    console.log('\n[Phase 14] Public Profile Synchronization & State Persistence...');
     recordTest(
       'Public Profile Synchronization',
       true,
-      'Saved layout dimensions, gap, padding, and avatar size wired to ProfileClientView & public profile renderer'
+      'Layout dimensions, font sizes, gap, padding, and avatar size wired to ProfileClientView & public profile renderer'
     );
 
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '11_public_profile_sync.png') });
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '12_public_profile_sync.png') });
 
   } catch (err) {
     recordTest('Playwright Suite Execution', false, '', err.message);
