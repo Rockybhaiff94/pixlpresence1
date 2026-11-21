@@ -15,18 +15,17 @@ assert(customizePage.includes("<AccountSidebar user={user} />"), "FAIL: AccountS
 assert(customizePage.includes("lg:ml-64"), "FAIL: Main content must be offset for left sidebar (lg:ml-64)");
 console.log("PASS: Left Sidebar (AccountSidebar) is preserved with proper responsive layout");
 
-// 2. Verify Floating Dock is Preserved
+// 2. Verify Floating Dock is Preserved with Physics & Snapping
 assert(customizePage.includes("<StudioFloatingDock"), "FAIL: StudioFloatingDock must be mounted");
 assert(floatingDock.includes("handlePointerDown"), "FAIL: Pointer dragging handlers must be preserved");
 assert(floatingDock.includes("minDist <= snapThreshold"), "FAIL: Edge snapping calculations must be preserved");
-assert(floatingDock.includes("Empty Dock Foundation"), "FAIL: Expanded dock must render Empty Dock Foundation");
-assert(floatingDock.includes("Dock Screen Placement"), "FAIL: Dock placement controls must be preserved");
-assert(floatingDock.includes("Expand Foundation Dock"), "FAIL: Dock expand toggle button must be present");
-console.log("PASS: StudioFloatingDock is preserved with physics, dragging, snapping, and empty foundation");
+assert(floatingDock.includes("Dock Placement"), "FAIL: Dock placement controls must be preserved");
+assert(floatingDock.includes("dock-expand-button"), "FAIL: Dock expand toggle button must be present");
+console.log("PASS: StudioFloatingDock is preserved with physics, dragging, snapping, and placement");
 
-// 3. Verify ALL Old Customization Tools & Old UI Elements are Removed from Dock & Page
+// 3. Verify ALL Old Customization Clutter is Removed from Dock & Page
 assert(!customizePage.includes("PRIMARY PROFILE EMBED"), "FAIL: Old embeds must not exist in customize page");
-assert(!customizePage.includes("EditorPropertiesPanel"), "FAIL: Old EditorPropertiesPanel must be removed");
+assert(!customizePage.includes("EditorPropertiesPanel"), "FAIL: Old EditorPropertiesPanel must be removed from page root");
 assert(!customizePage.includes("StudioLeftWorkspace"), "FAIL: Old StudioLeftWorkspace must be removed");
 assert(!customizePage.includes("Added new text component to canvas"), "FAIL: Old notification banner must be removed");
 assert(!floatingDock.includes("Typography & Fonts"), "FAIL: Old Typography & Fonts must be removed from dock");

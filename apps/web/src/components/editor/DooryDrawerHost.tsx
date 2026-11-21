@@ -132,8 +132,10 @@ export const DooryDrawerHost: React.FC<DooryDrawerHostProps> = ({
       case "elements":
         return "Graphics & Stickers";
       case "images":
-        return "Images & Uploads";
+      case "media":
+        return "Images & Media";
       case "background":
+      case "canvas":
         return "Canvas Background";
       case "layers":
         return "Layers & Hierarchy";
@@ -418,8 +420,8 @@ export const DooryDrawerHost: React.FC<DooryDrawerHostProps> = ({
           </div>
         )}
 
-        {/* ===================== IMAGES DRAWER ===================== */}
-        {activeTool === "images" && (
+        {/* ===================== IMAGES / MEDIA DRAWER ===================== */}
+        {(activeTool === "images" || activeTool === "media") && (
           <div className="space-y-5">
             <div>
               <div className="text-[10px] font-mono text-neutral-400 uppercase tracking-widest mb-2.5">
@@ -502,8 +504,8 @@ export const DooryDrawerHost: React.FC<DooryDrawerHostProps> = ({
           </div>
         )}
 
-        {/* ===================== BACKGROUND DRAWER ===================== */}
-        {activeTool === "background" && (
+        {/* ===================== BACKGROUND / CANVAS DRAWER ===================== */}
+        {(activeTool === "background" || activeTool === "canvas") && (
           <div className="space-y-5">
             <div>
               <div className="text-[10px] font-mono text-neutral-400 uppercase tracking-widest mb-2.5">

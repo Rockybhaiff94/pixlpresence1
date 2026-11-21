@@ -534,15 +534,9 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
         isDirty={isDirty}
       />
 
-      {/* 2. Main Studio Row: ToolRail + DrawerHost + (ContextualToolbar + CanvasWorkspace) + PropertiesPanel */}
+      {/* 2. Main Studio Row: DrawerHost + (ContextualToolbar + CanvasWorkspace) + PropertiesPanel */}
       <div className="flex-1 flex min-h-0 overflow-hidden relative">
-        {/* Doory Tool Rail */}
-        <DooryToolRail
-          activeTool={activeTool}
-          onToggleTool={handleToggleTool}
-        />
-
-        {/* Expandable Tool Drawer Host */}
+        {/* Expandable Tool Drawer Host (Opened via movable dock tools) */}
         <DooryDrawerHost
           activeTool={activeTool}
           onClose={() => setActiveTool(null)}
@@ -592,8 +586,16 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
               onFitScreen={handleFitScreen}
             />
 
-            {/* Preserved Floating Dock Overlay inside workspace */}
-            {children}
+            {/* Preserved Movable Dock with Integrated Editor Tools */}
+            {React.Children.map(children, (child) => {
+              if (React.isValidElement(child)) {
+                return React.cloneElement(child as React.ReactElement<any>, {
+                  activeTool,
+                  onToggleTool: handleToggleTool,
+                });
+              }
+              return child;
+            })}
           </div>
         </div>
 

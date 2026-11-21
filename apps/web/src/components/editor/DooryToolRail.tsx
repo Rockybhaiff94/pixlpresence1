@@ -17,7 +17,9 @@ export type DooryRailTool =
   | "shapes"
   | "elements"
   | "images"
+  | "media"
   | "background"
+  | "canvas"
   | "layers";
 
 interface DooryToolRailProps {
