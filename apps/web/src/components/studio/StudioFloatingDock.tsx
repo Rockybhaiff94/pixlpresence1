@@ -50,11 +50,11 @@ export interface ToolSelection {
 export interface StudioFloatingDockProps {
   position: DockPosition;
   onPositionChange: (pos: DockPosition) => void;
-  activeCategory: StudioTab;
-  currentView: StudioView;
-  isSettingsOpen: boolean;
-  onSelectTool: (tool: ToolSelection) => void;
-  onCloseSettings: () => void;
+  activeCategory?: StudioTab;
+  currentView?: StudioView;
+  isSettingsOpen?: boolean;
+  onSelectTool?: (tool: ToolSelection) => void;
+  onCloseSettings?: () => void;
   containerRef?: React.RefObject<HTMLDivElement | null>;
   themeAccentColor?: string;
 
@@ -156,7 +156,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         setInternalMode(mode);
       }
       if (mode === "main") {
-        onCloseSettings();
+        onCloseSettings?.();
       }
     },
     [onDockModeChange, onCloseSettings]
@@ -788,7 +788,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
       // Toggle collapse back to Mode A
       setDockMode("main");
     } else {
-      onSelectTool({
+      onSelectTool?.({
         type: "category",
         id: toolId,
         label: PRIMARY_TOOLS.find((t) => t.id === toolId)?.label || "",
@@ -809,10 +809,10 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   // Click on an item in the App Directory (Mode B)
   const handleDirectoryItemClick = (item: AppDirectoryItem) => {
     if (item.type === "settings" && item.tab) {
-      onSelectTool({ type: "category", id: item.tab, label: item.label });
+      onSelectTool?.({ type: "category", id: item.tab, label: item.label });
       setDockMode("settings");
     } else if (item.type === "view" && item.view) {
-      onSelectTool({ type: "view", id: item.view, label: item.label });
+      onSelectTool?.({ type: "view", id: item.view, label: item.label });
       setDockMode("settings");
     } else if (item.type === "action") {
       if (item.action === "addEmbed") onAddEmbed?.();
@@ -1237,79 +1237,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
               )}
             </div>
 
-            {/* 4 Primary Customization Tool Icons */}
-            {PRIMARY_TOOLS.map((tool) => {
-              const Icon = tool.icon;
-              const isActive =
-                isSettingsOpen &&
-                currentView === "categories" &&
-                activeCategory === tool.id;
-
-              return (
-                <div key={tool.id} className="relative group">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      hideTooltip();
-                      handlePrimaryClick(tool.id);
-                    }}
-                    onMouseEnter={(e) =>
-                      showTooltip(e, {
-                        id: tool.id,
-                        label: tool.label,
-                        desc:
-                          tool.id === "layout"
-                            ? "Canvas dimensions, padding & structure"
-                            : tool.id === "identity"
-                            ? "Display name, bio & verification badges"
-                            : tool.id === "typography"
-                            ? "Font families, styles & text hierarchy"
-                            : "Live Discord telemetry & rich presence card",
-                        hotkey: tool.hotkey,
-                      })
-                    }
-                    onMouseLeave={hideTooltip}
-                    onFocus={(e) =>
-                      showTooltip(e, {
-                        id: tool.id,
-                        label: tool.label,
-                        desc:
-                          tool.id === "layout"
-                            ? "Canvas dimensions, padding & structure"
-                            : tool.id === "identity"
-                            ? "Display name, bio & verification badges"
-                            : tool.id === "typography"
-                            ? "Font families, styles & text hierarchy"
-                            : "Live Discord telemetry & rich presence card",
-                        hotkey: tool.hotkey,
-                      })
-                    }
-                    onBlur={hideTooltip}
-                    aria-label={tool.label}
-                    className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer ${
-                      isActive
-                        ? "bg-white text-black font-bold shadow-[0_0_12px_rgba(255,255,255,0.45)] scale-105"
-                        : "text-neutral-400 hover:text-white hover:bg-white/10"
-                    }`}
-                  >
-                    <Icon size={17} />
-                    {isActive && (
-                      <span className="absolute -bottom-0.5 w-1 h-1 rounded-full bg-white shadow" />
-                    )}
-                  </button>
-                </div>
-              );
-            })}
-
-            {/* Separator Line */}
-            <div
-              className={`${
-                isVertical ? "w-5 h-[1px] my-0.5" : "w-[1px] h-5 mx-0.5"
-              } bg-white/10 shrink-0`}
-            />
-
-            {/* 5th Icon: More Options (Dotted Grid Icon) */}
+            {/* Expand Foundation Toggle Button */}
             <div className="relative group">
               <button
                 type="button"
@@ -1320,24 +1248,24 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                 }}
                 onMouseEnter={(e) =>
                   showTooltip(e, {
-                    id: "more-directory",
-                    label: "All Applications",
-                    desc: "Open complete app directory & dock placement controls",
+                    id: "expand-foundation",
+                    label: "Studio Dock Foundation",
+                    desc: "Expand foundation dock panel & screen placement controls",
                   })
                 }
                 onMouseLeave={hideTooltip}
                 onFocus={(e) =>
                   showTooltip(e, {
-                    id: "more-directory",
-                    label: "All Applications",
-                    desc: "Open complete app directory & dock placement controls",
+                    id: "expand-foundation",
+                    label: "Studio Dock Foundation",
+                    desc: "Expand foundation dock panel & screen placement controls",
                   })
                 }
                 onBlur={hideTooltip}
-                aria-label="More Options (Expand App Directory)"
-                className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer text-neutral-400 hover:text-white hover:bg-white/10"
+                aria-label="Expand Foundation Dock"
+                className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer text-neutral-300 hover:text-white hover:bg-white/10"
               >
-                <LayoutGrid size={17} />
+                <LayoutGrid size={16} />
               </button>
             </div>
           </div>
@@ -1365,15 +1293,10 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                 <div>
                   <div className="flex items-center gap-1.5 text-[9px] text-neutral-400 uppercase tracking-widest font-semibold">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>APP DIRECTORY</span>
-                    {panelSize !== 100 && (
-                      <span className="text-[8px] text-neutral-500 font-mono">
-                        ({panelSize}%)
-                      </span>
-                    )}
+                    <span>STUDIO DOCK</span>
                   </div>
                   <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                    All Studio Applications
+                    Foundation View
                   </h3>
                 </div>
               </div>
@@ -1388,7 +1311,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                   onMouseEnter={(e) =>
                     showTooltip(e, {
                       id: "collapse-directory",
-                      label: "Collapse Directory",
+                      label: "Collapse Foundation",
                       desc: "Return to compact dock view",
                     })
                   }
@@ -1396,7 +1319,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                   onFocus={(e) =>
                     showTooltip(e, {
                       id: "collapse-directory",
-                      label: "Collapse Directory",
+                      label: "Collapse Foundation",
                       desc: "Return to compact dock view",
                     })
                   }
@@ -1410,153 +1333,89 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
               </div>
             </div>
 
-            {/* Scrollable Directory Categorized Icon Grids (Scaled by panelScale) */}
+            {/* Clean Empty Foundation Container */}
             <div
               ref={directoryScrollRef}
-              className={`flex-1 overflow-y-auto custom-scrollbar space-y-5 ${
-                effectivePanelPct <= 60 ? "p-3" : "p-4"
-              }`}
+              className="flex-1 overflow-y-auto custom-scrollbar flex flex-col items-center justify-center p-8 text-center space-y-4"
             >
-              {APP_GROUPS.map((group) => (
-                <div key={group.id} className="space-y-2">
-                  <div className="flex items-center justify-between px-1">
-                    <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
-                      {group.title}
-                    </span>
-                    <span className="text-[9px] text-neutral-600 font-mono">
-                      {group.items.length} tools
-                    </span>
-                  </div>
+              <div className="w-14 h-14 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center text-neutral-400 shadow-inner">
+                <LayoutGrid size={24} className="text-neutral-500" />
+              </div>
+              <div className="space-y-1.5 max-w-xs">
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+                  Empty Dock Foundation
+                </h4>
+                <p className="text-[11px] text-neutral-500 font-mono leading-relaxed">
+                  Dock positioning, edge snapping, dragging, and placement controls are preserved and active. Ready for new customization tools to be built from scratch.
+                </p>
+              </div>
+            </div>
 
-                  {/* 1:1 Perfect Square Application Icons (Proportionally adapted grid) */}
-                  <div className={`grid gap-2.5 ${
-                    effectivePanelPct <= 55
-                      ? "grid-cols-3"
-                      : effectivePanelPct <= 75
-                      ? "grid-cols-4"
-                      : "grid-cols-5"
-                  }`}>
-                    {group.items.map((item) => {
-                      const Icon = item.icon;
-                      const isSelected =
-                        isSettingsOpen &&
-                        ((item.type === "settings" && activeCategory === item.tab) ||
-                          (item.type === "view" && currentView === item.view));
-
-                      return (
-                        <div key={item.id} className="relative flex flex-col items-center">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              hideTooltip();
-                              handleDirectoryItemClick(item);
-                            }}
-                            onMouseEnter={(e) => {
-                              setHoveredTool(item.id);
-                              showTooltip(e, {
-                                id: item.id,
-                                label: item.label,
-                                desc: item.desc,
-                              });
-                            }}
-                            onMouseLeave={() => {
-                              setHoveredTool(null);
-                              hideTooltip();
-                            }}
-                            onFocus={(e) => {
-                              setHoveredTool(item.id);
-                              showTooltip(e, {
-                                id: item.id,
-                                label: item.label,
-                                desc: item.desc,
-                              });
-                            }}
-                            onBlur={() => {
-                              setHoveredTool(null);
-                              hideTooltip();
-                            }}
-                            aria-label={item.label}
-                            className={`w-full aspect-square rounded-2xl flex items-center justify-center relative transition-all duration-200 cursor-pointer border ${
-                              isSelected
-                                ? "bg-white text-black font-bold border-white shadow-[0_0_20px_rgba(255,255,255,0.4)] scale-105"
-                                : "bg-[#141418]/80 hover:bg-[#1f1f26] text-neutral-300 hover:text-white border-white/10 hover:border-white/25 hover:scale-105 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)]"
-                            }`}
-                          >
-                            <Icon size={22} className="shrink-0" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-
-              {/* Edge Placement Interactive Controls (Section 10 & 11) */}
-              <div className="pt-2 border-t border-white/10">
-                <div className="flex items-center justify-between mb-2 px-1">
-                  <span className="text-[10px] text-neutral-400 uppercase tracking-widest font-semibold flex items-center gap-1.5">
-                    <Move size={11} />
-                    <span>Dock Screen Placement</span>
-                  </span>
-                  <span className="text-[9px] text-neutral-400 capitalize">
-                    Active: {edge}
-                  </span>
-                </div>
-                <div className={`grid gap-1.5 ${effectivePanelPct <= 55 ? "grid-cols-3" : "grid-cols-5"}`}>
-                  {(["bottom", "top", "left", "right", "float"] as DockPosition[]).map((pos) => (
-                    <button
-                      key={pos}
-                      type="button"
-                      onClick={() => {
-                        hideTooltip();
-                        setEdge(pos);
-                        onPositionChange(pos);
-                        try {
-                          localStorage.setItem("pixel_studio_dock_position", pos);
-                          localStorage.setItem(
-                            "pixel_studio_dock_coords",
-                            JSON.stringify({ edge: pos, ratioX: ratio.x, ratioY: ratio.y, panelSize })
-                          );
-                          localStorage.setItem("pixel_studio_dock_panel_size", String(panelSize));
-                        } catch {}
-                      }}
-                      onMouseEnter={(e) =>
-                        showTooltip(e, {
-                          id: `edge-${pos}`,
-                          label: `${pos.toUpperCase()} Dock`,
-                          desc:
-                            pos === "float"
-                              ? "Freely position dock anywhere on canvas"
-                              : `Snap and anchor dock to the ${pos} wall`,
-                        })
-                      }
-                      onMouseLeave={hideTooltip}
-                      onFocus={(e) =>
-                        showTooltip(e, {
-                          id: `edge-${pos}`,
-                          label: `${pos.toUpperCase()} Dock`,
-                          desc:
-                            pos === "float"
-                              ? "Freely position dock anywhere on canvas"
-                              : `Snap and anchor dock to the ${pos} wall`,
-                        })
-                      }
-                      onBlur={hideTooltip}
-                      className={`py-1.5 px-2 rounded-xl text-[10px] font-bold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer border ${
-                        edge === pos
-                          ? "bg-white text-black border-white shadow"
-                          : "bg-[#141418] hover:bg-[#1c1c22] text-neutral-400 hover:text-white border-white/5"
-                      }`}
-                    >
-                      {pos === "top" && <ArrowUp size={11} />}
-                      {pos === "bottom" && <ArrowDown size={11} />}
-                      {pos === "left" && <ArrowLeft size={11} />}
-                      {pos === "right" && <ArrowRight size={11} />}
-                      {pos === "float" && <Move size={11} />}
-                      <span>{pos}</span>
-                    </button>
-                  ))}
-                </div>
+            {/* Edge Placement Interactive Controls (Section 10 & 11) */}
+            <div className="p-3 border-t border-white/10 bg-[#0d0d10] shrink-0">
+              <div className="flex items-center justify-between mb-2 px-1">
+                <span className="text-[10px] text-neutral-400 uppercase tracking-widest font-semibold flex items-center gap-1.5">
+                  <Move size={11} />
+                  <span>Dock Screen Placement</span>
+                </span>
+                <span className="text-[9px] text-neutral-400 capitalize">
+                  Active: {edge}
+                </span>
+              </div>
+              <div className={`grid gap-1.5 ${effectivePanelPct <= 55 ? "grid-cols-3" : "grid-cols-5"}`}>
+                {(["bottom", "top", "left", "right", "float"] as DockPosition[]).map((pos) => (
+                  <button
+                    key={pos}
+                    type="button"
+                    onClick={() => {
+                      hideTooltip();
+                      setEdge(pos);
+                      onPositionChange(pos);
+                      try {
+                        localStorage.setItem("pixel_studio_dock_position", pos);
+                        localStorage.setItem(
+                          "pixel_studio_dock_coords",
+                          JSON.stringify({ edge: pos, ratioX: ratio.x, ratioY: ratio.y, panelSize })
+                        );
+                        localStorage.setItem("pixel_studio_dock_panel_size", String(panelSize));
+                      } catch {}
+                    }}
+                    onMouseEnter={(e) =>
+                      showTooltip(e, {
+                        id: `edge-${pos}`,
+                        label: `${pos.toUpperCase()} Dock`,
+                        desc:
+                          pos === "float"
+                            ? "Freely position dock anywhere on canvas"
+                            : `Snap and anchor dock to the ${pos} wall`,
+                      })
+                    }
+                    onMouseLeave={hideTooltip}
+                    onFocus={(e) =>
+                      showTooltip(e, {
+                        id: `edge-${pos}`,
+                        label: `${pos.toUpperCase()} Dock`,
+                        desc:
+                          pos === "float"
+                            ? "Freely position dock anywhere on canvas"
+                            : `Snap and anchor dock to the ${pos} wall`,
+                      })
+                    }
+                    onBlur={hideTooltip}
+                    className={`py-1.5 px-2 rounded-xl text-[10px] font-bold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer border ${
+                      edge === pos
+                        ? "bg-white text-black border-white shadow"
+                        : "bg-[#141418] hover:bg-[#1c1c22] text-neutral-400 hover:text-white border-white/5"
+                    }`}
+                  >
+                    {pos === "top" && <ArrowUp size={11} />}
+                    {pos === "bottom" && <ArrowDown size={11} />}
+                    {pos === "left" && <ArrowLeft size={11} />}
+                    {pos === "right" && <ArrowRight size={11} />}
+                    {pos === "float" && <Move size={11} />}
+                    <span>{pos}</span>
+                  </button>
+                ))}
               </div>
             </div>
           </motion.div>
@@ -1585,8 +1444,33 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                   onClose: () => setDockMode("main"),
                 })
               ) : (
-                <div className="p-8 text-center text-neutral-500 font-mono text-xs">
-                  Settings view ready
+                <div className="flex flex-col h-full">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#101014] shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setDockMode("directory")}
+                      className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-neutral-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5 text-[10px] font-bold border border-white/10"
+                    >
+                      <ArrowLeft size={12} />
+                      <span>Back to Foundation</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDockMode("main")}
+                      className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-neutral-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5 text-[10px] font-bold border border-white/10"
+                    >
+                      <X size={12} />
+                      <span>Close</span>
+                    </button>
+                  </div>
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-2">
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+                      Empty Settings Foundation
+                    </h4>
+                    <p className="text-[11px] text-neutral-500 font-mono">
+                      Ready for new tools and settings modules.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>

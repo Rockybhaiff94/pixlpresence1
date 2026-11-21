@@ -287,13 +287,19 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
     }
   };
 
+  const hasActiveEmbeds = Boolean(
+    activeConfig.canvas &&
+    Array.isArray(activeConfig.canvas.embeds) &&
+    activeConfig.canvas.embeds.length > 0
+  );
+
   return (
     <div
       className="min-h-screen text-[#ededed] font-mono relative overflow-x-hidden flex flex-col justify-between selection:bg-white selection:text-black"
-      style={baseBgStyle}
+      style={hasActiveEmbeds ? baseBgStyle : { backgroundColor: "#070707" }}
     >
       {/* Hidden Audio Element */}
-      {musicUrl && (
+      {hasActiveEmbeds && musicUrl && (
         <audio
           ref={audioRef}
           src={musicUrl}
@@ -302,9 +308,9 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
         />
       )}
 
-      {/* Intro Barrier (Click to Enter) with AnimatePresence */}
+      {/* Intro Barrier (Click to Enter) with AnimatePresence - Only for customized profiles with audio */}
       <AnimatePresence>
-        {!entered && (
+        {hasActiveEmbeds && !entered && musicUrl && (
           <motion.div
             key="intro-barrier"
             initial={{ opacity: 1 }}
@@ -348,32 +354,80 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Main Profile Layout — Rendered via Studio Engine */}
+      {/* Main Profile Layout — Rendered via Studio Engine when customized, or Clean Blank Slate when reset */}
       <div className="w-full min-h-screen flex-1 flex flex-col items-center justify-between relative z-10">
-        <StudioProfilePreview
-          config={activeConfig}
-          data={{
-            username,
-            displayName,
-            bio,
-            avatarUrl,
-            bannerUrl,
-            musicUrl,
-            musicTitle,
-            musicArtist,
-            views,
-            likes,
-            buttons,
-            links,
-            discordPresence: livePresence,
-            isPremium,
-          }}
-          isInteractiveEditor={false}
-          isPremium={isPremium}
-          scopeId="profile-page-root"
-          footerSlot={
+        {hasActiveEmbeds ? (
+          <StudioProfilePreview
+            config={activeConfig}
+            data={{
+              username,
+              displayName,
+              bio,
+              avatarUrl,
+              bannerUrl,
+              musicUrl,
+              musicTitle,
+              musicArtist,
+              views,
+              likes,
+              buttons,
+              links,
+              discordPresence: livePresence,
+              isPremium,
+            }}
+            isInteractiveEditor={false}
+            isPremium={isPremium}
+            scopeId="profile-page-root"
+            footerSlot={
+              <div className="w-full max-w-5xl px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] font-mono pointer-events-auto">
+                {/* Subtle Transparent Likes Pill */}
+                <button
+                  onClick={handleToggleLike}
+                  disabled={isLiking}
+                  className={`group flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md transition-all cursor-pointer shadow-sm ${
+                    hasLiked
+                      ? "bg-rose-500/20 border border-rose-500/40 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.25)]"
+                      : "bg-black/30 hover:bg-black/50 border border-white/10 hover:border-white/25 text-white/80 hover:text-white"
+                  }`}
+                  title={hasLiked ? "Unlike profile" : "Like profile"}
+                >
+                  <Heart
+                    size={12}
+                    className={`transition-transform group-hover:scale-110 ${
+                      hasLiked ? "fill-rose-500 text-rose-500" : "text-white/70 group-hover:text-white"
+                    }`}
+                  />
+                  <span className="font-semibold tracking-tight">{likes.toLocaleString()}</span>
+                </button>
+
+                {/* Minimal Claim Profile Text Link */}
+                <Link
+                  href="/register"
+                  className="text-white/60 hover:text-white px-2.5 py-1 rounded-md backdrop-blur-sm bg-black/20 hover:bg-black/40 border border-white/5 hover:border-white/20 transition-all text-[11px] tracking-wide"
+                >
+                  CLAIM YOUR OWN PROFILE ↗
+                </Link>
+              </div>
+            }
+          />
+        ) : (
+          <div className="w-full min-h-screen flex-1 flex flex-col items-center justify-between p-6">
+            <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4 max-w-sm">
+              <div className="w-16 h-16 rounded-3xl bg-white/[0.04] border border-white/10 flex items-center justify-center text-neutral-400 shadow-xl">
+                <span className="w-2.5 h-2.5 rounded-full bg-white/40" />
+              </div>
+              <div className="space-y-1">
+                <h1 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                  @{username}
+                </h1>
+                <p className="text-xs text-neutral-500 font-mono">
+                  Profile in clean blank state.
+                </p>
+              </div>
+            </div>
+
+            {/* Clean Blank Slate Minimal Footer */}
             <div className="w-full max-w-5xl px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] font-mono pointer-events-auto">
-              {/* Subtle Transparent Likes Pill */}
               <button
                 onClick={handleToggleLike}
                 disabled={isLiking}
@@ -393,7 +447,6 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
                 <span className="font-semibold tracking-tight">{likes.toLocaleString()}</span>
               </button>
 
-              {/* Minimal Claim Profile Text Link */}
               <Link
                 href="/register"
                 className="text-white/60 hover:text-white px-2.5 py-1 rounded-md backdrop-blur-sm bg-black/20 hover:bg-black/40 border border-white/5 hover:border-white/20 transition-all text-[11px] tracking-wide"
@@ -401,8 +454,8 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
                 CLAIM YOUR OWN PROFILE ↗
               </Link>
             </div>
-          }
-        />
+          </div>
+        )}
       </div>
     </div>
   );
