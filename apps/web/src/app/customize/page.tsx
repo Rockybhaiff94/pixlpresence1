@@ -124,7 +124,7 @@ export default function CustomizePage() {
         if (saved === "bottom" || saved === "top" || saved === "left" || saved === "right" || saved === "float") {
           return saved as DockPosition;
         }
-      } catch {}
+      } catch { }
     }
     return "bottom";
   });
@@ -405,8 +405,8 @@ export default function CustomizePage() {
                   showTelemetryBadge: next.discordRpc.showTelemetryBadge,
                   showTimer: next.discordRpc.showTimer,
                 }),
-              }).catch(() => {});
-            } catch {}
+              }).catch(() => { });
+            } catch { }
           }
           return next;
         }
@@ -606,11 +606,11 @@ export default function CustomizePage() {
         const primaryEmbed = updatedCanvas.embeds.find((em) => em.id === "embed_primary");
         const nextLayout = primaryEmbed
           ? {
-              ...prev.layout,
-              maxWidth: primaryEmbed.transform.width,
-              height: primaryEmbed.transform.height,
-              ...(primaryEmbed.transform.height ? { autoHeight: false } : {}),
-            }
+            ...prev.layout,
+            maxWidth: primaryEmbed.transform.width,
+            height: primaryEmbed.transform.height,
+            ...(primaryEmbed.transform.height ? { autoHeight: false } : {}),
+          }
           : prev.layout;
         return {
           ...prev,
@@ -1320,13 +1320,26 @@ export default function CustomizePage() {
 
   // Contextual Design Studio Inspector mapping
   const selectedEditorElement = useMemo(() => {
-    if (!selectedCanvasId || selectedCanvasId === "background") return null;
+    if (!selectedCanvasId || selectedCanvasId === "background" || selectedCanvasId === "layout") return null;
     const currentCanvas = config.canvas || createDefaultCanvasState(config);
-    if (selectedCanvasId.startsWith("embed_")) {
-      const embed = currentCanvas.embeds.find((em) => em.id === selectedCanvasId);
+    if (selectedCanvasId.startsWith("embed_") || selectedCanvasId === "embed") {
+      const targetEmbedId = selectedCanvasId === "embed" ? "embed_primary" : selectedCanvasId;
+      const embed = currentCanvas.embeds.find((em) => em.id === targetEmbedId) || currentCanvas.embeds[0];
       if (embed) return canvasEmbedToEditorElement(embed, config);
     }
-    const el = currentCanvas.elements.find((item) => item.id === selectedCanvasId);
+    const aliasMap: Record<string, string> = {
+      avatar: "avatar_1",
+      username: "username_1",
+      displayName: "username_1",
+      bio: "bio_1",
+      tagline: "tagline_1",
+      rpc: "rpc_1",
+      discordRpc: "rpc_1",
+      socials: "socials_1",
+      buttons: "buttons_1",
+    };
+    const resolvedId = aliasMap[selectedCanvasId] || selectedCanvasId;
+    const el = currentCanvas.elements.find((item) => item.id === resolvedId || item.id === selectedCanvasId);
     if (el) return canvasElementToEditorElement(el, config, previewData);
     return null;
   }, [selectedCanvasId, config, previewData]);

@@ -249,11 +249,16 @@ export function applyEditorUpdates(
   if (!currentCanvas) return prevConfig;
 
   // 1. If target is an Embed Container
-  const targetEmbed = currentCanvas.embeds.find((em) => em.id === targetId);
+  const isEmbed = targetId.startsWith("embed_") || targetId === "embed";
+  const embedId = targetId === "embed" ? "embed_primary" : targetId;
+  const targetEmbed = isEmbed
+    ? currentCanvas.embeds.find((em) => em.id === embedId) || (targetId === "embed" ? currentCanvas.embeds[0] : undefined)
+    : undefined;
+
   if (targetEmbed) {
     const isPrimary = targetEmbed.id === "embed_primary";
     const updatedEmbeds = currentCanvas.embeds.map((em) => {
-      if (em.id !== targetId) return em;
+      if (em.id !== targetEmbed.id) return em;
       return {
         ...em,
         ...((updates as any).name ? { name: (updates as any).name } : {}),
@@ -309,8 +314,26 @@ export function applyEditorUpdates(
   }
 
   // 2. If target is a Canvas Element (Text, Shape, Image, Avatar, Sticker, Social, RPC)
-  const targetElement = currentCanvas.elements.find((el) => el.id === targetId);
+  const aliasMap: Record<string, string> = {
+    avatar: "avatar_1",
+    username: "username_1",
+    displayName: "username_1",
+    bio: "bio_1",
+    tagline: "tagline_1",
+    rpc: "rpc_1",
+    discordRpc: "rpc_1",
+    socials: "socials_1",
+    buttons: "buttons_1",
+  };
+  const resolvedTargetId = aliasMap[targetId] || targetId;
+  const targetElement = currentCanvas.elements.find((el) => el.id === resolvedTargetId || el.id === targetId);
   if (!targetElement) return prevConfig;
+
+  let nextConfig: ProfileDesignConfig = {
+    ...prevConfig,
+    avatar: { ...prevConfig.avatar },
+    identity: { ...prevConfig.identity },
+  };
 
   const isText = [
     "displayName",
@@ -325,7 +348,7 @@ export function applyEditorUpdates(
   ].includes(targetElement.type);
 
   const updatedElements = currentCanvas.elements.map((el) => {
-    if (el.id !== targetId) return el;
+    if (el.id !== targetElement.id) return el;
 
     const nextStyle: any = { ...el.style };
     const nextProps: any = { ...el.props };
@@ -336,7 +359,7 @@ export function applyEditorUpdates(
       nextProps.text = textVal;
       nextProps.content = textVal;
 
-      if (el.type === "displayName" && onProfileFieldUpdate && textVal) {
+      if ((el.type === "displayName" || el.type === "username") && onProfileFieldUpdate && textVal) {
         onProfileFieldUpdate("displayName", textVal);
       } else if (el.type === "bio" && onProfileFieldUpdate && textVal) {
         onProfileFieldUpdate("bio", textVal);
@@ -344,15 +367,25 @@ export function applyEditorUpdates(
     }
     if ("fontFamily" in updates && (updates as TextElement).fontFamily) {
       nextStyle.fontFamily = (updates as TextElement).fontFamily;
+      if (el.type === "username" || el.type === "displayName") {
+        nextConfig.identity = { ...nextConfig.identity, titleFont: (updates as TextElement).fontFamily };
+      } else if (el.type === "bio") {
+        nextConfig.identity = { ...nextConfig.identity, bioFont: (updates as TextElement).fontFamily };
+      }
     }
     if ("fontSize" in updates && (updates as TextElement).fontSize !== undefined) {
       nextStyle.fontSize = (updates as TextElement).fontSize;
-    }
-    if ("fontWeight" in updates && (updates as TextElement).fontWeight !== undefined) {
-      nextStyle.fontWeight = (updates as TextElement).fontWeight;
+      if (el.type === "username" || el.type === "displayName") {
+        nextConfig.identity = { ...nextConfig.identity, titleSize: (updates as TextElement).fontSize };
+      } else if (el.type === "bio") {
+        nextConfig.identity = { ...nextConfig.identity, bioSize: (updates as TextElement).fontSize };
+      }
     }
     if ("color" in updates && (updates as TextElement).color) {
       nextStyle.color = (updates as TextElement).color;
+      if (el.type === "username" || el.type === "displayName") {
+        nextConfig.identity = { ...nextConfig.identity, titleColor: (updates as TextElement).color };
+      }
     }
     if ("textAlign" in updates && (updates as TextElement).textAlign) {
       nextStyle.textAlign = (updates as TextElement).textAlign;
@@ -391,10 +424,28 @@ export function applyEditorUpdates(
     // Image / Avatar updates
     if (el.type === "image" || el.type === "avatar" || el.type === "thumbnail") {
       const imgUp = updates as ImageElement;
-      if (imgUp.src) nextProps.imageUrl = imgUp.src;
+      if (imgUp.src) {
+        nextProps.imageUrl = imgUp.src;
+        if (el.type === "avatar") {
+          (nextConfig.avatar as any).imageUrl = imgUp.src;
+        }
+      }
       if (imgUp.fit) nextStyle.objectFit = imgUp.fit;
-      if (imgUp.borderRadius !== undefined) nextStyle.borderRadius = imgUp.borderRadius;
-      if (imgUp.filters) nextStyle.imageFilters = imgUp.filters;
+      if (imgUp.borderRadius !== undefined) {
+        nextStyle.borderRadius = imgUp.borderRadius;
+        if (el.type === "avatar") {
+          nextConfig.avatar = {
+            ...nextConfig.avatar,
+            shape: imgUp.borderRadius > 100 ? "circle" : imgUp.borderRadius > 20 ? "squircle" : "square",
+          };
+        }
+      }
+      if (imgUp.filters) {
+        nextStyle.imageFilters = imgUp.filters;
+        if (el.type === "avatar") {
+          (nextConfig.avatar as any).imageFilters = imgUp.filters;
+        }
+      }
     }
 
     // Sticker updates
@@ -452,8 +503,8 @@ export function applyEditorUpdates(
     };
   });
 
-  const nextConfig: ProfileDesignConfig = {
-    ...prevConfig,
+  nextConfig = {
+    ...nextConfig,
     canvas: {
       ...currentCanvas,
       elements: updatedElements,

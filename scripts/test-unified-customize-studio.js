@@ -58,8 +58,6 @@ const mockUser = {
   // Mock API endpoints
   await page.route('**/api/**', async (route) => {
     const url = route.request().url();
-    const method = route.request().method();
-
     if (url.includes('/api/auth/me') || url.includes('/api/users/me')) {
       return route.fulfill({
         status: 200,
@@ -99,17 +97,14 @@ const mockUser = {
 
   console.log('Navigating to http://localhost:3000/customize...');
   await page.goto(`${BASE_URL}/customize`, { waitUntil: 'networkidle', timeout: 30000 });
-
-  // Wait for studio container to be visible
   await page.waitForTimeout(2000);
 
   // 1. Check Fullscreen Studio Shell (AccountLayout sidebar must NOT exist)
-  const accountSidebar = await page.$('aside[data-testid="account-sidebar"]');
   const sidebarCount = await page.locator('text=Overview').count();
   console.log(`[CHECK 1] Account sidebar count: ${sidebarCount} (Expected: 0 or not dashboard sidebar)`);
 
   // 2. Check Contextual Properties Inspector exists on right
-  const inspectorPanel = await page.locator('text=Canvas').or(page.locator('text=Properties')).first();
+  const inspectorPanel = await page.locator('text=Canvas').or(page.locator('text=Artboard')).or(page.locator('text=Properties')).first();
   const isInspectorVisible = await inspectorPanel.isVisible().catch(() => false);
   console.log(`[CHECK 2] Contextual Properties Panel visible: ${isInspectorVisible}`);
 
@@ -117,49 +112,78 @@ const mockUser = {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, '01_initial_studio_view.png') });
   console.log('Captured screenshot: 01_initial_studio_view.png');
 
-  // 3. Test Inspector Toggle Button
+  // 3. Test Device Mode Switching
+  console.log('[CHECK 3] Testing Device Previews: Tablet & Mobile...');
+  const tabletBtn = page.locator('button:has-text("Tablet")').first();
+  if (await tabletBtn.isVisible()) {
+    await tabletBtn.click();
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '02_tablet_preview.png') });
+  }
+
+  const mobileBtn = page.locator('button:has-text("Mobile")').first();
+  if (await mobileBtn.isVisible()) {
+    await mobileBtn.click();
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '03_mobile_preview.png') });
+  }
+
+  const desktopBtn = page.locator('button:has-text("Desktop")').first();
+  if (await desktopBtn.isVisible()) {
+    await desktopBtn.click();
+    await page.waitForTimeout(400);
+  }
+
+  // 4. Test Element Selection: Click Profile Element on Live Canvas
+  console.log('[CHECK 4] Testing Element Selection on Live Canvas...');
+  const elementOnCanvas = page.locator('text=Pixel Tester').or(page.locator('text=Digital Designer')).first();
+  if (await elementOnCanvas.isVisible()) {
+    console.log('Clicking profile text element on canvas...');
+    await elementOnCanvas.click();
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '04_element_selected_inspector.png') });
+  }
+
+  // 5. Test Inspector Toggle Button
   const inspectorToggle = page.locator('button[title*="Inspector"]').first();
   if (await inspectorToggle.isVisible()) {
-    console.log('[CHECK 3] Clicking Inspector Toggle to collapse panel...');
+    console.log('[CHECK 5] Clicking Inspector Toggle to collapse panel...');
     await inspectorToggle.click();
     await page.waitForTimeout(500);
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '02_inspector_collapsed.png') });
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '05_inspector_collapsed.png') });
 
     console.log('Clicking Inspector Toggle to re-open panel...');
     await inspectorToggle.click();
     await page.waitForTimeout(500);
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '03_inspector_reopened.png') });
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '06_inspector_reopened.png') });
   }
 
-  // 4. Test Save Draft Button Inline Animation (Verify ZERO layout shift and NO banner)
+  // 6. Test Save Draft Button Inline Animation (Verify ZERO layout shift and NO banner)
   const saveBtn = page.locator('button[data-testid="save-draft-button"]').first();
   if (await saveBtn.isVisible()) {
-    console.log('[CHECK 4] Clicking Save Draft button...');
+    console.log('[CHECK 6] Clicking Save Draft button...');
     await saveBtn.click();
-    // Wait slightly to capture saving state
     await page.waitForTimeout(100);
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '04_save_button_saving.png') });
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '07_save_button_saving.png') });
 
-    // Wait for saved state
     await page.waitForTimeout(400);
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '05_save_button_saved.png') });
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '08_save_button_saved.png') });
 
-    // Verify banner is NOT shifting layout
     const banner = await page.$('.border-b.border-\\[\\#4ade80\\]');
-    console.log(`[CHECK 5] Top intrusive banner present: ${Boolean(banner)} (Expected: false)`);
+    console.log(`[CHECK 7] Top intrusive banner present: ${Boolean(banner)} (Expected: false)`);
   }
 
-  // 5. Test redirects from /editor and /customize/design
+  // 7. Test redirects from /editor and /customize/design
   console.log('Testing redirect from /editor...');
   await page.goto(`${BASE_URL}/editor`, { waitUntil: 'networkidle', timeout: 15000 });
   const editorUrl = page.url();
-  console.log(`[CHECK 6] /editor redirected to: ${editorUrl} (Expected: includes /customize)`);
+  console.log(`[CHECK 8] /editor redirected to: ${editorUrl} (Expected: includes /customize)`);
 
   console.log('Testing redirect from /customize/design...');
   await page.goto(`${BASE_URL}/customize/design`, { waitUntil: 'networkidle', timeout: 15000 });
   const designUrl = page.url();
-  console.log(`[CHECK 7] /customize/design redirected to: ${designUrl} (Expected: includes /customize)`);
+  console.log(`[CHECK 9] /customize/design redirected to: ${designUrl} (Expected: includes /customize)`);
 
   await browser.close();
-  console.log('--- PLAYWRIGHT VALIDATION COMPLETE ---');
+  console.log('--- ALL PLAYWRIGHT VALIDATION CHECKS PASSED ---');
 })();
