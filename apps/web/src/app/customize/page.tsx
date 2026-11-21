@@ -54,6 +54,15 @@ export default function CustomizePage() {
   const savedResetTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [msg, setMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
+  // Auto-dismiss floating toast notifications after 3.2s
+  useEffect(() => {
+    if (!msg) return;
+    const timer = setTimeout(() => {
+      setMsg(null);
+    }, 3200);
+    return () => clearTimeout(timer);
+  }, [msg]);
+
   // Mode Selection: Studio Workspace vs Classic Customizer
   const [isClassicMode, setIsClassicMode] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
@@ -1234,7 +1243,7 @@ export default function CustomizePage() {
 
   return (
     <AccountLayout>
-      <div className="flex flex-col h-[calc(100vh-5rem)] min-h-[700px] -m-4 sm:-m-6 lg:-m-8 bg-[#09090b] rounded-2xl border border-[#202020] overflow-hidden select-none">
+      <div className="flex flex-col h-[calc(100vh-5rem)] min-h-[700px] -m-4 sm:-m-6 lg:-m-8 bg-[#09090b] rounded-2xl border border-[#202020] overflow-hidden select-none relative">
         {/* Top Area: Compact Horizontal Navigation Toolbar */}
         <StudioTopBar
           currentView={currentView}
@@ -1260,25 +1269,32 @@ export default function CustomizePage() {
           onToggleClassicMode={toggleClassicMode}
         />
 
-        {/* Global Toast Notice (Preserved for non-draft notices and errors; never rendered for Save Draft) */}
+        {/* Floating Toast Notice (Zero Layout Shift - floats cleanly above canvas without altering document flow) */}
         {msg && msg.text !== "Draft saved successfully." && (
-          <div
-            className={`px-4 py-2.5 text-xs font-mono flex items-center justify-between border-b shrink-0 transition-all ${
-              msg.type === "success"
-                ? "bg-[#0d2818] border-[#4ade80]/40 text-[#4ade80]"
-                : "bg-[#2a0e0e] border-[#d71920]/40 text-[#ff6b6b]"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              {msg.type === "success" ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
-              <span>{msg.text}</span>
-            </div>
-            <button
-              onClick={() => setMsg(null)}
-              className="text-xs opacity-60 hover:opacity-100 cursor-pointer"
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-auto max-w-[90vw] sm:max-w-md shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200">
+            <div
+              className={`px-4 py-2 text-xs font-mono flex items-center justify-between gap-3 rounded-xl border backdrop-blur-md shadow-xl ${
+                msg.type === "success"
+                  ? "bg-[#0d2818]/95 border-[#4ade80]/50 text-[#4ade80] shadow-[0_4px_24px_rgba(74,222,128,0.2)]"
+                  : "bg-[#2a0e0e]/95 border-[#d71920]/50 text-[#ff6b6b] shadow-[0_4px_24px_rgba(215,25,32,0.2)]"
+              }`}
             >
-              ✕
-            </button>
+              <div className="flex items-center gap-2 truncate">
+                {msg.type === "success" ? (
+                  <CheckCircle2 size={14} className="shrink-0 text-[#4ade80]" />
+                ) : (
+                  <AlertCircle size={14} className="shrink-0 text-[#ff6b6b]" />
+                )}
+                <span className="truncate">{msg.text}</span>
+              </div>
+              <button
+                onClick={() => setMsg(null)}
+                className="text-xs opacity-60 hover:opacity-100 cursor-pointer shrink-0 ml-2 p-0.5"
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         )}
 
