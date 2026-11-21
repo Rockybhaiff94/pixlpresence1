@@ -77,7 +77,6 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
 
   const mainNavItems = [
     { label: "Customize", href: "/customize", icon: Palette },
-    { label: "Design Studio", href: "/editor", icon: Sparkles },
     { label: "Links", href: "/links", icon: LinkIcon },
     { label: "Premium", href: "/premium", icon: Crown },
     { label: "Image Host", href: "/image-host", icon: ImageIcon },

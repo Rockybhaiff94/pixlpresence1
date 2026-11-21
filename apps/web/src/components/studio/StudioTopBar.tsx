@@ -43,8 +43,10 @@ interface StudioTopBarProps {
   publishing: boolean;
   isDirty: boolean;
   username?: string;
-  isClassicMode: boolean;
-  onToggleClassicMode: () => void;
+  isClassicMode?: boolean;
+  onToggleClassicMode?: () => void;
+  isInspectorOpen?: boolean;
+  onToggleInspector?: () => void;
 }
 
 export const StudioTopBar: React.FC<StudioTopBarProps> = ({
@@ -67,6 +69,8 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
   username,
   isClassicMode,
   onToggleClassicMode,
+  isInspectorOpen,
+  onToggleInspector,
 }) => {
   const [isExportOpen, setIsExportOpen] = React.useState(false);
   return (
@@ -155,24 +159,21 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
 
       {/* Right: Actions */}
       <div className="flex items-center gap-2">
-        {/* Toggle between Classic Customizer and Studio Mode */}
-        <button
-          onClick={onToggleClassicMode}
-          title={isClassicMode ? "Switch to Modern Studio" : "Switch to Classic Mode"}
-          className="px-2.5 py-1 rounded-lg border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white transition-colors cursor-pointer text-[10px] hidden sm:inline"
-        >
-          {isClassicMode ? "⚡ Switch to Studio" : "Classic Mode"}
-        </button>
-
-        {/* Launch Pixel Design Studio */}
-        <Link
-          href="/editor"
-          className="px-2.5 py-1 rounded-lg border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5 text-[10px]"
-          title="Open Pixel Graphic & Banner Studio"
-        >
-          <Sparkles size={12} className="text-purple-400" />
-          <span className="hidden md:inline">Design Studio</span>
-        </Link>
+        {/* Toggle Contextual Inspector */}
+        {onToggleInspector && (
+          <button
+            onClick={onToggleInspector}
+            className={`px-2.5 py-1 rounded-lg border text-[10px] font-mono flex items-center gap-1.5 transition-colors cursor-pointer ${
+              isInspectorOpen
+                ? "bg-white text-black border-white font-bold"
+                : "border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white"
+            }`}
+            title="Toggle Contextual Properties Inspector"
+          >
+            <Sliders size={12} />
+            <span className="hidden lg:inline">Inspector</span>
+          </button>
+        )}
 
         {/* Live Public Profile Link */}
         {username && (

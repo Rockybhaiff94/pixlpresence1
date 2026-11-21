@@ -1,4 +1,4 @@
-export type ElementType = "shape" | "text" | "image" | "sticker";
+export type ElementType = "shape" | "text" | "image" | "sticker" | "container" | "social" | "rpc";
 
 export type ShapeKind =
   | "rectangle"
@@ -83,7 +83,38 @@ export interface StickerElement extends BaseElement {
   backgroundColor?: string;
 }
 
-export type EditorElement = ShapeElement | TextElement | ImageElement | StickerElement;
+export interface ContainerElement extends BaseElement {
+  type: "container";
+  backgroundColor: string;
+  borderColor?: string;
+  borderWidth?: number;
+  borderRadius?: number;
+  padding?: number;
+  gap?: number;
+  glassmorphism?: boolean;
+}
+
+export interface SocialElement extends BaseElement {
+  type: "social";
+  variant?: "default" | "pill" | "minimal" | "circle";
+  iconColorMode?: "original" | "custom" | "monochrome";
+  iconColor?: string;
+}
+
+export interface RpcElement extends BaseElement {
+  type: "rpc";
+  cardStyle?: "card" | "glass" | "minimal" | "compact" | "neon";
+  accentColor?: string;
+}
+
+export type EditorElement =
+  | ShapeElement
+  | TextElement
+  | ImageElement
+  | StickerElement
+  | ContainerElement
+  | SocialElement
+  | RpcElement;
 
 export interface CanvasDimensions {
   width: number;

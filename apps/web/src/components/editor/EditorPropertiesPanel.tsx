@@ -7,6 +7,10 @@ import {
   ShapeElement,
   TextElement,
   ImageElement,
+  StickerElement,
+  ContainerElement,
+  SocialElement,
+  RpcElement,
   BackgroundPattern,
 } from "./editorTypes";
 import { AVAILABLE_FONTS } from "./editorPresets";
@@ -20,6 +24,9 @@ import {
   ChevronUp,
   ChevronDown,
   Sparkles,
+  X,
+  Layers,
+  Settings2,
 } from "lucide-react";
 
 interface EditorPropertiesPanelProps {
@@ -40,6 +47,7 @@ interface EditorPropertiesPanelProps {
     alignment: "left" | "center-h" | "right" | "top" | "center-v" | "bottom"
   ) => void;
   onReorderElement: (id: string, direction: "top" | "bottom" | "up" | "down") => void;
+  onClose?: () => void;
 }
 
 export const EditorPropertiesPanel: React.FC<EditorPropertiesPanelProps> = ({
@@ -49,16 +57,29 @@ export const EditorPropertiesPanel: React.FC<EditorPropertiesPanelProps> = ({
   onUpdateElement,
   onAlignElement,
   onReorderElement,
+  onClose,
 }) => {
   if (!selectedElement) {
     // Canvas / Artboard Properties
     return (
       <aside className="w-80 bg-[#0a0a0a] border-l border-[#222222] p-4 flex flex-col h-[calc(100vh-3.5rem)] overflow-y-auto select-none space-y-5">
         <div className="flex items-center justify-between border-b border-[#222222] pb-3">
-          <span className="text-xs font-mono font-bold uppercase text-white tracking-wider">
-            [ CANVAS SETTINGS ]
+          <span className="text-xs font-mono font-bold uppercase text-white tracking-wider flex items-center gap-1.5">
+            <Settings2 size={13} className="text-neutral-400" />
+            <span>[ CANVAS SETTINGS ]</span>
           </span>
-          <span className="text-[10px] font-mono text-neutral-500">ARTBOARD</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono text-neutral-500">ARTBOARD</span>
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="p-1 rounded hover:bg-neutral-800 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                title="Close Inspector"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Dimensions */}
@@ -194,9 +215,20 @@ export const EditorPropertiesPanel: React.FC<EditorPropertiesPanelProps> = ({
           onChange={(e) => onUpdateElement(el.id, { name: e.target.value })}
           className="bg-transparent border border-transparent hover:border-[#333333] focus:border-white text-xs font-mono font-bold text-white px-1.5 py-1 rounded outline-none w-44"
         />
-        <span className="text-[10px] font-mono text-neutral-400 bg-[#161616] px-2 py-0.5 rounded border border-[#262626] uppercase">
-          {el.type}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-mono text-neutral-400 bg-[#161616] px-2 py-0.5 rounded border border-[#262626] uppercase">
+            {el.type}
+          </span>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 rounded hover:bg-neutral-800 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+              title="Close Inspector"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Position & Geometry */}
@@ -324,6 +356,26 @@ export const EditorPropertiesPanel: React.FC<EditorPropertiesPanelProps> = ({
       {/* IMAGE SPECIFIC PROPERTIES */}
       {el.type === "image" && (
         <ImageProperties img={el as ImageElement} onUpdate={(u) => onUpdateElement(el.id, u)} />
+      )}
+
+      {/* STICKER SPECIFIC PROPERTIES */}
+      {el.type === "sticker" && (
+        <StickerProperties sticker={el as StickerElement} onUpdate={(u) => onUpdateElement(el.id, u)} />
+      )}
+
+      {/* CONTAINER / EMBED SPECIFIC PROPERTIES */}
+      {el.type === "container" && (
+        <ContainerProperties container={el as ContainerElement} onUpdate={(u) => onUpdateElement(el.id, u)} />
+      )}
+
+      {/* SOCIAL SPECIFIC PROPERTIES */}
+      {el.type === "social" && (
+        <SocialProperties social={el as SocialElement} onUpdate={(u) => onUpdateElement(el.id, u)} />
+      )}
+
+      {/* RPC SPECIFIC PROPERTIES */}
+      {el.type === "rpc" && (
+        <RpcProperties rpc={el as RpcElement} onUpdate={(u) => onUpdateElement(el.id, u)} />
       )}
 
       {/* Opacity */}
@@ -669,15 +721,257 @@ const ImageProperties: React.FC<{
           onChange={(e) =>
             onUpdate({
               filters: {
-                brightness: img.filters?.brightness || 100,
-                contrast: img.filters?.contrast || 100,
-                blur: img.filters?.blur || 0,
+                brightness: img.filters?.brightness ?? 100,
+                contrast: img.filters?.contrast ?? 100,
+                blur: img.filters?.blur ?? 0,
                 grayscale: Number(e.target.value),
               },
             })
           }
           className="w-full accent-white"
         />
+      </div>
+
+      {/* Filters: Brightness */}
+      <div className="space-y-1">
+        <div className="flex justify-between text-[10px] font-mono text-neutral-500">
+          <span>BRIGHTNESS</span>
+          <span>{img.filters?.brightness ?? 100}%</span>
+        </div>
+        <input
+          type="range"
+          min={40}
+          max={160}
+          value={img.filters?.brightness ?? 100}
+          onChange={(e) =>
+            onUpdate({
+              filters: {
+                brightness: Number(e.target.value),
+                contrast: img.filters?.contrast ?? 100,
+                blur: img.filters?.blur ?? 0,
+                grayscale: img.filters?.grayscale ?? 0,
+              },
+            })
+          }
+          className="w-full accent-white"
+        />
+      </div>
+
+      {/* Filters: Contrast */}
+      <div className="space-y-1">
+        <div className="flex justify-between text-[10px] font-mono text-neutral-500">
+          <span>CONTRAST</span>
+          <span>{img.filters?.contrast ?? 100}%</span>
+        </div>
+        <input
+          type="range"
+          min={40}
+          max={160}
+          value={img.filters?.contrast ?? 100}
+          onChange={(e) =>
+            onUpdate({
+              filters: {
+                brightness: img.filters?.brightness ?? 100,
+                contrast: Number(e.target.value),
+                blur: img.filters?.blur ?? 0,
+                grayscale: img.filters?.grayscale ?? 0,
+              },
+            })
+          }
+          className="w-full accent-white"
+        />
+      </div>
+    </div>
+  );
+};
+
+const StickerProperties: React.FC<{
+  sticker: StickerElement;
+  onUpdate: (u: Partial<StickerElement>) => void;
+}> = ({ sticker, onUpdate }) => {
+  const STICKER_KEYS = [
+    { key: "verified", label: "Verified Badge" },
+    { key: "discord", label: "Discord" },
+    { key: "fire", label: "Flame" },
+    { key: "sparkle", label: "Sparkles" },
+    { key: "shield", label: "Shield" },
+    { key: "trophy", label: "Trophy" },
+    { key: "crown", label: "Crown" },
+    { key: "heart", label: "Heart" },
+    { key: "star", label: "Star" },
+    { key: "terminal", label: "Terminal" },
+    { key: "code", label: "Code" },
+  ];
+
+  return (
+    <div className="space-y-3 pt-2 border-t border-[#1f1f1f]">
+      {/* Sticker Glyph Key */}
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono text-neutral-500 block">BADGE / ICON</span>
+        <select
+          value={sticker.key}
+          onChange={(e) => onUpdate({ key: e.target.value })}
+          className="w-full bg-[#121212] border border-[#222222] text-xs font-mono text-white p-2 rounded-lg outline-none"
+        >
+          {STICKER_KEYS.map((k) => (
+            <option key={k.key} value={k.key}>
+              {k.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Color */}
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono text-neutral-500 block">GLYPH COLOR</span>
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            value={sticker.color?.startsWith("#") ? sticker.color : "#38bdf8"}
+            onChange={(e) => onUpdate({ color: e.target.value })}
+            className="w-7 h-7 rounded border border-[#333333] cursor-pointer bg-transparent"
+          />
+          <input
+            type="text"
+            value={sticker.color || "#38bdf8"}
+            onChange={(e) => onUpdate({ color: e.target.value })}
+            className="flex-1 bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
+          />
+        </div>
+      </div>
+
+      {/* Background Color */}
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono text-neutral-500 block">BACKGROUND TINT</span>
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            value={sticker.backgroundColor?.startsWith("#") ? sticker.backgroundColor : "#101014"}
+            onChange={(e) => onUpdate({ backgroundColor: e.target.value })}
+            className="w-7 h-7 rounded border border-[#333333] cursor-pointer bg-transparent"
+          />
+          <input
+            type="text"
+            value={sticker.backgroundColor || "transparent"}
+            onChange={(e) => onUpdate({ backgroundColor: e.target.value })}
+            className="flex-1 bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ContainerProperties: React.FC<{
+  container: ContainerElement;
+  onUpdate: (u: Partial<ContainerElement>) => void;
+}> = ({ container, onUpdate }) => {
+  return (
+    <div className="space-y-3 pt-2 border-t border-[#1f1f1f]">
+      {/* Container Background */}
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono text-neutral-500 block">CONTAINER BACKGROUND</span>
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            value={container.backgroundColor?.startsWith("#") ? container.backgroundColor : "#0c0c0e"}
+            onChange={(e) => onUpdate({ backgroundColor: e.target.value })}
+            className="w-7 h-7 rounded border border-[#333333] cursor-pointer bg-transparent"
+          />
+          <input
+            type="text"
+            value={container.backgroundColor || "#0c0c0e"}
+            onChange={(e) => onUpdate({ backgroundColor: e.target.value })}
+            className="flex-1 bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
+          />
+        </div>
+      </div>
+
+      {/* Border Radius */}
+      <div className="space-y-1">
+        <div className="flex justify-between text-[10px] font-mono text-neutral-500">
+          <span>CORNER RADIUS</span>
+          <span>{container.borderRadius ?? 24}px</span>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={48}
+          value={container.borderRadius ?? 24}
+          onChange={(e) => onUpdate({ borderRadius: Number(e.target.value) })}
+          className="w-full accent-white"
+        />
+      </div>
+
+      {/* Glassmorphism */}
+      <div className="flex items-center justify-between pt-1">
+        <span className="text-[10px] font-mono text-neutral-500">FROSTED GLASS</span>
+        <button
+          onClick={() => onUpdate({ glassmorphism: !container.glassmorphism })}
+          className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+            container.glassmorphism !== false
+              ? "bg-sky-950 text-sky-300 border-sky-800"
+              : "bg-[#141414] text-neutral-500 border-[#262626]"
+          }`}
+        >
+          {container.glassmorphism !== false ? "ENABLED" : "OFF"}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const SocialProperties: React.FC<{
+  social: SocialElement;
+  onUpdate: (u: Partial<SocialElement>) => void;
+}> = ({ social, onUpdate }) => {
+  return (
+    <div className="space-y-3 pt-2 border-t border-[#1f1f1f]">
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono text-neutral-500 block">ICON VARIANT</span>
+        <div className="grid grid-cols-2 gap-2">
+          {(["default", "pill", "minimal", "circle"] as const).map((variant) => (
+            <button
+              key={variant}
+              onClick={() => onUpdate({ variant })}
+              className={`py-1.5 px-2 rounded-lg text-xs font-mono capitalize transition-colors ${
+                social.variant === variant
+                  ? "bg-white text-black font-bold"
+                  : "bg-[#141414] text-neutral-400 border border-[#262626]"
+              }`}
+            >
+              {variant}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const RpcProperties: React.FC<{
+  rpc: RpcElement;
+  onUpdate: (u: Partial<RpcElement>) => void;
+}> = ({ rpc, onUpdate }) => {
+  return (
+    <div className="space-y-3 pt-2 border-t border-[#1f1f1f]">
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono text-neutral-500 block">CARD THEME</span>
+        <div className="grid grid-cols-2 gap-2">
+          {(["card", "glass", "minimal", "neon"] as const).map((style) => (
+            <button
+              key={style}
+              onClick={() => onUpdate({ cardStyle: style })}
+              className={`py-1.5 px-2 rounded-lg text-xs font-mono capitalize transition-colors ${
+                rpc.cardStyle === style
+                  ? "bg-white text-black font-bold"
+                  : "bg-[#141414] text-neutral-400 border border-[#262626]"
+              }`}
+            >
+              {style}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

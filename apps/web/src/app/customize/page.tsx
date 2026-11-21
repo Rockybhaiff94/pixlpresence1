@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { AccountLayout } from "@/components/account/AccountLayout";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -30,9 +29,16 @@ import { StudioTopBar, DeviceMode, StudioView, SaveDraftStatus } from "@/compone
 import { StudioLeftWorkspace } from "@/components/studio/StudioLeftWorkspace";
 import { StudioRightPreviewCanvas } from "@/components/studio/StudioRightPreviewCanvas";
 import { ParticlesCanvas } from "@/components/studio/ParticlesCanvas";
-import { ClassicCustomizer } from "@/components/studio/ClassicCustomizer";
 import { StudioTemplatePreset } from "@/components/studio/templates";
 import { StudioFloatingDock, DockPosition, ToolSelection } from "@/components/studio/StudioFloatingDock";
+import { EditorPropertiesPanel } from "@/components/editor/EditorPropertiesPanel";
+import {
+  canvasElementToEditorElement,
+  canvasEmbedToEditorElement,
+  profileConfigToCanvasState,
+  applyEditorUpdates,
+} from "@/components/studio/editorAdapter";
+import { EditorElement, CanvasBackground } from "@/components/editor/editorTypes";
 import {
   AlertCircle,
   CheckCircle2,
@@ -231,6 +237,7 @@ export default function CustomizePage() {
   const [links, setLinks] = useState<LinkedAccountReference[]>([]);
   const [isSocialModalOpen, setIsSocialModalOpen] = useState(false);
   const [isRpcModalOpen, setIsRpcModalOpen] = useState(false);
+  const [isInspectorOpen, setIsInspectorOpen] = useState(true);
   const [refreshingAccounts, setRefreshingAccounts] = useState(false);
   const [discordPresence, setDiscordPresence] = useState<{
     appName?: string | null;
@@ -1311,68 +1318,287 @@ export default function CustomizePage() {
     discordPresence,
   };
 
+  // Contextual Design Studio Inspector mapping
+  const selectedEditorElement = useMemo(() => {
+    if (!selectedCanvasId || selectedCanvasId === "background") return null;
+    const currentCanvas = config.canvas || createDefaultCanvasState(config);
+    if (selectedCanvasId.startsWith("embed_")) {
+      const embed = currentCanvas.embeds.find((em) => em.id === selectedCanvasId);
+      if (embed) return canvasEmbedToEditorElement(embed, config);
+    }
+    const el = currentCanvas.elements.find((item) => item.id === selectedCanvasId);
+    if (el) return canvasElementToEditorElement(el, config, previewData);
+    return null;
+  }, [selectedCanvasId, config, previewData]);
+
+  const canvasState = useMemo(() => {
+    return profileConfigToCanvasState(config);
+  }, [config]);
+
+  const handleEditorUpdateElement = (id: string, updates: Partial<EditorElement>) => {
+    updateConfigWithHistory((prev) =>
+      applyEditorUpdates(prev, id, updates, (field, value) => {
+        if (field === "displayName") setDisplayName(value);
+        if (field === "bio") setBio(value);
+      })
+    );
+  };
+
+  const handleEditorUpdateCanvas = (updates: {
+    width?: number;
+    height?: number;
+    background?: Partial<CanvasBackground>;
+  }) => {
+    updateConfigWithHistory((prev) => {
+      const next = { ...prev };
+      if (updates.background) {
+        const bg = updates.background;
+        next.background = {
+          ...next.background,
+          type: bg.type === "gradient" ? "gradient" : "solid",
+          color: bg.color || next.background?.color || "#09090b",
+          pattern: (bg.pattern as any) || next.background?.pattern || "none",
+          overlayOpacity: bg.patternOpacity ?? next.background?.overlayOpacity ?? 20,
+        };
+      }
+      return next;
+    });
+  };
+
+  const handleEditorAlignElement = (
+    id: string,
+    alignment: "left" | "center-h" | "right" | "top" | "center-v" | "bottom"
+  ) => {
+    const currentCanvas = config.canvas || createDefaultCanvasState(config);
+    const canvasWidth = config.layout?.maxWidth || 580;
+    const el = currentCanvas.elements.find((e) => e.id === id);
+    if (!el) return;
+
+    let newX = el.transform.x;
+    if (alignment === "left") newX = 20;
+    else if (alignment === "center-h") newX = Math.round((canvasWidth - el.transform.width) / 2);
+    else if (alignment === "right") newX = canvasWidth - el.transform.width - 20;
+
+    handleEditorUpdateElement(id, { x: newX });
+  };
+
+  const handleEditorReorderElement = (id: string, direction: "top" | "bottom" | "up" | "down") => {
+    const currentCanvas = config.canvas || createDefaultCanvasState(config);
+    const elIdx = currentCanvas.elements.findIndex((e) => e.id === id);
+    if (elIdx === -1) return;
+
+    const newElements = [...currentCanvas.elements];
+    const [moved] = newElements.splice(elIdx, 1);
+    if (direction === "top") {
+      newElements.push(moved);
+    } else if (direction === "bottom") {
+      newElements.unshift(moved);
+    } else if (direction === "up") {
+      const targetIdx = Math.min(newElements.length, elIdx + 1);
+      newElements.splice(targetIdx, 0, moved);
+    } else if (direction === "down") {
+      const targetIdx = Math.max(0, elIdx - 1);
+      newElements.splice(targetIdx, 0, moved);
+    }
+
+    // Reassign zIndexes
+    newElements.forEach((e, idx) => {
+      e.transform.zIndex = idx + 2;
+    });
+
+    updateConfigWithHistory((prev) => ({
+      ...prev,
+      canvas: {
+        ...currentCanvas,
+        elements: newElements,
+      },
+    }));
+  };
+
   return (
-    <AccountLayout>
-      <div className="flex flex-col h-[calc(100vh-5rem)] min-h-[700px] -m-4 sm:-m-6 lg:-m-8 bg-[#09090b] rounded-2xl border border-[#202020] overflow-hidden select-none relative">
-        {/* Top Area: Compact Horizontal Navigation Toolbar */}
-        <StudioTopBar
-          currentView={currentView}
-          setCurrentView={(v) => {
-            setCurrentView(v);
-            setIsSettingsOpen(true);
-          }}
-          deviceMode={deviceMode}
-          setDeviceMode={setDeviceMode}
-          canUndo={historyIdx > 0}
-          canRedo={historyIdx < history.length - 1}
-          onUndo={handleUndo}
-          onRedo={handleRedo}
-          onReset={handleResetToDefault}
-          onSave={handleSaveDraft}
-          onPublish={handlePublish}
-          onExport={handleExportGraphic}
-          saveStatus={saveDraftStatus}
-          saving={saving}
-          publishing={publishing}
-          isDirty={isDirty}
-          username={user?.username}
-          isClassicMode={isClassicMode}
-          onToggleClassicMode={toggleClassicMode}
-        />
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#050505] text-[#ededed] select-none relative">
+      {/* Top Area: Compact Horizontal Navigation Toolbar */}
+      <StudioTopBar
+        currentView={currentView}
+        setCurrentView={(v) => {
+          setCurrentView(v);
+          setIsSettingsOpen(true);
+        }}
+        deviceMode={deviceMode}
+        setDeviceMode={setDeviceMode}
+        canUndo={historyIdx > 0}
+        canRedo={historyIdx < history.length - 1}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        onReset={handleResetToDefault}
+        onSave={handleSaveDraft}
+        onPublish={handlePublish}
+        onExport={handleExportGraphic}
+        saveStatus={saveDraftStatus}
+        saving={saving}
+        publishing={publishing}
+        isDirty={isDirty}
+        username={user?.username}
+        isInspectorOpen={isInspectorOpen}
+        onToggleInspector={() => setIsInspectorOpen((prev) => !prev)}
+      />
 
-        {/* Floating Toast Notice (Zero Layout Shift - floats cleanly above canvas without altering document flow) */}
-        {msg && msg.text !== "Draft saved successfully." && (
-          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-auto max-w-[90vw] sm:max-w-md shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200">
-            <div
-              className={`px-4 py-2 text-xs font-mono flex items-center justify-between gap-3 rounded-xl border backdrop-blur-md shadow-xl ${
-                msg.type === "success"
-                  ? "bg-[#0d2818]/95 border-[#4ade80]/50 text-[#4ade80] shadow-[0_4px_24px_rgba(74,222,128,0.2)]"
-                  : "bg-[#2a0e0e]/95 border-[#d71920]/50 text-[#ff6b6b] shadow-[0_4px_24px_rgba(215,25,32,0.2)]"
-              }`}
-            >
-              <div className="flex items-center gap-2 truncate">
-                {msg.type === "success" ? (
-                  <CheckCircle2 size={14} className="shrink-0 text-[#4ade80]" />
-                ) : (
-                  <AlertCircle size={14} className="shrink-0 text-[#ff6b6b]" />
-                )}
-                <span className="truncate">{msg.text}</span>
-              </div>
-              <button
-                onClick={() => setMsg(null)}
-                className="text-xs opacity-60 hover:opacity-100 cursor-pointer shrink-0 ml-2 p-0.5"
-                title="Dismiss"
-              >
-                ✕
-              </button>
+      {/* Floating Toast Notice (Zero Layout Shift - floats cleanly above canvas without altering document flow) */}
+      {msg && msg.text !== "Draft saved successfully." && (
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 pointer-events-auto max-w-[90vw] sm:max-w-md shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200">
+          <div
+            className={`px-4 py-2 text-xs font-mono flex items-center justify-between gap-3 rounded-xl border backdrop-blur-md shadow-xl ${
+              msg.type === "success"
+                ? "bg-[#0d2818]/95 border-[#4ade80]/50 text-[#4ade80] shadow-[0_4px_24px_rgba(74,222,128,0.2)]"
+                : "bg-[#2a0e0e]/95 border-[#d71920]/50 text-[#ff6b6b] shadow-[0_4px_24px_rgba(215,25,32,0.2)]"
+            }`}
+          >
+            <div className="flex items-center gap-2 truncate">
+              {msg.type === "success" ? (
+                <CheckCircle2 size={14} className="shrink-0 text-[#4ade80]" />
+              ) : (
+                <AlertCircle size={14} className="shrink-0 text-[#ff6b6b]" />
+              )}
+              <span className="truncate">{msg.text}</span>
             </div>
+            <button
+              onClick={() => setMsg(null)}
+              className="text-xs opacity-60 hover:opacity-100 cursor-pointer shrink-0 ml-2 p-0.5"
+              title="Dismiss"
+            >
+              ✕
+            </button>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Workspace Body: Classic Mode vs New Horizontal Visual Workspace */}
-        {isClassicMode ? (
-          <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#070709]">
-            <ClassicCustomizer
+      {/* Workspace Body: Horizontal Flex Workspace with Central Canvas & Right Inspector */}
+      <div className="flex-1 flex flex-row min-h-0 overflow-hidden relative w-full h-full">
+        {/* Left & Center: Canvas Workspace */}
+        <div
+          ref={workspaceContainerRef}
+          style={getPassthroughBackgroundStyle()}
+          className="flex-1 flex flex-col min-h-0 overflow-hidden relative w-full h-full"
+        >
+          {/* Passthrough Background Overlays (Active in Transparent / Glass / Floating modes) */}
+          {transparencyMode !== "solid" && (
+            <>
+              {config.background.pattern === "dots" && (
+                <div className="absolute inset-0 nt-dot-grid opacity-60 pointer-events-none z-0" />
+              )}
+              {config.background.pattern === "grid" && (
+                <div
+                  className="absolute inset-0 pointer-events-none z-0 opacity-20"
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(to right, #444 1px, transparent 1px), linear-gradient(to bottom, #444 1px, transparent 1px)",
+                    backgroundSize: "28px 28px",
+                  }}
+                />
+              )}
+              {config.background.pattern === "scanlines" && (
+                <div
+                  className="absolute inset-0 pointer-events-none z-0 opacity-15"
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(rgba(255,255,255,0.06) 50%, transparent 50%)",
+                    backgroundSize: "100% 4px",
+                  }}
+                />
+              )}
+              {config.effects.particles !== "None" && (
+                <ParticlesCanvas
+                  effect={config.effects.particles}
+                  accentColor={config.effects.glowColor || "#ffffff"}
+                />
+              )}
+            </>
+          )}
+
+          {/* FULL-SCREEN LIVE PROFILE PREVIEW WORKSPACE */}
+          <div className="w-full h-full flex-1 flex flex-col overflow-hidden relative z-10">
+            <StudioRightPreviewCanvas
+              deviceMode={deviceMode}
+              setDeviceMode={setDeviceMode}
+              config={config}
+              previewData={previewData}
+              activeCategory={activeCategory}
+              onSelectCategory={(cat) => {
+                setActiveCategory(cat);
+                setCurrentView("categories");
+                setIsSettingsOpen(true);
+              }}
+              onUpdateCanvas={handleUpdateCanvas}
+              updateConfig={updateConfigWithHistory}
+              selectedCanvasId={selectedCanvasId}
+              onSelectCanvasId={(id) => setSelectedCanvasId(id)}
+              onOpenSocialSelector={() => setIsSocialModalOpen(true)}
+              onOpenRpcCustomizer={() => setIsRpcModalOpen(true)}
+              zoom={zoom}
+              setZoom={setZoom}
+              transparencyMode={transparencyMode}
+              setTransparencyMode={setTransparencyMode}
+              panelOpacity={panelOpacity}
+              setPanelOpacity={setPanelOpacity}
+              panelBlur={panelBlur}
+              setPanelBlur={setPanelBlur}
+              panelBorderOpacity={panelBorderOpacity}
+              setPanelBorderOpacity={setPanelBorderOpacity}
+              isEditorVisible={isSettingsOpen}
+              setIsEditorVisible={setIsSettingsOpen}
+              isPremium={Boolean(user?.premiumStatus)}
+              onUndo={handleUndo}
+              onRedo={handleRedo}
+              isPreviewVisible={true}
+              setIsPreviewVisible={() => {}}
+              onResetPanelSplit={handleResetPanelSplit}
+              isFullscreenPreview={isFullscreenPreview}
+              onToggleFullscreenPreview={handleToggleFullscreenPreview}
+            />
+          </div>
+
+          {/* UNIFIED ADAPTIVE FLOATING DOCK & APP DIRECTORY (MODES A, B, C) */}
+          <StudioFloatingDock
+            position={dockPosition}
+            onPositionChange={(newPos) => {
+              setDockPosition(newPos);
+              if (typeof window !== "undefined") {
+                try {
+                  localStorage.setItem("pixel_studio_dock_position", newPos);
+                } catch {}
+              }
+            }}
+            activeCategory={activeCategory}
+            currentView={currentView}
+            isSettingsOpen={isSettingsOpen}
+            onSelectTool={handleSelectTool}
+            onCloseSettings={() => setIsSettingsOpen(false)}
+            containerRef={workspaceContainerRef}
+            themeAccentColor={config.identity?.titleColor || "#ffffff"}
+            onAddEmbed={handleAddEmbed}
+            onAddElement={handleAddElement}
+            onOpenSocialSelector={() => setIsSocialModalOpen(true)}
+            onOpenRpcCustomizer={() => setIsRpcModalOpen(true)}
+            dockLockShortcut={config.advanced?.dockLockShortcut || "CapsLock"}
+            isDockLocked={config.advanced?.dockLocked ?? false}
+            onDockLockChange={(locked) => {
+              updateStudioPreferences((prev) => ({
+                ...prev,
+                dockLocked: locked,
+              }));
+            }}
+            moreOptionsPanelSize={config.advanced?.moreOptionsPanelSize ?? 100}
+            snapThreshold={config.advanced?.dockSnapThreshold ?? 175}
+          >
+            <StudioLeftWorkspace
+              currentView={currentView}
+              setCurrentView={setCurrentView}
+              activeCategory={activeCategory}
+              setActiveCategory={setActiveCategory}
+              panelSize={config.advanced?.moreOptionsPanelSize ?? 100}
+              config={config}
+              updateConfig={updateConfigWithHistory}
+              updatePreferences={updateStudioPreferences}
               displayName={displayName}
               setDisplayName={setDisplayName}
               bio={bio}
@@ -1383,177 +1609,38 @@ export default function CustomizePage() {
               setBannerUrl={setBannerUrl}
               musicUrl={musicUrl}
               setMusicUrl={setMusicUrl}
-              accentColor={accentColor}
-              setAccentColor={setAccentColor}
-              particles={particles}
-              setParticles={setParticles}
-              blur={blur}
-              setBlur={setBlur}
-              opacity={opacity}
-              setOpacity={setOpacity}
-              roundedCorners={roundedCorners}
-              setRoundedCorners={setRoundedCorners}
-              handleSave={(e) => {
-                if (e) e.preventDefault();
-                handlePublish();
-              }}
-              saving={saving || publishing}
-              username={user?.username}
-            />
-          </div>
-        ) : (
-          <div
-            ref={workspaceContainerRef}
-            style={getPassthroughBackgroundStyle()}
-            className="flex-1 flex flex-col min-h-0 overflow-hidden relative w-full h-full"
-          >
-            {/* Passthrough Background Overlays (Active in Transparent / Glass / Floating modes) */}
-            {transparencyMode !== "solid" && (
-              <>
-                {config.background.pattern === "dots" && (
-                  <div className="absolute inset-0 nt-dot-grid opacity-60 pointer-events-none z-0" />
-                )}
-                {config.background.pattern === "grid" && (
-                  <div
-                    className="absolute inset-0 pointer-events-none z-0 opacity-20"
-                    style={{
-                      backgroundImage:
-                        "linear-gradient(to right, #444 1px, transparent 1px), linear-gradient(to bottom, #444 1px, transparent 1px)",
-                      backgroundSize: "28px 28px",
-                    }}
-                  />
-                )}
-                {config.background.pattern === "scanlines" && (
-                  <div
-                    className="absolute inset-0 pointer-events-none z-0 opacity-15"
-                    style={{
-                      backgroundImage:
-                        "linear-gradient(rgba(255,255,255,0.06) 50%, transparent 50%)",
-                      backgroundSize: "100% 4px",
-                    }}
-                  />
-                )}
-                {config.effects.particles !== "None" && (
-                  <ParticlesCanvas
-                    effect={config.effects.particles}
-                    accentColor={config.effects.glowColor || "#ffffff"}
-                  />
-                )}
-              </>
-            )}
-
-            {/* FULL-SCREEN LIVE PROFILE PREVIEW WORKSPACE */}
-            <div className="w-full h-full flex-1 flex flex-col overflow-hidden relative z-10">
-              <StudioRightPreviewCanvas
-                deviceMode={deviceMode}
-                setDeviceMode={setDeviceMode}
-                config={config}
-                previewData={previewData}
-                activeCategory={activeCategory}
-                onSelectCategory={(cat) => {
-                  setActiveCategory(cat);
-                  setCurrentView("categories");
-                  setIsSettingsOpen(true);
-                }}
-                onUpdateCanvas={handleUpdateCanvas}
-                updateConfig={updateConfigWithHistory}
-                selectedCanvasId={selectedCanvasId}
-                onSelectCanvasId={(id) => setSelectedCanvasId(id)}
-                onOpenSocialSelector={() => setIsSocialModalOpen(true)}
-                onOpenRpcCustomizer={() => setIsRpcModalOpen(true)}
-                zoom={zoom}
-                setZoom={setZoom}
-                transparencyMode={transparencyMode}
-                setTransparencyMode={setTransparencyMode}
-                panelOpacity={panelOpacity}
-                setPanelOpacity={setPanelOpacity}
-                panelBlur={panelBlur}
-                setPanelBlur={setPanelBlur}
-                panelBorderOpacity={panelBorderOpacity}
-                setPanelBorderOpacity={setPanelBorderOpacity}
-                isEditorVisible={isSettingsOpen}
-                setIsEditorVisible={setIsSettingsOpen}
-                isPremium={Boolean(user?.premiumStatus)}
-                onUndo={handleUndo}
-                onRedo={handleRedo}
-                isPreviewVisible={true}
-                setIsPreviewVisible={() => {}}
-                onResetPanelSplit={handleResetPanelSplit}
-                isFullscreenPreview={isFullscreenPreview}
-                onToggleFullscreenPreview={handleToggleFullscreenPreview}
-              />
-            </div>
-
-            {/* UNIFIED ADAPTIVE FLOATING DOCK & APP DIRECTORY (MODES A, B, C) */}
-            <StudioFloatingDock
-              position={dockPosition}
-              onPositionChange={(newPos) => {
-                setDockPosition(newPos);
-                if (typeof window !== "undefined") {
-                  try {
-                    localStorage.setItem("pixel_studio_dock_position", newPos);
-                  } catch {}
-                }
-              }}
-              activeCategory={activeCategory}
-              currentView={currentView}
-              isSettingsOpen={isSettingsOpen}
-              onSelectTool={handleSelectTool}
-              onCloseSettings={() => setIsSettingsOpen(false)}
-              containerRef={workspaceContainerRef}
-              themeAccentColor={config.identity?.titleColor || "#ffffff"}
+              onApplyTemplatePreset={handleApplyTemplate}
+              onToggleLayerVisibility={handleToggleLayerVisibility}
+              onToggleLayerLock={handleToggleLayerLock}
+              onMoveLayer={handleMoveLayer}
               onAddEmbed={handleAddEmbed}
               onAddElement={handleAddElement}
               onOpenSocialSelector={() => setIsSocialModalOpen(true)}
               onOpenRpcCustomizer={() => setIsRpcModalOpen(true)}
-              dockLockShortcut={config.advanced?.dockLockShortcut || "CapsLock"}
-              isDockLocked={config.advanced?.dockLocked ?? false}
-              onDockLockChange={(locked) => {
-                updateStudioPreferences((prev) => ({
-                  ...prev,
-                  dockLocked: locked,
-                }));
-              }}
-              moreOptionsPanelSize={config.advanced?.moreOptionsPanelSize ?? 100}
-              snapThreshold={config.advanced?.dockSnapThreshold ?? 175}
-            >
-              <StudioLeftWorkspace
-                currentView={currentView}
-                setCurrentView={setCurrentView}
-                activeCategory={activeCategory}
-                setActiveCategory={setActiveCategory}
-                panelSize={config.advanced?.moreOptionsPanelSize ?? 100}
-                config={config}
-                updateConfig={updateConfigWithHistory}
-                updatePreferences={updateStudioPreferences}
-                displayName={displayName}
-                setDisplayName={setDisplayName}
-                bio={bio}
-                setBio={setBio}
-                avatarUrl={avatarUrl}
-                setAvatarUrl={setAvatarUrl}
-                bannerUrl={bannerUrl}
-                setBannerUrl={setBannerUrl}
-                musicUrl={musicUrl}
-                setMusicUrl={setMusicUrl}
-                onApplyTemplatePreset={handleApplyTemplate}
-                onToggleLayerVisibility={handleToggleLayerVisibility}
-                onToggleLayerLock={handleToggleLayerLock}
-                onMoveLayer={handleMoveLayer}
-                onAddEmbed={handleAddEmbed}
-                onAddElement={handleAddElement}
-                onOpenSocialSelector={() => setIsSocialModalOpen(true)}
-                onOpenRpcCustomizer={() => setIsRpcModalOpen(true)}
-                selectedId={selectedCanvasId}
-                onSelectElement={(id) => setSelectedCanvasId(id)}
-                transparencyMode={transparencyMode}
-                panelOpacity={panelOpacity}
-                panelBlur={panelBlur}
-                panelBorderOpacity={panelBorderOpacity}
-                isFloatingContext={true}
-                onClose={() => setIsSettingsOpen(false)}
-              />
-            </StudioFloatingDock>
+              selectedId={selectedCanvasId}
+              onSelectElement={(id) => setSelectedCanvasId(id)}
+              transparencyMode={transparencyMode}
+              panelOpacity={panelOpacity}
+              panelBlur={panelBlur}
+              panelBorderOpacity={panelBorderOpacity}
+              isFloatingContext={true}
+              onClose={() => setIsSettingsOpen(false)}
+            />
+          </StudioFloatingDock>
+        </div>
+
+        {/* Right: Design Studio Contextual Properties Panel Inspector */}
+        {isInspectorOpen && (
+          <div className="w-72 sm:w-80 h-full border-l border-[#27272a] bg-[#09090b] flex-shrink-0 z-30 flex flex-col overflow-hidden animate-in slide-in-from-right duration-200 shadow-2xl">
+            <EditorPropertiesPanel
+              selectedElement={selectedEditorElement}
+              canvas={canvasState}
+              onUpdateElement={handleEditorUpdateElement}
+              onUpdateCanvas={handleEditorUpdateCanvas}
+              onAlignElement={handleEditorAlignElement}
+              onReorderElement={handleEditorReorderElement}
+              onClose={() => setIsInspectorOpen(false)}
+            />
           </div>
         )}
       </div>
@@ -1596,6 +1683,6 @@ export default function CustomizePage() {
           window.location.href = "/pricing";
         }}
       />
-    </AccountLayout>
+    </div>
   );
 }

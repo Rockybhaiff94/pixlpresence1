@@ -1,11 +1,5 @@
-import { Metadata } from "next";
-import { DesignEditor } from "@/components/editor/DesignEditor";
-
-export const metadata: Metadata = {
-  title: "Design Studio — Pixel Customization",
-  description: "Create custom graphics and banners directly inside your Pixel profile customization workspace.",
-};
+import { redirect } from "next/navigation";
 
 export default function CustomizeDesignPage() {
-  return <DesignEditor />;
+  redirect("/customize");
 }
