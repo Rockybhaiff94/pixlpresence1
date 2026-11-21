@@ -32,6 +32,7 @@ import {
   Share2,
   Flame,
   ChevronLeft,
+  Shapes,
 } from "lucide-react";
 import { StudioTab } from "@/types/studio";
 import { StudioView } from "./StudioTopBar";
@@ -425,8 +426,9 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   }> = [
     { id: "layout", label: "Layout & Structure", icon: Layout, hotkey: "1" },
     { id: "identity", label: "Profile & Avatar", icon: User, hotkey: "2" },
-    { id: "typography", label: "Typography & Fonts", icon: Type, hotkey: "3" },
-    { id: "rpc", label: "Discord Rich Presence", icon: Gamepad2, hotkey: "4" },
+    { id: "shapes", label: "Shapes & Graphics", icon: Shapes, hotkey: "3" },
+    { id: "typography", label: "Typography & Fonts", icon: Type, hotkey: "4" },
+    { id: "rpc", label: "Discord Rich Presence", icon: Gamepad2, hotkey: "5" },
   ];
 
   // ========================================================
@@ -507,6 +509,14 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
           icon: FileText,
           type: "action",
           action: "addText",
+        },
+        {
+          id: "shapes",
+          label: "Shapes & Graphics",
+          desc: "Vector shapes, badges & stickers",
+          icon: Shapes,
+          type: "settings",
+          tab: "shapes",
         },
         {
           id: "background",

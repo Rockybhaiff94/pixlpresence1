@@ -89,6 +89,7 @@ interface StudioProfilePreviewProps {
     }
   ) => void;
   onResizeElement?: (elementId: string, width: number, height: number, x?: number, y?: number) => void;
+  onRotateElement?: (elementId: string, rotation: number) => void;
   onDuplicateEmbed?: (embedId: string) => void;
   onDeleteEmbed?: (embedId: string) => void;
   onToggleLockEmbed?: (embedId: string) => void;
@@ -112,6 +113,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
   onUpdateCanvas,
   onResizeEmbed,
   onResizeElement,
+  onRotateElement,
   onDuplicateEmbed,
   onDeleteEmbed,
   onToggleLockEmbed,
@@ -383,6 +385,53 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
           ...prev,
           ...(isAvatar ? { avatar: { ...prev.avatar, size: width } } : {}),
           ...(updatedElements ? { canvas: { ...prev.canvas!, elements: updatedElements } } : {}),
+        };
+      });
+    }
+  };
+
+  const handleRotateElement = (elementId: string, rotation: number) => {
+    if (onRotateElement) {
+      onRotateElement(elementId, rotation);
+      return;
+    }
+    if (onUpdateCanvas) {
+      onUpdateCanvas((prev: any) => ({
+        ...prev,
+        elements: prev.elements?.map((el: any) =>
+          el.id === elementId
+            ? {
+                ...el,
+                transform: {
+                  ...el.transform,
+                  rotation,
+                },
+              }
+            : el
+        ),
+      }));
+    }
+    if (updateConfig) {
+      updateConfig((prev) => {
+        const updatedElements = prev.canvas?.elements?.map((el) =>
+          el.id === elementId
+            ? {
+                ...el,
+                transform: {
+                  ...el.transform,
+                  rotation,
+                },
+              }
+            : el
+        );
+        return {
+          ...prev,
+          canvas: prev.canvas
+            ? {
+                ...prev.canvas,
+                elements: updatedElements || [],
+              }
+            : prev.canvas,
         };
       });
     }
@@ -976,6 +1025,7 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
             zoom={zoom}
             onResizeEmbed={handleResizeEmbed}
             onResizeElement={handleResizeElement}
+            onRotateElement={handleRotateElement}
             onDuplicateEmbed={handleDuplicateEmbed}
             onDeleteEmbed={handleDeleteEmbed}
             onDeleteElement={handleDeleteElement}

@@ -5,7 +5,9 @@ import {
   CanvasElement,
   CanvasEmbed,
   ProfileDesignConfig,
+  ShapeKind,
 } from "@/types/studio";
+import { calculateSmartSnap, GuideLine } from "./smartAlignment";
 import { PreviewData } from "./StudioProfilePreview";
 import { DiscordRpcCard } from "./DiscordRpcCard";
 import { PlatformIcon } from "@/components/links/PlatformIcons";
@@ -39,6 +41,13 @@ import {
   EyeOff,
   MoreHorizontal,
   Edit2,
+  Shield,
+  Trophy,
+  Crown,
+  Heart,
+  Star,
+  Terminal,
+  Code,
 } from "lucide-react";
 import { EmbedAdjustmentPanel } from "./EmbedAdjustmentPanel";
 import { ContentInsertionMenu } from "./ContentInsertionMenu";
@@ -80,6 +89,7 @@ interface CanvasObjectRendererProps {
     }
   ) => void;
   onResizeElement?: (elementId: string, width: number, height: number, x?: number, y?: number) => void;
+  onRotateElement?: (elementId: string, rotation: number) => void;
   onDuplicateEmbed?: (embedId: string) => void;
   onDeleteEmbed?: (embedId: string) => void;
   onDeleteElement?: (elementId: string) => void;
@@ -107,6 +117,7 @@ export function CanvasObjectRenderer({
   zoom = 100,
   onResizeEmbed,
   onResizeElement,
+  onRotateElement,
   onDuplicateEmbed,
   onDeleteEmbed,
   onDeleteElement,
@@ -824,6 +835,72 @@ export function CanvasObjectRenderer({
     targetEl.addEventListener("pointercancel", onPointerUp);
   };
 
+  const [activeGuides, setActiveGuides] = React.useState<GuideLine[]>([]);
+
+  const handleElementRotatePointerDown = (
+    e: React.PointerEvent,
+    elementId: string,
+    posX: number,
+    posY: number,
+    width: number,
+    height: number
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const targetHandle = e.currentTarget as HTMLElement;
+    try {
+      targetHandle.setPointerCapture(e.pointerId);
+    } catch {}
+
+    const targetEl = elements.find((item) => item.id === elementId);
+    const initialRotation = targetEl?.transform?.rotation || 0;
+
+    const domEl = document.querySelector(`[data-element-id="${elementId}"]`);
+    const rect = domEl?.getBoundingClientRect();
+    const centerX = rect ? rect.left + rect.width / 2 : e.clientX;
+    const centerY = rect ? rect.top + rect.height / 2 : e.clientY;
+
+    const startAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * (180 / Math.PI);
+    let hasRotated = false;
+
+    const onPointerMove = (ev: PointerEvent) => {
+      hasRotated = true;
+      const currentAngle = Math.atan2(ev.clientY - centerY, ev.clientX - centerX) * (180 / Math.PI);
+      const angleDiff = currentAngle - startAngle;
+      let newRotation = (initialRotation + angleDiff) % 360;
+      if (newRotation < 0) newRotation += 360;
+
+      // Shift key snaps to 15-degree increments
+      if (ev.shiftKey) {
+        newRotation = Math.round(newRotation / 15) * 15;
+      } else {
+        newRotation = Math.round(newRotation);
+      }
+
+      onRotateElement?.(elementId, newRotation);
+    };
+
+    const onPointerUp = (ev: PointerEvent) => {
+      try {
+        targetHandle.releasePointerCapture(ev.pointerId);
+      } catch {}
+      targetHandle.removeEventListener("pointermove", onPointerMove);
+      targetHandle.removeEventListener("pointerup", onPointerUp);
+      targetHandle.removeEventListener("pointercancel", onPointerUp);
+
+      if (hasRotated) {
+        isResizingJustFinishedRef.current = true;
+        setTimeout(() => {
+          isResizingJustFinishedRef.current = false;
+        }, 250);
+      }
+    };
+
+    targetHandle.addEventListener("pointermove", onPointerMove);
+    targetHandle.addEventListener("pointerup", onPointerUp);
+    targetHandle.addEventListener("pointercancel", onPointerUp);
+  };
+
   const handleMovePointerDown = (
     e: React.PointerEvent,
     embedId: string,
@@ -1088,6 +1165,20 @@ export function CanvasObjectRenderer({
       }
       return (
         <>
+          {/* Rotation Handle */}
+          <div className="absolute -top-7 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-auto z-40">
+            <div
+              onPointerDown={(e) =>
+                handleElementRotatePointerDown(e, targetElement.id, posX, posY, width, height)
+              }
+              title="Rotate Element (Hold Shift for 15° snap)"
+              className="w-3.5 h-3.5 bg-white border-2 border-sky-400 rounded-full cursor-grab active:cursor-grabbing hover:scale-125 transition-transform shadow-md flex items-center justify-center"
+            >
+              <div className="w-1 h-1 bg-sky-500 rounded-full pointer-events-none" />
+            </div>
+            <div className="w-[1.5px] h-3 bg-sky-400/80 pointer-events-none" />
+          </div>
+
           {/* 4 Corner Handles */}
           <div
             onPointerDown={(e) =>
@@ -1407,6 +1498,11 @@ export function CanvasObjectRenderer({
                   className="w-full h-full object-cover select-none"
                   style={{
                     objectFit: config.avatar.objectFit || "cover",
+                    filter: (() => {
+                      const filters = el.style?.imageFilters || (config.avatar as any)?.imageFilters;
+                      if (!filters) return undefined;
+                      return `brightness(${filters.brightness ?? 100}%) contrast(${filters.contrast ?? 100}%) blur(${filters.blur ?? 0}px) grayscale(${filters.grayscale ?? 0}%)`;
+                    })(),
                   }}
                 />
               ) : (
@@ -1934,6 +2030,11 @@ export function CanvasObjectRenderer({
               style={{
                 objectFit: el.style?.objectFit || "cover",
                 borderRadius: el.style?.borderRadius ? `${el.style.borderRadius}px` : undefined,
+                filter: (() => {
+                  const filters = el.style?.imageFilters;
+                  if (!filters) return undefined;
+                  return `brightness(${filters.brightness ?? 100}%) contrast(${filters.contrast ?? 100}%) blur(${filters.blur ?? 0}px) grayscale(${filters.grayscale ?? 0}%)`;
+                })(),
               }}
             />
           </div>
@@ -1958,6 +2059,198 @@ export function CanvasObjectRenderer({
                 height: el.style?.borderWidth ? `${el.style.borderWidth}px` : "1px",
               }}
             />
+          </div>
+        );
+      }
+
+      case "shape": {
+        const shapeKind: ShapeKind = el.style?.shapeKind || el.props?.shapeKind || "rounded-rectangle";
+        const fill = el.style?.fill || el.style?.backgroundColor || "#18181b";
+        const stroke = el.style?.strokeColor || el.style?.borderColor || "transparent";
+        const strokeWidth = el.style?.strokeWidth ?? 1;
+        const radius = el.style?.borderRadius ?? 12;
+        const currentW = el.transform?.width || 220;
+        const currentH = el.transform?.height || 80;
+
+        return (
+          <div
+            key={el.id}
+            data-element-id={el.id}
+            data-element-type="shape"
+            onClick={handleClick}
+            onPointerDown={handlePointerDown}
+            onPointerEnter={() => isInteractive && setHoveredElementId(el.id)}
+            onPointerLeave={() => isInteractive && setHoveredElementId((prev) => (prev === el.id ? null : prev))}
+            style={{
+              ...baseWrapperStyle,
+              width: `${currentW}px`,
+              height: `${currentH}px`,
+              minHeight: `${currentH}px`,
+            }}
+            className={`relative flex items-center justify-center select-none ${outlineClasses}`}
+          >
+            {renderHoverBadge()}
+            {renderElementResizeHandles(el, currentW, currentH, currentX, currentY, false)}
+            <svg
+              width="100%"
+              height="100%"
+              viewBox={`0 0 ${currentW} ${currentH}`}
+              className="w-full h-full overflow-visible pointer-events-none"
+            >
+              {shapeKind === "rectangle" && (
+                <rect
+                  x={strokeWidth / 2}
+                  y={strokeWidth / 2}
+                  width={Math.max(0, currentW - strokeWidth)}
+                  height={Math.max(0, currentH - strokeWidth)}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                />
+              )}
+              {shapeKind === "rounded-rectangle" && (
+                <rect
+                  x={strokeWidth / 2}
+                  y={strokeWidth / 2}
+                  width={Math.max(0, currentW - strokeWidth)}
+                  height={Math.max(0, currentH - strokeWidth)}
+                  rx={radius}
+                  ry={radius}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                />
+              )}
+              {shapeKind === "circle" && (
+                <ellipse
+                  cx={currentW / 2}
+                  cy={currentH / 2}
+                  rx={Math.max(0, Math.min(currentW, currentH) / 2 - strokeWidth / 2)}
+                  ry={Math.max(0, Math.min(currentW, currentH) / 2 - strokeWidth / 2)}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                />
+              )}
+              {shapeKind === "ellipse" && (
+                <ellipse
+                  cx={currentW / 2}
+                  cy={currentH / 2}
+                  rx={Math.max(0, currentW / 2 - strokeWidth / 2)}
+                  ry={Math.max(0, currentH / 2 - strokeWidth / 2)}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                />
+              )}
+              {shapeKind === "triangle" && (
+                <polygon
+                  points={`${currentW / 2},${strokeWidth} ${currentW - strokeWidth},${currentH - strokeWidth} ${strokeWidth},${currentH - strokeWidth}`}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                  strokeLinejoin="round"
+                />
+              )}
+              {shapeKind === "star" && (
+                <polygon
+                  points={`${currentW * 0.5},${currentH * 0.05} ${currentW * 0.63},${currentH * 0.35} ${currentW * 0.95},${currentH * 0.38} ${currentW * 0.71},${currentH * 0.59} ${currentW * 0.78},${currentH * 0.9} ${currentW * 0.5},${currentH * 0.73} ${currentW * 0.22},${currentH * 0.9} ${currentW * 0.29},${currentH * 0.59} ${currentW * 0.05},${currentH * 0.38} ${currentW * 0.37},${currentH * 0.35}`}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                  strokeLinejoin="round"
+                />
+              )}
+              {shapeKind === "line" && (
+                <line
+                  x1={strokeWidth}
+                  y1={currentH / 2}
+                  x2={currentW - strokeWidth}
+                  y2={currentH / 2}
+                  stroke={stroke !== "transparent" ? stroke : fill}
+                  strokeWidth={Math.max(2, strokeWidth)}
+                  strokeLinecap="round"
+                />
+              )}
+              {shapeKind === "arrow" && (
+                <g stroke={stroke !== "transparent" ? stroke : fill} strokeWidth={Math.max(2, strokeWidth)} strokeLinecap="round" strokeLinejoin="round" fill="none">
+                  <line x1={strokeWidth} y1={currentH / 2} x2={currentW - strokeWidth - 8} y2={currentH / 2} />
+                  <polyline points={`${currentW - strokeWidth - 14},${currentH / 2 - 6} ${currentW - strokeWidth - 6},${currentH / 2} ${currentW - strokeWidth - 14},${currentH / 2 + 6}`} />
+                </g>
+              )}
+              {shapeKind === "badge" && (
+                <path
+                  d={`M ${currentW / 2} 4 L ${currentW - 4} ${currentH * 0.25} L ${currentW - 4} ${currentH * 0.65} L ${currentW / 2} ${currentH - 4} L 4 ${currentH * 0.65} L 4 ${currentH * 0.25} Z`}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                  strokeLinejoin="round"
+                />
+              )}
+            </svg>
+          </div>
+        );
+      }
+
+      case "sticker": {
+        const stickerKey = el.style?.stickerKey || el.props?.stickerKey || "verified";
+        const color = el.style?.color || "#38bdf8";
+        const bg = el.style?.backgroundColor || "transparent";
+        const currentW = el.transform?.width || 56;
+        const currentH = el.transform?.height || 56;
+        const iconSize = Math.max(16, Math.min(currentW, currentH) * 0.65);
+
+        const renderStickerIcon = () => {
+          switch (stickerKey) {
+            case "verified":
+              return <BadgeCheck size={iconSize} className="text-sky-400" />;
+            case "discord":
+              return <Tv size={iconSize} className="text-[#5865F2]" />;
+            case "fire":
+              return <Flame size={iconSize} className="text-amber-500" />;
+            case "sparkle":
+              return <Sparkles size={iconSize} className="text-purple-400" />;
+            case "shield":
+              return <Shield size={iconSize} className="text-emerald-400" />;
+            case "trophy":
+              return <Trophy size={iconSize} className="text-amber-400" />;
+            case "crown":
+              return <Crown size={iconSize} className="text-yellow-400" />;
+            case "heart":
+              return <Heart size={iconSize} className="text-rose-500 fill-rose-500" />;
+            case "star":
+              return <Star size={iconSize} className="text-amber-400 fill-amber-400" />;
+            case "terminal":
+              return <Terminal size={iconSize} className="text-emerald-400" />;
+            case "code":
+              return <Code size={iconSize} className="text-sky-400" />;
+            default:
+              return <Sparkles size={iconSize} className="text-sky-400" />;
+          }
+        };
+
+        return (
+          <div
+            key={el.id}
+            data-element-id={el.id}
+            data-element-type="sticker"
+            onClick={handleClick}
+            onPointerDown={handlePointerDown}
+            onPointerEnter={() => isInteractive && setHoveredElementId(el.id)}
+            onPointerLeave={() => isInteractive && setHoveredElementId((prev) => (prev === el.id ? null : prev))}
+            style={{
+              ...baseWrapperStyle,
+              width: `${currentW}px`,
+              height: `${currentH}px`,
+              minHeight: `${currentH}px`,
+              backgroundColor: bg,
+              borderRadius: el.style?.borderRadius ? `${el.style.borderRadius}px` : "12px",
+            }}
+            className={`relative flex items-center justify-center shadow-lg select-none ${outlineClasses}`}
+          >
+            {renderHoverBadge()}
+            {renderElementResizeHandles(el, currentW, currentH, currentX, currentY, true)}
+            {renderStickerIcon()}
           </div>
         );
       }
@@ -2264,6 +2557,30 @@ export function CanvasObjectRenderer({
       className="canvas-object-root relative w-full h-full min-h-[500px]"
     >
       {/* Visual Alignment Guides */}
+      {activeGuides.map((guide, idx) => (
+        <div
+          key={`smart_guide_${idx}`}
+          className={`absolute pointer-events-none z-50 ${
+            guide.type === "x"
+              ? "top-0 bottom-0 w-[1.5px] bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.9)]"
+              : "left-0 right-0 h-[1.5px] bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.9)]"
+          }`}
+          style={{
+            [guide.type === "x" ? "left" : "top"]: `${guide.position}px`,
+          }}
+        >
+          {guide.label && (
+            <div
+              className={`absolute px-1.5 py-0.5 rounded bg-cyan-950/90 border border-cyan-400 text-[9px] font-mono font-bold text-cyan-200 shadow-md ${
+                guide.type === "x" ? "top-2 left-1" : "left-2 top-1"
+              }`}
+            >
+              {guide.label}
+            </div>
+          )}
+        </div>
+      ))}
+
       {movingEmbed?.isSnappedX && (
         <div
           className="absolute top-0 bottom-0 left-1/2 w-[2px] bg-cyan-400 pointer-events-none z-50 shadow-[0_0_10px_rgba(34,211,238,0.9)]"

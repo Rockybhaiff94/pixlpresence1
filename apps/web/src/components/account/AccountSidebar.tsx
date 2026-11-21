@@ -25,6 +25,7 @@ import {
   X,
   Check,
   Copy,
+  Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { formatAvatarUrl, getCachedUser, getStoredToken } from "@/lib/api";
@@ -76,6 +77,7 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
 
   const mainNavItems = [
     { label: "Customize", href: "/customize", icon: Palette },
+    { label: "Design Studio", href: "/editor", icon: Sparkles },
     { label: "Links", href: "/links", icon: LinkIcon },
     { label: "Premium", href: "/premium", icon: Crown },
     { label: "Image Host", href: "/image-host", icon: ImageIcon },

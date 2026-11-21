@@ -145,6 +145,14 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
       onSelectCategory("buttons");
     } else if (elementId === "music") {
       onSelectCategory("effects");
+    } else if (
+      elementId === "shapes" ||
+      elementId.startsWith("shape") ||
+      elementId.startsWith("sticker")
+    ) {
+      onSelectCategory("shapes");
+    } else {
+      onSelectCategory("identity");
     }
   };
 

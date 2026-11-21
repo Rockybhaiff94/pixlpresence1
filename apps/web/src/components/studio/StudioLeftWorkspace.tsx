@@ -39,6 +39,26 @@ import {
   Square,
   Check,
   Move,
+  Shapes,
+  Circle,
+  Triangle,
+  Star,
+  Minus,
+  ArrowRight,
+  Flame,
+  ShieldCheck,
+  CheckCircle2,
+  Bot,
+  Trophy,
+  Crown,
+  Heart,
+  Terminal,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  ArrowUpToLine,
+  ArrowDownToLine,
+  AlignJustify,
 } from "lucide-react";
 import {
   ProfileDesignConfig,
@@ -226,6 +246,49 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
   const is40OrBelow = effectivePct <= 45;
   const [shortcutConflictWarning, setShortcutConflictWarning] = useState<string | null>(null);
 
+  const selectedElement = useMemo(() => {
+    if (!selectedId || !config.canvas) return null;
+    return config.canvas.elements.find((e) => e.id === selectedId) || null;
+  }, [selectedId, config.canvas]);
+
+  const handleAlignSelectedElement = (alignment: "left" | "center-h" | "right" | "top" | "center-v" | "bottom") => {
+    if (!selectedElement) return;
+    const parentEmbed = config.canvas?.embeds.find((em) => em.id === selectedElement.parentEmbedId);
+    const containerW = parentEmbed ? (parentEmbed.transform.width || 580) : (config.layout.maxWidth || 580);
+    const containerH = parentEmbed ? (parentEmbed.transform.height || 520) : 520;
+
+    let newX = selectedElement.transform.x;
+    let newY = selectedElement.transform.y;
+
+    if (alignment === "left") newX = 16;
+    else if (alignment === "center-h") newX = Math.round((containerW - selectedElement.transform.width) / 2);
+    else if (alignment === "right") newX = Math.round(containerW - selectedElement.transform.width - 16);
+    else if (alignment === "top") newY = 16;
+    else if (alignment === "center-v") newY = Math.round((containerH - selectedElement.transform.height) / 2);
+    else if (alignment === "bottom") newY = Math.round(containerH - selectedElement.transform.height - 16);
+
+    updateConfig((prev) => ({
+      ...prev,
+      canvas: prev.canvas
+        ? {
+            ...prev.canvas,
+            elements: prev.canvas.elements.map((el) =>
+              el.id === selectedElement.id
+                ? {
+                    ...el,
+                    transform: {
+                      ...el.transform,
+                      x: newX,
+                      y: newY,
+                    },
+                  }
+                : el
+            ),
+          }
+        : prev.canvas,
+    }));
+  };
+
   // FIX-01: Update Studio preferences without marking the profile dirty
   const updateAdvancedPreferences = React.useCallback(
     (advUpdater: (prev: NonNullable<ProfileDesignConfig["advanced"]>) => NonNullable<ProfileDesignConfig["advanced"]>) => {
@@ -318,6 +381,7 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
       { id: "layout", label: "Layout & Structure", icon: Layout },
       { id: "identity", label: "Profile Identity", icon: User },
       { id: "avatar", label: "Avatar & Images", icon: ImageIcon },
+      { id: "shapes", label: "Shapes & Graphics", icon: Shapes },
       { id: "background", label: "Backgrounds", icon: Palette },
       { id: "typography", label: "Typography & Fonts", icon: Type },
       { id: "rpc", label: "Discord Rich Presence", icon: Gamepad2 },
@@ -2172,6 +2236,511 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                     {config.avatar.glow ? "ENABLED" : "DISABLED"}
                   </button>
                 </div>
+
+                {/* Image Filters & Adjustments (Migrated from Design Studio) */}
+                <div className="p-3.5 rounded-xl border border-neutral-800 bg-[#101012] space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-white font-semibold text-xs flex items-center gap-1.5">
+                      <Sliders size={13} className="text-cyan-400" /> Image Adjustments & Color Filters
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateConfig((prev) => ({
+                          ...prev,
+                          canvas: prev.canvas
+                            ? {
+                                ...prev.canvas,
+                                elements: prev.canvas.elements.map((el) =>
+                                  el.id === "avatar_1" || el.type === "avatar"
+                                    ? { ...el, style: { ...el.style, imageFilters: { brightness: 100, contrast: 100, blur: 0, grayscale: 0 } } }
+                                    : el
+                                ),
+                              }
+                            : prev.canvas,
+                        }))
+                      }
+                      className="text-[10px] text-neutral-400 hover:text-white font-mono cursor-pointer"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                  {/* Brightness */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[11px] font-mono text-neutral-400">
+                      <span>Brightness</span>
+                      <span>{config.canvas?.elements.find((e) => e.type === "avatar")?.style?.imageFilters?.brightness ?? 100}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={20}
+                      max={200}
+                      value={config.canvas?.elements.find((e) => e.type === "avatar")?.style?.imageFilters?.brightness ?? 100}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        updateConfig((prev) => ({
+                          ...prev,
+                          canvas: prev.canvas
+                            ? {
+                                ...prev.canvas,
+                                elements: prev.canvas.elements.map((el) =>
+                                  el.id === "avatar_1" || el.type === "avatar"
+                                    ? {
+                                        ...el,
+                                        style: {
+                                          ...el.style,
+                                          imageFilters: {
+                                            ...(el.style?.imageFilters || {}),
+                                            brightness: val,
+                                          },
+                                        },
+                                      }
+                                    : el
+                                ),
+                              }
+                            : prev.canvas,
+                        }));
+                      }}
+                      className="w-full accent-cyan-400 h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer"
+                    />
+                  </div>
+                  {/* Contrast */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[11px] font-mono text-neutral-400">
+                      <span>Contrast</span>
+                      <span>{config.canvas?.elements.find((e) => e.type === "avatar")?.style?.imageFilters?.contrast ?? 100}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={20}
+                      max={200}
+                      value={config.canvas?.elements.find((e) => e.type === "avatar")?.style?.imageFilters?.contrast ?? 100}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        updateConfig((prev) => ({
+                          ...prev,
+                          canvas: prev.canvas
+                            ? {
+                                ...prev.canvas,
+                                elements: prev.canvas.elements.map((el) =>
+                                  el.id === "avatar_1" || el.type === "avatar"
+                                    ? {
+                                        ...el,
+                                        style: {
+                                          ...el.style,
+                                          imageFilters: {
+                                            ...(el.style?.imageFilters || {}),
+                                            contrast: val,
+                                          },
+                                        },
+                                      }
+                                    : el
+                                ),
+                              }
+                            : prev.canvas,
+                        }));
+                      }}
+                      className="w-full accent-cyan-400 h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer"
+                    />
+                  </div>
+                  {/* Grayscale */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[11px] font-mono text-neutral-400">
+                      <span>Grayscale / Monochrome</span>
+                      <span>{config.canvas?.elements.find((e) => e.type === "avatar")?.style?.imageFilters?.grayscale ?? 0}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={config.canvas?.elements.find((e) => e.type === "avatar")?.style?.imageFilters?.grayscale ?? 0}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        updateConfig((prev) => ({
+                          ...prev,
+                          canvas: prev.canvas
+                            ? {
+                                ...prev.canvas,
+                                elements: prev.canvas.elements.map((el) =>
+                                  el.id === "avatar_1" || el.type === "avatar"
+                                    ? {
+                                        ...el,
+                                        style: {
+                                          ...el.style,
+                                          imageFilters: {
+                                            ...(el.style?.imageFilters || {}),
+                                            grayscale: val,
+                                          },
+                                        },
+                                      }
+                                    : el
+                                ),
+                              }
+                            : prev.canvas,
+                        }));
+                      }}
+                      className="w-full accent-cyan-400 h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 3.5. SHAPES & GRAPHICS (Migrated from Design Studio) */}
+            {activeCategory === "shapes" && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Shapes size={16} className="text-cyan-400" /> SHAPES & GRAPHICS // DESIGN STUDIO
+                  </h3>
+                  <p className="text-neutral-400 text-[11px] pt-0.5">
+                    Insert vector geometric shapes, decorative badges, and gaming stickers into your canvas.
+                  </p>
+                </div>
+
+                {/* Sub-section 1: Add Vector Shape to Canvas */}
+                <div className="p-3.5 rounded-xl border border-neutral-800 bg-[#101012] space-y-3">
+                  <span className="text-xs font-mono font-bold text-white uppercase tracking-wider block">
+                    [ ADD VECTOR SHAPES ]
+                  </span>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    {[
+                      { kind: "rounded-rectangle", label: "Squircle", icon: Square },
+                      { kind: "rectangle", label: "Box", icon: Square },
+                      { kind: "circle", label: "Circle", icon: Circle },
+                      { kind: "triangle", label: "Triangle", icon: Triangle },
+                      { kind: "star", label: "Star", icon: Star },
+                      { kind: "badge", label: "Badge", icon: ShieldCheck },
+                      { kind: "line", label: "Divider", icon: Minus },
+                      { kind: "arrow", label: "Arrow", icon: ArrowRight },
+                    ].map((s) => (
+                      <button
+                        key={s.kind}
+                        type="button"
+                        onClick={() => {
+                          onAddElement?.("shape");
+                        }}
+                        className="p-2.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:border-cyan-400/60 hover:bg-neutral-800 flex flex-col items-center justify-center gap-1.5 transition-colors cursor-pointer group"
+                      >
+                        <s.icon size={18} className="text-neutral-400 group-hover:text-cyan-400 transition-colors" />
+                        <span className="text-[10px] font-mono text-neutral-300 group-hover:text-white">{s.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sub-section 2: Add Badges & Stickers */}
+                <div className="p-3.5 rounded-xl border border-neutral-800 bg-[#101012] space-y-3">
+                  <span className="text-xs font-mono font-bold text-white uppercase tracking-wider block">
+                    [ GRAPHIC STICKERS & BADGES ]
+                  </span>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    {[
+                      { key: "verified", label: "Verified", icon: CheckCircle2, color: "#38bdf8" },
+                      { key: "discord", label: "Discord", icon: Gamepad2, color: "#5865F2" },
+                      { key: "fire", label: "Flame", icon: Flame, color: "#f97316" },
+                      { key: "sparkle", label: "Sparkle", icon: Sparkles, color: "#eab308" },
+                      { key: "bot", label: "Bot Glyph", icon: Bot, color: "#a855f7" },
+                      { key: "shield", label: "Shield", icon: Shield, color: "#4ade80" },
+                      { key: "trophy", label: "Trophy", icon: Trophy, color: "#facc15" },
+                      { key: "crown", label: "Crown", icon: Crown, color: "#fbbf24" },
+                      { key: "heart", label: "Heart", icon: Heart, color: "#ec4899" },
+                      { key: "star", label: "Star", icon: Star, color: "#fbbf24" },
+                      { key: "terminal", label: "Terminal", icon: Terminal, color: "#ffffff" },
+                      { key: "code", label: "Code", icon: Code2, color: "#38bdf8" },
+                    ].map((st) => (
+                      <button
+                        key={st.key}
+                        type="button"
+                        onClick={() => {
+                          onAddElement?.("sticker");
+                        }}
+                        className="p-2.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:border-cyan-400/60 hover:bg-neutral-800 flex flex-col items-center justify-center gap-1.5 transition-colors cursor-pointer group"
+                      >
+                        <st.icon size={18} style={{ color: st.color }} className="transition-transform group-hover:scale-110" />
+                        <span className="text-[10px] font-mono text-neutral-300 group-hover:text-white">{st.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sub-section 3: Selected Shape or Sticker Inspector */}
+                {selectedElement && (selectedElement.type === "shape" || selectedElement.type === "sticker") && (
+                  <div className="p-3.5 rounded-xl border border-cyan-500/40 bg-neutral-950 space-y-4 shadow-[0_0_20px_rgba(56,189,248,0.1)]">
+                    <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
+                      <span className="text-xs font-mono font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Sliders size={13} /> {selectedElement.name || selectedElement.type.toUpperCase()} PROPERTIES
+                      </span>
+                      <span className="text-[9px] font-mono text-neutral-500 uppercase">{selectedElement.id}</span>
+                    </div>
+
+                    {/* Shape Specific Controls */}
+                    {selectedElement.type === "shape" && (
+                      <>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono text-neutral-400 uppercase">Shape Type</label>
+                          <select
+                            value={selectedElement.style?.shapeKind || "rounded-rectangle"}
+                            onChange={(e) => {
+                              const kind = e.target.value as any;
+                              updateConfig((prev) => ({
+                                ...prev,
+                                canvas: prev.canvas
+                                  ? {
+                                      ...prev.canvas,
+                                      elements: prev.canvas.elements.map((el) =>
+                                        el.id === selectedElement.id
+                                          ? { ...el, style: { ...el.style, shapeKind: kind } }
+                                          : el
+                                      ),
+                                    }
+                                  : prev.canvas,
+                              }));
+                            }}
+                            className="w-full bg-[#121212] border border-neutral-700 text-xs font-mono text-white p-2 rounded-lg outline-none"
+                          >
+                            <option value="rounded-rectangle">Rounded Rectangle (Squircle)</option>
+                            <option value="rectangle">Sharp Rectangle</option>
+                            <option value="circle">Circle</option>
+                            <option value="triangle">Triangle</option>
+                            <option value="star">Star</option>
+                            <option value="badge">Nothing OS Badge</option>
+                            <option value="line">Divider Line</option>
+                            <option value="arrow">Arrow</option>
+                          </select>
+                        </div>
+
+                        {/* Fill & Stroke */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono text-neutral-400 uppercase">Fill Color</label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="color"
+                                value={selectedElement.style?.fill || "#18181b"}
+                                onChange={(e) => {
+                                  const c = e.target.value;
+                                  updateConfig((prev) => ({
+                                    ...prev,
+                                    canvas: prev.canvas
+                                      ? {
+                                          ...prev.canvas,
+                                          elements: prev.canvas.elements.map((el) =>
+                                            el.id === selectedElement.id
+                                              ? { ...el, style: { ...el.style, fill: c } }
+                                              : el
+                                          ),
+                                        }
+                                      : prev.canvas,
+                                  }));
+                                }}
+                                className="w-8 h-8 rounded border border-neutral-700 cursor-pointer bg-transparent"
+                              />
+                              <input
+                                type="text"
+                                value={selectedElement.style?.fill || "#18181b"}
+                                onChange={(e) => {
+                                  const c = e.target.value;
+                                  updateConfig((prev) => ({
+                                    ...prev,
+                                    canvas: prev.canvas
+                                      ? {
+                                          ...prev.canvas,
+                                          elements: prev.canvas.elements.map((el) =>
+                                            el.id === selectedElement.id
+                                              ? { ...el, style: { ...el.style, fill: c } }
+                                              : el
+                                          ),
+                                        }
+                                      : prev.canvas,
+                                  }));
+                                }}
+                                className="flex-1 bg-[#121212] border border-neutral-700 px-2 py-1 text-xs font-mono text-white rounded"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono text-neutral-400 uppercase">Border / Stroke</label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="color"
+                                value={selectedElement.style?.strokeColor || "#38bdf8"}
+                                onChange={(e) => {
+                                  const c = e.target.value;
+                                  updateConfig((prev) => ({
+                                    ...prev,
+                                    canvas: prev.canvas
+                                      ? {
+                                          ...prev.canvas,
+                                          elements: prev.canvas.elements.map((el) =>
+                                            el.id === selectedElement.id
+                                              ? { ...el, style: { ...el.style, strokeColor: c } }
+                                              : el
+                                          ),
+                                        }
+                                      : prev.canvas,
+                                  }));
+                                }}
+                                className="w-8 h-8 rounded border border-neutral-700 cursor-pointer bg-transparent"
+                              />
+                              <input
+                                type="text"
+                                value={selectedElement.style?.strokeColor || "#38bdf8"}
+                                onChange={(e) => {
+                                  const c = e.target.value;
+                                  updateConfig((prev) => ({
+                                    ...prev,
+                                    canvas: prev.canvas
+                                      ? {
+                                          ...prev.canvas,
+                                          elements: prev.canvas.elements.map((el) =>
+                                            el.id === selectedElement.id
+                                              ? { ...el, style: { ...el.style, strokeColor: c } }
+                                              : el
+                                          ),
+                                        }
+                                      : prev.canvas,
+                                  }));
+                                }}
+                                className="flex-1 bg-[#121212] border border-neutral-700 px-2 py-1 text-xs font-mono text-white rounded"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Corner Radius & Stroke Width Sliders */}
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-[11px] font-mono text-neutral-400">
+                            <span>Corner Radius</span>
+                            <span>{selectedElement.style?.borderRadius ?? 16}px</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={60}
+                            value={selectedElement.style?.borderRadius ?? 16}
+                            onChange={(e) => {
+                              const r = Number(e.target.value);
+                              updateConfig((prev) => ({
+                                ...prev,
+                                canvas: prev.canvas
+                                  ? {
+                                      ...prev.canvas,
+                                      elements: prev.canvas.elements.map((el) =>
+                                        el.id === selectedElement.id
+                                          ? { ...el, style: { ...el.style, borderRadius: r } }
+                                          : el
+                                      ),
+                                    }
+                                  : prev.canvas,
+                              }));
+                            }}
+                            className="w-full accent-cyan-400 h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {/* Sticker Specific Controls */}
+                    {selectedElement.type === "sticker" && (
+                      <div className="space-y-3">
+                        <label className="text-[10px] font-mono text-neutral-400 uppercase">Sticker Glyph Key</label>
+                        <div className="grid grid-cols-4 gap-2">
+                          {["verified", "discord", "fire", "sparkle", "bot", "shield", "trophy", "crown"].map((k) => (
+                            <button
+                              key={k}
+                              type="button"
+                              onClick={() => {
+                                updateConfig((prev) => ({
+                                  ...prev,
+                                  canvas: prev.canvas
+                                    ? {
+                                        ...prev.canvas,
+                                        elements: prev.canvas.elements.map((el) =>
+                                          el.id === selectedElement.id
+                                            ? {
+                                                ...el,
+                                                props: { ...el.props, stickerKey: k },
+                                                style: { ...el.style, stickerKey: k },
+                                              }
+                                            : el
+                                        ),
+                                      }
+                                    : prev.canvas,
+                                }));
+                              }}
+                              className={`p-1.5 rounded text-[10px] font-mono uppercase text-center border cursor-pointer ${
+                                (selectedElement.props?.stickerKey || selectedElement.style?.stickerKey) === k
+                                  ? "border-cyan-400 bg-cyan-500/20 text-white font-bold"
+                                  : "border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-white"
+                              }`}
+                            >
+                              {k}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Sub-section 4: One-Click Alignment Bar */}
+                <div className="p-3.5 rounded-xl border border-neutral-800 bg-[#101012] space-y-3">
+                  <span className="text-xs font-mono font-bold text-white uppercase tracking-wider block">
+                    [ ONE-CLICK ALIGNMENT // CANVAS SNAP ]
+                  </span>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      disabled={!selectedElement}
+                      onClick={() => handleAlignSelectedElement("left")}
+                      className="p-2 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-mono flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+                    >
+                      <AlignLeft size={13} /> Left
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!selectedElement}
+                      onClick={() => handleAlignSelectedElement("center-h")}
+                      className="p-2 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-cyan-300 hover:text-cyan-200 text-xs font-mono flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+                    >
+                      <AlignCenter size={13} /> Center X
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!selectedElement}
+                      onClick={() => handleAlignSelectedElement("right")}
+                      className="p-2 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-mono flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+                    >
+                      <AlignRight size={13} /> Right
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!selectedElement}
+                      onClick={() => handleAlignSelectedElement("top")}
+                      className="p-2 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-mono flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+                    >
+                      <ArrowUpToLine size={13} /> Top
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!selectedElement}
+                      onClick={() => handleAlignSelectedElement("center-v")}
+                      className="p-2 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-cyan-300 hover:text-cyan-200 text-xs font-mono flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+                    >
+                      <AlignJustify size={13} /> Center Y
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!selectedElement}
+                      onClick={() => handleAlignSelectedElement("bottom")}
+                      className="p-2 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-mono flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+                    >
+                      <ArrowDownToLine size={13} /> Bottom
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -2265,8 +2834,8 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                   <label className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
                     Atmospheric Pattern Overlay
                   </label>
-                  <div className={`grid gap-2 ${is60OrBelow ? "grid-cols-2" : is80OrBelow ? "grid-cols-3" : "grid-cols-5"}`}>
-                    {(["none", "dots", "grid", "scanlines", "matrix"] as PatternType[]).map((pat) => (
+                  <div className={`grid gap-2 ${is60OrBelow ? "grid-cols-2" : is80OrBelow ? "grid-cols-3" : "grid-cols-4 sm:grid-cols-7"}`}>
+                    {(["none", "dots", "grid", "scanlines", "matrix", "crosshair", "noise"] as PatternType[]).map((pat) => (
                       <button
                         key={pat}
                         onClick={() =>

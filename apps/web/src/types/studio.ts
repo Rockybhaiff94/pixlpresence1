@@ -20,7 +20,7 @@ export type CanvasSelectionTarget =
   | null;
 export type BackgroundAspectRatio = "full" | "16:9" | "9:16" | "1:1" | "4:3" | "custom";
 export type BackgroundFitMode = "cover" | "contain" | "fill" | "stretch";
-export type PatternType = "none" | "dots" | "grid" | "matrix" | "scanlines" | "noise";
+export type PatternType = "none" | "dots" | "grid" | "matrix" | "scanlines" | "noise" | "crosshair" | "dot-matrix";
 export type ParticleEffect = "None" | "Snow" | "Stars" | "Fireflies" | "Rain" | "Matrix";
 export type BadgeStyle = "pill" | "glyph" | "minimal" | "neon" | "hidden";
 export type ButtonVariant = "solid-white" | "glass" | "neon" | "minimal" | "outline" | "gradient";
@@ -28,6 +28,18 @@ export type SocialIconStyle = "minimal" | "pill" | "glass" | "neon" | "circle";
 export type RpcStyle = "card" | "glass" | "minimal" | "compact" | "neon";
 export type RpcImageLayout = "left" | "right" | "stacked" | "hidden";
 export type RpcImageSize = "small" | "medium" | "large";
+
+export type ShapeKind =
+  | "rectangle"
+  | "rounded-rectangle"
+  | "circle"
+  | "ellipse"
+  | "triangle"
+  | "star"
+  | "polygon"
+  | "line"
+  | "arrow"
+  | "badge";
 
 export type CanvasElementType =
   | "embed"
@@ -75,6 +87,7 @@ export type CanvasElementType =
   | "selectMenu"
   | "interactiveLink"
   | "shape"
+  | "sticker"
   | "bottomIcon";
 
 export interface CanvasTransform {
@@ -176,6 +189,21 @@ export interface CanvasElementStyle {
   gradientAngle?: number;
   gradientStops?: Array<{ color: string; offset: number }>;
   gradientAnimated?: boolean;
+
+  // Shapes & Graphics Styling (Migrated from Design Studio)
+  shapeKind?: ShapeKind;
+  fill?: string;
+  strokeColor?: string;
+  strokeWidth?: number;
+  points?: number; // for star/polygon
+  stickerKey?: string;
+  stickerType?: "icon" | "emoji" | "badge";
+  imageFilters?: {
+    brightness?: number; // 0-200%
+    contrast?: number; // 0-200%
+    blur?: number; // 0-20px
+    grayscale?: number; // 0-100%
+  };
 
   // Hover Effects & Animation Presets
   hoverEffect?: "none" | "opacity" | "glow" | "color" | "scale" | "lift" | "neon" | "pulse";
@@ -313,6 +341,7 @@ export type StudioTab =
   | "layout"
   | "identity"
   | "avatar"
+  | "shapes"
   | "background"
   | "typography"
   | "rpc"
@@ -323,7 +352,21 @@ export type StudioTab =
 
 export interface StudioLayer {
   id: string;
-  type: "background" | "container" | "avatar" | "username" | "bio" | "rpc" | "music" | "socials" | "buttons" | "custom" | "badges" | "identity";
+  type:
+    | "background"
+    | "container"
+    | "avatar"
+    | "username"
+    | "bio"
+    | "rpc"
+    | "music"
+    | "socials"
+    | "buttons"
+    | "custom"
+    | "badges"
+    | "identity"
+    | "shape"
+    | "sticker";
   label: string;
   visible: boolean;
   locked: boolean;

@@ -519,7 +519,6 @@ export default function CustomizePage() {
 
   const handleResetToDefault = () => {
     updateConfigWithHistory(() => DEFAULT_DESIGN_CONFIG);
-    setMsg({ text: "Studio reset to Default Nothing OS layout.", type: "success" });
   };
 
   const handleApplyTemplate = (preset: StudioTemplatePreset) => {
@@ -541,7 +540,6 @@ export default function CustomizePage() {
     if (preset.accentColor) {
       setAccentColor(preset.accentColor);
     }
-    setMsg({ text: `Applied "${preset.name}" template.`, type: "success" });
   };
 
   // Layers handlers
@@ -672,7 +670,6 @@ export default function CustomizePage() {
         },
       };
     });
-    setMsg({ text: "Added new customizable embed.", type: "success" });
   };
 
   const refreshProfileLinks = useCallback(async () => {
@@ -770,7 +767,6 @@ export default function CustomizePage() {
         },
       };
     });
-    setMsg({ text: `Added ${account.label} icon to embed.`, type: "success" });
   };
 
   const handleAddSocialPill = (account: LinkedAccountReference) => {
@@ -823,7 +819,6 @@ export default function CustomizePage() {
         },
       };
     });
-    setMsg({ text: `Added ${account.label} pill to embed.`, type: "success" });
   };
 
   const handleAddAllSocialBar = () => {
@@ -871,7 +866,6 @@ export default function CustomizePage() {
         },
       };
     });
-    setMsg({ text: "Added unified social bar with all connected accounts.", type: "success" });
   };
 
   const handleAddElement = (type: CanvasElementType) => {
@@ -907,6 +901,25 @@ export default function CustomizePage() {
         else initialProps = { content: "New editable text component" };
       } else if (type === "image") {
         initialProps = { imageUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500" };
+      } else if (type === "shape") {
+        initialStyle = {
+          shapeKind: "rounded-rectangle",
+          fill: "#18181b",
+          strokeColor: "#38bdf8",
+          strokeWidth: 2,
+          borderRadius: 16,
+          color: "#ffffff",
+        };
+        initialProps = { shapeKind: "rounded-rectangle" };
+      } else if (type === "sticker") {
+        initialStyle = {
+          stickerKey: "verified",
+          stickerType: "badge",
+          color: "#38bdf8",
+          backgroundColor: "#101014",
+          borderRadius: 12,
+        };
+        initialProps = { stickerKey: "verified" };
       }
 
       const newEl: CanvasElement = {
@@ -917,8 +930,8 @@ export default function CustomizePage() {
         transform: {
           x: 0,
           y: 0,
-          width: (prev.layout.maxWidth || 580) - 60,
-          height: type === "divider" ? 2 : isTextBasedElement(type) ? 36 : 120,
+          width: type === "sticker" ? 56 : type === "shape" ? 220 : (prev.layout.maxWidth || 580) - 60,
+          height: type === "divider" ? 2 : type === "sticker" ? 56 : type === "shape" ? 80 : isTextBasedElement(type) ? 36 : 120,
           rotation: 0,
           zIndex: currentCanvas.elements.length + 2,
         },
@@ -939,7 +952,6 @@ export default function CustomizePage() {
         },
       };
     });
-    setMsg({ text: `Added new ${type} component to canvas.`, type: "success" });
   };
 
   // Load initial profile & presence
@@ -1224,6 +1236,64 @@ export default function CustomizePage() {
     return base;
   };
 
+  const handleExportGraphic = async (format: "png" | "svg" | "json") => {
+    try {
+      const { exportToPng, exportToSvg, exportToJson } = await import("@/components/editor/canvasExport");
+      const bg = config.background || { type: "solid", color: "#09090b" };
+      const currentCanvas = config.canvas || createDefaultCanvasState(config);
+      const canvasElements: any[] = currentCanvas.elements.map((el) => ({
+        id: el.id,
+        type: el.type === "shape" ? "shape" : el.type === "sticker" ? "sticker" : "text",
+        name: el.name,
+        x: el.transform.x || 0,
+        y: el.transform.y || 0,
+        width: el.transform.width,
+        height: el.transform.height,
+        rotation: el.transform.rotation || 0,
+        zIndex: el.transform.zIndex || 1,
+        opacity: (el.style?.opacity ?? 100) / 100,
+        visible: el.isVisible !== false,
+        locked: Boolean(el.isLocked),
+        shapeKind: el.style?.shapeKind || "rounded-rectangle",
+        fill: el.style?.fill || "#18181b",
+        stroke: el.style?.strokeColor || "transparent",
+        strokeWidth: el.style?.strokeWidth || 1,
+        cornerRadius: el.style?.borderRadius || 12,
+        text: el.props?.text || el.props?.content || el.name,
+        color: el.style?.color || "#ffffff",
+        fontSize: el.style?.fontSize || 16,
+        fontFamily: el.style?.fontFamily || "Space Grotesk, sans-serif",
+        fontWeight: el.style?.fontWeight || "600",
+        textAlign: el.style?.textAlign || "left",
+      }));
+
+      const options = {
+        width: 1200,
+        height: 800,
+        background: {
+          type: bg.type === "gradient" ? ("gradient" as const) : ("solid" as const),
+          color: bg.color || "#09090b",
+          gradientTo: bg.gradient?.stops?.[1]?.color || bg.gradient?.stops?.[0]?.color,
+          gradientAngle: bg.gradient?.angle,
+          pattern: bg.pattern === "grid" ? ("grid" as const) : bg.pattern === "dot-matrix" ? ("dot-matrix" as const) : ("none" as const),
+          patternOpacity: (bg as any).patternOpacity ?? bg.overlayOpacity,
+        },
+        elements: canvasElements,
+        filename: `pixel-profile-${user?.username || "design"}.${format}`,
+      };
+
+      if (format === "png") {
+        await exportToPng(options);
+      } else if (format === "svg") {
+        exportToSvg(options);
+      } else {
+        exportToJson(options);
+      }
+    } catch (err) {
+      console.error("Export error:", err);
+    }
+  };
+
   // Preview Data payload for WYSIWYG right preview
   const previewData = {
     username: user?.username || "yourname",
@@ -1260,6 +1330,7 @@ export default function CustomizePage() {
           onReset={handleResetToDefault}
           onSave={handleSaveDraft}
           onPublish={handlePublish}
+          onExport={handleExportGraphic}
           saveStatus={saveDraftStatus}
           saving={saving}
           publishing={publishing}
@@ -1520,7 +1591,6 @@ export default function CustomizePage() {
               customLayout: newLayout,
             },
           }));
-          setMsg({ text: "Discord Rich Presence custom layout updated!", type: "success" });
         }}
         onOpenUpgradeModal={() => {
           window.location.href = "/pricing";

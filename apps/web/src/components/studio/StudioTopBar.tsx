@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import {
   Undo2,
   Redo2,
@@ -17,6 +18,7 @@ import {
   Loader2,
   Check,
   AlertCircle,
+  Download,
 } from "lucide-react";
 
 export type DeviceMode = "desktop" | "tablet" | "mobile";
@@ -35,6 +37,7 @@ interface StudioTopBarProps {
   onReset: () => void;
   onSave: () => void;
   onPublish: () => void;
+  onExport?: (format: "png" | "svg" | "json") => void;
   saveStatus?: SaveDraftStatus;
   saving: boolean;
   publishing: boolean;
@@ -56,6 +59,7 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
   onReset,
   onSave,
   onPublish,
+  onExport,
   saveStatus = "idle",
   saving,
   publishing,
@@ -64,6 +68,7 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
   isClassicMode,
   onToggleClassicMode,
 }) => {
+  const [isExportOpen, setIsExportOpen] = React.useState(false);
   return (
     <header className="h-14 border-b border-[#202020] bg-[#09090b]/95 backdrop-blur-md px-4 flex items-center justify-between text-xs font-mono text-[#ededed] shrink-0 z-30 select-none">
       {/* Left: Brand & Main Navigation (Categories / Templates / Layers) */}
@@ -159,6 +164,16 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
           {isClassicMode ? "⚡ Switch to Studio" : "Classic Mode"}
         </button>
 
+        {/* Launch Pixel Design Studio */}
+        <Link
+          href="/editor"
+          className="px-2.5 py-1 rounded-lg border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5 text-[10px]"
+          title="Open Pixel Graphic & Banner Studio"
+        >
+          <Sparkles size={12} className="text-purple-400" />
+          <span className="hidden md:inline">Design Studio</span>
+        </Link>
+
         {/* Live Public Profile Link */}
         {username && (
           <a
@@ -172,6 +187,52 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
             <ExternalLink size={12} />
           </a>
         )}
+
+        {/* Export Graphic Dropdown Menu */}
+        <div className="relative">
+          <button
+            onClick={() => setIsExportOpen(!isExportOpen)}
+            className="px-2.5 py-1 rounded-lg border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5 text-[10px]"
+            title="Export Profile Graphic (PNG 2x, SVG, JSON)"
+          >
+            <Download size={12} className="text-sky-400" />
+            <span className="hidden md:inline">Export</span>
+          </button>
+          {isExportOpen && (
+            <div className="absolute right-0 top-full mt-1.5 w-48 bg-[#101014] border border-neutral-800 rounded-xl shadow-2xl p-1.5 z-50 flex flex-col gap-1">
+              <button
+                onClick={() => {
+                  setIsExportOpen(false);
+                  onExport?.("png");
+                }}
+                className="w-full text-left px-2.5 py-1.5 text-[11px] font-sans text-neutral-300 hover:text-white hover:bg-neutral-800/80 rounded-lg transition-colors flex items-center justify-between cursor-pointer"
+              >
+                <span>Export PNG</span>
+                <span className="text-[9px] font-mono text-neutral-500">2x Retina</span>
+              </button>
+              <button
+                onClick={() => {
+                  setIsExportOpen(false);
+                  onExport?.("svg");
+                }}
+                className="w-full text-left px-2.5 py-1.5 text-[11px] font-sans text-neutral-300 hover:text-white hover:bg-neutral-800/80 rounded-lg transition-colors flex items-center justify-between cursor-pointer"
+              >
+                <span>Export SVG</span>
+                <span className="text-[9px] font-mono text-neutral-500">Vector</span>
+              </button>
+              <button
+                onClick={() => {
+                  setIsExportOpen(false);
+                  onExport?.("json");
+                }}
+                className="w-full text-left px-2.5 py-1.5 text-[11px] font-sans text-neutral-300 hover:text-white hover:bg-neutral-800/80 rounded-lg transition-colors flex items-center justify-between cursor-pointer"
+              >
+                <span>Export JSON</span>
+                <span className="text-[9px] font-mono text-neutral-500">Backup</span>
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Save Draft Button with 3-State Inline Animation & Zero Layout Shift */}
         <button

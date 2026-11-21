@@ -29,6 +29,7 @@ import {
   Sliders,
   ListFilter,
   CheckCircle,
+  Sparkles,
 } from "lucide-react";
 import {
   CanvasElement,
@@ -1022,6 +1023,25 @@ export const COMPONENT_REGISTRY: Record<CanvasElementType, ComponentDefinition> 
       name: "Status Glyph",
       parentEmbedId: parentEmbedId || null,
       transform: { x: 0, y: 0, width: 32, height: 32, rotation: 0, zIndex: 3 },
+      isVisible: true,
+      isLocked: false,
+    }),
+  },
+
+  sticker: {
+    type: "sticker",
+    category: "profile",
+    name: "Badge & Sticker",
+    description: "Graphic badge or decorative sticker glyph",
+    icon: Sparkles,
+    defaultTransform: { width: 56, height: 56, rotation: 0, zIndex: 3 },
+    createInstance: (parentEmbedId) => ({
+      id: `sticker_${Date.now()}`,
+      type: "sticker",
+      name: "Sticker",
+      parentEmbedId: parentEmbedId || null,
+      transform: { x: 0, y: 0, width: 56, height: 56, rotation: 0, zIndex: 3 },
+      style: { stickerKey: "verified", color: "#38bdf8", borderRadius: 12 },
       isVisible: true,
       isLocked: false,
     }),
