@@ -2243,8 +2243,22 @@ export function CanvasObjectRenderer({
       onClick={(e) => {
         if (!isInteractive) return;
         if (isResizingJustFinishedRef.current) return;
-        if (e.target === e.currentTarget) {
-          onSelectElement?.(null);
+        const target = e.target as HTMLElement;
+        if (
+          target.closest("button") ||
+          target.closest("input") ||
+          target.closest("textarea") ||
+          target.closest("a") ||
+          target.closest(".resize-handle") ||
+          target.closest(".embed-toolbar") ||
+          target.closest(".embed-inspector") ||
+          target.closest(".embed-adjustment-panel") ||
+          target.closest(".content-insertion-menu")
+        ) {
+          return;
+        }
+        if (!target.closest("[data-embed-id]")) {
+          onSelectElement?.("background");
         }
       }}
       className="canvas-object-root relative w-full h-full min-h-[500px]"
@@ -2344,6 +2358,21 @@ export function CanvasObjectRenderer({
             onClick={(e) => {
               if (!isInteractive) return;
               if (isResizingJustFinishedRef.current) return;
+              const target = e.target as HTMLElement;
+              if (
+                target.closest("[data-element-id]") ||
+                target.closest("button") ||
+                target.closest("input") ||
+                target.closest("textarea") ||
+                target.closest("a") ||
+                target.closest(".resize-handle") ||
+                target.closest(".embed-toolbar") ||
+                target.closest(".embed-inspector") ||
+                target.closest(".embed-adjustment-panel") ||
+                target.closest(".content-insertion-menu")
+              ) {
+                return;
+              }
               e.stopPropagation();
               onSelectElement?.(embed.id);
             }}
@@ -2352,6 +2381,7 @@ export function CanvasObjectRenderer({
               if (embed.isLocked) return;
               const target = e.target as HTMLElement;
               if (
+                target.closest("[data-element-id]") ||
                 target.closest("button") ||
                 target.closest("input") ||
                 target.closest("textarea") ||

@@ -583,7 +583,7 @@ export function validateImageBuffer(buffer: Buffer): {
   error?: string;
 } {
   if (!buffer || buffer.length < 8) {
-    return { valid: false, mimeType: '', isAnimated: false, ext: '', error: 'File is too small to be a valid image.' };
+    return { valid: false, mimeType: '', isAnimated: false, ext: '', error: 'File is too small to be a valid media file.' };
   }
 
   // PNG: 89 50 4E 47 0D 0A 1A 0A
@@ -641,12 +641,60 @@ export function validateImageBuffer(buffer: Buffer): {
     return { valid: true, mimeType: 'image/webp', isAnimated: isAnimWebp, ext: 'webp' };
   }
 
+  // MP4: buffer[4..7] === 'ftyp'
+  if (buffer.length >= 8 && buffer.slice(4, 8).toString() === 'ftyp') {
+    return { valid: true, mimeType: 'video/mp4', isAnimated: true, ext: 'mp4' };
+  }
+
+  // WebM: 1A 45 DF A3
+  if (
+    buffer[0] === 0x1a &&
+    buffer[1] === 0x45 &&
+    buffer[2] === 0xdf &&
+    buffer[3] === 0xa3
+  ) {
+    return { valid: true, mimeType: 'video/webm', isAnimated: true, ext: 'webm' };
+  }
+
+  // MP3: ID3 header (49 44 33) or sync word (FF FB / FF F3 / FF F2)
+  if (
+    (buffer[0] === 0x49 && buffer[1] === 0x44 && buffer[2] === 0x33) ||
+    (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0)
+  ) {
+    return { valid: true, mimeType: 'audio/mpeg', isAnimated: false, ext: 'mp3' };
+  }
+
+  // WAV: RIFF....WAVE
+  if (
+    buffer.length >= 12 &&
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 &&
+    buffer[8] === 0x57 &&
+    buffer[9] === 0x41 &&
+    buffer[10] === 0x56 &&
+    buffer[11] === 0x45
+  ) {
+    return { valid: true, mimeType: 'audio/wav', isAnimated: false, ext: 'wav' };
+  }
+
+  // OGG: 4F 67 67 53 ('OggS')
+  if (
+    buffer[0] === 0x4f &&
+    buffer[1] === 0x67 &&
+    buffer[2] === 0x67 &&
+    buffer[3] === 0x53
+  ) {
+    return { valid: true, mimeType: 'audio/ogg', isAnimated: false, ext: 'ogg' };
+  }
+
   return {
     valid: false,
     mimeType: '',
     isAnimated: false,
     ext: '',
-    error: 'Unsupported image format. Please upload a valid PNG, JPG, JPEG, WEBP, or GIF file.',
+    error: 'Unsupported media format. Please upload a valid PNG, JPG, WEBP, GIF, MP4, WebM, MP3, WAV, or OGG file.',
   };
 }
 
@@ -687,11 +735,20 @@ rpcRouter.post('/upload', requireAuth, uploadRateLimiter, async (req: any, res) 
       return res.status(400).json({ error: validation.error || 'Invalid image file content.' });
     }
 
-    // Enforce 10 MB limit for GIFs and static images
-    const MAX_GIF_BYTES = 10 * 1024 * 1024; // 10,485,760 bytes (~10 MB)
+    // Enforce size limits: 25 MB for video/audio, 10 MB for GIFs and static images
+    const MAX_GIF_BYTES = 10 * 1024 * 1024; // 10 MB
     const MAX_STATIC_BYTES = 10 * 1024 * 1024; // 10 MB
+    const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // 25 MB
 
-    if (validation.mimeType === 'image/gif') {
+    if (validation.mimeType.startsWith('video/') || validation.mimeType.startsWith('audio/')) {
+      if (buffer.length > MAX_MEDIA_BYTES) {
+        return res.status(400).json({
+          error: `Media file exceeds the 25 MB maximum size limit. Uploaded file size is ${(buffer.length / (1024 * 1024)).toFixed(2)} MB.`,
+          fileSize: buffer.length,
+          maxAllowed: MAX_MEDIA_BYTES,
+        });
+      }
+    } else if (validation.mimeType === 'image/gif') {
       if (buffer.length > MAX_GIF_BYTES) {
         return res.status(400).json({
           error: `GIF animation exceeds the 10 MB maximum size limit. Uploaded file size is ${(buffer.length / (1024 * 1024)).toFixed(2)} MB.`,

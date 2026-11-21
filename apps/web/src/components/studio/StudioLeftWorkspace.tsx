@@ -2178,11 +2178,23 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
             {/* 4. BACKGROUNDS */}
             {activeCategory === "background" && (
               <div className="space-y-6">
-                <div>
-                  <h3 className="text-sm font-bold text-white">BACKGROUND ATMOSPHERE</h3>
-                  <p className="text-neutral-400 text-[11px] pt-0.5">
-                    Solid color, dynamic CSS gradients, mesh patterns, dot matrices, and image overlays.
-                  </p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Palette size={16} /> BACKGROUND & MEDIA STUDIO
+                    </h3>
+                    <p className="text-neutral-400 text-[11px] pt-0.5">
+                      Solid color, dynamic CSS gradients, mesh patterns, images, GIFs, video backgrounds, and multi-track audio.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsBgModalOpen(true)}
+                    className="px-3 py-1.5 rounded-xl bg-white text-black font-bold text-xs hover:bg-neutral-200 cursor-pointer flex items-center gap-1.5 transition-all shadow-md shrink-0"
+                  >
+                    <Sliders size={13} />
+                    MEDIA & AUDIO STUDIO ↗
+                  </button>
                 </div>
 
                 {/* Background Type */}
@@ -2331,6 +2343,54 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                         </button>
                       ))}
                     </div>
+
+                    {/* Video Sound Toggle */}
+                    <div className="flex items-center justify-between text-xs pt-2 border-t border-neutral-800/60">
+                      <span className="text-neutral-300">Video Soundtrack</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateConfig((prev) => ({
+                            ...prev,
+                            background: {
+                              ...prev.background,
+                              videoMuted: !prev.background.videoMuted,
+                              audioSourceMode: prev.background.videoMuted ? "video" : "none",
+                            },
+                          }))
+                        }
+                        className={`px-3 py-1 rounded-md text-[10px] font-bold cursor-pointer transition-colors ${
+                          !config.background.videoMuted
+                            ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                            : "bg-neutral-800 text-neutral-400"
+                        }`}
+                      >
+                        {!config.background.videoMuted ? "SOUND ON" : "MUTED"}
+                      </button>
+                    </div>
+
+                    {!config.background.videoMuted && (
+                      <div className="space-y-1.5 pt-1">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-[10px] text-neutral-400">VIDEO VOLUME</span>
+                          <span className="text-white font-bold">{config.background.videoVolume ?? 100}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={config.background.videoVolume ?? 100}
+                          onChange={(e) =>
+                            updateConfig((prev) => ({
+                              ...prev,
+                              background: { ...prev.background, videoVolume: Number(e.target.value) },
+                            }))
+                          }
+                          className="w-full accent-white cursor-pointer"
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2431,6 +2491,110 @@ export const StudioLeftWorkspace: React.FC<StudioLeftWorkspaceProps> = ({
                       className="w-full accent-white cursor-pointer"
                     />
                   </div>
+                </div>
+
+                {/* Background Audio Engine */}
+                <div className="space-y-4 p-4 rounded-xl border border-neutral-800 bg-[#101012]">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] text-neutral-400 uppercase font-bold flex items-center gap-1.5">
+                      <Music size={13} className="text-emerald-400" />
+                      BACKGROUND AUDIO ENGINE
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsBgModalOpen(true)}
+                      className="text-[10px] text-neutral-400 hover:text-white cursor-pointer underline"
+                    >
+                      Advanced Audio Settings ↗
+                    </button>
+                  </div>
+
+                  {/* Audio Source Mode */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-xs">
+                    {[
+                      { id: "none", label: "Mute All" },
+                      { id: "video", label: "Mode A: Video" },
+                      { id: "music", label: "Mode B: Track" },
+                      { id: "both", label: "Mode C: Mix" },
+                    ].map((mode) => (
+                      <button
+                        key={mode.id}
+                        type="button"
+                        onClick={() =>
+                          updateConfig((prev) => ({
+                            ...prev,
+                            background: { ...prev.background, audioSourceMode: mode.id as any },
+                          }))
+                        }
+                        className={`py-1.5 px-2 rounded-lg border text-center font-bold text-[10px] cursor-pointer transition-all ${
+                          (config.background.audioSourceMode || "none") === mode.id
+                            ? "bg-white text-black border-white"
+                            : "bg-black border-neutral-800 text-neutral-400 hover:text-white"
+                        }`}
+                      >
+                        {mode.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {(config.background.audioSourceMode === "music" || config.background.audioSourceMode === "both") && (
+                    <div className="space-y-2 pt-1">
+                      <input
+                        type="url"
+                        value={config.background.audioUrl || ""}
+                        onChange={(e) =>
+                          updateConfig((prev) => ({
+                            ...prev,
+                            background: { ...prev.background, audioUrl: e.target.value },
+                          }))
+                        }
+                        placeholder="https://... direct audio link (MP3 / WAV / OGG)"
+                        className="w-full bg-black border border-neutral-700 rounded p-2 text-white text-xs focus:outline-none focus:border-white font-mono"
+                      />
+                      <div className="grid grid-cols-2 gap-3 pt-1">
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px] text-neutral-400">
+                            <span>TRACK VOLUME</span>
+                            <span className="text-white font-bold">{config.background.audioVolume ?? 80}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            step={5}
+                            value={config.background.audioVolume ?? 80}
+                            onChange={(e) =>
+                              updateConfig((prev) => ({
+                                ...prev,
+                                background: { ...prev.background, audioVolume: Number(e.target.value) },
+                              }))
+                            }
+                            className="w-full accent-white cursor-pointer"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px] text-neutral-400">
+                            <span>MASTER GAIN</span>
+                            <span className="text-white font-bold">{config.background.masterVolume ?? 100}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            step={5}
+                            value={config.background.masterVolume ?? 100}
+                            onChange={(e) =>
+                              updateConfig((prev) => ({
+                                ...prev,
+                                background: { ...prev.background, masterVolume: Number(e.target.value) },
+                              }))
+                            }
+                            className="w-full accent-white cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

@@ -100,8 +100,30 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
   const [showGuides, setShowGuides] = useState(false);
   const [showWireframe, setShowWireframe] = useState(false);
 
-  // Map element IDs to category tabs
+  // Map element or embed IDs to category tabs
   const handleSelectElement = (elementId: string) => {
+    if (!elementId) return;
+
+    // 1. Background selection
+    if (elementId === "background") {
+      onSelectCategory("background");
+      return;
+    }
+
+    // 2. Embed / Container selection (lookup in canvas embeds array)
+    const canvasEmbeds = config.canvas?.embeds || [];
+    const isEmbed =
+      elementId === "embed_primary" ||
+      elementId === "layout" ||
+      elementId === "container" ||
+      canvasEmbeds.some((em) => em.id === elementId);
+
+    if (isEmbed) {
+      onSelectCategory("layout");
+      return;
+    }
+
+    // 3. Child Element selection
     if (elementId === "avatar" || elementId.startsWith("avatar_")) {
       onSelectCategory("avatar");
     } else if (
@@ -121,8 +143,6 @@ export const StudioRightPreviewCanvas: React.FC<StudioRightPreviewCanvasProps> =
       elementId.startsWith("social_")
     ) {
       onSelectCategory("buttons");
-    } else if (elementId === "background") {
-      onSelectCategory("background");
     } else if (elementId === "music") {
       onSelectCategory("effects");
     }

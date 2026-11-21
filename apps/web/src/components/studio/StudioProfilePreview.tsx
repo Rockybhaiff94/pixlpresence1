@@ -1,11 +1,13 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   Activity,
   Play,
   ExternalLink,
   Volume2,
+  VolumeX,
+  Music,
   Share2,
   Eye,
   Heart,
@@ -130,6 +132,65 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
     customCss,
     layers,
   } = config;
+
+  // Background Media & Sound Engine State
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const bgAudioRef = useRef<HTMLAudioElement>(null);
+  const [isSoundActivated, setIsSoundActivated] = useState<boolean>(false);
+
+  const hasConfiguredAudio =
+    (background.type === "video" &&
+      background.videoUrl &&
+      (background.audioSourceMode === "video" || background.audioSourceMode === "both")) ||
+    (Boolean(background.audioUrl) &&
+      (background.audioSourceMode === "music" || background.audioSourceMode === "both"));
+
+  // Keep video & background soundtrack synchronized with volume and mute settings
+  useEffect(() => {
+    const masterVol = (background.masterVolume ?? 100) / 100;
+    const isMutedAll = Boolean(background.muteAll);
+
+    // 1. Video Soundtrack
+    if (videoRef.current) {
+      const vidVol = (background.videoVolume ?? 100) / 100;
+      videoRef.current.volume = Math.max(0, Math.min(1, vidVol * masterVol));
+      const shouldMuteVideo =
+        isMutedAll ||
+        Boolean(background.videoMuted) ||
+        (background.audioSourceMode !== "video" && background.audioSourceMode !== "both") ||
+        !isSoundActivated;
+      videoRef.current.muted = shouldMuteVideo;
+    }
+
+    // 2. Independent Background Audio Track
+    if (bgAudioRef.current) {
+      const audioVol = (background.audioVolume ?? 80) / 100;
+      bgAudioRef.current.volume = Math.max(0, Math.min(1, audioVol * masterVol));
+      const shouldPlayAudio =
+        !isMutedAll &&
+        (background.audioSourceMode === "music" || background.audioSourceMode === "both") &&
+        isSoundActivated;
+
+      if (shouldPlayAudio) {
+        if (background.audioTrimStart && bgAudioRef.current.currentTime < background.audioTrimStart) {
+          bgAudioRef.current.currentTime = background.audioTrimStart;
+        }
+        bgAudioRef.current.play().catch(() => {});
+      } else {
+        bgAudioRef.current.pause();
+      }
+    }
+  }, [
+    background.audioSourceMode,
+    background.audioUrl,
+    background.audioVolume,
+    background.videoVolume,
+    background.masterVolume,
+    background.muteAll,
+    background.videoMuted,
+    background.audioTrimStart,
+    isSoundActivated,
+  ]);
 
   const handleResizeEmbed = (
     embedId: string,
@@ -717,7 +778,29 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
         backgroundColor: background.color || "#050505",
         fontFamily: typography.bodyFont ? `"${typography.bodyFont}", sans-serif` : "inherit",
       }}
-      onClick={() => onSelectElement?.("background")}
+      onClick={(e) => {
+        if (!isSoundActivated && hasConfiguredAudio) {
+          setIsSoundActivated(true);
+        }
+        if (!isInteractiveEditor) return;
+        const target = e.target as HTMLElement;
+        if (
+          target.closest("button") ||
+          target.closest("input") ||
+          target.closest("textarea") ||
+          target.closest("a") ||
+          target.closest(".resize-handle") ||
+          target.closest(".embed-toolbar") ||
+          target.closest(".embed-inspector") ||
+          target.closest(".embed-adjustment-panel") ||
+          target.closest(".content-insertion-menu")
+        ) {
+          return;
+        }
+        if (!target.closest("[data-embed-id]")) {
+          onSelectElement?.("background");
+        }
+      }}
     >
       {/* Dynamic Scoped CSS */}
       {scopedCssCode && <style dangerouslySetInnerHTML={{ __html: scopedCssCode }} />}
@@ -740,11 +823,17 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
             }}
           >
             <video
+              ref={videoRef}
               src={background.videoUrl}
               poster={background.videoPoster}
-              autoPlay
-              loop
-              muted
+              autoPlay={background.videoAutoplay !== false}
+              loop={background.videoLoop !== false}
+              muted={
+                Boolean(background.muteAll) ||
+                Boolean(background.videoMuted) ||
+                (background.audioSourceMode !== "video" && background.audioSourceMode !== "both") ||
+                !isSoundActivated
+              }
               playsInline
               className="w-full h-full select-none"
               style={{
@@ -756,6 +845,17 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
             />
           </div>
         )}
+
+        {/* Independent Background Music / Audio Track */}
+        {background.audioUrl &&
+          (background.audioSourceMode === "music" || background.audioSourceMode === "both") && (
+            <audio
+              ref={bgAudioRef}
+              src={background.audioUrl}
+              loop={background.audioLoop !== false}
+              preload="auto"
+            />
+          )}
 
         {/* Transformable Image / Animated GIF Layer */}
         {(background.type === "image" || background.type === "gif") && background.imageUrl && (
@@ -1276,6 +1376,31 @@ export const StudioProfilePreview: React.FC<StudioProfilePreviewProps> = ({
           POWERED BY <span className="text-neutral-300 font-bold">PIXEL.GG STUDIO (01)</span> &bull; NOTHING OS
         </div>
       </motion.div>
+      )}
+
+      {/* Ambient Audio Pill (Autoplay-compliant Sound Toggle) */}
+      {hasConfiguredAudio && (
+        <div
+          data-sound-pill="true"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsSoundActivated((prev) => !prev);
+          }}
+          className="fixed sm:absolute bottom-4 right-4 z-40 px-3 py-1.5 rounded-full bg-black/85 hover:bg-black text-white border border-white/20 backdrop-blur-md flex items-center gap-2 cursor-pointer shadow-xl text-[11px] font-mono transition-all hover:scale-105 select-none"
+          title={!isSoundActivated ? "Click to enable sound" : "Sound enabled (Click to mute)"}
+        >
+          {!isSoundActivated ? (
+            <>
+              <VolumeX size={13} className="text-neutral-400 shrink-0" />
+              <span className="text-neutral-300">SOUND: MUTED</span>
+            </>
+          ) : (
+            <>
+              <Volume2 size={13} className="text-emerald-400 shrink-0 animate-pulse" />
+              <span className="text-emerald-300">SOUND: ON</span>
+            </>
+          )}
+        </div>
       )}
 
       {/* Optional Integrated Floating Footer Slot */}

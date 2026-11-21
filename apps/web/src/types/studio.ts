@@ -12,6 +12,12 @@ export type LayoutPreset =
 
 export type AvatarShape = "circle" | "square" | "rounded" | "squircle";
 export type BackgroundType = "solid" | "gradient" | "mesh" | "image" | "gif" | "video" | "pattern";
+
+export type CanvasSelectionTarget =
+  | { type: "background" }
+  | { type: "embed"; id: string }
+  | { type: "element"; id: string }
+  | null;
 export type BackgroundAspectRatio = "full" | "16:9" | "9:16" | "1:1" | "4:3" | "custom";
 export type BackgroundFitMode = "cover" | "contain" | "fill" | "stretch";
 export type PatternType = "none" | "dots" | "grid" | "matrix" | "scanlines" | "noise";
@@ -374,6 +380,22 @@ export interface ProfileDesignConfig {
     videoUrl?: string;
     videoPoster?: string;
     videoType?: "mp4" | "webm" | "auto";
+    videoAutoplay?: boolean;
+    videoLoop?: boolean;
+    videoVolume?: number; // 0 to 100
+    videoMuted?: boolean;
+    videoStartTime?: number; // in seconds
+    audioSourceMode?: "none" | "video" | "music" | "both";
+    audioUrl?: string;
+    audioFileName?: string;
+    audioVolume?: number; // 0 to 100
+    audioLoop?: boolean;
+    audioTrimStart?: number; // in seconds
+    audioTrimEnd?: number; // in seconds
+    audioFadeIn?: number; // in seconds
+    audioFadeOut?: number; // in seconds
+    masterVolume?: number; // 0 to 100
+    muteAll?: boolean;
     customCssGradient?: string;
     position?: string;
     repeat?: "no-repeat" | "repeat" | "repeat-x" | "repeat-y";
@@ -726,6 +748,16 @@ export const DEFAULT_DESIGN_CONFIG: ProfileDesignConfig = {
     offsetY: 0,
     rotation: 0,
     focalPoint: { x: 50, y: 50 },
+    videoAutoplay: true,
+    videoLoop: true,
+    videoVolume: 100,
+    videoMuted: true,
+    audioSourceMode: "none",
+    audioVolume: 80,
+    audioLoop: true,
+    audioTrimStart: 0,
+    masterVolume: 100,
+    muteAll: false,
     blur: 0,
     opacity: 100,
     overlayColor: "#000000",
