@@ -14,10 +14,14 @@ import {
   LayoutTemplate,
   Layers,
   Sparkles,
+  Loader2,
+  Check,
+  AlertCircle,
 } from "lucide-react";
 
 export type DeviceMode = "desktop" | "tablet" | "mobile";
 export type StudioView = "categories" | "templates" | "layers";
+export type SaveDraftStatus = "idle" | "saving" | "saved" | "error";
 
 interface StudioTopBarProps {
   currentView: StudioView;
@@ -31,6 +35,7 @@ interface StudioTopBarProps {
   onReset: () => void;
   onSave: () => void;
   onPublish: () => void;
+  saveStatus?: SaveDraftStatus;
   saving: boolean;
   publishing: boolean;
   isDirty: boolean;
@@ -51,6 +56,7 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
   onReset,
   onSave,
   onPublish,
+  saveStatus = "idle",
   saving,
   publishing,
   isDirty,
@@ -167,14 +173,52 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
           </a>
         )}
 
-        {/* Save Draft */}
+        {/* Save Draft Button with 3-State Inline Animation & Zero Layout Shift */}
         <button
           onClick={onSave}
-          disabled={saving || publishing}
-          className="px-3 py-1 rounded-lg border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-white font-semibold transition-colors cursor-pointer flex items-center gap-1.5 text-[11px] disabled:opacity-50"
+          disabled={saveStatus === "saving" || publishing}
+          data-save-status={saveStatus}
+          data-testid="save-draft-button"
+          className={`w-[108px] h-[30px] rounded-lg text-[11px] font-semibold transition-all duration-200 flex items-center justify-center gap-1.5 shrink-0 select-none ${
+            saveStatus === "saving"
+              ? "bg-[#123D29] border border-[#22C55E]/50 text-[#4ADE80] shadow-[0_0_12px_rgba(34,197,94,0.25)] cursor-wait"
+              : saveStatus === "saved"
+              ? "bg-[#123D29] border border-[#22C55E]/60 text-[#4ADE80] shadow-[0_0_10px_rgba(34,197,94,0.2)] cursor-default"
+              : saveStatus === "error"
+              ? "bg-[#2A0E0E] border border-[#EF4444]/60 text-[#FCA5A5] shadow-[0_0_10px_rgba(239,68,68,0.2)] cursor-pointer"
+              : "border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-white cursor-pointer"
+          } ${publishing ? "opacity-50 cursor-not-allowed" : ""}`}
+          title={
+            saveStatus === "saving"
+              ? "Saving draft to server..."
+              : saveStatus === "saved"
+              ? "Draft saved successfully"
+              : saveStatus === "error"
+              ? "Failed to save draft. Click to retry."
+              : "Save Draft"
+          }
         >
-          <Save size={12} />
-          <span>{saving ? "Saving..." : "Save Draft"}</span>
+          {saveStatus === "saving" ? (
+            <>
+              <Loader2 size={12} className="animate-spin text-[#22C55E] motion-reduce:animate-none shrink-0" />
+              <span className="font-medium tracking-tight">Saving...</span>
+            </>
+          ) : saveStatus === "saved" ? (
+            <>
+              <Check size={12} className="text-[#22C55E] stroke-[2.5] shrink-0" />
+              <span className="font-medium tracking-tight">Saved</span>
+            </>
+          ) : saveStatus === "error" ? (
+            <>
+              <AlertCircle size={12} className="text-[#EF4444] shrink-0" />
+              <span className="font-medium tracking-tight">Retry</span>
+            </>
+          ) : (
+            <>
+              <Save size={12} className="shrink-0" />
+              <span className="tracking-tight">Save Draft</span>
+            </>
+          )}
         </button>
 
         {/* Publish Profile */}

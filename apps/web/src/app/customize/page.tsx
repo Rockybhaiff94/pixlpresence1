@@ -26,7 +26,7 @@ import {
   sanitizeSocialUrl,
   isSocialElement,
 } from "@/components/studio/socialsEngine";
-import { StudioTopBar, DeviceMode, StudioView } from "@/components/studio/StudioTopBar";
+import { StudioTopBar, DeviceMode, StudioView, SaveDraftStatus } from "@/components/studio/StudioTopBar";
 import { StudioLeftWorkspace } from "@/components/studio/StudioLeftWorkspace";
 import { StudioRightPreviewCanvas } from "@/components/studio/StudioRightPreviewCanvas";
 import { ParticlesCanvas } from "@/components/studio/ParticlesCanvas";
@@ -49,6 +49,9 @@ export default function CustomizePage() {
   const [savePhase, setSavePhase] = useState<SavePhase>("idle");
   const saving = savePhase === "saving";
   const publishing = savePhase === "publishing";
+  const [saveDraftStatus, setSaveDraftStatus] = useState<SaveDraftStatus>("idle");
+  const isSavingRef = useRef(false);
+  const savedResetTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [msg, setMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   // Mode Selection: Studio Workspace vs Classic Customizer
@@ -1061,11 +1064,17 @@ export default function CustomizePage() {
   // Save / Publish handlers synchronizing profile + independent RPC controls
   const executeSave = async (isPublish = false) => {
     // Guard against concurrent invocations or rapid double-clicks (SM-01)
-    if (savePhase !== "idle") return;
+    if (isSavingRef.current || savePhase !== "idle") return;
+    isSavingRef.current = true;
 
     try {
-      setSavePhase(isPublish ? "publishing" : "saving");
-      setMsg(null);
+      if (isPublish) {
+        setSavePhase("publishing");
+        setMsg(null);
+      } else {
+        setSavePhase("saving");
+        setSaveDraftStatus("saving");
+      }
 
       const profilePayload = {
         displayName,
@@ -1107,17 +1116,34 @@ export default function CustomizePage() {
 
       isDirtyRef.current = false;
       setIsDirty(false);
-      setMsg({
-        text: isPublish
-          ? "Profile design successfully published and live across all devices."
-          : "Draft saved successfully.",
-        type: "success",
-      });
+
+      if (isPublish) {
+        setMsg({
+          text: "Profile design successfully published and live across all devices.",
+          type: "success",
+        });
+        setTimeout(() => setMsg(null), 4000);
+      } else {
+        // Complete saving workflow inline inside the Save Draft button (Zero layout shift)
+        setSaveDraftStatus("saved");
+        if (savedResetTimerRef.current) clearTimeout(savedResetTimerRef.current);
+        savedResetTimerRef.current = setTimeout(() => {
+          setSaveDraftStatus("idle");
+        }, 1300);
+      }
+
       await refreshUser();
-      setTimeout(() => setMsg(null), 4000);
     } catch (err: unknown) {
+      if (!isPublish) {
+        setSaveDraftStatus("error");
+        if (savedResetTimerRef.current) clearTimeout(savedResetTimerRef.current);
+        savedResetTimerRef.current = setTimeout(() => {
+          setSaveDraftStatus("idle");
+        }, 2500);
+      }
       setMsg({ text: (err as Error)?.message || "Failed to update profile", type: "error" });
     } finally {
+      isSavingRef.current = false;
       setSavePhase("idle");
     }
   };
@@ -1128,7 +1154,7 @@ export default function CustomizePage() {
   // Debounced Autosave (1000ms): saves draft automatically when changes occur without requiring manual save
   const debouncedSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    if (!isDirty || savePhase !== "idle") return;
+    if (!isDirty || isSavingRef.current || savePhase !== "idle") return;
 
     if (debouncedSaveTimeoutRef.current) {
       clearTimeout(debouncedSaveTimeoutRef.current);
@@ -1225,6 +1251,7 @@ export default function CustomizePage() {
           onReset={handleResetToDefault}
           onSave={handleSaveDraft}
           onPublish={handlePublish}
+          saveStatus={saveDraftStatus}
           saving={saving}
           publishing={publishing}
           isDirty={isDirty}
@@ -1233,8 +1260,8 @@ export default function CustomizePage() {
           onToggleClassicMode={toggleClassicMode}
         />
 
-        {/* Global Toast Notice */}
-        {msg && (
+        {/* Global Toast Notice (Preserved for non-draft notices and errors; never rendered for Save Draft) */}
+        {msg && msg.text !== "Draft saved successfully." && (
           <div
             className={`px-4 py-2.5 text-xs font-mono flex items-center justify-between border-b shrink-0 transition-all ${
               msg.type === "success"
