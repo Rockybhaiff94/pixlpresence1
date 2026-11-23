@@ -297,6 +297,7 @@ export default function AccountRpcStudioPage() {
         partySize: targetRpc.partySize ? Number(targetRpc.partySize) : null,
         partyMax: targetRpc.partyMax ? Number(targetRpc.partyMax) : null,
       };
+      // Strip virtual and read-only fields so Prisma does not throw validation errors
       delete payload.revision;
       delete payload.id;
       delete payload.userId;
@@ -304,12 +305,27 @@ export default function AccountRpcStudioPage() {
       delete payload.updatedAt;
       delete payload.username;
       delete payload.userAvatar;
+      delete payload.buttonSize;
+      delete payload.largeImageEnabled;
+      delete payload.smallImageEnabled;
+      delete payload.enabled;
 
-      const res = await apiFetch("/api/rpc/me", {
+      let res = await apiFetch("/api/rpc/me", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+
+      // Cold start / 502 / 504 retry once after 1.5s
+      if (!res.ok && [502, 503, 504].includes(res.status)) {
+        await new Promise((r) => setTimeout(r, 1500));
+        if (version !== rpcVersionRef.current) return;
+        res = await apiFetch("/api/rpc/me", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
 
       // Guard against stale response if a newer edit occurred in flight
       if (version !== rpcVersionRef.current) return;

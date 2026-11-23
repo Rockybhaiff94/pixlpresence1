@@ -7,12 +7,15 @@ export interface RpcResponse {
     state?: string | null;
     details?: string | null;
     useProfileAvatar?: boolean | null;
+    largeImageEnabled?: boolean | null;
     largeImage?: string | null;
+    smallImageEnabled?: boolean | null;
     smallImage?: string | null;
     largeImageText?: string | null;
     smallImageText?: string | null;
     largeImageCrop?: string | null;
     smallImageCrop?: string | null;
+    buttonSize?: "small" | "medium" | "large" | null;
     startTimestamp?: string | number | Date | null;
     endTimestamp?: string | number | Date | null;
     partySize?: number | null;
@@ -26,23 +29,47 @@ export interface RpcResponse {
     showProfileRpc?: boolean | null;
     enableDiscordRpc?: boolean | null;
     username?: string | null;
+    revision?: number | null;
 }
 
-export type ConnectionStatus =
-    | "disconnected"
+export type ConnectionStateEnum =
+    | "not_linked"
+    | "authorizing"
+    | "linking"
     | "connecting"
     | "connected"
+    | "syncing"
+    | "reconnecting"
+    | "disconnected"
+    | "offline"
     | "unauthorized"
-    | "error"
-    | "rate_limited";
+    | "discord_unavailable"
+    | "error";
+
+export type PublishingStatus =
+    | "not_published"
+    | "preparing"
+    | "publishing"
+    | "active"
+    | "update_pending"
+    | "failed"
+    | "cleared";
+
+// Backwards-compatible alias for existing UI components
+export type ConnectionStatus = ConnectionStateEnum;
 
 export interface ConnectionState {
-    status: ConnectionStatus;
+    status: ConnectionStateEnum;
+    discordAvailable: boolean;
+    publishingStatus: PublishingStatus;
+    appliedRevision: number;
     lastSync: Date | null;
+    lastHeartbeat: Date | null;
     lastError: string | null;
     retryCount: number;
     activeTitle: string | null;
     linkedUsername: string | null;
+    deviceId: string | null;
 }
 
 export interface DiscordActivity {

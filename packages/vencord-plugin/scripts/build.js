@@ -40,6 +40,9 @@ fs.copyFileSync(path.join(srcDir, 'index.ts'), path.join(pluginDistDir, 'index.t
 fs.copyFileSync(path.join(srcDir, 'settings.ts'), path.join(pluginDistDir, 'settings.ts'));
 fs.copyFileSync(path.join(srcDir, 'types.ts'), path.join(pluginDistDir, 'types.ts'));
 fs.copyFileSync(path.join(srcDir, 'styles.css'), path.join(pluginDistDir, 'styles.css'));
+if (fs.existsSync(path.join(srcDir, 'native.ts'))) {
+  fs.copyFileSync(path.join(srcDir, 'native.ts'), path.join(pluginDistDir, 'native.ts'));
+}
 fs.copyFileSync(
   path.join(srcDir, 'components', 'StatusCard.tsx'),
   path.join(componentsDist, 'StatusCard.tsx')
@@ -55,6 +58,34 @@ fs.copyFileSync(
 fs.copyFileSync(path.join(rootDir, 'README.md'), path.join(pluginDistDir, 'README.md'));
 
 console.log('[PixelsRPC Build] Clean native plugin packaged to dist/pixelsrpc/');
+
+// 1.5 Sync to apps/web/public/pixelsrpc-plugin/ for the PowerShell CLI installer
+const webPluginDir = path.resolve(rootDir, '../../apps/web/public/pixelsrpc-plugin');
+if (fs.existsSync(webPluginDir)) {
+  const webComponentsDir = path.join(webPluginDir, 'components');
+  if (!fs.existsSync(webComponentsDir)) fs.mkdirSync(webComponentsDir, { recursive: true });
+
+  fs.copyFileSync(path.join(srcDir, 'index.ts'), path.join(webPluginDir, 'index.ts'));
+  fs.copyFileSync(path.join(srcDir, 'settings.ts'), path.join(webPluginDir, 'settings.ts'));
+  fs.copyFileSync(path.join(srcDir, 'types.ts'), path.join(webPluginDir, 'types.ts'));
+  fs.copyFileSync(path.join(srcDir, 'styles.css'), path.join(webPluginDir, 'styles.css'));
+  if (fs.existsSync(path.join(srcDir, 'native.ts'))) {
+    fs.copyFileSync(path.join(srcDir, 'native.ts'), path.join(webPluginDir, 'native.ts'));
+  }
+  fs.copyFileSync(
+    path.join(srcDir, 'components', 'StatusCard.tsx'),
+    path.join(webComponentsDir, 'StatusCard.tsx')
+  );
+  fs.copyFileSync(
+    path.join(srcDir, 'components', 'ActionControls.tsx'),
+    path.join(webComponentsDir, 'ActionControls.tsx')
+  );
+  fs.copyFileSync(
+    path.join(srcDir, 'components', 'SettingsAbout.tsx'),
+    path.join(webComponentsDir, 'SettingsAbout.tsx')
+  );
+  console.log('[PixelsRPC Build] Synchronized plugin files to apps/web/public/pixelsrpc-plugin/');
+}
 
 // 2. Build standalone single-file distribution (PixelsRPC.vencord.js)
 const standaloneBundle = `/**

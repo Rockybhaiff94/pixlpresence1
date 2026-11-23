@@ -184,11 +184,12 @@ app.use(
       if (isOriginAllowed(origin)) {
         return callback(null, true);
       }
-      return callback(new Error('Cross-Origin Request Blocked: Origin unauthorized by policy.'));
+      // Do not throw an unhandled 500 Error; simply deny CORS header
+      return callback(null, false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Cookie'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Cookie', 'X-App-Token', 'X-Api-Token'],
     exposedHeaders: ['Set-Cookie', 'Retry-After'],
   })
 );
@@ -198,16 +199,22 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 const rpcUploadsDir = path.join(uploadsDir, 'rpc');
 if (!fs.existsSync(rpcUploadsDir)) fs.mkdirSync(rpcUploadsDir, { recursive: true });
 
-// Hardened Static File Serving for Uploads
+// Hardened Static File Serving for Uploads (Accessible to Discord Media Proxy & Web Client)
 app.use(
   '/uploads',
+  (req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+  },
   express.static(uploadsDir, {
     dotfiles: 'ignore',
+    maxAge: '7d',
     setHeaders: (res) => {
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-      res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
-      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
     },
   })
 );

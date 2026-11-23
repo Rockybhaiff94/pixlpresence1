@@ -13,6 +13,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1175.0",
     "@discord-rpc/database": "*",
     "@quixo3/prisma-session-store": "^3.1.21",
     "@types/cors": "^2.8.19",
@@ -33,12 +34,14 @@
     "helmet": "^8.3.0",
     "passport": "^0.7.0",
     "passport-discord": "^0.1.4",
+    "sharp": "^0.34.5",
     "socket.io": "^4.8.3",
     "typescript": "^5.9.3"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/geoip-lite": "^1.4.4",
+    "@types/sharp": "^0.31.1",
     "nodemon": "^3.1.14",
     "ts-node-dev": "^2.0.0"
   }

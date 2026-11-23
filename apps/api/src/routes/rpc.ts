@@ -8,6 +8,7 @@ import { uploadRateLimiter } from '../rateLimiter'; // Import upload rate limite
 import { resolveDiscordAvatarUrl } from '../auth';
 import { presenceManager, LiveActivity } from '../services/presenceManager';
 import { rpcSyncHub } from '../services/rpcSyncHub';
+import { ImageAssetService } from '../services/imageAssetService';
 
 export const rpcRouter = Router();
 
@@ -888,132 +889,31 @@ rpcRouter.post('/upload', requireAuth, uploadRateLimiter, async (req: any, res) 
       return res.status(400).json({ error: 'Invalid base64 image data encoding.' });
     }
 
-    // Validate file content via magic bytes
-    const validation = validateImageBuffer(buffer);
-    if (!validation.valid) {
-      return res.status(400).json({ error: validation.error || 'Invalid image file content.' });
-    }
+    const slot: 'largeImage' | 'smallImage' = targetSlot === 'smallImage' ? 'smallImage' : 'largeImage';
 
-    // Enforce size limits: 25 MB for video/audio, 10 MB for GIFs and static images
-    const MAX_GIF_BYTES = 10 * 1024 * 1024; // 10 MB
-    const MAX_STATIC_BYTES = 10 * 1024 * 1024; // 10 MB
-    const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // 25 MB
-
-    if (validation.mimeType.startsWith('video/') || validation.mimeType.startsWith('audio/')) {
-      if (buffer.length > MAX_MEDIA_BYTES) {
-        return res.status(400).json({
-          error: `Media file exceeds the 25 MB maximum size limit. Uploaded file size is ${(buffer.length / (1024 * 1024)).toFixed(2)} MB.`,
-          fileSize: buffer.length,
-          maxAllowed: MAX_MEDIA_BYTES,
-        });
-      }
-    } else if (validation.mimeType === 'image/gif') {
-      if (buffer.length > MAX_GIF_BYTES) {
-        return res.status(400).json({
-          error: `GIF animation exceeds the 10 MB maximum size limit. Uploaded file size is ${(buffer.length / (1024 * 1024)).toFixed(2)} MB.`,
-          fileSize: buffer.length,
-          maxAllowed: MAX_GIF_BYTES,
-        });
-      }
-    } else {
-      if (buffer.length > MAX_STATIC_BYTES) {
-        return res.status(400).json({
-          error: `Image file exceeds the 10 MB maximum size limit. Uploaded file size is ${(buffer.length / (1024 * 1024)).toFixed(2)} MB.`,
-          fileSize: buffer.length,
-          maxAllowed: MAX_STATIC_BYTES,
-        });
-      }
-    }
-
-    // Save to disk in uploads/rpc/
-    const uploadsDir = path.resolve(__dirname, '../../uploads/rpc');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-
-    const uniqueId = crypto.randomBytes(6).toString('hex');
-    const safeExt = validation.ext;
-    const storedFileName = `px_rpc_${req.user.id}_${Date.now()}_${uniqueId}.${safeExt}`;
-    const filePath = path.join(uploadsDir, storedFileName);
-
-    await fs.promises.writeFile(filePath, buffer);
-
-    // Compute public URL
-    // In production, ensure uploads use the public reachable HTTPS endpoint (Render or custom domain)
-    // Avoid defaulting to localhost when requests come from reverse proxy or production browsers
-    const frontendOrApi = (
-      process.env.PUBLIC_API_URL ||
-      process.env.NEXT_PUBLIC_API_URL ||
-      process.env.INTERNAL_API_URL ||
-      ''
-    ).replace(/\/+$/, '');
-
-    let baseUrl = frontendOrApi;
-    if (!baseUrl) {
-      const host = req.get('host') || '';
-      const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
-      if (isLocal) {
-        baseUrl = `${req.protocol}://${host}`;
-      } else {
-        // Production host fallback to Render production API URL if host is internal/empty
-        baseUrl = host ? `https://${host}` : 'https://pixelgg-api.onrender.com';
-      }
-    }
-    const publicUrl = `${baseUrl}/uploads/rpc/${storedFileName}`;
-
-    // Extract crop & transformation metadata if provided
-    const crop = typeof cropData === 'object' && cropData !== null ? cropData : {};
-    const cropX = typeof crop.cropX === 'number' ? crop.cropX : 0;
-    const cropY = typeof crop.cropY === 'number' ? crop.cropY : 0;
-    const cropWidth = typeof crop.cropWidth === 'number' ? crop.cropWidth : null;
-    const cropHeight = typeof crop.cropHeight === 'number' ? crop.cropHeight : null;
-    const zoom = typeof crop.zoom === 'number' ? crop.zoom : 1;
-    const offsetX = typeof crop.offsetX === 'number' ? crop.offsetX : 0;
-    const offsetY = typeof crop.offsetY === 'number' ? crop.offsetY : 0;
-
-    // Persist asset in database
-    const asset = await prisma.uploadedAsset.create({
-      data: {
-        userId: req.user.id,
-        originalUrl: publicUrl,
-        processedUrl: publicUrl,
-        fileName: (fileName || storedFileName).slice(0, 120),
-        fileSize: buffer.length,
-        mimeType: validation.mimeType,
-        isAnimated: validation.isAnimated,
-        cropX,
-        cropY,
-        cropWidth,
-        cropHeight,
-        zoom,
-        offsetX,
-        offsetY,
-        targetSlot: targetSlot === 'smallImage' ? 'smallImage' : 'largeImage',
-      },
+    // Process and save through ImageAssetService (Sharp pipeline, animated GIF preservation, persistent storage upload)
+    const savedAsset = await ImageAssetService.processAndSaveAsset({
+      userId: req.user.id,
+      fileBuffer: buffer,
+      fileName,
+      targetSlot: slot,
+      cropData,
     });
 
     res.json({
       success: true,
-      assetId: asset.id,
-      url: publicUrl,
-      fileName: asset.fileName,
-      fileSize: asset.fileSize,
-      mimeType: asset.mimeType,
-      isAnimated: asset.isAnimated,
-      cropData: {
-        cropX,
-        cropY,
-        cropWidth,
-        cropHeight,
-        zoom,
-        offsetX,
-        offsetY,
-      },
-      message: `${validation.isAnimated ? 'Animated GIF' : 'Image'} uploaded successfully!`,
+      assetId: savedAsset.id,
+      url: savedAsset.url,
+      fileName: savedAsset.fileName,
+      fileSize: savedAsset.fileSize,
+      mimeType: savedAsset.mimeType,
+      isAnimated: savedAsset.isAnimated,
+      cropData: savedAsset.cropData,
+      message: `${savedAsset.isAnimated ? 'Animated GIF' : 'Image'} uploaded and processed successfully!`,
     });
   } catch (err: any) {
     console.error('[RPC Upload Error]:', err);
-    res.status(500).json({ error: err.message || 'Failed to process image upload' });
+    res.status(400).json({ error: err.message || 'Failed to process image upload' });
   }
 });
 
@@ -1037,38 +937,14 @@ rpcRouter.get('/assets', requireAuth, async (req: any, res) => {
 
 /**
  * DELETE /api/rpc/assets/:id
- * Removes an uploaded asset and unlinks the local file if present.
+ * Removes an uploaded asset from both storage and database.
  */
 rpcRouter.delete('/assets/:id', requireAuth, async (req: any, res) => {
   try {
-    const asset = await prisma.uploadedAsset.findFirst({
-      where: {
-        id: req.params.id,
-        userId: req.user.id,
-      },
-    });
-
-    if (!asset) {
+    const deleted = await ImageAssetService.deleteAsset(req.params.id, req.user.id);
+    if (!deleted) {
       return res.status(404).json({ error: 'Asset not found or unauthorized' });
     }
-
-    // Attempt to unlink local file
-    try {
-      const fileName = asset.originalUrl.split('/').pop();
-      if (fileName) {
-        const filePath = path.resolve(__dirname, '../../uploads/rpc', fileName);
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-      }
-    } catch (fsErr) {
-      console.warn('[Asset Delete Notice] Local file removal:', fsErr);
-    }
-
-    await prisma.uploadedAsset.delete({
-      where: { id: asset.id },
-    });
-
     res.json({ success: true, message: 'Asset deleted successfully' });
   } catch (err) {
     console.error('[RPC Asset Delete Error]:', err);

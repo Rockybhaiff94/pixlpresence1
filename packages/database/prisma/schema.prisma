@@ -266,6 +266,7 @@ model UploadedAsset {
   offsetY       Float?    @default(0)
   
   targetSlot    String?   // "largeImage" | "smallImage"
+  storageKey    String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

@@ -9,16 +9,22 @@ const SOCKET_ID = "pixels-rpc";
 const DEFAULT_APP_ID = "1523632136878559302";
 
 let syncTimeoutId: ReturnType<typeof setTimeout> | null = null;
+let heartbeatTimerId: ReturnType<typeof setInterval> | null = null;
 let activeAbortController: AbortController | null = null;
 let lastActivityHash: string | null = null;
 
 let state: ConnectionState = {
-    status: "disconnected",
+    status: "not_linked",
+    discordAvailable: true,
+    publishingStatus: "not_published",
+    appliedRevision: 0,
     lastSync: null,
+    lastHeartbeat: null,
     lastError: null,
     retryCount: 0,
     activeTitle: null,
-    linkedUsername: null
+    linkedUsername: null,
+    deviceId: null
 };
 
 // UI subscriber callback for re-rendering SettingsAbout
@@ -28,6 +34,95 @@ function updateState(partial: Partial<ConnectionState>) {
     state = { ...state, ...partial };
     if (onStateChangeCallback) {
         onStateChangeCallback();
+    }
+}
+
+function handleServerDisconnection(reason: string) {
+    const store = settings.store;
+    logDebug(`Server disconnection detected: ${reason}`);
+
+    stopHeartbeat();
+    clearActivity();
+
+    store.deviceToken = "";
+    store.linkedUsername = "";
+    store.token = "";
+
+    updateState({
+        status: "unauthorized",
+        discordAvailable: true,
+        publishingStatus: "cleared",
+        lastError: reason,
+        activeTitle: null,
+        linkedUsername: null,
+        deviceId: null
+    });
+}
+
+async function sendHeartbeat(): Promise<void> {
+    const store = settings.store;
+    const token = getActiveToken();
+    const apiUrl = (store.apiUrl || "https://pixlpresence1-web.vercel.app").trim().replace(/\/+$/, "");
+
+    if (!token) return;
+
+    const dispatcher = getDispatcher();
+    const discordAvailable = Boolean(dispatcher);
+
+    try {
+        const res = await fetch(`${apiUrl}/api/rpc/device/heartbeat`, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+                Accept: "application/json"
+            },
+            body: JSON.stringify({
+                deviceId: state.deviceId || undefined,
+                deviceToken: token,
+                pluginVersion: "1.1.0",
+                discordAvailable,
+                publishingStatus: state.publishingStatus,
+                lastAppliedRevision: state.appliedRevision,
+                activeTitle: state.activeTitle,
+                lastError: state.lastError,
+                timestamp: Date.now()
+            })
+        });
+
+        if (res.status === 401) {
+            handleServerDisconnection("Device was unlinked from Pixel.gg dashboard.");
+            return;
+        }
+
+        if (res.ok) {
+            const data = await res.json().catch(() => null);
+            if (data?.runtime?.deviceId && !state.deviceId) {
+                updateState({ deviceId: data.runtime.deviceId });
+            }
+            updateState({
+                lastHeartbeat: new Date(),
+                discordAvailable,
+                ...(state.status === "offline" || state.status === "reconnecting" ? { status: "connected", lastError: null } : {})
+            });
+        }
+    } catch (err: any) {
+        logDebug("Heartbeat ping failed:", err);
+    }
+}
+
+function startHeartbeat() {
+    stopHeartbeat();
+    sendHeartbeat();
+    heartbeatTimerId = setInterval(() => {
+        sendHeartbeat();
+    }, 15000);
+}
+
+function stopHeartbeat() {
+    if (heartbeatTimerId) {
+        clearInterval(heartbeatTimerId);
+        heartbeatTimerId = null;
     }
 }
 
@@ -152,8 +247,11 @@ async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> 
     }
 
     // Resolve Large Image and Small Icon with Discord Asset system
-    const hasLarge = Boolean(rpc.largeImage && rpc.largeImage.trim());
-    const hasSmall = Boolean(rpc.smallImage && rpc.smallImage.trim());
+    // Respect independent enable/disable toggles (largeImageEnabled and smallImageEnabled)
+    const isLargeEnabled = (rpc as any).largeImageEnabled !== false;
+    const isSmallEnabled = (rpc as any).smallImageEnabled !== false;
+    const hasLarge = Boolean(isLargeEnabled && rpc.largeImage && rpc.largeImage.trim());
+    const hasSmall = Boolean(isSmallEnabled && rpc.smallImage && rpc.smallImage.trim());
 
     if (hasLarge || hasSmall) {
         activity.assets = {};
@@ -226,7 +324,16 @@ export async function applyActivity(rpc: RpcResponse) {
         (rpc as any).enabled === false
     ) {
         clearActivity();
+        updateState({ publishingStatus: "cleared" });
         return;
+    }
+
+    // Monotonic revision check: never overwrite newer local activity with older incoming payload
+    if (rpc.revision && typeof rpc.revision === "number") {
+        if (rpc.revision < state.appliedRevision) {
+            logDebug(`Discarding stale config revision #${rpc.revision} (current: #${state.appliedRevision})`);
+            return;
+        }
     }
 
     const hasContent = Boolean(
@@ -235,33 +342,61 @@ export async function applyActivity(rpc: RpcResponse) {
 
     if (!hasContent) {
         clearActivity();
+        updateState({ publishingStatus: "cleared" });
         return;
     }
+
+    updateState({ publishingStatus: "publishing" });
 
     const activity = await buildDiscordActivity(rpc);
     const hash = JSON.stringify(activity);
 
-    // Prevent redundant Flux dispatches if payload hasn't changed
-    if (hash === lastActivityHash) {
-        logDebug("Presence payload unchanged, skipping dispatch.");
-        return;
-    }
-
     const dispatcher = getDispatcher();
     if (!dispatcher) {
         console.warn("[PixelsRPC] Discord FluxDispatcher is not available.");
+        updateState({
+            publishingStatus: "failed",
+            discordAvailable: false,
+            status: "discord_unavailable",
+            lastError: "Discord FluxDispatcher is unavailable."
+        });
         return;
     }
 
-    dispatcher.dispatch({
-        type: "LOCAL_ACTIVITY_UPDATE",
-        socketId: SOCKET_ID,
-        activity
-    });
+    // Prevent redundant Flux dispatches if payload hasn't changed
+    if (hash === lastActivityHash) {
+        logDebug("Presence payload unchanged, skipping dispatch.");
+        updateState({
+            publishingStatus: "active",
+            discordAvailable: true,
+            appliedRevision: rpc.revision || state.appliedRevision
+        });
+        return;
+    }
 
-    lastActivityHash = hash;
-    updateState({ activeTitle: activity.name });
-    logDebug("Updated local Discord presence:", activity);
+    try {
+        dispatcher.dispatch({
+            type: "LOCAL_ACTIVITY_UPDATE",
+            socketId: SOCKET_ID,
+            activity
+        });
+
+        lastActivityHash = hash;
+        updateState({
+            activeTitle: activity.name,
+            publishingStatus: "active",
+            discordAvailable: true,
+            appliedRevision: rpc.revision || state.appliedRevision + 1,
+            lastError: null
+        });
+        logDebug("Updated local Discord presence:", activity);
+    } catch (dispatchErr: any) {
+        console.error("[PixelsRPC] Local activity dispatch failed:", dispatchErr);
+        updateState({
+            publishingStatus: "failed",
+            lastError: dispatchErr?.message || "Failed to publish activity to Discord."
+        });
+    }
 }
 
 export async function linkDeviceAccount(code: string): Promise<void> {
@@ -336,6 +471,7 @@ export async function linkDeviceAccount(code: string): Promise<void> {
             updateState({
                 status: "connected",
                 linkedUsername: data.username,
+                deviceId: data.deviceId || data.codeId || null,
                 lastError: null,
                 retryCount: 0
             });
@@ -343,7 +479,8 @@ export async function linkDeviceAccount(code: string): Promise<void> {
             logDebug(`Account successfully linked as @${data.username}`);
             isConnected = true;
 
-            // Immediately fetch presence
+            // Immediately start heartbeat and fetch presence
+            startHeartbeat();
             await fetchAndSync();
             break;
         } catch (err: any) {
@@ -370,6 +507,8 @@ export async function disconnectDeviceAccount(): Promise<void> {
     const token = getActiveToken();
     const apiUrl = (store.apiUrl || "https://pixlpresence1-web.vercel.app").trim().replace(/\/+$/, "");
 
+    stopHeartbeat();
+
     if (token) {
         try {
             await fetch(`${apiUrl}/api/rpc/device/revoke`, {
@@ -392,7 +531,9 @@ export async function disconnectDeviceAccount(): Promise<void> {
 
     updateState({
         status: "disconnected",
+        publishingStatus: "cleared",
         linkedUsername: null,
+        deviceId: null,
         lastError: null,
         activeTitle: null
     });
@@ -406,9 +547,11 @@ export async function fetchAndSync(): Promise<void> {
     const apiUrl = (store.apiUrl || "https://pixlpresence1-web.vercel.app").trim().replace(/\/+$/, "");
 
     if (!token) {
+        stopHeartbeat();
         clearActivity();
         updateState({
-            status: "disconnected",
+            status: "not_linked",
+            publishingStatus: "cleared",
             linkedUsername: null,
             lastError: null
         });
@@ -421,7 +564,7 @@ export async function fetchAndSync(): Promise<void> {
     activeAbortController = new AbortController();
 
     try {
-        updateState({ status: "connecting" });
+        updateState({ status: "syncing" });
 
         const response = await fetch(`${apiUrl}/api/rpc/me`, {
             method: "GET",
@@ -433,17 +576,13 @@ export async function fetchAndSync(): Promise<void> {
         });
 
         if (response.status === 401) {
-            clearActivity();
-            updateState({
-                status: "unauthorized",
-                lastError: "Session expired or token invalid. Please re-link your account."
-            });
+            handleServerDisconnection("Session revoked or token invalid. Please re-link your account.");
             return;
         }
 
         if (response.status === 429) {
             updateState({
-                status: "rate_limited",
+                status: "reconnecting",
                 lastError: "Rate limit reached. Backing off..."
             });
             scheduleNextSync(true);
@@ -466,13 +605,18 @@ export async function fetchAndSync(): Promise<void> {
             linkedUsername: store.linkedUsername || null
         });
 
+        // Ensure heartbeat is ticking
+        if (!heartbeatTimerId) {
+            startHeartbeat();
+        }
+
         scheduleNextSync(false);
     } catch (err: any) {
         if (err.name === "AbortError") return;
 
         console.error("[PixelsRPC] Sync failed:", err);
         updateState({
-            status: "error",
+            status: "offline",
             lastError: err.message || "Failed to sync"
         });
 
@@ -549,10 +693,12 @@ export default definePlugin({
 
         // Only start network polling if account is linked or token is present
         if (getActiveToken()) {
+            startHeartbeat();
             fetchAndSync();
         } else {
             updateState({
-                status: "disconnected",
+                status: "not_linked",
+                publishingStatus: "not_published",
                 linkedUsername: null,
                 lastError: null
             });
@@ -564,6 +710,8 @@ export default definePlugin({
 
     stop() {
         logDebug("Plugin stopping...");
+
+        stopHeartbeat();
 
         if (syncTimeoutId) {
             clearTimeout(syncTimeoutId);
@@ -579,6 +727,7 @@ export default definePlugin({
 
         updateState({
             status: "disconnected",
+            publishingStatus: "cleared",
             retryCount: 0,
             activeTitle: null
         });
