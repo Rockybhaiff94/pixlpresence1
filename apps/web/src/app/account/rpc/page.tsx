@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 import { AccountLayout } from "@/components/account/AccountLayout";
 import { Button } from "@/components/nothing/Button";
-import { apiFetch, getApiBaseUrl, getStoredToken, setStoredToken } from "@/lib/api";
+import { apiFetch, getApiBaseUrl, getStoredToken, setStoredToken, getCachedUser } from "@/lib/api";
 import { io, Socket } from "socket.io-client";
 import { useAuth } from "@/context/AuthContext";
 import { ImageCustomizerModal, CropData } from "@/components/rpc/ImageCustomizerModal";
@@ -656,12 +656,25 @@ export default function AccountRpcStudioPage() {
     setLinkingState("generating");
 
     try {
-      // Ensure we have the user's active token from localStorage, cookie, auth context, or live profile
+      // Ensure we have the user's active token from localStorage, cookie, auth context, cached user, or live profile
       let currentToken = getStoredToken() || authContextToken || authUser?.appToken || token;
       
       if (!currentToken) {
+        const cached = getCachedUser();
+        if (cached?.appToken || cached?.token) {
+          currentToken = String(cached.appToken || cached.token).trim();
+          setToken(currentToken);
+          setStoredToken(currentToken);
+        }
+      }
+
+      // Proactively discover active session token via same-origin relative endpoints if token is not cached
+      if (!currentToken) {
         try {
-          const authMeRes = await apiFetch("/api/auth/me", { signal: controller.signal });
+          const authMeRes = await fetch("/api/auth/me", {
+            credentials: "include",
+            signal: controller.signal,
+          });
           if (authMeRes.ok) {
             const authMeData = await authMeRes.json();
             if (authMeData?.appToken) {
@@ -675,7 +688,10 @@ export default function AccountRpcStudioPage() {
 
       if (!currentToken) {
         try {
-          const tRes = await apiFetch("/api/profile/me/token", { signal: controller.signal });
+          const tRes = await fetch("/api/profile/me/token", {
+            credentials: "include",
+            signal: controller.signal,
+          });
           if (tRes.ok) {
             const tData = await tRes.json();
             if (tData?.token) {
@@ -698,29 +714,58 @@ export default function AccountRpcStudioPage() {
       };
       if (currentToken) {
         headers["Authorization"] = `Bearer ${currentToken}`;
+        headers["X-App-Token"] = currentToken;
       }
 
-      let res: Response;
+      const bodyPayload = JSON.stringify({ token: currentToken || undefined });
+
+      // Dual-path authorization request: Same-origin relative URL first, then direct API base URL fallback
+      let res: Response | null = null;
+      let lastNetworkErr: any = null;
+
       try {
-        res = await apiFetch("/api/rpc/device/authorize", {
-          method: "POST",
-          headers,
-          signal: controller.signal,
-        });
-      } catch (directErr: any) {
-        // Fallback to relative URL through Next.js proxy if direct API URL failed
         res = await fetch("/api/rpc/device/authorize", {
           method: "POST",
           headers,
           credentials: "include",
+          body: bodyPayload,
           signal: controller.signal,
         });
+      } catch (proxyErr: any) {
+        lastNetworkErr = proxyErr;
+      }
+
+      // If same-origin proxy failed or returned 502/503/504 (cold start), attempt direct API base URL
+      if (!res || (!res.ok && [502, 503, 504].includes(res.status))) {
+        try {
+          const directApiUrl = `${getApiBaseUrl()}/api/rpc/device/authorize`;
+          const directRes = await fetch(directApiUrl, {
+            method: "POST",
+            headers,
+            credentials: "include",
+            body: bodyPayload,
+            signal: controller.signal,
+          });
+          if (directRes.ok || directRes.status === 401 || !res) {
+            res = directRes;
+          }
+        } catch (directErr: any) {
+          if (!res) lastNetworkErr = directErr;
+        }
+      }
+
+      // If both fetch attempts threw network/CORS exceptions
+      if (!res) {
+        throw (lastNetworkErr || new Error("Failed to communicate with authorization server. Please check your network connection."));
       }
 
       // If unauthorized, attempt a fresh token retrieval and retry once before failing
       if (res.status === 401) {
         try {
-          const freshTokenRes = await apiFetch("/api/profile/me/token", { signal: controller.signal });
+          const freshTokenRes = await fetch("/api/profile/me/token", {
+            credentials: "include",
+            signal: controller.signal,
+          });
           if (freshTokenRes.ok) {
             const freshData = await freshTokenRes.json();
             if (freshData?.token) {
@@ -728,17 +773,22 @@ export default function AccountRpcStudioPage() {
               setToken(freshData.token);
               setStoredToken(freshData.token);
               headers["Authorization"] = `Bearer ${currentToken}`;
+              headers["X-App-Token"] = currentToken;
+              const retryBody = JSON.stringify({ token: currentToken });
               try {
-                res = await apiFetch("/api/rpc/device/authorize", {
-                  method: "POST",
-                  headers,
-                  signal: controller.signal,
-                });
-              } catch (_) {
                 res = await fetch("/api/rpc/device/authorize", {
                   method: "POST",
                   headers,
                   credentials: "include",
+                  body: retryBody,
+                  signal: controller.signal,
+                });
+              } catch (_) {
+                res = await fetch(`${getApiBaseUrl()}/api/rpc/device/authorize`, {
+                  method: "POST",
+                  headers,
+                  credentials: "include",
+                  body: retryBody,
                   signal: controller.signal,
                 });
               }
@@ -753,10 +803,18 @@ export default function AccountRpcStudioPage() {
       }
 
       if (!res.ok) {
-        const errJson = await res.json().catch(() => null);
-        if (res.status === 401) {
+        let errJson: any = null;
+        try {
+          errJson = await res.json();
+        } catch (_) {
+          try {
+            const t = await res.text();
+            if (t && t.length < 200) errJson = { error: t };
+          } catch (_) {}
+        }
+        if (res.status === 401 || (errJson?.error && String(errJson.error).toLowerCase().includes("unauthorized"))) {
           setIsAuthError(true);
-          throw new Error("Authentication required. Please sign in with Discord to link your Discord client.");
+          throw new Error("Authentication required. Please sign in with Discord to generate a device linking code.");
         }
         throw new Error(errJson?.error || `Server returned HTTP ${res.status}`);
       }
@@ -806,7 +864,10 @@ export default function AccountRpcStudioPage() {
         try {
           const pollHeaders: Record<string, string> = {};
           const activeTok = getStoredToken() || currentToken;
-          if (activeTok) pollHeaders["Authorization"] = `Bearer ${activeTok}`;
+          if (activeTok) {
+            pollHeaders["Authorization"] = `Bearer ${activeTok}`;
+            pollHeaders["X-App-Token"] = activeTok;
+          }
           const pollRes = await apiFetch(`/api/rpc/device/status?codeId=${data.codeId}`, {
             headers: pollHeaders,
             signal: controller.signal,
@@ -841,8 +902,25 @@ export default function AccountRpcStudioPage() {
         return;
       }
       console.error("[RPC Studio] Failed to generate device linking code:", err);
-      const msg = err?.message || "A network or server error occurred. Please check your connection and try again.";
-      if (msg.includes("401") || msg.toLowerCase().includes("auth") || msg.toLowerCase().includes("unauthorized") || authStatus === "UNAUTHENTICATED") {
+
+      let msg = "A network or server error occurred. Please check your connection and try again.";
+      if (typeof err === "string" && err.trim().length > 0) {
+        msg = err.trim();
+      } else if (err?.message && typeof err.message === "string" && err.message.trim().length > 0) {
+        msg = err.message.trim();
+      } else if (err?.error && typeof err.error === "string" && err.error.trim().length > 0) {
+        msg = err.error.trim();
+      }
+
+      const isAuth =
+        isAuthError ||
+        msg.includes("401") ||
+        msg.toLowerCase().includes("auth") ||
+        msg.toLowerCase().includes("unauthorized") ||
+        msg.toLowerCase().includes("session") ||
+        authStatus === "UNAUTHENTICATED";
+
+      if (isAuth) {
         setIsAuthError(true);
       }
       setLinkingError(msg);
@@ -1109,7 +1187,12 @@ export default function AccountRpcStudioPage() {
         <div className="bg-[#0c0c0e] border border-[#222228] rounded-2xl p-6 relative overflow-hidden space-y-6">
           <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 pb-6 border-b border-[#1c1c22]">
             <div className="space-y-1.5">
-              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded bg-[#18181f] border border-[#2c2c36] text-[10px] text-neutral-400 uppercase tracking-widest">
+              <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#18181f] border border-[#2c2c36] text-[10px] text-neutral-300 uppercase tracking-widest font-mono">
+                <img
+                  src="/logos/pixel-icon.png"
+                  alt="Pixel.gg"
+                  className="w-3.5 h-3.5 object-contain"
+                />
                 <ShieldCheck size={12} className="text-emerald-400" /> Device Authorization
               </div>
               <h2 className="text-lg font-bold text-white tracking-wide">

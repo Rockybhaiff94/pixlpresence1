@@ -155,16 +155,34 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
   }
-
-  let finalUrl = input;
-  if (typeof input === "string" && input.startsWith("/api/")) {
-    const baseUrl = getApiBaseUrl();
-    finalUrl = `${baseUrl}${input}`;
+  if (token && !headers.has("X-App-Token")) {
+    headers.set("X-App-Token", token);
   }
 
-  return fetch(finalUrl, {
-    ...init,
-    headers,
-    credentials: "include",
-  });
+  const isRelativeApi = typeof input === "string" && input.startsWith("/api/");
+  const baseUrl = isRelativeApi ? getApiBaseUrl() : "";
+  const directUrl = isRelativeApi ? `${baseUrl}${input}` : input;
+
+  try {
+    return await fetch(directUrl, {
+      ...init,
+      headers,
+      credentials: "include",
+    });
+  } catch (err: any) {
+    // If direct API call failed (CORS error, adblocker block, network timeout)
+    // and input was a relative endpoint, fallback seamlessly to same-origin proxy
+    if (isRelativeApi && typeof window !== "undefined" && directUrl !== input) {
+      try {
+        return await fetch(input, {
+          ...init,
+          headers,
+          credentials: "include",
+        });
+      } catch (_) {
+        // Fall through to re-throw original error
+      }
+    }
+    throw err;
+  }
 }

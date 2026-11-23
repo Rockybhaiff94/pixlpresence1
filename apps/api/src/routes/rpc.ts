@@ -88,11 +88,19 @@ export const requireAuth = async (req: any, res: any, next: any) => {
     } catch (_) {}
   }
 
-  // 3. Extract token from Authorization header, Cookie, or Query parameter
+  // 3. Extract token from Authorization header, Cookie, custom headers, body, or Query parameter
   let token: string | null = null;
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.split(' ')[1]?.trim() || null;
+  } else if (req.headers['x-app-token']) {
+    token = String(req.headers['x-app-token']).trim() || null;
+  } else if (req.headers['x-api-token']) {
+    token = String(req.headers['x-api-token']).trim() || null;
+  } else if (req.body && typeof req.body === 'object' && req.body.token) {
+    token = String(req.body.token).trim() || null;
+  } else if (req.body && typeof req.body === 'object' && req.body.appToken) {
+    token = String(req.body.appToken).trim() || null;
   } else if (req.headers.cookie) {
     const match = req.headers.cookie.match(/(?:^|;\s*)pixel_app_token=([^;]+)/);
     if (match && match[1]) {
@@ -559,6 +567,14 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
       data.buttonSize = 'medium';
     }
 
+    // Separate virtual fields that are not columns in the RichPresence table
+    const largeImageEnabled = data.largeImageEnabled !== undefined ? Boolean(data.largeImageEnabled) : true;
+    const smallImageEnabled = data.smallImageEnabled !== undefined ? Boolean(data.smallImageEnabled) : true;
+    const buttonSize = data.buttonSize || 'medium';
+    delete data.largeImageEnabled;
+    delete data.smallImageEnabled;
+    delete data.buttonSize;
+
     const rpc = await prisma.richPresence.upsert({
       where: { userId: req.user.id },
       update: data,
@@ -575,7 +591,12 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
       currentUser.avatar || currentUser.profile?.avatarUrl
     );
 
-    const fullPayload: any = { ...rpc };
+    const fullPayload: any = {
+      ...rpc,
+      largeImageEnabled,
+      smallImageEnabled,
+      buttonSize,
+    };
     if (fullPayload.useProfileAvatar !== false) {
       fullPayload.largeImage = resolvedAvatar;
     }

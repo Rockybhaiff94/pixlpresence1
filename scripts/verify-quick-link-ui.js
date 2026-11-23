@@ -106,8 +106,8 @@ async function verifyQuickLinkUI() {
     );
   });
 
-  console.log("Navigating to http://localhost:3000/account/rpc ...");
-  await page.goto("http://localhost:3000/account/rpc", { waitUntil: "domcontentloaded", timeout: 60000 });
+  console.log("Navigating to https://pixlpresence1-web.vercel.app/account/rpc ...");
+  await page.goto("https://pixlpresence1-web.vercel.app/account/rpc", { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.waitForSelector("h1", { timeout: 60000 });
 
   console.log("Verified Discord Rich Presence Studio page loaded.");
