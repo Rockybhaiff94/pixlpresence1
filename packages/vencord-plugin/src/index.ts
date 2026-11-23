@@ -193,29 +193,42 @@ const assetResolutionCache = new Map<string, string>();
 async function resolveDiscordAsset(appId: string, assetInput: string | null | undefined): Promise<string | undefined> {
     if (!assetInput || !assetInput.trim()) return undefined;
     const raw = assetInput.trim();
-    if (raw.startsWith("http://") || raw.startsWith("https://") || raw.startsWith("mp:")) {
+
+    // Already in Discord Media Proxy format (mp:external/...)
+    if (raw.startsWith("mp:")) {
         return raw;
     }
+
     const cacheKey = `${appId}:${raw}`;
     if (assetResolutionCache.has(cacheKey)) {
         return assetResolutionCache.get(cacheKey);
     }
 
+    // Determine target URL for Discord asset resolution
+    let target = raw;
+
+    // Discord external asset proxy explicitly rejects cdn.discordapp.com and media.discordapp.net to prevent proxy recursion
+    // Route any Discord CDN URLs (e.g. user avatars) through a high-speed global image proxy (wsrv.nl)
+    if (/https?:\/\/(cdn|media)\.discordapp\.(com|net)\//i.test(raw)) {
+        target = `https://wsrv.nl/?url=${encodeURIComponent(raw)}`;
+    }
+
     try {
         if (ApplicationAssetUtils && typeof ApplicationAssetUtils.fetchAssetIds === "function") {
-            const resolvedList = await ApplicationAssetUtils.fetchAssetIds(appId, [raw]);
+            const resolvedList = await ApplicationAssetUtils.fetchAssetIds(appId, [target]);
             if (Array.isArray(resolvedList) && resolvedList[0]) {
                 const assetId = resolvedList[0];
                 assetResolutionCache.set(cacheKey, assetId);
+                logDebug(`[PixelsRPC] Resolved Discord asset [${raw}] -> [${assetId}]`);
                 return assetId;
             }
         }
     } catch (e) {
-        logDebug("Asset resolution via ApplicationAssetUtils failed for:", raw, e);
+        logDebug("[PixelsRPC] Asset resolution via ApplicationAssetUtils failed for:", target, e);
     }
 
     // Fallback: If Discord's proxy or Developer Portal doesn't return an ID, return raw
-    return raw;
+    return target;
 }
 
 async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> {

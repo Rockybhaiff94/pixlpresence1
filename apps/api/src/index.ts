@@ -219,6 +219,43 @@ app.use(
   })
 );
 
+// Fallback: If uploaded asset file was erased on ephemeral hosting restart, restore from PostgreSQL
+app.use('/uploads/rpc/:fileName', async (req, res, next) => {
+  try {
+    const fileName = req.params.fileName;
+    if (!fileName) return next();
+
+    const asset = await prisma.uploadedAsset.findFirst({
+      where: {
+        OR: [
+          { originalUrl: { contains: fileName } },
+          { processedUrl: { contains: fileName } },
+          { storageKey: { contains: fileName } },
+          { fileName: fileName }
+        ],
+        data: { not: null }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (asset && asset.data) {
+      // Re-hydrate local disk cache so subsequent requests are instant
+      const diskPath = path.join(rpcUploadsDir, fileName);
+      fs.writeFile(diskPath, asset.data, () => {});
+
+      res.setHeader('Content-Type', asset.mimeType || 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      return res.end(asset.data);
+    }
+  } catch (err) {
+    console.warn('[Uploads Database Fallback Error]:', err);
+  }
+  next();
+});
+
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 app.use('/api', globalApiLimiter);

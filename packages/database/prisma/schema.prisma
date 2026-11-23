@@ -267,6 +267,7 @@ model UploadedAsset {
   
   targetSlot    String?   // "largeImage" | "smallImage"
   storageKey    String?
+  data          Bytes?    // Persistent database binary backup ensuring zero 404s on ephemeral hosting
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

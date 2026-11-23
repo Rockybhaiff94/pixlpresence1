@@ -147,6 +147,76 @@ export const requireAuth = async (req: any, res: any, next: any) => {
 };
 
 // ============================================================================
+// MEDIA PROXY FOR DISCORD ASSETS & AVATARS
+// ============================================================================
+
+/**
+ * GET /api/rpc/media-proxy
+ * Public proxy endpoint that allows Discord's external-asset proxy to safely fetch
+ * external avatar and media images (including cdn.discordapp.com which Discord's proxy blocks directly).
+ */
+rpcRouter.get('/media-proxy', async (req: any, res) => {
+  try {
+    const targetUrl = String(req.query.url || '').trim();
+    if (!targetUrl || (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://'))) {
+      return res.status(400).json({ error: 'Valid HTTP or HTTPS URL required' });
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(targetUrl);
+    } catch {
+      return res.status(400).json({ error: 'Malformed URL' });
+    }
+
+    // SSRF Guard: prevent loopback and private IP requests
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '::1' ||
+      host.startsWith('10.') ||
+      host.startsWith('192.168.') ||
+      host.startsWith('172.16.') ||
+      host.startsWith('169.254.')
+    ) {
+      return res.status(403).json({ error: 'Prohibited target host' });
+    }
+
+    const abortController = new AbortController();
+    const timeout = setTimeout(() => abortController.abort(), 10000);
+
+    const upstream = await fetch(targetUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) PixelRPC/1.0',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+      },
+      signal: abortController.signal
+    });
+    clearTimeout(timeout);
+
+    if (!upstream.ok) {
+      return res.status(upstream.status).json({ error: `Upstream error: ${upstream.statusText}` });
+    }
+
+    const contentType = upstream.headers.get('content-type') || 'image/png';
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return res.end(buffer);
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      return res.status(504).json({ error: 'Gateway timeout fetching image' });
+    }
+    return res.status(500).json({ error: `Failed to proxy image: ${err.message}` });
+  }
+});
+
+// ============================================================================
 // DEVICE AUTHORIZATION & ROBLOX-STYLE QUICK ACCOUNT LINKING
 // ============================================================================
 

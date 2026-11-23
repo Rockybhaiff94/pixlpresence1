@@ -12,6 +12,8 @@ if (typeof CspPolicies === "object" && CspPolicies !== null) {
     CspPolicies["pixelgg-api.onrender.com"] = ImageAndCssSrc;
     CspPolicies["*.pixel.gg"] = ImageAndCssSrc;
     CspPolicies["pixel.gg"] = ImageAndCssSrc;
+    CspPolicies["wsrv.nl"] = ImageAndCssSrc;
+    CspPolicies["*.wsrv.nl"] = ImageAndCssSrc;
 }
 
 // Any export in native.ts is registered as an IPC handler with ipcMain.handle().

@@ -344,6 +344,7 @@ export class ImageAssetService {
           offsetY,
           targetSlot,
           storageKey,
+          data: processed.buffer,
         },
       });
 
