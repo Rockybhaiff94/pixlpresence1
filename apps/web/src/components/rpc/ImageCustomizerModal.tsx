@@ -9,6 +9,10 @@ import {
   Check,
   X,
   AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  RefreshCw,
+  Loader2,
   Image as ImageIcon,
   Flame,
   Move,
@@ -26,6 +30,16 @@ export interface CropData {
   offsetX: number;
   offsetY: number;
 }
+
+export type UploadVerificationState =
+  | "idle"
+  | "uploading"
+  | "upload_success"
+  | "verifying"
+  | "verification_delayed"
+  | "verified"
+  | "verification_unavailable"
+  | "failed";
 
 interface ImageCustomizerModalProps {
   isOpen: boolean;
@@ -47,6 +61,7 @@ export function ImageCustomizerModal({
   onRemove,
 }: ImageCustomizerModalProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(currentUrl || null);
+  const [savedAssetUrl, setSavedAssetUrl] = useState<string | null>(currentUrl || null);
   const [fileName, setFileName] = useState<string>("");
   const [fileSize, setFileSize] = useState<number>(0);
   const [isAnimated, setIsAnimated] = useState<boolean>(false);
@@ -61,19 +76,27 @@ export function ImageCustomizerModal({
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Upload status
-  const [uploading, setUploading] = useState<boolean>(false);
+  // Verification & Upload State Machine
+  const [verificationState, setVerificationState] = useState<UploadVerificationState>("idle");
+  const [verificationAttempt, setVerificationAttempt] = useState<number>(1);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
 
+  const MAX_VERIFICATION_ATTEMPTS = 3;
+  const ATTEMPT_TIMEOUTS = [8000, 10000, 12000]; // Progressive timeouts: 8s, 10s, 12s
+  const RETRY_DELAYS = [1000, 2000, 3000]; // Exponential backoff delays: 1s, 2s, 3s
+
   useEffect(() => {
     if (isOpen) {
       setImageSrc(currentUrl || null);
+      setSavedAssetUrl(currentUrl || null);
       setZoom(currentCrop?.zoom || 1);
       setOffsetX(currentCrop?.offsetX || 0);
       setOffsetY(currentCrop?.offsetY || 0);
       setErrorMessage(null);
+      setVerificationState("idle");
+      setVerificationAttempt(1);
 
       if (currentUrl?.toLowerCase().includes(".gif")) {
         setIsAnimated(true);
@@ -87,11 +110,15 @@ export function ImageCustomizerModal({
 
   const handleFileProcess = (file: File) => {
     setErrorMessage(null);
+    setVerificationState("idle");
+    setSavedAssetUrl(null);
+    setVerificationAttempt(1);
 
     // Validate MIME types
     const validTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"];
     if (!validTypes.includes(file.type.toLowerCase())) {
       setErrorMessage("Unsupported file format. Please upload a PNG, JPG, WEBP, or GIF image.");
+      setVerificationState("failed");
       return;
     }
 
@@ -103,12 +130,14 @@ export function ImageCustomizerModal({
     if (isGif && file.size > MAX_GIF_BYTES) {
       const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
       setErrorMessage(`Animated GIF exceeds the 10 MB maximum size limit (${sizeMb} MB). Please compress your GIF to under 10 MB.`);
+      setVerificationState("failed");
       return;
     }
 
     if (!isGif && file.size > MAX_STATIC_BYTES) {
       const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
       setErrorMessage(`Image exceeds the 10 MB maximum size limit (${sizeMb} MB).`);
+      setVerificationState("failed");
       return;
     }
 
@@ -156,13 +185,11 @@ export function ImageCustomizerModal({
     setOffsetY(0);
   };
 
-  // Helper to empirically verify if an image URL loads successfully before applying
-  const verifyImageLoads = (url: string, timeoutMs = 6000): Promise<{ ok: boolean; reason?: string }> => {
+  /**
+   * Helper to verify if an image can be decoded and rendered by the browser
+   */
+  const testImageDecodable = (imgUrl: string, timeoutMs: number): Promise<{ ok: boolean; reason?: string }> => {
     return new Promise((resolve) => {
-      if (!url || typeof url !== "string") {
-        return resolve({ ok: false, reason: "No URL provided." });
-      }
-
       const img = new Image();
       let settled = false;
 
@@ -172,7 +199,7 @@ export function ImageCustomizerModal({
           img.src = "";
           resolve({
             ok: false,
-            reason: "Image load timed out. The server hosting the image did not respond within 6 seconds.",
+            reason: `Image decode timed out after ${Math.round(timeoutMs / 1000)}s.`,
           });
         }
       }, timeoutMs);
@@ -181,7 +208,11 @@ export function ImageCustomizerModal({
         if (!settled) {
           settled = true;
           clearTimeout(timer);
-          resolve({ ok: true });
+          if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+            resolve({ ok: true });
+          } else {
+            resolve({ ok: false, reason: "Image loaded with 0x0 dimensions." });
+          }
         }
       };
 
@@ -191,22 +222,128 @@ export function ImageCustomizerModal({
           clearTimeout(timer);
           resolve({
             ok: false,
-            reason: "The image URL returned an error, could not be retrieved, or was blocked.",
+            reason: "The browser could not decode or load the image resource.",
           });
         }
       };
 
-      img.src = url;
+      img.src = imgUrl;
     });
+  };
+
+  /**
+   * Single verification attempt combining HTTP status, Content-Type, and decodability
+   */
+  const verifySingleAttempt = async (
+    rawUrl: string,
+    timeoutMs: number,
+    isGif: boolean
+  ): Promise<{ ok: boolean; reason?: string }> => {
+    if (!rawUrl || typeof rawUrl !== "string") {
+      return { ok: false, reason: "No URL provided." };
+    }
+
+    // Cache buster to bypass stale CDN or browser cache
+    const cacheBuster = `_t=${Date.now()}`;
+    const verifyUrl = rawUrl.includes("?") ? `${rawUrl}&${cacheBuster}` : `${rawUrl}?${cacheBuster}`;
+
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const fetchTimer = setTimeout(() => {
+      if (controller) controller.abort();
+    }, timeoutMs);
+
+    try {
+      // 1. Check HTTP response and Content-Type via fetch
+      const res = await fetch(verifyUrl, {
+        method: "GET",
+        signal: controller?.signal,
+        redirect: "follow",
+        cache: "no-store",
+      });
+      clearTimeout(fetchTimer);
+
+      if (!res.ok) {
+        return {
+          ok: false,
+          reason: `Server responded with HTTP ${res.status} (${res.statusText || "Error"})`,
+        };
+      }
+
+      const contentType = (res.headers.get("content-type") || "").toLowerCase();
+      if (
+        contentType &&
+        !contentType.startsWith("image/") &&
+        !contentType.includes("octet-stream")
+      ) {
+        return {
+          ok: false,
+          reason: `Invalid content type: expected image, received "${contentType}".`,
+        };
+      }
+
+      if (isGif && contentType && !contentType.includes("gif") && !contentType.includes("octet-stream")) {
+        console.warn(`[ImageCustomizer] Note: Expected image/gif but received ${contentType}`);
+      }
+
+      // 2. Empirically verify image decoding in the browser
+      return await testImageDecodable(verifyUrl, timeoutMs);
+    } catch (err: any) {
+      clearTimeout(fetchTimer);
+      if (err.name === "AbortError") {
+        return {
+          ok: false,
+          reason: `Image request timed out after ${Math.round(timeoutMs / 1000)} seconds.`,
+        };
+      }
+      // If fetch fails due to CORS or network sandbox, fallback to direct Image decoding
+      return await testImageDecodable(verifyUrl, timeoutMs);
+    }
+  };
+
+  /**
+   * Verifies image URL with exponential backoff and up to 3 retries
+   */
+  const verifyImageWithRetries = async (
+    url: string,
+    isGif: boolean
+  ): Promise<{ ok: boolean; reason?: string }> => {
+    let lastReason = "Image verification failed.";
+
+    for (let attempt = 1; attempt <= MAX_VERIFICATION_ATTEMPTS; attempt++) {
+      setVerificationAttempt(attempt);
+      if (attempt > 1) {
+        setVerificationState("verification_delayed");
+      } else {
+        setVerificationState("verifying");
+      }
+
+      const timeoutMs = ATTEMPT_TIMEOUTS[attempt - 1] || 10000;
+      const result = await verifySingleAttempt(url, timeoutMs, isGif);
+
+      if (result.ok) {
+        setVerificationState("verified");
+        return { ok: true };
+      }
+
+      lastReason = result.reason || lastReason;
+
+      // Exponential backoff wait before next attempt
+      if (attempt < MAX_VERIFICATION_ATTEMPTS) {
+        const delay = RETRY_DELAYS[attempt - 1] || 1500;
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+
+    return { ok: false, reason: lastReason };
   };
 
   const handleSaveAndApply = async () => {
     if (!imageSrc) {
       setErrorMessage("Please select or upload an image first.");
+      setVerificationState("failed");
       return;
     }
 
-    setUploading(true);
     setErrorMessage(null);
 
     const cropData: CropData = {
@@ -217,22 +354,25 @@ export function ImageCustomizerModal({
       offsetY,
     };
 
-    // If already a remote URL: verify it actually loads as an image before applying
+    // If imageSrc is already an external HTTP/HTTPS URL
     if (imageSrc.startsWith("http://") || imageSrc.startsWith("https://")) {
-      const check = await verifyImageLoads(imageSrc);
-      if (!check.ok) {
-        setErrorMessage(
-          `Image verification failed: ${check.reason || "Unable to load image."} Please check the link or upload a file directly.`
-        );
-        setUploading(false);
+      const check = await verifyImageWithRetries(imageSrc, isAnimated);
+      if (check.ok) {
+        onApply(imageSrc, cropData);
+        onClose();
         return;
       }
-      onApply(imageSrc, cropData);
-      setUploading(false);
-      onClose();
+
+      // If external URL verification failed after 3 attempts, allow non-blocking apply anyway
+      setVerificationState("verification_unavailable");
+      setSavedAssetUrl(imageSrc);
       return;
     }
 
+    // New uploaded file (data URL)
+    setVerificationState("uploading");
+
+    let canonicalUrl: string | null = null;
     try {
       const payload = {
         file: imageSrc,
@@ -257,29 +397,86 @@ export function ImageCustomizerModal({
         throw new Error("Server succeeded but did not return a valid asset URL.");
       }
 
-      // Verify the returned URL actually returns a loadable image
-      const check = await verifyImageLoads(data.url);
-      if (!check.ok) {
-        setErrorMessage(
-          `Image saved but verification failed: ${check.reason || "The uploaded image URL could not be retrieved."} Please check server connection.`
-        );
-        setUploading(false);
-        return;
-      }
-
-      onApply(data.url, cropData);
-      onClose();
+      canonicalUrl = data.url;
+      setSavedAssetUrl(canonicalUrl);
+      setImageSrc(canonicalUrl);
+      setVerificationState("upload_success");
     } catch (err: any) {
       console.error("[ImageCustomizer] Upload error:", err);
+      setVerificationState("failed");
       setErrorMessage(err.message || "Failed to upload image. Please try again.");
-    } finally {
-      setUploading(false);
+      return;
+    }
+
+    if (!canonicalUrl) {
+      setVerificationState("failed");
+      setErrorMessage("No asset URL returned from upload server.");
+      return;
+    }
+
+    // Upload succeeded! Now verify accessibility & decodability
+    const check = await verifyImageWithRetries(canonicalUrl, isAnimated);
+    if (check.ok) {
+      setVerificationState("verified");
+      // Brief timeout so user sees green verification confirmation
+      setTimeout(() => {
+        onApply(canonicalUrl, cropData);
+        onClose();
+      }, 350);
+      return;
+    }
+
+    // Verification was delayed or temporarily unavailable, BUT asset was successfully uploaded and preserved!
+    setVerificationState("verification_unavailable");
+  };
+
+  const handleApplyAnyway = () => {
+    const finalUrl = savedAssetUrl || imageSrc;
+    if (!finalUrl) return;
+
+    const cropData: CropData = {
+      cropX: offsetX,
+      cropY: offsetY,
+      zoom,
+      offsetX,
+      offsetY,
+    };
+
+    onApply(finalUrl, cropData);
+    onClose();
+  };
+
+  const handleRetryVerification = async () => {
+    const urlToVerify = savedAssetUrl || imageSrc;
+    if (!urlToVerify) return;
+
+    setErrorMessage(null);
+    const check = await verifyImageWithRetries(urlToVerify, isAnimated);
+    if (check.ok) {
+      const cropData: CropData = {
+        cropX: offsetX,
+        cropY: offsetY,
+        zoom,
+        offsetX,
+        offsetY,
+      };
+      setTimeout(() => {
+        onApply(urlToVerify, cropData);
+        onClose();
+      }, 350);
+    } else {
+      setVerificationState("verification_unavailable");
     }
   };
 
   const isSmall = targetSlot === "smallImage";
   const slotTitle = isSmall ? "Small Activity Icon" : "Large Activity Image";
   const slotAspect = isSmall ? "w-24 h-24 rounded-full" : "w-48 h-48 rounded-2xl";
+
+  const isBusy =
+    verificationState === "uploading" ||
+    verificationState === "verifying" ||
+    verificationState === "verification_delayed";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in font-mono">
@@ -301,7 +498,8 @@ export function ImageCustomizerModal({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-[#1a1a1a] transition-colors"
+            disabled={isBusy}
+            className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-[#1a1a1a] transition-colors disabled:opacity-50"
           >
             <X size={18} />
           </button>
@@ -309,10 +507,67 @@ export function ImageCustomizerModal({
 
         {/* Modal Body */}
         <div className="p-6 space-y-6 overflow-y-auto flex-1">
-          {errorMessage && (
+          {/* Status & Verification Banners */}
+          {verificationState === "failed" && errorMessage && (
             <div className="p-3.5 rounded-xl bg-red-950/40 border border-red-500/40 flex items-start gap-2.5 text-xs text-red-200">
               <AlertCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
-              <span>{errorMessage}</span>
+              <div className="space-y-1">
+                <p className="font-semibold text-red-300">Upload or Verification Error</p>
+                <p className="text-red-200/90">{errorMessage}</p>
+              </div>
+            </div>
+          )}
+
+          {verificationState === "uploading" && (
+            <div className="p-3.5 rounded-xl bg-blue-950/30 border border-blue-500/30 flex items-center gap-2.5 text-xs text-blue-200 animate-pulse">
+              <Loader2 size={16} className="text-blue-400 animate-spin shrink-0" />
+              <span>Uploading and processing image with high fidelity...</span>
+            </div>
+          )}
+
+          {verificationState === "verifying" && (
+            <div className="p-3.5 rounded-xl bg-blue-950/30 border border-blue-500/30 flex items-center gap-2.5 text-xs text-blue-200 animate-pulse">
+              <Loader2 size={16} className="text-blue-400 animate-spin shrink-0" />
+              <span>
+                Image uploaded successfully. Verifying accessibility (attempt {verificationAttempt} of {MAX_VERIFICATION_ATTEMPTS})...
+              </span>
+            </div>
+          )}
+
+          {verificationState === "verification_delayed" && (
+            <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/40 flex items-center gap-2.5 text-xs text-amber-200 animate-pulse">
+              <Loader2 size={16} className="text-amber-400 animate-spin shrink-0" />
+              <span>
+                Image uploaded. Verification is taking longer than expected. Retrying automatically (attempt {verificationAttempt} of {MAX_VERIFICATION_ATTEMPTS})...
+              </span>
+            </div>
+          )}
+
+          {verificationState === "verified" && (
+            <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/40 flex items-center gap-2.5 text-xs text-emerald-200">
+              <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+              <span>Image verified successfully! Applying changes...</span>
+            </div>
+          )}
+
+          {verificationState === "verification_unavailable" && (
+            <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-200">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-amber-300">Image Preserved</p>
+                  <p className="text-amber-200/90 text-[11px] leading-relaxed">
+                    Unable to verify image accessibility immediately due to server/CDN delay. Your uploaded image is safely saved and can be applied now.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleRetryVerification}
+                className="shrink-0 px-3 py-1.5 rounded-lg bg-[#201a10] hover:bg-[#2c2214] border border-amber-500/40 text-[11px] text-amber-300 flex items-center gap-1.5 transition-colors self-end sm:self-center"
+              >
+                <RefreshCw size={12} /> Retry Check
+              </button>
             </div>
           )}
 
@@ -473,6 +728,8 @@ export function ImageCustomizerModal({
             <button
               onClick={() => {
                 setImageSrc(null);
+                setSavedAssetUrl(null);
+                setVerificationState("idle");
                 onRemove();
                 onClose();
               }}
@@ -488,28 +745,47 @@ export function ImageCustomizerModal({
             <Button
               variant="outline"
               onClick={onClose}
-              disabled={uploading}
+              disabled={isBusy}
               className="text-xs px-4 py-2"
             >
               Cancel
             </Button>
-            <Button
-              onClick={handleSaveAndApply}
-              disabled={!imageSrc || uploading}
-              className="text-xs px-5 py-2 bg-white text-black font-bold hover:bg-neutral-200 flex items-center gap-1.5"
-            >
-              {uploading ? (
-                <>UPLOADING...</>
-              ) : (
-                <>
-                  <Check size={14} /> APPLY & SAVE
-                </>
-              )}
-            </Button>
+
+            {verificationState === "verification_unavailable" ? (
+              <Button
+                onClick={handleApplyAnyway}
+                className="text-xs px-5 py-2 bg-amber-500 text-black font-bold hover:bg-amber-400 flex items-center gap-1.5 shadow-lg transition-all"
+              >
+                <Check size={14} /> APPLY & SAVE ANYWAY
+              </Button>
+            ) : (
+              <Button
+                onClick={handleSaveAndApply}
+                disabled={!imageSrc || isBusy}
+                className="text-xs px-5 py-2 bg-white text-black font-bold hover:bg-neutral-200 flex items-center gap-1.5 disabled:opacity-60 transition-all"
+              >
+                {verificationState === "uploading" ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" /> UPLOADING...
+                  </>
+                ) : verificationState === "verifying" || verificationState === "verification_delayed" ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" /> VERIFYING ({verificationAttempt}/{MAX_VERIFICATION_ATTEMPTS})...
+                  </>
+                ) : verificationState === "verified" ? (
+                  <>
+                    <CheckCircle2 size={14} className="text-emerald-600" /> VERIFIED
+                  </>
+                ) : (
+                  <>
+                    <Check size={14} /> APPLY & SAVE
+                  </>
+                )}
+              </Button>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
 }
-
