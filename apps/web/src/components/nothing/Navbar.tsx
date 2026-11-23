@@ -43,13 +43,13 @@ export const Navbar: React.FC = () => {
       {/* Main Navigation Bar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
         {/* Brand Logo */}
-        <Link href="/" className="flex items-center gap-2 group">
+        <Link href="/" className="flex items-center gap-2.5 group">
           <motion.div
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="w-7 h-7 rounded bg-white text-black flex items-center justify-center font-mono font-bold text-xs tracking-tighter group-hover:bg-neutral-200 transition-colors"
+            className="w-7 h-7 rounded-md bg-[#121216] border border-[#262630] flex items-center justify-center p-0.5 group-hover:border-neutral-500 transition-colors overflow-hidden shrink-0"
           >
-            P
+            <img src="/logos/pixel-icon.png" alt="Pixel.gg" className="w-full h-full object-contain" />
           </motion.div>
           <div className="flex flex-col">
             <span className="font-mono text-sm font-semibold tracking-wider text-white flex items-center gap-1.5">

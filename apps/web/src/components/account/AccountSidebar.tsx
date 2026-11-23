@@ -117,8 +117,8 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
       {/* Mobile Top Header Bar */}
       <div className="lg:hidden w-full bg-[#0a0a0a] border-b border-[#222222] px-4 py-3 flex items-center justify-between sticky top-0 z-40 font-mono">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded bg-white text-black flex items-center justify-center font-bold text-xs">
-            P
+          <div className="w-7 h-7 rounded-md bg-[#121216] border border-[#262630] flex items-center justify-center p-0.5 overflow-hidden shrink-0">
+            <img src="/logos/pixel-icon.png" alt="Pixel.gg" className="w-full h-full object-contain" />
           </div>
           <span className="text-white font-bold text-sm tracking-wide">
             PIXEL.GG <span className="text-neutral-500 text-xs">(01)</span>
@@ -152,8 +152,8 @@ export const AccountSidebar: React.FC<AccountSidebarProps> = ({ user }) => {
           {/* Logo & Platform Code */}
           <div className="flex items-center justify-between pb-3 border-b border-[#181818]">
             <Link href="/" className="flex items-center gap-2.5 group">
-              <div className="w-7 h-7 rounded bg-white text-black flex items-center justify-center font-bold text-xs group-hover:bg-neutral-200 transition-colors">
-                P
+              <div className="w-7 h-7 rounded-md bg-[#121216] border border-[#262630] flex items-center justify-center p-0.5 group-hover:border-neutral-500 transition-colors overflow-hidden shrink-0">
+                <img src="/logos/pixel-icon.png" alt="Pixel.gg" className="w-full h-full object-contain" />
               </div>
               <div className="flex flex-col">
                 <span className="text-white font-bold text-xs tracking-wider">
