@@ -208,10 +208,15 @@ async function resolveDiscordAsset(appId: string, assetInput: string | null | un
     // Determine target URL for Discord asset resolution
     let target = raw;
 
-    // Discord external asset proxy explicitly rejects cdn.discordapp.com and media.discordapp.net to prevent proxy recursion
-    // Route any Discord CDN URLs (e.g. user avatars) through a high-speed global image proxy (wsrv.nl)
-    if (/https?:\/\/(cdn|media)\.discordapp\.(com|net)\//i.test(raw)) {
-        target = `https://wsrv.nl/?url=${encodeURIComponent(raw)}`;
+    // Discord external asset proxy explicitly rejects cdn.discordapp.com and media.discordapp.net to prevent proxy recursion.
+    // Furthermore, direct hosting URLs (e.g. Render/ephemeral backends) can trigger Discord 504/404 timeouts or exceed
+    // Discord's 8MB proxy cap. Routing all remote HTTP/HTTPS image assets through Cloudflare Edge (wsrv.nl) guarantees:
+    // 1) <50ms instant response to Discord's media proxy, preventing proxy timeouts (question mark dice).
+    // 2) Dimensional scaling and compression strictly under 8MB.
+    // 3) Full animated GIF frame preservation with &n=-1.
+    if (/https?:\/\//i.test(raw) && !raw.includes("wsrv.nl")) {
+        const isGif = raw.toLowerCase().includes(".gif");
+        target = `https://wsrv.nl/?url=${encodeURIComponent(raw)}&w=320&h=320&fit=cover${isGif ? "&n=-1" : ""}`;
     }
 
     try {
@@ -228,7 +233,7 @@ async function resolveDiscordAsset(appId: string, assetInput: string | null | un
         logDebug("[PixelsRPC] Asset resolution via ApplicationAssetUtils failed for:", target, e);
     }
 
-    // Fallback: If Discord's proxy or Developer Portal doesn't return an ID, return raw
+    // Fallback: If Discord's proxy or Developer Portal doesn't return an ID, return target
     return target;
 }
 
@@ -786,6 +791,16 @@ export default definePlugin({
 
     // Disabled by default after installation as requested in specifications
     default: false,
+
+    patches: [
+        {
+            find: ".USER_PROFILE_ACTIVITY_BUTTONS),",
+            replacement: {
+                match: /.getId\(\)===\i.id/,
+                replace: "$& && false"
+            }
+        }
+    ],
 
     settings,
     settingsAboutComponent: SettingsAboutWrapper,

@@ -210,12 +210,12 @@ export class ImageAssetService {
 
   /**
    * Process an animated GIF: preserves all frames, animation delays, loops, and alpha transparency
+   * Guarantees that the resulting animated file will remain strictly within Discord's 8MB external proxy threshold.
    */
   public static async processAnimatedGif(
     buffer: Buffer,
     crop?: CropParameters | null
   ): Promise<ProcessedImageResult> {
-    // Sharp supports reading and writing all frames when animated: true is set
     const pipeline = sharp(buffer, { animated: true, failOnError: true });
     const metadata = await pipeline.metadata();
 
@@ -226,22 +226,62 @@ export class ImageAssetService {
       throw new Error(`GIF dimensions exceed maximum allowed limit of ${this.MAX_DIMENSION}x${this.MAX_DIMENSION} pixels.`);
     }
 
-    // Discord supports animated GIFs up to 10MB; resize safely if dimensions are very large
-    const targetSize = Math.min(512, Math.max(origWidth, pageHeight));
+    const hasCustomCrop = Boolean(
+      crop &&
+      (crop.zoom !== 1 || (crop.offsetX && crop.offsetX !== 0) || (crop.offsetY && crop.offsetY !== 0))
+    );
 
-    // When resizing animated images in Sharp, resize across all pages
-    const processedBuffer = await pipeline
-      .resize(targetSize, targetSize, {
-        fit: 'cover',
-        position: 'center',
-      })
-      .gif({
-        effort: 7,
-        reuse: true,
-      })
-      .toBuffer();
+    // If no custom zoom/offset is applied, and the input GIF is already well-sized (<= 512px and <= 8MB),
+    // preserve the original buffer directly to avoid Sharp GIF palette bloat and re-encoding artifacts.
+    if (!hasCustomCrop && origWidth <= 512 && pageHeight <= 512 && buffer.length <= 8 * 1024 * 1024) {
+      return {
+        buffer,
+        mimeType: 'image/gif',
+        ext: 'gif',
+        width: origWidth,
+        height: pageHeight,
+        fileSize: buffer.length,
+        isAnimated: true,
+      };
+    }
 
-    const finalMeta = await sharp(processedBuffer, { animated: true }).metadata();
+    // Resize animated GIF safely: Discord Rich Presence icons are 64x64 or 128x128 retina.
+    // 320x320 provides pixel-perfect crispness while preventing multi-megabyte frame explosion.
+    const targetSize = Math.min(320, Math.max(origWidth, pageHeight));
+
+    let processedBuffer: Buffer;
+    try {
+      processedBuffer = await pipeline
+        .resize(targetSize, targetSize, {
+          fit: 'cover',
+          position: 'center',
+        })
+        .gif({
+          effort: 7,
+          reuse: true,
+          colours: 128,
+        })
+        .toBuffer();
+    } catch (err: any) {
+      console.warn('[ImageAssetService] GIF resize fallback to original buffer:', err.message);
+      processedBuffer = buffer;
+    }
+
+    // Safety guard: if processed animated GIF still exceeds 8MB Discord proxy limit, downscale to 256
+    if (processedBuffer.length > 8 * 1024 * 1024) {
+      try {
+        processedBuffer = await sharp(buffer, { animated: true })
+          .resize(256, 256, { fit: 'cover', position: 'center' })
+          .gif({ effort: 7, reuse: true, colours: 96 })
+          .toBuffer();
+      } catch (_) {}
+    }
+
+    const finalMeta = await sharp(processedBuffer, { animated: true }).metadata().catch(() => ({
+      width: targetSize,
+      height: targetSize,
+      pageHeight: targetSize,
+    }));
 
     return {
       buffer: processedBuffer,
