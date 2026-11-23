@@ -65,43 +65,71 @@ function checkVerifyRateLimit(ip: string): boolean {
   return true;
 }
 
-// Middleware to check authentication via Session OR Bearer Token (App Token or Device Token)
+// Middleware to check authentication via Session OR Bearer Token (App Token or Device Token) OR Token Cookie
 export const requireAuth = async (req: any, res: any, next: any) => {
+  // 1. Passport authenticated session or attached user
+  if (req.user) {
+    return next();
+  }
   if (req.isAuthenticated && req.isAuthenticated()) {
     return next();
   }
 
+  // 2. Fallback to userId stored in express session
+  const sessionUserId = (req.session as any)?.userId || (req.session as any)?.passport?.user;
+  if (sessionUserId) {
+    try {
+      const sessionUser = await prisma.user.findUnique({ where: { id: sessionUserId } });
+      if (sessionUser) {
+        req.user = sessionUser;
+        return next();
+      }
+    } catch (_) {}
+  }
+
+  // 3. Extract token from Authorization header, Cookie, or Query parameter
+  let token: string | null = null;
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1]?.trim();
-    if (token) {
-      // 1. Try finding by user appToken
-      const user = await prisma.user.findUnique({ where: { appToken: token } });
-      if (user) {
-        req.user = user;
-        return next();
-      }
+    token = authHeader.split(' ')[1]?.trim() || null;
+  } else if (req.headers.cookie) {
+    const match = req.headers.cookie.match(/(?:^|;\s*)pixel_app_token=([^;]+)/);
+    if (match && match[1]) {
+      token = decodeURIComponent(match[1]).trim();
+    }
+  } else if (req.cookies && req.cookies.pixel_app_token) {
+    token = String(req.cookies.pixel_app_token).trim();
+  } else if (req.query && req.query.token) {
+    token = String(req.query.token).trim();
+  }
 
-      // 2. Try finding by active deviceToken
-      const deviceAuth = await prisma.rpcDeviceAuthorization.findUnique({
-        where: { deviceToken: token },
-        include: { user: true },
-      });
+  if (token) {
+    // 1. Try finding by user appToken
+    const user = await prisma.user.findFirst({ where: { appToken: token } });
+    if (user) {
+      req.user = user;
+      return next();
+    }
 
-      if (deviceAuth && deviceAuth.status === 'CONSUMED' && deviceAuth.user) {
-        req.user = deviceAuth.user;
-        req.deviceAuth = deviceAuth;
+    // 2. Try finding by active deviceToken
+    const deviceAuth = await prisma.rpcDeviceAuthorization.findUnique({
+      where: { deviceToken: token },
+      include: { user: true },
+    });
 
-        // Async update lastUsedAt without blocking request
-        prisma.rpcDeviceAuthorization
-          .update({
-            where: { id: deviceAuth.id },
-            data: { lastUsedAt: new Date() },
-          })
-          .catch(() => {});
+    if (deviceAuth && deviceAuth.status === 'CONSUMED' && deviceAuth.user) {
+      req.user = deviceAuth.user;
+      req.deviceAuth = deviceAuth;
 
-        return next();
-      }
+      // Async update lastUsedAt without blocking request
+      prisma.rpcDeviceAuthorization
+        .update({
+          where: { id: deviceAuth.id },
+          data: { lastUsedAt: new Date() },
+        })
+        .catch(() => {});
+
+      return next();
     }
   }
 
@@ -133,23 +161,50 @@ rpcRouter.post('/device/authorize', requireAuth, async (req: any, res) => {
       },
     });
 
-    // Generate user-friendly 8-char code in format "ABCD-1234"
-    const rawCode = `${crypto.randomBytes(2).toString('hex').toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
-    const codeHash = crypto.createHash('sha256').update(rawCode).digest('hex');
+    // Clean up revoked or expired sessions for this user older than 1 hour to prevent clutter
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    await prisma.rpcDeviceAuthorization.deleteMany({
+      where: {
+        userId,
+        status: { in: ['REVOKED', 'EXPIRED'] },
+        createdAt: { lt: oneHourAgo },
+      },
+    }).catch(() => {});
+
+    // Generate user-friendly 8-char code in format "ABCD-1234" with collision protection (up to 3 attempts)
+    let deviceSession: any = null;
+    let rawCode = '';
     const expiresAt = new Date(Date.now() + 2 * 60 * 1000); // 2 minutes
 
-    const deviceSession = await prisma.rpcDeviceAuthorization.create({
-      data: {
-        userId,
-        codeHash,
-        status: 'PENDING',
-        expiresAt,
-        deviceMetadata: JSON.stringify({
-          ip: req.ip,
-          userAgent: req.headers['user-agent'] || 'Unknown',
-        }),
-      },
-    });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      rawCode = `${crypto.randomBytes(2).toString('hex').toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
+      const codeHash = crypto.createHash('sha256').update(rawCode).digest('hex');
+
+      try {
+        deviceSession = await prisma.rpcDeviceAuthorization.create({
+          data: {
+            userId,
+            codeHash,
+            status: 'PENDING',
+            expiresAt,
+            deviceMetadata: JSON.stringify({
+              ip: req.ip,
+              userAgent: req.headers['user-agent'] || 'Unknown',
+            }),
+          },
+        });
+        break;
+      } catch (err: any) {
+        if (err?.code === 'P2002' && attempt < 2) {
+          continue; // Unique constraint collision retry
+        }
+        throw err;
+      }
+    }
+
+    if (!deviceSession) {
+      throw new Error('Failed to create device authorization session after retries');
+    }
 
     res.json({
       success: true,

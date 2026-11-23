@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 import { AccountLayout } from "@/components/account/AccountLayout";
 import { Button } from "@/components/nothing/Button";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getStoredToken, setStoredToken } from "@/lib/api";
 import { ImageCustomizerModal, CropData } from "@/components/rpc/ImageCustomizerModal";
 
 interface RpcConfig {
@@ -178,6 +178,8 @@ export default function AccountRpcStudioPage() {
     | "cancelled";
 
   const [linkingState, setLinkingState] = useState<LinkingState>("idle");
+  const [linkingError, setLinkingError] = useState<string | null>(null);
+  const [isAuthError, setIsAuthError] = useState(false);
   const [currentSession, setCurrentSession] = useState<{
     sessionId: string;
     code: string;
@@ -404,7 +406,10 @@ export default function AccountRpcStudioPage() {
 
         if (tokenRes.ok) {
           const tokenData = await tokenRes.json();
-          if (tokenData?.token) setToken(tokenData.token);
+          if (tokenData?.token) {
+            setToken(tokenData.token);
+            setStoredToken(tokenData.token);
+          }
         }
 
         if (accountRes.ok) {
@@ -458,7 +463,10 @@ export default function AccountRpcStudioPage() {
 
   const fetchLinkedDevices = async () => {
     try {
-      const res = await apiFetch("/api/rpc/device/list");
+      const activeTok = getStoredToken() || token;
+      const headers: Record<string, string> = {};
+      if (activeTok) headers["Authorization"] = `Bearer ${activeTok}`;
+      const res = await apiFetch("/api/rpc/device/list", { headers });
       if (res.ok) {
         const list = await res.json();
         if (Array.isArray(list)) setLinkedDevices(list);
@@ -525,13 +533,58 @@ export default function AccountRpcStudioPage() {
     // Reset session view and enter single 'generating' state
     setCurrentSession(null);
     setTimeLeft(0);
+    setLinkingError(null);
+    setIsAuthError(false);
     setLinkingState("generating");
 
     try {
-      const res = await apiFetch("/api/rpc/device/authorize", {
+      // Ensure we have the user's active token from localStorage, cookie, or live profile
+      let currentToken = getStoredToken() || token;
+      if (!currentToken) {
+        try {
+          const tRes = await apiFetch("/api/profile/me/token", { signal: controller.signal });
+          if (tRes.ok) {
+            const tData = await tRes.json();
+            if (tData?.token) {
+              currentToken = tData.token;
+              setToken(tData.token);
+              setStoredToken(tData.token);
+            }
+          }
+        } catch (_) {}
+      }
+
+      const headers: Record<string, string> = {};
+      if (currentToken) {
+        headers["Authorization"] = `Bearer ${currentToken}`;
+      }
+
+      let res = await apiFetch("/api/rpc/device/authorize", {
         method: "POST",
+        headers,
         signal: controller.signal,
       });
+
+      // If unauthorized, attempt a fresh token retrieval and retry once before failing
+      if (res.status === 401) {
+        try {
+          const freshTokenRes = await apiFetch("/api/profile/me/token", { signal: controller.signal });
+          if (freshTokenRes.ok) {
+            const freshData = await freshTokenRes.json();
+            if (freshData?.token) {
+              currentToken = freshData.token;
+              setToken(freshData.token);
+              setStoredToken(freshData.token);
+              headers["Authorization"] = `Bearer ${currentToken}`;
+              res = await apiFetch("/api/rpc/device/authorize", {
+                method: "POST",
+                headers,
+                signal: controller.signal,
+              });
+            }
+          }
+        } catch (_) {}
+      }
 
       // Disregard if a newer session was triggered or component unmounted
       if (activeSessionIdRef.current !== newSessionId || controller.signal.aborted) {
@@ -539,7 +592,12 @@ export default function AccountRpcStudioPage() {
       }
 
       if (!res.ok) {
-        throw new Error(`Server returned HTTP ${res.status}`);
+        const errJson = await res.json().catch(() => null);
+        if (res.status === 401) {
+          setIsAuthError(true);
+          throw new Error("Authentication required. Please sign in or refresh your session to link your Discord account.");
+        }
+        throw new Error(errJson?.error || `Server returned HTTP ${res.status}`);
       }
 
       const data = await res.json();
@@ -585,7 +643,11 @@ export default function AccountRpcStudioPage() {
       pollingTimerRef.current = setInterval(async () => {
         if (activeSessionIdRef.current !== newSessionId || controller.signal.aborted) return;
         try {
+          const pollHeaders: Record<string, string> = {};
+          const activeTok = getStoredToken() || currentToken;
+          if (activeTok) pollHeaders["Authorization"] = `Bearer ${activeTok}`;
           const pollRes = await apiFetch(`/api/rpc/device/status?codeId=${data.codeId}`, {
+            headers: pollHeaders,
             signal: controller.signal,
           });
 
@@ -618,6 +680,7 @@ export default function AccountRpcStudioPage() {
         return;
       }
       console.error("[RPC Studio] Failed to generate device linking code:", err);
+      setLinkingError(err?.message || "A network or server error occurred. Please check your connection and try again.");
       setLinkingState("failed");
     }
   };
@@ -1000,16 +1063,29 @@ export default function AccountRpcStudioPage() {
               <p className="text-red-300 font-bold text-xs uppercase tracking-wider">
                 Failed to Generate Linking Code
               </p>
-              <p className="text-neutral-400 text-[11px]">
-                A network or server error occurred. Please check your connection and try again.
+              <p className="text-neutral-400 text-[11px] leading-relaxed">
+                {linkingError || "A network or server error occurred. Please check your connection and try again."}
               </p>
-              <Button
-                variant="solid-white"
-                onClick={handleGenerateLinkingCode}
-                className="text-xs px-4 py-1.5 mt-2"
-              >
-                RETRY
-              </Button>
+              <div className="flex items-center justify-center gap-2 pt-1">
+                {isAuthError && (
+                  <Button
+                    variant="solid-white"
+                    onClick={() => {
+                      window.location.href = "/auth/discord";
+                    }}
+                    className="text-xs px-4 py-1.5"
+                  >
+                    SIGN IN WITH DISCORD
+                  </Button>
+                )}
+                <Button
+                  variant={isAuthError ? "outline" : "solid-white"}
+                  onClick={handleGenerateLinkingCode}
+                  className="text-xs px-4 py-1.5"
+                >
+                  RETRY
+                </Button>
+              </div>
             </div>
           )}
 

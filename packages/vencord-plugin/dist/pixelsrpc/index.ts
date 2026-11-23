@@ -149,8 +149,11 @@ async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> 
     }
 
     // Resolve Large Image and Small Icon with Discord Asset system
-    const hasLarge = Boolean(rpc.largeImage && rpc.largeImage.trim());
-    const hasSmall = Boolean(rpc.smallImage && rpc.smallImage.trim());
+    // Respect independent enable/disable toggles (largeImageEnabled and smallImageEnabled)
+    const isLargeEnabled = (rpc as any).largeImageEnabled !== false;
+    const isSmallEnabled = (rpc as any).smallImageEnabled !== false;
+    const hasLarge = Boolean(isLargeEnabled && rpc.largeImage && rpc.largeImage.trim());
+    const hasSmall = Boolean(isSmallEnabled && rpc.smallImage && rpc.smallImage.trim());
 
     if (hasLarge || hasSmall) {
         activity.assets = {};

@@ -80,6 +80,20 @@ export function getStoredToken(): string | null {
     }
   } catch (_) {}
 
+  // 4. Check cached user in localStorage
+  try {
+    const cached = getCachedUser();
+    if (cached?.appToken || cached?.token) {
+      const userToken = String(cached.appToken || cached.token).trim();
+      if (userToken) {
+        try {
+          localStorage.setItem("pixel_app_token", userToken);
+        } catch (_) {}
+        return userToken;
+      }
+    }
+  } catch (_) {}
+
   return null;
 }
 

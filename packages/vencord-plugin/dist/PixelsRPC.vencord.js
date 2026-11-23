@@ -66,8 +66,8 @@
         }
 
         const buttons = [];
-        if (rpc.button1Label && rpc.button1Url) buttons.push({ label: rpc.button1Label.trim(), url: rpc.button1Url.trim() });
-        if (rpc.button2Label && rpc.button2Url) buttons.push({ label: rpc.button2Label.trim(), url: rpc.button2Url.trim() });
+        if (rpc.button1Enabled !== false && rpc.button1Label && rpc.button1Url) buttons.push({ label: rpc.button1Label.trim(), url: rpc.button1Url.trim() });
+        if (rpc.button2Enabled !== false && rpc.button2Label && rpc.button2Url) buttons.push({ label: rpc.button2Label.trim(), url: rpc.button2Url.trim() });
 
         const activity = {
             application_id: rpc.appId || DEFAULT_APP_ID,
@@ -78,12 +78,17 @@
         if (rpc.state) activity.state = rpc.state.trim();
         if (rpc.details) activity.details = rpc.details.trim();
 
-        if (rpc.largeImage || rpc.smallImage) {
+        const isLargeEnabled = rpc.largeImageEnabled !== false;
+        const isSmallEnabled = rpc.smallImageEnabled !== false;
+        const hasLarge = Boolean(isLargeEnabled && rpc.largeImage);
+        const hasSmall = Boolean(isSmallEnabled && rpc.smallImage);
+
+        if (hasLarge || hasSmall) {
             activity.assets = {};
-            if (rpc.largeImage) activity.assets.large_image = rpc.largeImage.trim();
-            if (rpc.largeImageText) activity.assets.large_text = rpc.largeImageText.trim();
-            if (rpc.smallImage) activity.assets.small_image = rpc.smallImage.trim();
-            if (rpc.smallImageText) activity.assets.small_text = rpc.smallImageText.trim();
+            if (hasLarge && rpc.largeImage) activity.assets.large_image = rpc.largeImage.trim();
+            if (hasLarge && rpc.largeImageText) activity.assets.large_text = rpc.largeImageText.trim();
+            if (hasSmall && rpc.smallImage) activity.assets.small_image = rpc.smallImage.trim();
+            if (hasSmall && rpc.smallImageText) activity.assets.small_text = rpc.smallImageText.trim();
         }
 
         if (rpc.startTimestamp || rpc.endTimestamp) {
