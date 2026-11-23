@@ -31,9 +31,11 @@ export function getDefaultRpcConfig(user: {
     details: 'Welcome to my profile!',
     state: 'Discover my personal page on PIXEL.GG.',
     useProfileAvatar: true,
+    largeImageEnabled: true,
     largeImage: resolvedAvatar,
     largeImageText: `@${user.username || 'User'} on PIXEL.GG`,
     largeImageCrop: null,
+    smallImageEnabled: true,
     smallImage: 'https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png',
     smallImageText: 'PIXEL.GG',
     smallImageCrop: null,
@@ -43,6 +45,7 @@ export function getDefaultRpcConfig(user: {
     button2Enabled: true,
     button2Label: 'Get PixelsRPC',
     button2Url: `${frontendUrl}/rpc`,
+    buttonSize: 'medium',
     showProfileRpc: true,
     enableDiscordRpc: true,
   };
@@ -479,8 +482,15 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
 
     // Parse boolean toggles
     if (data.useProfileAvatar !== undefined) data.useProfileAvatar = Boolean(data.useProfileAvatar);
+    if (data.largeImageEnabled !== undefined) data.largeImageEnabled = Boolean(data.largeImageEnabled);
+    if (data.smallImageEnabled !== undefined) data.smallImageEnabled = Boolean(data.smallImageEnabled);
     if (data.button1Enabled !== undefined) data.button1Enabled = Boolean(data.button1Enabled);
     if (data.button2Enabled !== undefined) data.button2Enabled = Boolean(data.button2Enabled);
+
+    // Sanitize button size if provided
+    if (data.buttonSize && !['small', 'medium', 'large'].includes(data.buttonSize)) {
+      data.buttonSize = 'medium';
+    }
 
     const rpc = await prisma.richPresence.upsert({
       where: { userId: req.user.id },
@@ -502,6 +512,20 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
     if (fullPayload.useProfileAvatar !== false) {
       fullPayload.largeImage = resolvedAvatar;
     }
+    // If largeImageEnabled is explicitly false, suppress large image from outgoing presence payload
+    if (fullPayload.largeImageEnabled === false) {
+      fullPayload.outgoingLargeImage = null;
+    } else {
+      fullPayload.outgoingLargeImage = fullPayload.largeImage;
+    }
+
+    // If smallImageEnabled is explicitly false, suppress small image from outgoing presence payload
+    if (fullPayload.smallImageEnabled === false) {
+      fullPayload.outgoingSmallImage = null;
+    } else {
+      fullPayload.outgoingSmallImage = fullPayload.smallImage;
+    }
+
     fullPayload.username = currentUser.username;
 
     // Emit a Socket.io event to notify active desktop/browser clients
@@ -526,10 +550,10 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
           type: typeof fullPayload.activityType === 'number' ? fullPayload.activityType : 0,
           details: fullPayload.details || null,
           state: fullPayload.state || null,
-          largeImage: fullPayload.largeImage || null,
-          smallImage: fullPayload.smallImage || null,
-          largeImageText: fullPayload.largeImageText || null,
-          smallImageText: fullPayload.smallImageText || null,
+          largeImage: fullPayload.largeImageEnabled !== false ? (fullPayload.largeImage || null) : null,
+          smallImage: fullPayload.smallImageEnabled !== false ? (fullPayload.smallImage || null) : null,
+          largeImageText: fullPayload.largeImageEnabled !== false ? (fullPayload.largeImageText || null) : null,
+          smallImageText: fullPayload.smallImageEnabled !== false ? (fullPayload.smallImageText || null) : null,
           streamUrl: fullPayload.streamUrl || null,
           startTimestamp: fullPayload.startTimestamp ? new Date(fullPayload.startTimestamp).toISOString() : null,
           endTimestamp: fullPayload.endTimestamp ? new Date(fullPayload.endTimestamp).toISOString() : null,
@@ -780,10 +804,25 @@ rpcRouter.post('/upload', requireAuth, uploadRateLimiter, async (req: any, res) 
     await fs.promises.writeFile(filePath, buffer);
 
     // Compute public URL
-    const frontendOrApi = (process.env.NEXT_PUBLIC_API_URL || process.env.INTERNAL_API_URL || '').replace(/\/+$/, '');
+    // In production, ensure uploads use the public reachable HTTPS endpoint (Render or custom domain)
+    // Avoid defaulting to localhost when requests come from reverse proxy or production browsers
+    const frontendOrApi = (
+      process.env.PUBLIC_API_URL ||
+      process.env.NEXT_PUBLIC_API_URL ||
+      process.env.INTERNAL_API_URL ||
+      ''
+    ).replace(/\/+$/, '');
+
     let baseUrl = frontendOrApi;
     if (!baseUrl) {
-      baseUrl = `${req.protocol}://${req.get('host')}`;
+      const host = req.get('host') || '';
+      const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
+      if (isLocal) {
+        baseUrl = `${req.protocol}://${host}`;
+      } else {
+        // Production host fallback to Render production API URL if host is internal/empty
+        baseUrl = host ? `https://${host}` : 'https://pixelgg-api.onrender.com';
+      }
     }
     const publicUrl = `${baseUrl}/uploads/rpc/${storedFileName}`;
 

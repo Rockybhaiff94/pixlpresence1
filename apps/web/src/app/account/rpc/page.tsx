@@ -46,9 +46,11 @@ interface RpcConfig {
   state?: string;
   details?: string;
   useProfileAvatar?: boolean;
+  largeImageEnabled?: boolean;
   largeImage?: string;
   largeImageText?: string;
   largeImageCrop?: string | null;
+  smallImageEnabled?: boolean;
   smallImage?: string;
   smallImageText?: string;
   smallImageCrop?: string | null;
@@ -62,6 +64,7 @@ interface RpcConfig {
   button2Enabled?: boolean;
   button2Label?: string;
   button2Url?: string;
+  buttonSize?: "small" | "medium" | "large";
   showProfileRpc?: boolean;
   enableDiscordRpc?: boolean;
 }
@@ -74,9 +77,11 @@ const DEFAULT_RPC: RpcConfig = {
   state: "Discover my personal page on PIXEL.GG.",
   details: "Welcome to my profile!",
   useProfileAvatar: true,
+  largeImageEnabled: true,
   largeImage: "",
   largeImageText: "PIXEL.GG Platform",
   largeImageCrop: null,
+  smallImageEnabled: true,
   smallImage: "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
   smallImageText: "PIXEL.GG",
   smallImageCrop: null,
@@ -86,6 +91,7 @@ const DEFAULT_RPC: RpcConfig = {
   button2Enabled: true,
   button2Label: "Get PixelsRPC",
   button2Url: "https://pixel.gg/rpc",
+  buttonSize: "medium",
   showProfileRpc: true,
   enableDiscordRpc: true,
   partySize: null,
@@ -1449,26 +1455,33 @@ export default function AccountRpcStudioPage() {
                     </p>
                   </div>
 
-                  {/* Toggle Switch */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = rpc.useProfileAvatar === false ? true : false;
-                      updateRpc({
-                        useProfileAvatar: next,
-                        largeImage: next ? (currentUser?.avatar || rpc.largeImage) : rpc.largeImage,
-                      });
-                    }}
-                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                      rpc.useProfileAvatar !== false ? "bg-white" : "bg-[#222222]"
-                    }`}
-                  >
-                    <span
-                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
-                        rpc.useProfileAvatar !== false ? "translate-x-5" : "translate-x-0"
+                  {/* Animated Sliding Switch */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono font-bold text-neutral-400">
+                      {rpc.useProfileAvatar !== false ? "ON" : "OFF"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = rpc.useProfileAvatar === false ? true : false;
+                        updateRpc({
+                          useProfileAvatar: next,
+                          largeImage: next ? (currentUser?.avatar || rpc.largeImage) : rpc.largeImage,
+                        });
+                      }}
+                      data-testid="toggle-use-profile-avatar"
+                      aria-label="Toggle Profile Avatar as Large Image"
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        rpc.useProfileAvatar !== false ? "bg-white" : "bg-[#252530]"
                       }`}
-                    />
-                  </button>
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
+                          rpc.useProfileAvatar !== false ? "translate-x-4" : "translate-x-0"
+                        }`}
+                      />
+                    </button>
+                  </div>
                 </div>
 
                 {rpc.useProfileAvatar !== false && (
@@ -1503,23 +1516,62 @@ export default function AccountRpcStudioPage() {
               {/* Large Activity Image Upload & Customization */}
               <div className="p-4 rounded-xl bg-[#080808] border border-[#1a1a1a] space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#181818] pb-2.5">
-                  <div>
-                    <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                      <ImageIcon size={13} className="text-neutral-300" /> LARGE ACTIVITY IMAGE
-                    </span>
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                        <ImageIcon size={13} className="text-neutral-300" /> LARGE ACTIVITY IMAGE
+                      </span>
+                      <span
+                        className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold border transition-colors ${
+                          rpc.largeImageEnabled !== false
+                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                            : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                        }`}
+                      >
+                        {rpc.largeImageEnabled !== false ? "ON" : "OFF"}
+                      </span>
+                    </div>
                     <span className="text-[10px] text-neutral-500">
-                      Custom wallpaper, art, avatar, or animated GIF
+                      Custom artwork, avatar, or animated GIF
                     </span>
                   </div>
 
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => openCustomizer("largeImage")}
-                    className="text-xs px-3 py-1.5 flex items-center gap-1.5 bg-[#141414] hover:bg-[#202020] text-white border-[#2a2a2a]"
-                  >
-                    <UploadCloud size={13} /> Upload & Crop Image / GIF
-                  </Button>
+                  <div className="flex items-center gap-2.5">
+                    {/* Animated Sliding ON/OFF Toggle */}
+                    <div className="flex items-center gap-2 bg-[#121216] px-2.5 py-1 rounded-lg border border-[#22222a]">
+                      <span className="text-[10px] font-mono font-bold text-neutral-400">
+                        {rpc.largeImageEnabled !== false ? "VISIBLE" : "HIDDEN"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateRpc({
+                            largeImageEnabled: rpc.largeImageEnabled === false ? true : false,
+                          })
+                        }
+                        data-testid="toggle-large-image"
+                        aria-label="Toggle Large Activity Image"
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          rpc.largeImageEnabled !== false ? "bg-white" : "bg-[#252530]"
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
+                            rpc.largeImageEnabled !== false ? "translate-x-4" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => openCustomizer("largeImage")}
+                      className="text-xs px-3 py-1.5 flex items-center gap-1.5 bg-[#141414] hover:bg-[#202020] text-white border-[#2a2a2a]"
+                    >
+                      <UploadCloud size={13} /> Upload & Crop
+                    </Button>
+                  </div>
                 </div>
 
                 {rpc.largeImage && (
@@ -1609,16 +1661,53 @@ export default function AccountRpcStudioPage() {
               {/* Small Activity Icon Upload & Customization */}
               <div className="p-4 rounded-xl bg-[#080808] border border-[#1a1a1a] space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#181818] pb-2.5">
-                  <div>
-                    <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                      <ImageIcon size={13} className="text-neutral-300" /> SMALL ACTIVITY ICON (BADGE)
-                    </span>
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                        <ImageIcon size={13} className="text-neutral-300" /> SMALL ACTIVITY ICON (BADGE)
+                      </span>
+                      <span
+                        className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold border transition-colors ${
+                          rpc.smallImageEnabled !== false
+                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                            : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                        }`}
+                      >
+                        {rpc.smallImageEnabled !== false ? "ON" : "OFF"}
+                      </span>
+                    </div>
                     <span className="text-[10px] text-neutral-500">
-                      Corner icon badge, mini branding, or animated status
+                      Corner badge, mini branding, or animated status icon
                     </span>
                   </div>
 
                   <div className="flex items-center gap-2">
+                    {/* Animated Sliding ON/OFF Toggle */}
+                    <div className="flex items-center gap-2 bg-[#121216] px-2.5 py-1 rounded-lg border border-[#22222a]">
+                      <span className="text-[10px] font-mono font-bold text-neutral-400">
+                        {rpc.smallImageEnabled !== false ? "VISIBLE" : "HIDDEN"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateRpc({
+                            smallImageEnabled: rpc.smallImageEnabled === false ? true : false,
+                          })
+                        }
+                        data-testid="toggle-small-image"
+                        aria-label="Toggle Small Activity Icon"
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          rpc.smallImageEnabled !== false ? "bg-white" : "bg-[#252530]"
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
+                            rpc.smallImageEnabled !== false ? "translate-x-4" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
                     <button
                       type="button"
                       onClick={() =>
@@ -1627,11 +1716,12 @@ export default function AccountRpcStudioPage() {
                             "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
                           smallImageText: "PIXEL.GG",
                           smallImageCrop: null,
+                          smallImageEnabled: true,
                         })
                       }
                       className="text-[10px] text-neutral-400 hover:text-white px-2 py-1 rounded bg-[#141414] border border-[#242424]"
                     >
-                      Default Pixels Icon
+                      Default Icon
                     </button>
                     <Button
                       type="button"
@@ -1639,7 +1729,7 @@ export default function AccountRpcStudioPage() {
                       onClick={() => openCustomizer("smallImage")}
                       className="text-xs px-3 py-1.5 flex items-center gap-1.5 bg-[#141414] hover:bg-[#202020] text-white border-[#2a2a2a]"
                     >
-                      <UploadCloud size={13} /> Upload & Crop Icon / GIF
+                      <UploadCloud size={13} /> Upload & Crop
                     </Button>
                   </div>
                 </div>
@@ -1729,27 +1819,48 @@ export default function AccountRpcStudioPage() {
               </div>
             </div>
 
-            {/* Section 3: Profile Action Buttons with Restore Defaults */}
+            {/* Section 3: Profile Action Buttons with Resizing & Modern Animated Toggles */}
             <div className="p-6 bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#181818] pb-3">
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <span className="text-[#d71920]">[03]</span> DEFAULT PROMOTIONAL BUTTONS
+                    <span className="text-[#d71920]">[03]</span> RICH PRESENCE ACTION BUTTONS & SIZING
                   </h3>
                   <span className="text-[10px] text-neutral-500 uppercase">
-                    DISCORD PROFILE CTA LINKS (MAX 2)
+                    DISCORD PROFILE CTA LINKS (MAX 2) & PREVIEW SIZE CONTROLS
                   </span>
                 </div>
 
-                {/* Restore Defaults Action */}
-                <button
-                  type="button"
-                  onClick={handleRestoreDefaults}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#141418] hover:bg-[#1e1e24] border border-[#282832] text-xs text-neutral-300 hover:text-white transition-colors cursor-pointer"
-                >
-                  <RotateCcw size={12} className="text-neutral-400" />
-                  RESTORE DEFAULTS
-                </button>
+                <div className="flex items-center gap-2">
+                  {/* Button Size Customization in Preview */}
+                  <div className="flex items-center gap-1.5 bg-[#141418] border border-[#282832] rounded-lg p-1 text-[11px] font-mono">
+                    <span className="text-neutral-500 px-1 text-[10px]">SIZE:</span>
+                    {(["small", "medium", "large"] as const).map((sz) => (
+                      <button
+                        key={sz}
+                        type="button"
+                        onClick={() => updateRpc({ buttonSize: sz })}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-colors cursor-pointer ${
+                          (rpc.buttonSize || "medium") === sz
+                            ? "bg-white text-black shadow-sm"
+                            : "text-neutral-400 hover:text-white"
+                        }`}
+                      >
+                        {sz}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Restore Defaults Action */}
+                  <button
+                    type="button"
+                    onClick={handleRestoreDefaults}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#141418] hover:bg-[#1e1e24] border border-[#282832] text-xs text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                  >
+                    <RotateCcw size={12} className="text-neutral-400" />
+                    RESTORE DEFAULTS
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1759,18 +1870,33 @@ export default function AccountRpcStudioPage() {
                     <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">
                       PRIMARY BUTTON [01] &bull; PROFILE CTA
                     </span>
-                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-neutral-400 hover:text-white">
-                      <input
-                        type="checkbox"
-                        checked={rpc.button1Enabled !== false}
-                        onChange={(e) => updateRpc({ button1Enabled: e.target.checked })}
-                        className="rounded border-neutral-700 bg-neutral-900 text-white focus:ring-0"
-                      />
-                      <span>{rpc.button1Enabled !== false ? "ENABLED" : "DISABLED"}</span>
-                    </label>
+
+                    {/* Animated Sliding ON/OFF Toggle */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono font-bold text-neutral-400">
+                        {rpc.button1Enabled !== false ? "ON" : "OFF"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateRpc({ button1Enabled: rpc.button1Enabled === false ? true : false })
+                        }
+                        data-testid="toggle-button-1"
+                        aria-label="Toggle Primary Button"
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          rpc.button1Enabled !== false ? "bg-white" : "bg-[#252530]"
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
+                            rpc.button1Enabled !== false ? "translate-x-4" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Label</label>
+                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Button Label</label>
                     <input
                       type="text"
                       value={rpc.button1Label || ""}
@@ -1797,18 +1923,33 @@ export default function AccountRpcStudioPage() {
                     <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">
                       SECONDARY BUTTON [02] &bull; PROMOTIONAL CTA
                     </span>
-                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-neutral-400 hover:text-white">
-                      <input
-                        type="checkbox"
-                        checked={rpc.button2Enabled !== false}
-                        onChange={(e) => updateRpc({ button2Enabled: e.target.checked })}
-                        className="rounded border-neutral-700 bg-neutral-900 text-white focus:ring-0"
-                      />
-                      <span>{rpc.button2Enabled !== false ? "ENABLED" : "DISABLED"}</span>
-                    </label>
+
+                    {/* Animated Sliding ON/OFF Toggle */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono font-bold text-neutral-400">
+                        {rpc.button2Enabled !== false ? "ON" : "OFF"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateRpc({ button2Enabled: rpc.button2Enabled === false ? true : false })
+                        }
+                        data-testid="toggle-button-2"
+                        aria-label="Toggle Secondary Button"
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          rpc.button2Enabled !== false ? "bg-white" : "bg-[#252530]"
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
+                            rpc.button2Enabled !== false ? "translate-x-4" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Label</label>
+                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Button Label</label>
                     <input
                       type="text"
                       value={rpc.button2Label || ""}
@@ -1874,8 +2015,13 @@ export default function AccountRpcStudioPage() {
                 {/* Visual Asset Containers */}
                 <div className="relative shrink-0">
                   <div className="w-20 h-20 rounded-2xl bg-[#2b2d31] overflow-hidden flex items-center justify-center border border-white/5 relative">
-                    {/* Render resolved avatar if auto-sync is on, or custom large image with crop */}
-                    {largeImageFailed ? (
+                    {/* Render resolved avatar if auto-sync is on, or custom large image with crop if enabled */}
+                    {rpc.largeImageEnabled === false ? (
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-[#1e1f22] p-1 text-center border border-dashed border-neutral-700" title="Large Activity Image is disabled (OFF).">
+                        <EyeOff size={18} className="text-neutral-500 mb-0.5" />
+                        <span className="text-[8px] text-neutral-400 font-mono leading-tight">DISABLED</span>
+                      </div>
+                    ) : largeImageFailed ? (
                       <div className="w-full h-full flex flex-col items-center justify-center bg-red-950/40 p-1 text-center border border-red-500/40" title="Image failed to load. Check that the image URL is accessible.">
                         <AlertCircle size={20} className="text-red-400 mb-0.5" />
                         <span className="text-[8px] text-red-300 font-mono leading-tight">LOAD ERROR</span>
@@ -1903,7 +2049,7 @@ export default function AccountRpcStudioPage() {
                     )}
                   </div>
 
-                  {rpc.smallImage && (
+                  {rpc.smallImage && rpc.smallImageEnabled !== false && (
                     <div className="absolute -bottom-1.5 -right-1.5 w-7 h-7 rounded-full bg-[#1e1f22] p-[2px]">
                       <div className="w-full h-full rounded-full bg-[#2b2d31] overflow-hidden flex items-center justify-center relative">
                         {smallImageFailed ? (
@@ -1957,15 +2103,29 @@ export default function AccountRpcStudioPage() {
                 </div>
               </div>
 
-              {/* Discord Action Buttons (Enforcing max 2 buttons and independent toggle) */}
+              {/* Discord Action Buttons (Enforcing max 2 buttons, size customization, and independent toggle) */}
               {((rpc.button1Enabled !== false && rpc.button1Label) || (rpc.button2Enabled !== false && rpc.button2Label)) && (
-                <div className="px-5 pb-5 space-y-2">
+                <div
+                  className={`px-5 pb-5 ${
+                    rpc.buttonSize === "small"
+                      ? "space-y-1.5"
+                      : rpc.buttonSize === "large"
+                      ? "space-y-3"
+                      : "space-y-2"
+                  }`}
+                >
                   {rpc.button1Enabled !== false && rpc.button1Label && (
                     <a
                       href={rpc.button1Url || "#"}
                       target="_blank"
                       rel="noreferrer"
-                      className="w-full py-2.5 bg-[#2b2d31] hover:bg-[#35373c] text-white text-xs font-semibold text-center rounded-lg transition-colors block border border-white/5 active:scale-[0.99]"
+                      className={`w-full bg-[#2b2d31] hover:bg-[#35373c] text-white font-semibold text-center rounded-lg transition-all block border border-white/5 active:scale-[0.99] truncate ${
+                        rpc.buttonSize === "small"
+                          ? "py-1.5 px-3 text-[11px]"
+                          : rpc.buttonSize === "large"
+                          ? "py-3.5 px-5 text-sm shadow-md"
+                          : "py-2.5 px-4 text-xs"
+                      }`}
                     >
                       {rpc.button1Label}
                     </a>
@@ -1975,7 +2135,13 @@ export default function AccountRpcStudioPage() {
                       href={rpc.button2Url || "#"}
                       target="_blank"
                       rel="noreferrer"
-                      className="w-full py-2.5 bg-[#2b2d31] hover:bg-[#35373c] text-white text-xs font-semibold text-center rounded-lg transition-colors block border border-white/5 active:scale-[0.99]"
+                      className={`w-full bg-[#2b2d31] hover:bg-[#35373c] text-white font-semibold text-center rounded-lg transition-all block border border-white/5 active:scale-[0.99] truncate ${
+                        rpc.buttonSize === "small"
+                          ? "py-1.5 px-3 text-[11px]"
+                          : rpc.buttonSize === "large"
+                          ? "py-3.5 px-5 text-sm shadow-md"
+                          : "py-2.5 px-4 text-xs"
+                      }`}
                     >
                       {rpc.button2Label}
                     </a>

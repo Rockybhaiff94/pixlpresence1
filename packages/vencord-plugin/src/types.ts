@@ -7,12 +7,15 @@ export interface RpcResponse {
     state?: string | null;
     details?: string | null;
     useProfileAvatar?: boolean | null;
+    largeImageEnabled?: boolean | null;
     largeImage?: string | null;
+    smallImageEnabled?: boolean | null;
     smallImage?: string | null;
     largeImageText?: string | null;
     smallImageText?: string | null;
     largeImageCrop?: string | null;
     smallImageCrop?: string | null;
+    buttonSize?: "small" | "medium" | "large" | null;
     startTimestamp?: string | number | Date | null;
     endTimestamp?: string | number | Date | null;
     partySize?: number | null;
