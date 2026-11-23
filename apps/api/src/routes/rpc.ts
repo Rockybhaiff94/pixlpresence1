@@ -85,7 +85,7 @@ export const requireAuth = async (req: any, res: any, next: any) => {
         req.user = sessionUser;
         return next();
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   // 3. Extract token from Authorization header, Cookie, custom headers, body, or Query parameter
@@ -136,7 +136,7 @@ export const requireAuth = async (req: any, res: any, next: any) => {
           where: { id: deviceAuth.id },
           data: { lastUsedAt: new Date() },
         })
-        .catch(() => {});
+        .catch(() => { });
 
       return next();
     }
@@ -178,7 +178,7 @@ rpcRouter.post('/device/authorize', requireAuth, async (req: any, res) => {
         status: { in: ['REVOKED', 'EXPIRED'] },
         createdAt: { lt: oneHourAgo },
       },
-    }).catch(() => {});
+    }).catch(() => { });
 
     // Generate user-friendly 8-char code in format "ABCD-1234" with collision protection (up to 3 attempts)
     let deviceSession: any = null;
@@ -538,42 +538,84 @@ rpcRouter.get('/me', requireAuth, async (req: any, res) => {
 // Update RPC Config
 rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
   try {
-    const data = { ...req.body };
-    delete data.id;
-    delete data.userId;
-    delete data.createdAt;
-    delete data.updatedAt;
-    delete data.username;
-    delete data.userAvatar;
-
-    if (data.show_profile_rpc !== undefined && data.showProfileRpc === undefined) {
-      data.showProfileRpc = Boolean(data.show_profile_rpc);
-      delete data.show_profile_rpc;
-    }
-    if (data.enable_discord_rpc !== undefined && data.enableDiscordRpc === undefined) {
-      data.enableDiscordRpc = Boolean(data.enable_discord_rpc);
-      delete data.enable_discord_rpc;
-    }
-
-    // Parse boolean toggles
-    if (data.useProfileAvatar !== undefined) data.useProfileAvatar = Boolean(data.useProfileAvatar);
-    if (data.largeImageEnabled !== undefined) data.largeImageEnabled = Boolean(data.largeImageEnabled);
-    if (data.smallImageEnabled !== undefined) data.smallImageEnabled = Boolean(data.smallImageEnabled);
-    if (data.button1Enabled !== undefined) data.button1Enabled = Boolean(data.button1Enabled);
-    if (data.button2Enabled !== undefined) data.button2Enabled = Boolean(data.button2Enabled);
-
-    // Sanitize button size if provided
-    if (data.buttonSize && !['small', 'medium', 'large'].includes(data.buttonSize)) {
-      data.buttonSize = 'medium';
-    }
+    const rawData = { ...req.body };
 
     // Separate virtual fields that are not columns in the RichPresence table
-    const largeImageEnabled = data.largeImageEnabled !== undefined ? Boolean(data.largeImageEnabled) : true;
-    const smallImageEnabled = data.smallImageEnabled !== undefined ? Boolean(data.smallImageEnabled) : true;
-    const buttonSize = data.buttonSize || 'medium';
-    delete data.largeImageEnabled;
-    delete data.smallImageEnabled;
-    delete data.buttonSize;
+    const largeImageEnabled = rawData.largeImageEnabled !== undefined ? Boolean(rawData.largeImageEnabled) : true;
+    const smallImageEnabled = rawData.smallImageEnabled !== undefined ? Boolean(rawData.smallImageEnabled) : true;
+    const buttonSize = ['small', 'medium', 'large'].includes(rawData.buttonSize) ? rawData.buttonSize : 'medium';
+
+    // Construct clean data with ONLY legitimate Prisma RichPresence columns
+    const data: any = {};
+
+    if (rawData.appName !== undefined) data.appName = rawData.appName ? String(rawData.appName).trim() : null;
+    if (rawData.appId !== undefined) data.appId = rawData.appId ? String(rawData.appId).trim() : null;
+    if (rawData.activityType !== undefined) data.activityType = rawData.activityType ? String(rawData.activityType).trim() : 'streaming';
+    if (rawData.streamUrl !== undefined) data.streamUrl = rawData.streamUrl ? String(rawData.streamUrl).trim() : null;
+    if (rawData.state !== undefined) data.state = rawData.state ? String(rawData.state).trim() : null;
+    if (rawData.details !== undefined) data.details = rawData.details ? String(rawData.details).trim() : null;
+    if (rawData.useProfileAvatar !== undefined) data.useProfileAvatar = Boolean(rawData.useProfileAvatar);
+    if (rawData.largeImage !== undefined) data.largeImage = rawData.largeImage ? String(rawData.largeImage).trim() : null;
+    if (rawData.smallImage !== undefined) data.smallImage = rawData.smallImage ? String(rawData.smallImage).trim() : null;
+    if (rawData.largeImageText !== undefined) data.largeImageText = rawData.largeImageText ? String(rawData.largeImageText).trim() : null;
+    if (rawData.smallImageText !== undefined) data.smallImageText = rawData.smallImageText ? String(rawData.smallImageText).trim() : null;
+    if (rawData.largeImageCrop !== undefined) data.largeImageCrop = rawData.largeImageCrop ? String(rawData.largeImageCrop) : null;
+    if (rawData.smallImageCrop !== undefined) data.smallImageCrop = rawData.smallImageCrop ? String(rawData.smallImageCrop) : null;
+
+    if (rawData.startTimestamp !== undefined) {
+      if (rawData.startTimestamp === null || rawData.startTimestamp === '') {
+        data.startTimestamp = null;
+      } else {
+        const d = new Date(rawData.startTimestamp);
+        data.startTimestamp = isNaN(d.getTime()) ? null : d;
+      }
+    }
+
+    if (rawData.endTimestamp !== undefined) {
+      if (rawData.endTimestamp === null || rawData.endTimestamp === '') {
+        data.endTimestamp = null;
+      } else {
+        const d = new Date(rawData.endTimestamp);
+        data.endTimestamp = isNaN(d.getTime()) ? null : d;
+      }
+    }
+
+    if (rawData.partySize !== undefined) {
+      if (rawData.partySize === null || rawData.partySize === '') {
+        data.partySize = null;
+      } else {
+        const n = parseInt(String(rawData.partySize), 10);
+        data.partySize = isNaN(n) ? null : n;
+      }
+    }
+
+    if (rawData.partyMax !== undefined) {
+      if (rawData.partyMax === null || rawData.partyMax === '') {
+        data.partyMax = null;
+      } else {
+        const n = parseInt(String(rawData.partyMax), 10);
+        data.partyMax = isNaN(n) ? null : n;
+      }
+    }
+
+    if (rawData.button1Enabled !== undefined) data.button1Enabled = Boolean(rawData.button1Enabled);
+    if (rawData.button1Label !== undefined) data.button1Label = rawData.button1Label ? String(rawData.button1Label).trim() : null;
+    if (rawData.button1Url !== undefined) data.button1Url = rawData.button1Url ? String(rawData.button1Url).trim() : null;
+    if (rawData.button2Enabled !== undefined) data.button2Enabled = Boolean(rawData.button2Enabled);
+    if (rawData.button2Label !== undefined) data.button2Label = rawData.button2Label ? String(rawData.button2Label).trim() : null;
+    if (rawData.button2Url !== undefined) data.button2Url = rawData.button2Url ? String(rawData.button2Url).trim() : null;
+
+    if (rawData.show_profile_rpc !== undefined) {
+      data.showProfileRpc = Boolean(rawData.show_profile_rpc);
+    } else if (rawData.showProfileRpc !== undefined) {
+      data.showProfileRpc = Boolean(rawData.showProfileRpc);
+    }
+
+    if (rawData.enable_discord_rpc !== undefined) {
+      data.enableDiscordRpc = Boolean(rawData.enable_discord_rpc);
+    } else if (rawData.enableDiscordRpc !== undefined) {
+      data.enableDiscordRpc = Boolean(rawData.enableDiscordRpc);
+    }
 
     const rpc = await prisma.richPresence.upsert({
       where: { userId: req.user.id },

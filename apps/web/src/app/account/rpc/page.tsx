@@ -292,11 +292,18 @@ export default function AccountRpcStudioPage() {
     setSyncStatus("saving");
     try {
       const targetRpc = currentRpcRef.current;
-      const payload = {
+      const payload: any = {
         ...targetRpc,
         partySize: targetRpc.partySize ? Number(targetRpc.partySize) : null,
         partyMax: targetRpc.partyMax ? Number(targetRpc.partyMax) : null,
       };
+      delete payload.revision;
+      delete payload.id;
+      delete payload.userId;
+      delete payload.createdAt;
+      delete payload.updatedAt;
+      delete payload.username;
+      delete payload.userAvatar;
 
       const res = await apiFetch("/api/rpc/me", {
         method: "PATCH",
@@ -312,7 +319,7 @@ export default function AccountRpcStudioPage() {
         if (typeof window !== "undefined") {
           try {
             localStorage.setItem("pixel_rpc_config", JSON.stringify(payload));
-          } catch {}
+          } catch { }
         }
         setSyncStatus("synced");
         setLastSyncedTime(
@@ -487,11 +494,12 @@ export default function AccountRpcStudioPage() {
 
               const merged: RpcConfig = { ...prev };
               for (const [key, value] of Object.entries(rpcData)) {
-                if (["id", "userId", "createdAt", "updatedAt"].includes(key)) continue;
+                if (["id", "userId", "createdAt", "updatedAt", "revision", "username", "userAvatar"].includes(key)) continue;
                 if (value !== null && value !== undefined && value !== "") {
                   (merged as Record<string, unknown>)[key] = value;
                 }
               }
+              currentRpcRef.current = merged;
 
               if (typeof window !== "undefined") {
                 try {
@@ -658,7 +666,7 @@ export default function AccountRpcStudioPage() {
     try {
       // Ensure we have the user's active token from localStorage, cookie, auth context, cached user, or live profile
       let currentToken = getStoredToken() || authContextToken || authUser?.appToken || token;
-      
+
       if (!currentToken) {
         const cached = getCachedUser();
         if (cached?.appToken || cached?.token) {
@@ -683,7 +691,7 @@ export default function AccountRpcStudioPage() {
               setStoredToken(authMeData.appToken);
             }
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       if (!currentToken) {
@@ -700,7 +708,7 @@ export default function AccountRpcStudioPage() {
               setStoredToken(tData.token);
             }
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       // If user is truly unauthenticated
@@ -794,7 +802,7 @@ export default function AccountRpcStudioPage() {
               }
             }
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       // Disregard if a newer session was triggered or component unmounted
@@ -810,7 +818,7 @@ export default function AccountRpcStudioPage() {
           try {
             const t = await res.text();
             if (t && t.length < 200) errJson = { error: t };
-          } catch (_) {}
+          } catch (_) { }
         }
         if (res.status === 401 || (errJson?.error && String(errJson.error).toLowerCase().includes("unauthorized"))) {
           setIsAuthError(true);
@@ -970,9 +978,8 @@ export default function AccountRpcStudioPage() {
     }
   };
 
-  const installCommand = `irm ${
-    typeof window !== "undefined" ? window.location.origin : "https://pixlpresence1-web.vercel.app"
-  }/install.ps1 | iex`;
+  const installCommand = `irm ${typeof window !== "undefined" ? window.location.origin : "https://pixlpresence1-web.vercel.app"
+    }/install.ps1 | iex`;
 
   const handleCopyInstallCmd = () => {
     navigator.clipboard.writeText(installCommand);
@@ -1378,28 +1385,27 @@ export default function AccountRpcStudioPage() {
               <span className="text-[10px] uppercase font-mono text-neutral-500 tracking-wider">Integration</span>
               <p className="text-xs font-semibold flex items-center gap-1.5">
                 <span
-                  className={`w-2 h-2 rounded-full ${
-                    linkedDevices.some((d) => d.isOnline)
-                      ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]"
-                      : linkedDevices.length > 0
+                  className={`w-2 h-2 rounded-full ${linkedDevices.some((d) => d.isOnline)
+                    ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]"
+                    : linkedDevices.length > 0
                       ? "bg-amber-400"
                       : "bg-neutral-600"
-                  }`}
+                    }`}
                 />
                 <span
                   className={
                     linkedDevices.some((d) => d.isOnline)
                       ? "text-emerald-400"
                       : linkedDevices.length > 0
-                      ? "text-amber-400"
-                      : "text-neutral-400"
+                        ? "text-amber-400"
+                        : "text-neutral-400"
                   }
                 >
                   {linkedDevices.some((d) => d.isOnline)
                     ? "Connected"
                     : linkedDevices.length > 0
-                    ? "Standby"
-                    : "Not Linked"}
+                      ? "Standby"
+                      : "Not Linked"}
                 </span>
               </p>
             </div>
@@ -1408,9 +1414,8 @@ export default function AccountRpcStudioPage() {
               <span className="text-[10px] uppercase font-mono text-neutral-500 tracking-wider">Discord Client</span>
               <p className="text-xs font-semibold flex items-center gap-1.5">
                 <span
-                  className={`w-2 h-2 rounded-full ${
-                    linkedDevices.some((d) => d.discordAvailable) ? "bg-emerald-400" : "bg-neutral-600"
-                  }`}
+                  className={`w-2 h-2 rounded-full ${linkedDevices.some((d) => d.discordAvailable) ? "bg-emerald-400" : "bg-neutral-600"
+                    }`}
                 />
                 <span
                   className={
@@ -1420,8 +1425,8 @@ export default function AccountRpcStudioPage() {
                   {linkedDevices.some((d) => d.discordAvailable)
                     ? "Detected"
                     : linkedDevices.length > 0
-                    ? "Not Running"
-                    : "—"}
+                      ? "Not Running"
+                      : "—"}
                 </span>
               </p>
             </div>
@@ -1430,11 +1435,10 @@ export default function AccountRpcStudioPage() {
               <span className="text-[10px] uppercase font-mono text-neutral-500 tracking-wider">Rich Presence</span>
               <p className="text-xs font-semibold flex items-center gap-1.5">
                 <span
-                  className={`w-2 h-2 rounded-full ${
-                    linkedDevices.some((d) => d.publishingStatus === "active")
-                      ? "bg-emerald-400 animate-pulse"
-                      : "bg-neutral-600"
-                  }`}
+                  className={`w-2 h-2 rounded-full ${linkedDevices.some((d) => d.publishingStatus === "active")
+                    ? "bg-emerald-400 animate-pulse"
+                    : "bg-neutral-600"
+                    }`}
                 />
                 <span
                   className={
@@ -1446,8 +1450,8 @@ export default function AccountRpcStudioPage() {
                   {linkedDevices.some((d) => d.publishingStatus === "active")
                     ? "Streaming"
                     : linkedDevices.length > 0
-                    ? "Idle"
-                    : "—"}
+                      ? "Idle"
+                      : "—"}
                 </span>
               </p>
             </div>
@@ -1458,8 +1462,8 @@ export default function AccountRpcStudioPage() {
                 {confirmedRevision !== null
                   ? `Rev #${confirmedRevision}`
                   : linkedDevices[0]?.lastAppliedRevision
-                  ? `Rev #${linkedDevices[0].lastAppliedRevision}`
-                  : "Sync Ready"}
+                    ? `Rev #${linkedDevices[0].lastAppliedRevision}`
+                    : "Sync Ready"}
               </p>
             </div>
           </div>
@@ -1492,11 +1496,10 @@ export default function AccountRpcStudioPage() {
                     <div className="space-y-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span
-                          className={`w-2 h-2 rounded-full shrink-0 ${
-                            dev.isOnline
-                              ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"
-                              : "bg-neutral-500"
-                          }`}
+                          className={`w-2 h-2 rounded-full shrink-0 ${dev.isOnline
+                            ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"
+                            : "bg-neutral-500"
+                            }`}
                         />
                         <p className="text-white font-semibold truncate text-xs">
                           {dev.deviceName || "Vencord Discord Client"}
@@ -1514,11 +1517,10 @@ export default function AccountRpcStudioPage() {
                         </span>
                         {dev.discordAvailable !== undefined && (
                           <span
-                            className={`px-1.5 py-0.5 rounded text-[9px] font-mono ${
-                              dev.discordAvailable
-                                ? "text-emerald-400 bg-emerald-950/40 border border-emerald-500/30"
-                                : "text-amber-400 bg-amber-950/40 border border-amber-500/30"
-                            }`}
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-mono ${dev.discordAvailable
+                              ? "text-emerald-400 bg-emerald-950/40 border border-emerald-500/30"
+                              : "text-amber-400 bg-amber-950/40 border border-amber-500/30"
+                              }`}
                           >
                             {dev.discordAvailable ? "Discord Active" : "Discord Inactive"}
                           </span>
@@ -1645,11 +1647,10 @@ export default function AccountRpcStudioPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-white font-bold text-xs">Website Profile RPC</span>
                     <span
-                      className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${
-                        rpc.showProfileRpc !== false
-                          ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
-                          : "bg-neutral-800 text-neutral-400"
-                      }`}
+                      className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${rpc.showProfileRpc !== false
+                        ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                        : "bg-neutral-800 text-neutral-400"
+                        }`}
                     >
                       {rpc.showProfileRpc !== false ? "VISIBLE" : "HIDDEN"}
                     </span>
@@ -1662,11 +1663,10 @@ export default function AccountRpcStudioPage() {
                 <button
                   type="button"
                   onClick={() => updateRpc({ showProfileRpc: rpc.showProfileRpc === false ? true : false })}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                    rpc.showProfileRpc !== false
-                      ? "bg-white text-black hover:bg-neutral-200"
-                      : "bg-neutral-800 text-neutral-400 hover:text-white"
-                  }`}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${rpc.showProfileRpc !== false
+                    ? "bg-white text-black hover:bg-neutral-200"
+                    : "bg-neutral-800 text-neutral-400 hover:text-white"
+                    }`}
                 >
                   {rpc.showProfileRpc !== false ? "ENABLED" : "DISABLED"}
                 </button>
@@ -1678,11 +1678,10 @@ export default function AccountRpcStudioPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-white font-bold text-xs">Discord RPC (PixelsRPC)</span>
                     <span
-                      className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${
-                        rpc.enableDiscordRpc !== false
-                          ? "bg-blue-500/20 text-blue-400 border border-blue-500/40"
-                          : "bg-neutral-800 text-neutral-400"
-                      }`}
+                      className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${rpc.enableDiscordRpc !== false
+                        ? "bg-blue-500/20 text-blue-400 border border-blue-500/40"
+                        : "bg-neutral-800 text-neutral-400"
+                        }`}
                     >
                       {rpc.enableDiscordRpc !== false ? "PUBLISHING" : "STOPPED"}
                     </span>
@@ -1695,11 +1694,10 @@ export default function AccountRpcStudioPage() {
                 <button
                   type="button"
                   onClick={() => updateRpc({ enableDiscordRpc: rpc.enableDiscordRpc === false ? true : false })}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                    rpc.enableDiscordRpc !== false
-                      ? "bg-white text-black hover:bg-neutral-200"
-                      : "bg-neutral-800 text-neutral-400 hover:text-white"
-                  }`}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${rpc.enableDiscordRpc !== false
+                    ? "bg-white text-black hover:bg-neutral-200"
+                    : "bg-neutral-800 text-neutral-400 hover:text-white"
+                    }`}
                 >
                   {rpc.enableDiscordRpc !== false ? "ENABLED" : "DISABLED"}
                 </button>
@@ -1712,10 +1710,10 @@ export default function AccountRpcStudioPage() {
                   {rpc.showProfileRpc !== false && rpc.enableDiscordRpc !== false
                     ? "Visible on website profile & published to Discord"
                     : rpc.showProfileRpc !== false && rpc.enableDiscordRpc === false
-                    ? "Visible only on website profile (Discord publishing stopped)"
-                    : rpc.showProfileRpc === false && rpc.enableDiscordRpc !== false
-                    ? "Published to Discord, hidden on public website profile"
-                    : "Hidden in both destinations"}
+                      ? "Visible only on website profile (Discord publishing stopped)"
+                      : rpc.showProfileRpc === false && rpc.enableDiscordRpc !== false
+                        ? "Published to Discord, hidden on public website profile"
+                        : "Hidden in both destinations"}
                 </span>
               </div>
             </div>
@@ -1781,13 +1779,12 @@ export default function AccountRpcStudioPage() {
                         key={item.id}
                         type="button"
                         onClick={() => updateRpc({ activityType: item.id as any })}
-                        className={`p-3 rounded-xl border text-left transition-all ${
-                          active
-                            ? item.id === "streaming"
-                              ? "bg-purple-950/30 border-purple-500 text-white shadow-lg shadow-purple-950/50"
-                              : "bg-[#141419] border-white text-white shadow-lg"
-                            : "bg-[#050505] border-[#222222] text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
-                        }`}
+                        className={`p-3 rounded-xl border text-left transition-all ${active
+                          ? item.id === "streaming"
+                            ? "bg-purple-950/30 border-purple-500 text-white shadow-lg shadow-purple-950/50"
+                            : "bg-[#141419] border-white text-white shadow-lg"
+                          : "bg-[#050505] border-[#222222] text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
+                          }`}
                       >
                         <div className="flex items-center gap-2 mb-1">
                           <Icon size={14} className={active ? (item.id === "streaming" ? "text-purple-400" : "text-white") : "text-neutral-500"} />
@@ -1962,14 +1959,12 @@ export default function AccountRpcStudioPage() {
                       }}
                       data-testid="toggle-use-profile-avatar"
                       aria-label="Toggle Profile Avatar as Large Image"
-                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                        rpc.useProfileAvatar !== false ? "bg-white" : "bg-[#252530]"
-                      }`}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${rpc.useProfileAvatar !== false ? "bg-white" : "bg-[#252530]"
+                        }`}
                     >
                       <span
-                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
-                          rpc.useProfileAvatar !== false ? "translate-x-4" : "translate-x-0"
-                        }`}
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${rpc.useProfileAvatar !== false ? "translate-x-4" : "translate-x-0"
+                          }`}
                       />
                     </button>
                   </div>
@@ -2013,11 +2008,10 @@ export default function AccountRpcStudioPage() {
                         <ImageIcon size={13} className="text-neutral-300" /> LARGE ACTIVITY IMAGE
                       </span>
                       <span
-                        className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold border transition-colors ${
-                          rpc.largeImageEnabled !== false
-                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                            : "bg-neutral-800 text-neutral-400 border-neutral-700"
-                        }`}
+                        className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold border transition-colors ${rpc.largeImageEnabled !== false
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                          : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                          }`}
                       >
                         {rpc.largeImageEnabled !== false ? "ON" : "OFF"}
                       </span>
@@ -2042,14 +2036,12 @@ export default function AccountRpcStudioPage() {
                         }
                         data-testid="toggle-large-image"
                         aria-label="Toggle Large Activity Image"
-                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          rpc.largeImageEnabled !== false ? "bg-white" : "bg-[#252530]"
-                        }`}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${rpc.largeImageEnabled !== false ? "bg-white" : "bg-[#252530]"
+                          }`}
                       >
                         <span
-                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
-                            rpc.largeImageEnabled !== false ? "translate-x-4" : "translate-x-0"
-                          }`}
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${rpc.largeImageEnabled !== false ? "translate-x-4" : "translate-x-0"
+                            }`}
                         />
                       </button>
                     </div>
@@ -2077,9 +2069,9 @@ export default function AccountRpcStudioPage() {
                           const crop = parseCrop(rpc.largeImageCrop);
                           return crop
                             ? {
-                                transform: `scale(${crop.zoom}) translate(${crop.offsetX * 0.25}px, ${crop.offsetY * 0.25}px)`,
-                                transformOrigin: "center center",
-                              }
+                              transform: `scale(${crop.zoom}) translate(${crop.offsetX * 0.25}px, ${crop.offsetY * 0.25}px)`,
+                              transformOrigin: "center center",
+                            }
                             : undefined;
                         })()}
                       />
@@ -2158,11 +2150,10 @@ export default function AccountRpcStudioPage() {
                         <ImageIcon size={13} className="text-neutral-300" /> SMALL ACTIVITY ICON (BADGE)
                       </span>
                       <span
-                        className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold border transition-colors ${
-                          rpc.smallImageEnabled !== false
-                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                            : "bg-neutral-800 text-neutral-400 border-neutral-700"
-                        }`}
+                        className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold border transition-colors ${rpc.smallImageEnabled !== false
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                          : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                          }`}
                       >
                         {rpc.smallImageEnabled !== false ? "ON" : "OFF"}
                       </span>
@@ -2187,29 +2178,28 @@ export default function AccountRpcStudioPage() {
                         }
                         data-testid="toggle-small-image"
                         aria-label="Toggle Small Activity Icon"
-                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          rpc.smallImageEnabled !== false ? "bg-white" : "bg-[#252530]"
-                        }`}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${rpc.smallImageEnabled !== false ? "bg-white" : "bg-[#252530]"
+                          }`}
                       >
                         <span
-                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
-                            rpc.smallImageEnabled !== false ? "translate-x-4" : "translate-x-0"
-                          }`}
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${rpc.smallImageEnabled !== false ? "translate-x-4" : "translate-x-0"
+                            }`}
                         />
                       </button>
                     </div>
 
                     <button
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        setSmallImageFailed(false);
                         updateRpc({
                           smallImage:
                             "https://pixlpresence1-web.vercel.app/server-icon.png",
                           smallImageText: "PIXEL.GG",
                           smallImageCrop: null,
                           smallImageEnabled: true,
-                        })
-                      }
+                        });
+                      }}
                       className="text-[10px] text-neutral-400 hover:text-white px-2 py-1 rounded bg-[#141414] border border-[#242424]"
                     >
                       Default Icon
@@ -2227,27 +2217,52 @@ export default function AccountRpcStudioPage() {
 
                 {rpc.smallImage && (
                   <div className="flex items-center gap-3 p-3 rounded-xl bg-[#050505] border border-[#1f1f1f]">
-                    <div className="w-10 h-10 rounded-full bg-[#141414] overflow-hidden border border-[#2b2d31] shrink-0 relative">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={rpc.smallImage}
-                        alt="Small Icon Asset"
-                        className="w-full h-full object-cover"
-                        style={(() => {
-                          const crop = parseCrop(rpc.smallImageCrop);
-                          return crop
-                            ? {
-                                transform: `scale(${crop.zoom}) translate(${crop.offsetX * 0.25}px, ${crop.offsetY * 0.25}px)`,
-                                transformOrigin: "center center",
-                              }
-                            : undefined;
-                        })()}
-                      />
+                    <div className="w-10 h-10 rounded-full bg-[#141414] overflow-hidden border border-[#2b2d31] shrink-0 relative flex items-center justify-center">
+                      {smallImageFailed ? (
+                        <div className="w-full h-full flex items-center justify-center bg-red-950/60 text-red-400" title="Image failed to load">
+                          <AlertCircle size={16} />
+                        </div>
+                      ) : (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={rpc.smallImage}
+                          alt="Small Icon Asset"
+                          className="w-full h-full object-cover"
+                          onError={() => setSmallImageFailed(true)}
+                          style={(() => {
+                            const crop = parseCrop(rpc.smallImageCrop);
+                            return crop
+                              ? {
+                                  transform: `scale(${crop.zoom}) translate(${crop.offsetX * 0.25}px, ${crop.offsetY * 0.25}px)`,
+                                  transformOrigin: "center center",
+                                }
+                              : undefined;
+                          })()}
+                        />
+                      )}
                     </div>
 
                     <div className="flex-1 min-w-0 text-xs space-y-1">
                       <p className="text-white font-medium truncate">{rpc.smallImage}</p>
                       <div className="flex items-center gap-2">
+                        {smallImageFailed && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSmallImageFailed(false);
+                              updateRpc({
+                                smallImage:
+                                  "https://pixlpresence1-web.vercel.app/server-icon.png",
+                                smallImageText: "PIXEL.GG",
+                                smallImageCrop: null,
+                                smallImageEnabled: true,
+                              });
+                            }}
+                            className="px-2 py-0.5 rounded bg-amber-950/60 border border-amber-500/40 text-[10px] text-amber-300 hover:text-white"
+                          >
+                            Restore Default Icon
+                          </button>
+                        )}
                         {rpc.smallImage.toLowerCase().includes(".gif") && (
                           <span className="px-1.5 py-0.5 rounded bg-purple-950/60 border border-purple-500/40 text-[9px] text-purple-300 font-bold">
                             ANIMATED GIF
@@ -2331,11 +2346,10 @@ export default function AccountRpcStudioPage() {
                         key={sz}
                         type="button"
                         onClick={() => updateRpc({ buttonSize: sz })}
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-colors cursor-pointer ${
-                          (rpc.buttonSize || "medium") === sz
-                            ? "bg-white text-black shadow-sm"
-                            : "text-neutral-400 hover:text-white"
-                        }`}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-colors cursor-pointer ${(rpc.buttonSize || "medium") === sz
+                          ? "bg-white text-black shadow-sm"
+                          : "text-neutral-400 hover:text-white"
+                          }`}
                       >
                         {sz}
                       </button>
@@ -2374,14 +2388,12 @@ export default function AccountRpcStudioPage() {
                         }
                         data-testid="toggle-button-1"
                         aria-label="Toggle Primary Button"
-                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          rpc.button1Enabled !== false ? "bg-white" : "bg-[#252530]"
-                        }`}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${rpc.button1Enabled !== false ? "bg-white" : "bg-[#252530]"
+                          }`}
                       >
                         <span
-                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
-                            rpc.button1Enabled !== false ? "translate-x-4" : "translate-x-0"
-                          }`}
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${rpc.button1Enabled !== false ? "translate-x-4" : "translate-x-0"
+                            }`}
                         />
                       </button>
                     </div>
@@ -2427,14 +2439,12 @@ export default function AccountRpcStudioPage() {
                         }
                         data-testid="toggle-button-2"
                         aria-label="Toggle Secondary Button"
-                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          rpc.button2Enabled !== false ? "bg-white" : "bg-[#252530]"
-                        }`}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${rpc.button2Enabled !== false ? "bg-white" : "bg-[#252530]"
+                          }`}
                       >
                         <span
-                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
-                            rpc.button2Enabled !== false ? "translate-x-4" : "translate-x-0"
-                          }`}
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${rpc.button2Enabled !== false ? "translate-x-4" : "translate-x-0"
+                            }`}
                         />
                       </button>
                     </div>
@@ -2478,11 +2488,10 @@ export default function AccountRpcStudioPage() {
             <div className="bg-[#1e1f22] rounded-2xl shadow-2xl overflow-hidden border border-[#2b2d31] font-sans text-neutral-200">
               {/* Card Header Bar dynamically matching Discord activity type */}
               <div
-                className={`px-5 py-3 flex items-center justify-between border-b transition-colors ${
-                  (rpc.activityType || "streaming") === "streaming"
-                    ? "bg-[#181124] border-purple-900/40 text-purple-300"
-                    : "bg-[#111214] border-[#2b2d31] text-[#949ba4]"
-                }`}
+                className={`px-5 py-3 flex items-center justify-between border-b transition-colors ${(rpc.activityType || "streaming") === "streaming"
+                  ? "bg-[#181124] border-purple-900/40 text-purple-300"
+                  : "bg-[#111214] border-[#2b2d31] text-[#949ba4]"
+                  }`}
               >
                 <span className="font-bold text-[11px] uppercase tracking-wider flex items-center gap-2">
                   {(rpc.activityType || "streaming") === "streaming" && (
@@ -2491,12 +2500,12 @@ export default function AccountRpcStudioPage() {
                   {(rpc.activityType || "streaming") === "streaming"
                     ? `STREAMING ${rpc.appName || "TWITCH"}`
                     : rpc.activityType === "listening"
-                    ? `LISTENING TO ${rpc.appName || "SPOTIFY"}`
-                    : rpc.activityType === "watching"
-                    ? `WATCHING ${rpc.appName || "YOUTUBE"}`
-                    : rpc.activityType === "competing"
-                    ? `COMPETING IN ${rpc.appName || "ARENA"}`
-                    : `PLAYING ${rpc.appName || "A GAME"}`}
+                      ? `LISTENING TO ${rpc.appName || "SPOTIFY"}`
+                      : rpc.activityType === "watching"
+                        ? `WATCHING ${rpc.appName || "YOUTUBE"}`
+                        : rpc.activityType === "competing"
+                          ? `COMPETING IN ${rpc.appName || "ARENA"}`
+                          : `PLAYING ${rpc.appName || "A GAME"}`}
                 </span>
                 <span className="text-[10px] text-[#80848e] font-mono">via PixelsRPC</span>
               </div>
@@ -2528,9 +2537,9 @@ export default function AccountRpcStudioPage() {
                           const crop = parseCrop(rpc.largeImageCrop);
                           return crop && rpc.useProfileAvatar === false
                             ? {
-                                transform: `scale(${crop.zoom}) translate(${crop.offsetX * 0.25}px, ${crop.offsetY * 0.25}px)`,
-                                transformOrigin: "center center",
-                              }
+                              transform: `scale(${crop.zoom}) translate(${crop.offsetX * 0.25}px, ${crop.offsetY * 0.25}px)`,
+                              transformOrigin: "center center",
+                            }
                             : undefined;
                         })()}
                         onError={() => setLargeImageFailed(true)}
@@ -2558,9 +2567,9 @@ export default function AccountRpcStudioPage() {
                               const crop = parseCrop(rpc.smallImageCrop);
                               return crop
                                 ? {
-                                    transform: `scale(${crop.zoom}) translate(${crop.offsetX * 0.25}px, ${crop.offsetY * 0.25}px)`,
-                                    transformOrigin: "center center",
-                                  }
+                                  transform: `scale(${crop.zoom}) translate(${crop.offsetX * 0.25}px, ${crop.offsetY * 0.25}px)`,
+                                  transformOrigin: "center center",
+                                }
                                 : undefined;
                             })()}
                             onError={() => setSmallImageFailed(true)}
@@ -2597,26 +2606,24 @@ export default function AccountRpcStudioPage() {
               {/* Discord Action Buttons (Enforcing max 2 buttons, size customization, and independent toggle) */}
               {((rpc.button1Enabled !== false && rpc.button1Label) || (rpc.button2Enabled !== false && rpc.button2Label)) && (
                 <div
-                  className={`px-5 pb-5 ${
-                    rpc.buttonSize === "small"
-                      ? "space-y-1.5"
-                      : rpc.buttonSize === "large"
+                  className={`px-5 pb-5 ${rpc.buttonSize === "small"
+                    ? "space-y-1.5"
+                    : rpc.buttonSize === "large"
                       ? "space-y-3"
                       : "space-y-2"
-                  }`}
+                    }`}
                 >
                   {rpc.button1Enabled !== false && rpc.button1Label && (
                     <a
                       href={rpc.button1Url || "#"}
                       target="_blank"
                       rel="noreferrer"
-                      className={`w-full bg-[#2b2d31] hover:bg-[#35373c] text-white font-semibold text-center rounded-lg transition-all block border border-white/5 active:scale-[0.99] truncate ${
-                        rpc.buttonSize === "small"
-                          ? "py-1.5 px-3 text-[11px]"
-                          : rpc.buttonSize === "large"
+                      className={`w-full bg-[#2b2d31] hover:bg-[#35373c] text-white font-semibold text-center rounded-lg transition-all block border border-white/5 active:scale-[0.99] truncate ${rpc.buttonSize === "small"
+                        ? "py-1.5 px-3 text-[11px]"
+                        : rpc.buttonSize === "large"
                           ? "py-3.5 px-5 text-sm shadow-md"
                           : "py-2.5 px-4 text-xs"
-                      }`}
+                        }`}
                     >
                       {rpc.button1Label}
                     </a>
@@ -2626,13 +2633,12 @@ export default function AccountRpcStudioPage() {
                       href={rpc.button2Url || "#"}
                       target="_blank"
                       rel="noreferrer"
-                      className={`w-full bg-[#2b2d31] hover:bg-[#35373c] text-white font-semibold text-center rounded-lg transition-all block border border-white/5 active:scale-[0.99] truncate ${
-                        rpc.buttonSize === "small"
-                          ? "py-1.5 px-3 text-[11px]"
-                          : rpc.buttonSize === "large"
+                      className={`w-full bg-[#2b2d31] hover:bg-[#35373c] text-white font-semibold text-center rounded-lg transition-all block border border-white/5 active:scale-[0.99] truncate ${rpc.buttonSize === "small"
+                        ? "py-1.5 px-3 text-[11px]"
+                        : rpc.buttonSize === "large"
                           ? "py-3.5 px-5 text-sm shadow-md"
                           : "py-2.5 px-4 text-xs"
-                      }`}
+                        }`}
                     >
                       {rpc.button2Label}
                     </a>
