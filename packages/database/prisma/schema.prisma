@@ -224,6 +224,7 @@ model RichPresence {
   smallImageText  String?
   largeImageCrop  String?
   smallImageCrop  String?
+  customConfig    String?
   startTimestamp  DateTime?
   endTimestamp    DateTime?
   partySize       Int?

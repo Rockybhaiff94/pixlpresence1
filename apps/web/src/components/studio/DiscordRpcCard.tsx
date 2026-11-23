@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Activity, Radio, Music, Tv, Swords, ExternalLink } from "lucide-react";
 import { DiscordRpcConfig } from "@/types/studio";
+import { formatRichPresenceField } from "@/lib/rpcFormat";
 import {
   resolveRpcElementText,
   isRpcElementDataAvailable,
@@ -13,15 +14,22 @@ export interface DiscordRpcData {
   name?: string | null;
   details?: string | null;
   state?: string | null;
+  detailsUrl?: string | null;
+  stateUrl?: string | null;
+  detailsEnabled?: boolean | null;
+  stateEnabled?: boolean | null;
   largeImage?: string | null;
   largeImageText?: string | null;
+  largeImageUrl?: string | null;
   smallImage?: string | null;
   smallImageText?: string | null;
+  smallImageUrl?: string | null;
   activityType?: string | number | null;
   type?: number;
   streamUrl?: string | null;
   status?: "online" | "idle" | "dnd" | "offline" | string | null;
   hasActivity?: boolean;
+  timestampMode?: "none" | "now" | "time" | "custom" | number | null;
   timestamps?: {
     start?: number | null;
     end?: number | null;
@@ -40,6 +48,9 @@ export interface DiscordRpcData {
   button2Enabled?: boolean | null;
   button2Label?: string | null;
   button2Url?: string | null;
+  streaks?: any[] | null;
+  statistics?: any[] | null;
+  statusLabels?: any[] | null;
 }
 
 interface DiscordRpcCardProps {
@@ -488,27 +499,55 @@ export function DiscordRpcCard({
           <p className="text-white font-semibold truncate">
             {rpc.appName || rpc.name || "Active Discord Application"}
           </p>
-          {rpc.details && (
-            <p className="text-neutral-400 text-[11px] truncate">{rpc.details}</p>
-          )}
-          {rpc.state && (
-            <p className="text-neutral-500 text-[10px] truncate">{rpc.state}</p>
-          )}
+          {(() => {
+            const formattedDetails = formatRichPresenceField(
+              rpc.details,
+              rpc.detailsEnabled,
+              "details",
+              rpc.statusLabels,
+              rpc.streaks,
+              rpc.statistics
+            );
+            const formattedState = formatRichPresenceField(
+              rpc.state,
+              rpc.stateEnabled,
+              "state",
+              rpc.statusLabels,
+              rpc.streaks,
+              rpc.statistics
+            );
 
-          {/* Party size indicator */}
-          {(rpc.party?.size || (rpc.partySize && rpc.partyMax)) && (
-            <p className="text-neutral-500 text-[10px] truncate">
-              Party ({rpc.party?.size ? rpc.party.size[0] : rpc.partySize} of{" "}
-              {rpc.party?.size ? rpc.party.size[1] : rpc.partyMax})
-            </p>
-          )}
+            const tMode = String(rpc.timestampMode ?? "now").toLowerCase();
+            const showTimestamp = tMode !== "none" && tMode !== "0" && config.showTimer;
 
-          {/* Dynamic elapsed timer */}
-          {config.showTimer && (elapsed || "Active") && (
-            <p className="text-neutral-400 text-[10px] font-mono pt-0.5">
-              {elapsed || "00:01 elapsed"}
-            </p>
-          )}
+            return (
+              <>
+                {formattedDetails && (
+                  <p className="text-neutral-400 text-[11px] truncate">{formattedDetails}</p>
+                )}
+                {formattedState && (
+                  <p className="text-neutral-500 text-[10px] truncate">{formattedState}</p>
+                )}
+
+                {/* Party size indicator */}
+                {(rpc.party?.size || (rpc.partySize && rpc.partyMax)) && (
+                  <p className="text-neutral-500 text-[10px] truncate">
+                    Party ({rpc.party?.size ? rpc.party.size[0] : rpc.partySize} of{" "}
+                    {rpc.party?.size ? rpc.party.size[1] : rpc.partyMax})
+                  </p>
+                )}
+
+                {/* Dynamic elapsed or local timer */}
+                {showTimestamp && (
+                  <p className="text-neutral-400 text-[10px] font-mono pt-0.5">
+                    {tMode === "time" || tMode === "2"
+                      ? new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                      : elapsed || "00:01 elapsed"}
+                  </p>
+                )}
+              </>
+            );
+          })()}
         </div>
       </div>
 

@@ -9,6 +9,7 @@ import { resolveDiscordAvatarUrl } from '../auth';
 import { presenceManager, LiveActivity } from '../services/presenceManager';
 import { rpcSyncHub } from '../services/rpcSyncHub';
 import { ImageAssetService } from '../services/imageAssetService';
+import { formatRichPresenceField } from '../utils/rpcFormat';
 
 export const rpcRouter = Router();
 
@@ -572,6 +573,16 @@ rpcRouter.get('/me', requireAuth, async (req: any, res) => {
 
     const responseData: any = { ...rpc };
 
+    // Unpack extended custom configuration (streaks, statistics, statusLabels, URLs, toggles)
+    if (rpc.customConfig) {
+      try {
+        const parsed = JSON.parse(rpc.customConfig);
+        if (parsed && typeof parsed === 'object') {
+          Object.assign(responseData, parsed);
+        }
+      } catch (_) {}
+    }
+
     const frontendUrl = (process.env.FRONTEND_URL || 'https://pixlpresence1-web.vercel.app').replace(/\/+$/, '');
 
     // Normalize default buttons to user's existing public profile and public RPC page
@@ -688,6 +699,31 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
       data.enableDiscordRpc = Boolean(rawData.enableDiscordRpc);
     }
 
+    // Collect extended custom configuration:
+    // detailsUrl, stateUrl, detailsEnabled, stateEnabled, largeImageUrl, smallImageUrl, timestampMode, streaks, statistics, statusLabels
+    let existingCustomConfig: any = {};
+    const existingRpc = await prisma.richPresence.findUnique({ where: { userId: req.user.id } });
+    if (existingRpc?.customConfig) {
+      try {
+        existingCustomConfig = JSON.parse(existingRpc.customConfig) || {};
+      } catch (_) {}
+    }
+
+    const updatedCustomConfig = { ...existingCustomConfig };
+
+    if (rawData.detailsUrl !== undefined) updatedCustomConfig.detailsUrl = rawData.detailsUrl ? String(rawData.detailsUrl).trim() : null;
+    if (rawData.stateUrl !== undefined) updatedCustomConfig.stateUrl = rawData.stateUrl ? String(rawData.stateUrl).trim() : null;
+    if (rawData.detailsEnabled !== undefined) updatedCustomConfig.detailsEnabled = Boolean(rawData.detailsEnabled);
+    if (rawData.stateEnabled !== undefined) updatedCustomConfig.stateEnabled = Boolean(rawData.stateEnabled);
+    if (rawData.largeImageUrl !== undefined) updatedCustomConfig.largeImageUrl = rawData.largeImageUrl ? String(rawData.largeImageUrl).trim() : null;
+    if (rawData.smallImageUrl !== undefined) updatedCustomConfig.smallImageUrl = rawData.smallImageUrl ? String(rawData.smallImageUrl).trim() : null;
+    if (rawData.timestampMode !== undefined) updatedCustomConfig.timestampMode = rawData.timestampMode;
+    if (rawData.streaks !== undefined) updatedCustomConfig.streaks = Array.isArray(rawData.streaks) ? rawData.streaks : [];
+    if (rawData.statistics !== undefined) updatedCustomConfig.statistics = Array.isArray(rawData.statistics) ? rawData.statistics : [];
+    if (rawData.statusLabels !== undefined) updatedCustomConfig.statusLabels = Array.isArray(rawData.statusLabels) ? rawData.statusLabels : [];
+
+    data.customConfig = JSON.stringify(updatedCustomConfig);
+
     const rpc = await prisma.richPresence.upsert({
       where: { userId: req.user.id },
       update: data,
@@ -706,6 +742,7 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
 
     const fullPayload: any = {
       ...rpc,
+      ...updatedCustomConfig,
       largeImageEnabled,
       smallImageEnabled,
       buttonSize,
@@ -743,7 +780,25 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
     }
 
     // Synchronize live presence manager so public profile visitors get immediate update
-    if (rpcRecord.showProfileRpc !== false && (fullPayload.appName || fullPayload.details || fullPayload.state)) {
+    // Compute formatted details and state for live presence
+    const formattedDetails = formatRichPresenceField(
+      fullPayload.details,
+      fullPayload.detailsEnabled,
+      "details",
+      fullPayload.statusLabels,
+      fullPayload.streaks,
+      fullPayload.statistics
+    );
+    const formattedState = formatRichPresenceField(
+      fullPayload.state,
+      fullPayload.stateEnabled,
+      "state",
+      fullPayload.statusLabels,
+      fullPayload.streaks,
+      fullPayload.statistics
+    );
+
+    if (rpcRecord.showProfileRpc !== false && (fullPayload.appName || formattedDetails || formattedState)) {
       presenceManager.updatePresence({
         username: currentUser.username,
         userId: currentUser.id,
@@ -754,8 +809,8 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
           name: fullPayload.appName || 'Active Application',
           appName: fullPayload.appName || 'Active Application',
           type: typeof fullPayload.activityType === 'number' ? fullPayload.activityType : 0,
-          details: fullPayload.details || null,
-          state: fullPayload.state || null,
+          details: formattedDetails || null,
+          state: formattedState || null,
           largeImage: fullPayload.largeImageEnabled !== false ? (fullPayload.largeImage || null) : null,
           smallImage: fullPayload.smallImageEnabled !== false ? (fullPayload.smallImage || null) : null,
           largeImageText: fullPayload.largeImageEnabled !== false ? (fullPayload.largeImageText || null) : null,

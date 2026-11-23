@@ -4,6 +4,7 @@ import { findByProps } from "@webpack";
 import { settings } from "./settings";
 import { SettingsAbout } from "./components/SettingsAbout";
 import { ConnectionState, DiscordActivity, RpcResponse } from "./types";
+import { formatRichPresenceField } from "./rpcFormat";
 
 const SOCKET_ID = "pixels-rpc";
 const DEFAULT_APP_ID = "1523632136878559302";
@@ -244,6 +245,36 @@ async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> 
         type: resolvedType.type
     };
 
+    // Unpack extended custom configuration if present
+    let streaks = rpc.streaks;
+    let statistics = rpc.statistics;
+    let statusLabels = rpc.statusLabels;
+    let detailsUrl = rpc.detailsUrl;
+    let stateUrl = rpc.stateUrl;
+    let detailsEnabled = rpc.detailsEnabled;
+    let stateEnabled = rpc.stateEnabled;
+    let largeImageUrl = rpc.largeImageUrl;
+    let smallImageUrl = rpc.smallImageUrl;
+    let timestampMode = rpc.timestampMode;
+
+    if (rpc.customConfig && typeof rpc.customConfig === "string") {
+        try {
+            const parsed = JSON.parse(rpc.customConfig);
+            if (parsed && typeof parsed === "object") {
+                if (!streaks && parsed.streaks) streaks = parsed.streaks;
+                if (!statistics && parsed.statistics) statistics = parsed.statistics;
+                if (!statusLabels && parsed.statusLabels) statusLabels = parsed.statusLabels;
+                if (detailsUrl === undefined && parsed.detailsUrl !== undefined) detailsUrl = parsed.detailsUrl;
+                if (stateUrl === undefined && parsed.stateUrl !== undefined) stateUrl = parsed.stateUrl;
+                if (detailsEnabled === undefined && parsed.detailsEnabled !== undefined) detailsEnabled = parsed.detailsEnabled;
+                if (stateEnabled === undefined && parsed.stateEnabled !== undefined) stateEnabled = parsed.stateEnabled;
+                if (largeImageUrl === undefined && parsed.largeImageUrl !== undefined) largeImageUrl = parsed.largeImageUrl;
+                if (smallImageUrl === undefined && parsed.smallImageUrl !== undefined) smallImageUrl = parsed.smallImageUrl;
+                if (timestampMode === undefined && parsed.timestampMode !== undefined) timestampMode = parsed.timestampMode;
+            }
+        } catch (_) {}
+    }
+
     // Discord requires a valid stream URL for type: 1 (Streaming)
     if (activity.type === 1) {
         const streamUrl = (rpc.streamUrl || "").trim();
@@ -252,11 +283,37 @@ async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> 
             : `https://twitch.tv/${rpc.username || "pixelgg"}`;
     }
 
-    if (rpc.state && rpc.state.trim()) {
-        activity.state = rpc.state.trim().slice(0, 128);
+    // Compile Details and State incorporating base text, status labels, streaks, and statistics
+    const formattedDetails = formatRichPresenceField(
+        rpc.details,
+        detailsEnabled,
+        "details",
+        statusLabels,
+        streaks,
+        statistics
+    );
+    if (formattedDetails) {
+        activity.details = formattedDetails;
     }
-    if (rpc.details && rpc.details.trim()) {
-        activity.details = rpc.details.trim().slice(0, 128);
+
+    const formattedState = formatRichPresenceField(
+        rpc.state,
+        stateEnabled,
+        "state",
+        statusLabels,
+        streaks,
+        statistics
+    );
+    if (formattedState) {
+        activity.state = formattedState;
+    }
+
+    // Clickable URLs for Details and State where supported
+    if (detailsUrl && (detailsUrl.startsWith("http://") || detailsUrl.startsWith("https://"))) {
+        activity.details_url = detailsUrl.trim();
+    }
+    if (stateUrl && (stateUrl.startsWith("http://") || stateUrl.startsWith("https://"))) {
+        activity.state_url = stateUrl.trim();
     }
 
     // Resolve Large Image and Small Icon with Discord Asset system
@@ -274,6 +331,9 @@ async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> 
             if (rpc.largeImageText && rpc.largeImageText.trim()) {
                 activity.assets.large_text = rpc.largeImageText.trim().slice(0, 128);
             }
+            if (largeImageUrl && (largeImageUrl.startsWith("http://") || largeImageUrl.startsWith("https://"))) {
+                activity.assets.large_url = largeImageUrl.trim();
+            }
         }
         if (hasSmall && rpc.smallImage) {
             const resolvedSmall = await resolveDiscordAsset(appId, rpc.smallImage.trim());
@@ -281,35 +341,57 @@ async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> 
             if (rpc.smallImageText && rpc.smallImageText.trim()) {
                 activity.assets.small_text = rpc.smallImageText.trim().slice(0, 128);
             }
+            if (smallImageUrl && (smallImageUrl.startsWith("http://") || smallImageUrl.startsWith("https://"))) {
+                activity.assets.small_url = smallImageUrl.trim();
+            }
         }
     }
 
-    if (store.showTimestamps && (rpc.startTimestamp || rpc.endTimestamp)) {
-        activity.timestamps = {};
-        if (rpc.startTimestamp) {
-            const start = new Date(rpc.startTimestamp).getTime();
-            if (!Number.isNaN(start)) activity.timestamps.start = Math.floor(start);
-        }
-        if (rpc.endTimestamp) {
-            const end = new Date(rpc.endTimestamp).getTime();
-            if (!Number.isNaN(end)) activity.timestamps.end = Math.floor(end);
+    // Timestamp Configuration
+    // Modes: 'none' (0), 'now' (1), 'time' (2), 'custom' (3)
+    const tMode = String(timestampMode ?? "now").toLowerCase();
+    if (store.showTimestamps && tMode !== "none" && tMode !== "0") {
+        if (tMode === "now" || tMode === "1") {
+            activity.timestamps = {
+                start: Date.now()
+            };
+        } else if (tMode === "time" || tMode === "2") {
+            const now = new Date();
+            const startOfDay = Date.now() - (now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()) * 1000;
+            activity.timestamps = {
+                start: startOfDay
+            };
+        } else if (tMode === "custom" || tMode === "3" || rpc.startTimestamp || rpc.endTimestamp) {
+            activity.timestamps = {};
+            if (rpc.startTimestamp) {
+                const start = new Date(rpc.startTimestamp).getTime();
+                if (!Number.isNaN(start)) activity.timestamps.start = Math.floor(start);
+            }
+            if (rpc.endTimestamp) {
+                const end = new Date(rpc.endTimestamp).getTime();
+                if (!Number.isNaN(end)) activity.timestamps.end = Math.floor(end);
+            }
+            if (!activity.timestamps.start && !activity.timestamps.end) {
+                delete activity.timestamps;
+            }
         }
     }
 
+    // Custom Buttons (2 independently configurable buttons with validation)
     if (store.showButtons) {
         const labels: string[] = [];
         const urls: string[] = [];
 
-        // Button 1: Default 'View Profile', user's public profile page
-        if (rpc.button1Enabled !== false && rpc.button1Url) {
-            const label = (rpc.button1Label || "View Profile").trim().slice(0, 32);
+        // Button 1
+        if (rpc.button1Enabled !== false && rpc.button1Url && (rpc.button1Url.startsWith("http://") || rpc.button1Url.startsWith("https://"))) {
+            const label = (rpc.button1Label || "View Profile").trim().slice(0, 31);
             labels.push(label);
             urls.push(rpc.button1Url.trim());
         }
 
-        // Button 2: Default 'Get PixelsRPC', public PixelsRPC homepage
-        if (rpc.button2Enabled !== false && rpc.button2Url && labels.length < 2) {
-            const label = (rpc.button2Label || "Get PixelsRPC").trim().slice(0, 32);
+        // Button 2
+        if (rpc.button2Enabled !== false && rpc.button2Url && (rpc.button2Url.startsWith("http://") || rpc.button2Url.startsWith("https://")) && labels.length < 2) {
+            const label = (rpc.button2Label || "Get PixelsRPC").trim().slice(0, 31);
             labels.push(label);
             urls.push(rpc.button2Url.trim());
         }
@@ -320,7 +402,14 @@ async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> 
         }
     }
 
-    if (rpc.partySize && rpc.partyMax && rpc.partySize > 0 && rpc.partyMax > 0) {
+    // Party Size
+    if (
+        typeof rpc.partySize === "number" &&
+        typeof rpc.partyMax === "number" &&
+        rpc.partySize > 0 &&
+        rpc.partyMax > 0 &&
+        rpc.partySize <= rpc.partyMax
+    ) {
         activity.party = {
             size: [Math.floor(rpc.partySize), Math.floor(rpc.partyMax)]
         };

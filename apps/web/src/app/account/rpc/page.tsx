@@ -32,6 +32,14 @@ import {
   Move,
   Crop,
   Image as ImageIcon,
+  Plus,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
+  Layers,
+  Link2,
+  BarChart2,
+  Tag,
 } from "lucide-react";
 import { AccountLayout } from "@/components/account/AccountLayout";
 import { Button } from "@/components/nothing/Button";
@@ -39,6 +47,12 @@ import { apiFetch, getApiBaseUrl, getStoredToken, setStoredToken, getCachedUser 
 import { io, Socket } from "socket.io-client";
 import { useAuth } from "@/context/AuthContext";
 import { ImageCustomizerModal, CropData } from "@/components/rpc/ImageCustomizerModal";
+import {
+  formatRichPresenceField,
+  CustomStreak,
+  CustomStatistic,
+  CustomStatusLabel,
+} from "@/lib/rpcFormat";
 
 function formatRelativeTime(dateInput: string | Date | undefined): string {
   if (!dateInput) return "Recently";
@@ -59,16 +73,23 @@ interface RpcConfig {
   activityType?: "streaming" | "playing" | "listening" | "watching" | "competing";
   streamUrl?: string;
   state?: string;
+  stateUrl?: string | null;
+  stateEnabled?: boolean;
   details?: string;
+  detailsUrl?: string | null;
+  detailsEnabled?: boolean;
   useProfileAvatar?: boolean;
   largeImageEnabled?: boolean;
   largeImage?: string;
   largeImageText?: string;
+  largeImageUrl?: string | null;
   largeImageCrop?: string | null;
   smallImageEnabled?: boolean;
   smallImage?: string;
   smallImageText?: string;
+  smallImageUrl?: string | null;
   smallImageCrop?: string | null;
+  timestampMode?: "none" | "now" | "time" | "custom";
   startTimestamp?: string | null;
   endTimestamp?: string | null;
   partySize?: number | null;
@@ -82,6 +103,9 @@ interface RpcConfig {
   buttonSize?: "small" | "medium" | "large";
   showProfileRpc?: boolean;
   enableDiscordRpc?: boolean;
+  streaks?: CustomStreak[];
+  statistics?: CustomStatistic[];
+  statusLabels?: CustomStatusLabel[];
 }
 
 const DEFAULT_RPC: RpcConfig = {
@@ -90,15 +114,21 @@ const DEFAULT_RPC: RpcConfig = {
   activityType: "streaming",
   streamUrl: "https://twitch.tv/pixelgg",
   state: "Discover my personal page on PIXEL.GG.",
+  stateUrl: null,
+  stateEnabled: true,
   details: "Welcome to my profile!",
+  detailsUrl: null,
+  detailsEnabled: true,
   useProfileAvatar: true,
   largeImageEnabled: true,
   largeImage: "",
   largeImageText: "PIXEL.GG Platform",
+  largeImageUrl: null,
   largeImageCrop: null,
   smallImageEnabled: true,
   smallImage: "https://pixlpresence1-web.vercel.app/server-icon.png",
   smallImageText: "PIXEL.GG",
+  smallImageUrl: null,
   smallImageCrop: null,
   button1Enabled: true,
   button1Label: "View Profile",
@@ -111,7 +141,12 @@ const DEFAULT_RPC: RpcConfig = {
   enableDiscordRpc: true,
   partySize: null,
   partyMax: null,
+  timestampMode: "now",
   startTimestamp: null,
+  endTimestamp: null,
+  streaks: [],
+  statistics: [],
+  statusLabels: [],
 };
 
 const PRESETS: Record<string, Partial<RpcConfig>> = {
@@ -385,6 +420,99 @@ export default function AccountRpcStudioPage() {
     };
   }, [executeAutoSaveAndSync]);
 
+  // Custom Streaks, Statistics & Status Labels tab state
+  const [customTab, setCustomTab] = useState<"streaks" | "statistics" | "labels">("streaks");
+
+  // Streak handlers
+  const addStreak = (streak?: Partial<CustomStreak>) => {
+    const newStreak: CustomStreak = {
+      id: `streak_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      name: streak?.name || "Win Streak",
+      value: streak?.value ?? 5,
+      prefix: streak?.prefix ?? "🔥",
+      suffix: streak?.suffix ?? "Wins",
+      enabled: true,
+      targetField: streak?.targetField || "details",
+    };
+    updateRpc({ streaks: [...(rpc.streaks || []), newStreak] });
+  };
+
+  const updateStreak = (id: string, updates: Partial<CustomStreak>) => {
+    const next = (rpc.streaks || []).map((s) => (s.id === id ? { ...s, ...updates } : s));
+    updateRpc({ streaks: next });
+  };
+
+  const removeStreak = (id: string) => {
+    const next = (rpc.streaks || []).filter((s) => s.id !== id);
+    updateRpc({ streaks: next });
+  };
+
+  const moveStreak = (index: number, direction: "up" | "down") => {
+    const list = [...(rpc.streaks || [])];
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= list.length) return;
+    const temp = list[index];
+    list[index] = list[targetIndex];
+    list[targetIndex] = temp;
+    updateRpc({ streaks: list });
+  };
+
+  // Statistics handlers
+  const addStatistic = (stat?: Partial<CustomStatistic>) => {
+    const newStat: CustomStatistic = {
+      id: `stat_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      label: stat?.label || "Rank",
+      value: stat?.value ?? "Diamond",
+      prefix: stat?.prefix ?? "🏆",
+      suffix: stat?.suffix ?? "",
+      enabled: true,
+      targetField: stat?.targetField || "state",
+    };
+    updateRpc({ statistics: [...(rpc.statistics || []), newStat] });
+  };
+
+  const updateStatistic = (id: string, updates: Partial<CustomStatistic>) => {
+    const next = (rpc.statistics || []).map((s) => (s.id === id ? { ...s, ...updates } : s));
+    updateRpc({ statistics: next });
+  };
+
+  const removeStatistic = (id: string) => {
+    const next = (rpc.statistics || []).filter((s) => s.id !== id);
+    updateRpc({ statistics: next });
+  };
+
+  const moveStatistic = (index: number, direction: "up" | "down") => {
+    const list = [...(rpc.statistics || [])];
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= list.length) return;
+    const temp = list[index];
+    list[index] = list[targetIndex];
+    list[targetIndex] = temp;
+    updateRpc({ statistics: list });
+  };
+
+  // Status labels handlers
+  const addStatusLabel = (item?: Partial<CustomStatusLabel>) => {
+    const newLabel: CustomStatusLabel = {
+      id: `label_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      label: item?.label || "MVP",
+      emoji: item?.emoji ?? "👑",
+      enabled: true,
+      targetField: item?.targetField || "details",
+    };
+    updateRpc({ statusLabels: [...(rpc.statusLabels || []), newLabel] });
+  };
+
+  const updateStatusLabel = (id: string, updates: Partial<CustomStatusLabel>) => {
+    const next = (rpc.statusLabels || []).map((l) => (l.id === id ? { ...l, ...updates } : l));
+    updateRpc({ statusLabels: next });
+  };
+
+  const removeStatusLabel = (id: string) => {
+    const next = (rpc.statusLabels || []).filter((l) => l.id !== id);
+    updateRpc({ statusLabels: next });
+  };
+
   // Image Customizer Modal State
   const [customizerOpen, setCustomizerOpen] = useState(false);
   const [customizerSlot, setCustomizerSlot] = useState<"largeImage" | "smallImage">("largeImage");
@@ -511,7 +639,7 @@ export default function AccountRpcStudioPage() {
               const merged: RpcConfig = { ...prev };
               for (const [key, value] of Object.entries(rpcData)) {
                 if (["id", "userId", "createdAt", "updatedAt", "revision", "username", "userAvatar"].includes(key)) continue;
-                if (value !== null && value !== undefined && value !== "") {
+                if (value !== undefined) {
                   (merged as Record<string, unknown>)[key] = value;
                 }
               }
@@ -1837,40 +1965,118 @@ export default function AccountRpcStudioPage() {
 
               {/* Activity Details & State */}
               <div className="space-y-4 pt-1">
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-[11px] font-semibold text-neutral-400 uppercase">
-                      Details Line (Top Line)
-                    </label>
-                    <span className="text-[10px] text-neutral-500 font-mono">DEFAULT: Welcome to my profile!</span>
+                {/* Details Line */}
+                <div className="p-3.5 rounded-xl bg-[#08080a] border border-[#1a1a20] space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <label className="text-[11px] font-semibold text-neutral-300 uppercase">
+                        Details Line (Top Line)
+                      </label>
+                      <span className="text-[10px] text-neutral-500 font-mono">
+                        ({(rpc.details || "").length}/128)
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono font-bold text-neutral-400">
+                        {rpc.detailsEnabled !== false ? "VISIBLE" : "HIDDEN"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => updateRpc({ detailsEnabled: rpc.detailsEnabled === false ? true : false })}
+                        className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          rpc.detailsEnabled !== false ? "bg-white" : "bg-[#252530]"
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
+                            rpc.detailsEnabled !== false ? "translate-x-3" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
+
                   <input
                     type="text"
+                    maxLength={128}
                     value={rpc.details || ""}
                     onChange={(e) => updateRpc({ details: e.target.value })}
                     placeholder="Welcome to my profile!"
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
+
+                  <div className="pt-1">
+                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase flex items-center gap-1">
+                      <Link2 size={11} className="text-neutral-500" /> Details Clickable URL (Optional)
+                    </label>
+                    <input
+                      type="url"
+                      value={rpc.detailsUrl || ""}
+                      onChange={(e) => updateRpc({ detailsUrl: e.target.value })}
+                      placeholder="https://... (Opens when clicking Details in Discord)"
+                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
+                    />
+                  </div>
                 </div>
 
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-[11px] font-semibold text-neutral-400 uppercase">
-                      State Line (Bottom Line)
-                    </label>
-                    <span className="text-[10px] text-neutral-500 font-mono">DEFAULT: Discover my personal page on PIXEL.GG.</span>
+                {/* State Line */}
+                <div className="p-3.5 rounded-xl bg-[#08080a] border border-[#1a1a20] space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <label className="text-[11px] font-semibold text-neutral-300 uppercase">
+                        State Line (Bottom Line)
+                      </label>
+                      <span className="text-[10px] text-neutral-500 font-mono">
+                        ({(rpc.state || "").length}/128)
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono font-bold text-neutral-400">
+                        {rpc.stateEnabled !== false ? "VISIBLE" : "HIDDEN"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => updateRpc({ stateEnabled: rpc.stateEnabled === false ? true : false })}
+                        className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          rpc.stateEnabled !== false ? "bg-white" : "bg-[#252530]"
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
+                            rpc.stateEnabled !== false ? "translate-x-3" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
+
                   <input
                     type="text"
+                    maxLength={128}
                     value={rpc.state || ""}
                     onChange={(e) => updateRpc({ state: e.target.value })}
                     placeholder="Discover my personal page on PIXEL.GG."
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
+
+                  <div className="pt-1">
+                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase flex items-center gap-1">
+                      <Link2 size={11} className="text-neutral-500" /> State Clickable URL (Optional)
+                    </label>
+                    <input
+                      type="url"
+                      value={rpc.stateUrl || ""}
+                      onChange={(e) => updateRpc({ stateUrl: e.target.value })}
+                      placeholder="https://... (Opens when clicking State in Discord)"
+                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* Party configuration & Elapsed mode */}
+              {/* Party configuration & Timestamp mode */}
               <div className="pt-2 border-t border-[#181818] grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase flex items-center gap-1.5">
@@ -1912,21 +2118,63 @@ export default function AccountRpcStudioPage() {
                     Timestamp Mode
                   </label>
                   <select
-                    value={rpc.startTimestamp ? "custom" : "elapsed"}
+                    value={rpc.timestampMode || (rpc.startTimestamp ? "custom" : "now")}
                     onChange={(e) => {
-                      if (e.target.value === "elapsed") {
-                        updateRpc({ startTimestamp: null });
-                      } else {
-                        updateRpc({ startTimestamp: new Date().toISOString() });
+                      const mode = e.target.value as any;
+                      if (mode === "now") {
+                        updateRpc({ timestampMode: "now", startTimestamp: null, endTimestamp: null });
+                      } else if (mode === "time") {
+                        updateRpc({ timestampMode: "time", startTimestamp: null, endTimestamp: null });
+                      } else if (mode === "none") {
+                        updateRpc({ timestampMode: "none", startTimestamp: null, endTimestamp: null });
+                      } else if (mode === "custom") {
+                        updateRpc({
+                          timestampMode: "custom",
+                          startTimestamp: rpc.startTimestamp || new Date().toISOString(),
+                        });
                       }
                     }}
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white focus:outline-none transition-colors"
                   >
-                    <option value="elapsed">Dynamic Elapsed Time (00:00 elapsed)</option>
-                    <option value="custom">Fixed Session Timestamp</option>
+                    <option value="now">Dynamic Elapsed (00:00 elapsed since open)</option>
+                    <option value="time">Local Clock Time (Current Local Hour/Min)</option>
+                    <option value="custom">Custom Timestamp (Fixed Start / End Time)</option>
+                    <option value="none">Disabled (No Timestamp)</option>
                   </select>
                 </div>
               </div>
+
+              {/* Custom Timestamp Start/End Inputs */}
+              {(rpc.timestampMode === "custom" || (!rpc.timestampMode && rpc.startTimestamp)) && (
+                <div className="p-3.5 rounded-xl bg-[#08080a] border border-[#1f1f28] grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fade-in">
+                  <div>
+                    <label className="block text-[10px] text-neutral-400 mb-1 uppercase">Start Timestamp</label>
+                    <input
+                      type="datetime-local"
+                      value={rpc.startTimestamp ? new Date(rpc.startTimestamp).toISOString().slice(0, 16) : ""}
+                      onChange={(e) =>
+                        updateRpc({
+                          startTimestamp: e.target.value ? new Date(e.target.value).toISOString() : null,
+                        })
+                      }
+                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-neutral-400 mb-1 uppercase">End Timestamp (Optional Countdown)</label>
+                    <input
+                      type="datetime-local"
+                      value={rpc.endTimestamp ? new Date(rpc.endTimestamp).toISOString().slice(0, 16) : ""}
+                      onChange={(e) =>
+                        updateRpc({
+                          endTimestamp: e.target.value ? new Date(e.target.value).toISOString() : null,
+                        })
+                      }
+                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Section 2: Visual Assets & Profile Picture Integration */}
@@ -2155,6 +2403,20 @@ export default function AccountRpcStudioPage() {
                     />
                   </div>
                 </div>
+
+                <div className="pt-1">
+                  <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase flex items-center gap-1.5">
+                    <Link2 size={12} className="text-neutral-500" />
+                    Large Image Clickable URL (Optional)
+                  </label>
+                  <input
+                    type="url"
+                    value={rpc.largeImageUrl || ""}
+                    onChange={(e) => updateRpc({ largeImageUrl: e.target.value })}
+                    placeholder="https://... (Opens when clicking large activity image in Discord)"
+                    className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
+                  />
+                </div>
               </div>
 
               {/* Small Activity Icon Upload & Customization */}
@@ -2338,15 +2600,565 @@ export default function AccountRpcStudioPage() {
                     />
                   </div>
                 </div>
+
+                <div className="pt-1">
+                  <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase flex items-center gap-1.5">
+                    <Link2 size={12} className="text-neutral-500" />
+                    Small Image Clickable URL (Optional)
+                  </label>
+                  <input
+                    type="url"
+                    value={rpc.smallImageUrl || ""}
+                    onChange={(e) => updateRpc({ smallImageUrl: e.target.value })}
+                    placeholder="https://... (Opens when clicking small activity icon in Discord)"
+                    className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
+                  />
+                </div>
               </div>
             </div>
 
-            {/* Section 3: Profile Action Buttons with Resizing & Modern Animated Toggles */}
+            {/* Section 3: Custom Streaks, Statistics & Status Labels */}
+            <div className="p-6 bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#181818] pb-3">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span className="text-[#d71920]">[03]</span> CUSTOM STREAKS, STATISTICS & STATUS LABELS
+                  </h3>
+                  <span className="text-[10px] text-neutral-500 uppercase">
+                    INTEGRATED COUNTERS, BADGES & HIGHLIGHTS EMBEDDED DIRECTLY INTO DISCORD PRESENCE
+                  </span>
+                </div>
+
+                {/* Sub-navigation tabs */}
+                <div className="flex items-center gap-1 bg-[#121216] border border-[#22222a] p-1 rounded-xl">
+                  {[
+                    { id: "streaks", label: "Streaks", count: rpc.streaks?.length || 0, icon: Flame },
+                    { id: "statistics", label: "Statistics", count: rpc.statistics?.length || 0, icon: BarChart2 },
+                    { id: "labels", label: "Status Badges", count: rpc.statusLabels?.length || 0, icon: Tag },
+                  ].map((tab) => {
+                    const active = customTab === tab.id;
+                    const Icon = tab.icon;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setCustomTab(tab.id as any)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                          active
+                            ? "bg-white text-black shadow-sm"
+                            : "text-neutral-400 hover:text-white"
+                        }`}
+                      >
+                        <Icon size={12} />
+                        <span>{tab.label}</span>
+                        {tab.count > 0 && (
+                          <span
+                            className={`px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold ${
+                              active ? "bg-black text-white" : "bg-neutral-800 text-neutral-300"
+                            }`}
+                          >
+                            {tab.count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Subtab 1: Streaks */}
+              {customTab === "streaks" && (
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <p className="text-xs text-neutral-400">
+                      Display consecutive daily activities, gaming win streaks, or milestone counters formatted into Details or State.
+                    </p>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => addStreak()}
+                        className="text-xs px-3 py-1.5 flex items-center gap-1.5 bg-[#141414] hover:bg-[#202020] text-white border-[#2a2a2a]"
+                      >
+                        <Plus size={13} /> Add Streak
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Quick Preset Buttons */}
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <span className="text-[10px] text-neutral-500 uppercase font-mono">QUICK PRESETS:</span>
+                    {[
+                      { name: "Win Streak", value: 7, prefix: "🔥", suffix: "Wins", targetField: "details" as const },
+                      { name: "Daily Grind", value: 14, prefix: "⚡", suffix: "Days", targetField: "details" as const },
+                      { name: "Match Streak", value: 25, prefix: "🏆", suffix: "W", targetField: "state" as const },
+                    ].map((preset, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => addStreak(preset)}
+                        className="px-2.5 py-1 rounded-lg bg-[#111116] hover:bg-[#1a1a22] border border-[#22222a] text-[11px] text-neutral-300 hover:text-white transition-colors flex items-center gap-1"
+                      >
+                        <span>{preset.prefix}</span>
+                        <span>
+                          {preset.value} {preset.suffix} {preset.name}
+                        </span>
+                        <Plus size={10} className="text-neutral-500 ml-0.5" />
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Streaks List */}
+                  {!rpc.streaks || rpc.streaks.length === 0 ? (
+                    <div className="p-8 rounded-xl bg-[#070709] border border-[#1a1a22] text-center space-y-2">
+                      <Flame size={28} className="mx-auto text-neutral-600" />
+                      <p className="text-xs text-neutral-400 font-medium">No Custom Streaks Configured</p>
+                      <p className="text-[11px] text-neutral-600 max-w-sm mx-auto">
+                        Add a streak like &quot;🔥 12 Win Streak&quot; to showcase your performance directly on Discord.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {rpc.streaks.map((streak, idx) => (
+                        <div
+                          key={streak.id}
+                          className="p-3.5 rounded-xl bg-[#08080a] border border-[#1f1f24] space-y-3 transition-colors hover:border-[#2a2a32]"
+                        >
+                          <div className="flex items-center justify-between gap-2 border-b border-[#181820] pb-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-mono text-neutral-500">#{idx + 1}</span>
+                              <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                                {streak.prefix && <span>{streak.prefix}</span>}
+                                <span>{streak.value}</span>
+                                {streak.suffix && <span>{streak.suffix}</span>}
+                                <span>{streak.name}</span>
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              {/* Target Field Selector */}
+                              <select
+                                value={streak.targetField || "details"}
+                                onChange={(e) => updateStreak(streak.id, { targetField: e.target.value as any })}
+                                className="bg-[#121216] border border-[#22222a] text-[11px] text-neutral-300 rounded px-2 py-1 focus:outline-none"
+                              >
+                                <option value="details">Append to Details (Top)</option>
+                                <option value="state">Append to State (Bottom)</option>
+                              </select>
+
+                              {/* Toggle */}
+                              <button
+                                type="button"
+                                onClick={() => updateStreak(streak.id, { enabled: !streak.enabled })}
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border transition-colors ${
+                                  streak.enabled
+                                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                                    : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                                }`}
+                              >
+                                {streak.enabled ? "ACTIVE" : "OFF"}
+                              </button>
+
+                              {/* Reorder Up */}
+                              <button
+                                type="button"
+                                disabled={idx === 0}
+                                onClick={() => moveStreak(idx, "up")}
+                                className="p-1 rounded hover:bg-[#1a1a20] text-neutral-400 hover:text-white disabled:opacity-20"
+                                title="Move Up"
+                              >
+                                <ArrowUp size={12} />
+                              </button>
+
+                              {/* Reorder Down */}
+                              <button
+                                type="button"
+                                disabled={idx === (rpc.streaks?.length || 0) - 1}
+                                onClick={() => moveStreak(idx, "down")}
+                                className="p-1 rounded hover:bg-[#1a1a20] text-neutral-400 hover:text-white disabled:opacity-20"
+                                title="Move Down"
+                              >
+                                <ArrowDown size={12} />
+                              </button>
+
+                              {/* Delete */}
+                              <button
+                                type="button"
+                                onClick={() => removeStreak(streak.id)}
+                                className="p-1 rounded hover:bg-red-950/40 text-neutral-500 hover:text-red-400"
+                                title="Delete Streak"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Streak Inputs */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                            <div>
+                              <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Streak Name</label>
+                              <input
+                                type="text"
+                                value={streak.name}
+                                onChange={(e) => updateStreak(streak.id, { name: e.target.value })}
+                                placeholder="Win Streak"
+                                className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Count / Value</label>
+                              <input
+                                type="number"
+                                value={streak.value}
+                                onChange={(e) => updateStreak(streak.id, { value: parseInt(e.target.value, 10) || 0 })}
+                                placeholder="5"
+                                className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Prefix Emoji</label>
+                              <input
+                                type="text"
+                                value={streak.prefix || ""}
+                                onChange={(e) => updateStreak(streak.id, { prefix: e.target.value })}
+                                placeholder="🔥"
+                                className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Suffix / Unit</label>
+                              <input
+                                type="text"
+                                value={streak.suffix || ""}
+                                onChange={(e) => updateStreak(streak.id, { suffix: e.target.value })}
+                                placeholder="Wins"
+                                className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Subtab 2: Statistics */}
+              {customTab === "statistics" && (
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <p className="text-xs text-neutral-400">
+                      Display in-game ranking, leaderboard statistics, level, or scores appended to your Rich Presence.
+                    </p>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => addStatistic()}
+                        className="text-xs px-3 py-1.5 flex items-center gap-1.5 bg-[#141414] hover:bg-[#202020] text-white border-[#2a2a2a]"
+                      >
+                        <Plus size={13} /> Add Statistic
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Quick Preset Buttons */}
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <span className="text-[10px] text-neutral-500 uppercase font-mono">QUICK PRESETS:</span>
+                    {[
+                      { label: "Rank", value: "Diamond II", prefix: "🏆", suffix: "", targetField: "state" as const },
+                      { label: "Kills", value: "1,450", prefix: "⚔️", suffix: "K", targetField: "state" as const },
+                      { label: "Level", value: "85", prefix: "⭐", suffix: "", targetField: "details" as const },
+                      { label: "Score", value: "9,800", prefix: "🎯", suffix: "pts", targetField: "state" as const },
+                    ].map((preset, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => addStatistic(preset)}
+                        className="px-2.5 py-1 rounded-lg bg-[#111116] hover:bg-[#1a1a22] border border-[#22222a] text-[11px] text-neutral-300 hover:text-white transition-colors flex items-center gap-1"
+                      >
+                        <span>{preset.prefix}</span>
+                        <span>
+                          {preset.label}: {preset.value}
+                        </span>
+                        <Plus size={10} className="text-neutral-500 ml-0.5" />
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Statistics List */}
+                  {!rpc.statistics || rpc.statistics.length === 0 ? (
+                    <div className="p-8 rounded-xl bg-[#070709] border border-[#1a1a22] text-center space-y-2">
+                      <BarChart2 size={28} className="mx-auto text-neutral-600" />
+                      <p className="text-xs text-neutral-400 font-medium">No Custom Statistics Configured</p>
+                      <p className="text-[11px] text-neutral-600 max-w-sm mx-auto">
+                        Add a stat like &quot;🏆 Rank: Diamond&quot; or &quot;⚔️ Kills: 1.5K&quot; to broadcast your milestones.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {rpc.statistics.map((stat, idx) => (
+                        <div
+                          key={stat.id}
+                          className="p-3.5 rounded-xl bg-[#08080a] border border-[#1f1f24] space-y-3 transition-colors hover:border-[#2a2a32]"
+                        >
+                          <div className="flex items-center justify-between gap-2 border-b border-[#181820] pb-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-mono text-neutral-500">#{idx + 1}</span>
+                              <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                                {stat.prefix && <span>{stat.prefix}</span>}
+                                <span>{stat.label}:</span>
+                                <span>{stat.value}</span>
+                                {stat.suffix && <span>{stat.suffix}</span>}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              {/* Target Field Selector */}
+                              <select
+                                value={stat.targetField || "state"}
+                                onChange={(e) => updateStatistic(stat.id, { targetField: e.target.value as any })}
+                                className="bg-[#121216] border border-[#22222a] text-[11px] text-neutral-300 rounded px-2 py-1 focus:outline-none"
+                              >
+                                <option value="state">Append to State (Bottom)</option>
+                                <option value="details">Append to Details (Top)</option>
+                              </select>
+
+                              {/* Toggle */}
+                              <button
+                                type="button"
+                                onClick={() => updateStatistic(stat.id, { enabled: !stat.enabled })}
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border transition-colors ${
+                                  stat.enabled
+                                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                                    : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                                }`}
+                              >
+                                {stat.enabled ? "ACTIVE" : "OFF"}
+                              </button>
+
+                              {/* Reorder Up */}
+                              <button
+                                type="button"
+                                disabled={idx === 0}
+                                onClick={() => moveStatistic(idx, "up")}
+                                className="p-1 rounded hover:bg-[#1a1a20] text-neutral-400 hover:text-white disabled:opacity-20"
+                                title="Move Up"
+                              >
+                                <ArrowUp size={12} />
+                              </button>
+
+                              {/* Reorder Down */}
+                              <button
+                                type="button"
+                                disabled={idx === (rpc.statistics?.length || 0) - 1}
+                                onClick={() => moveStatistic(idx, "down")}
+                                className="p-1 rounded hover:bg-[#1a1a20] text-neutral-400 hover:text-white disabled:opacity-20"
+                                title="Move Down"
+                              >
+                                <ArrowDown size={12} />
+                              </button>
+
+                              {/* Delete */}
+                              <button
+                                type="button"
+                                onClick={() => removeStatistic(stat.id)}
+                                className="p-1 rounded hover:bg-red-950/40 text-neutral-500 hover:text-red-400"
+                                title="Delete Statistic"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Statistic Inputs */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                            <div>
+                              <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Metric / Label</label>
+                              <input
+                                type="text"
+                                value={stat.label}
+                                onChange={(e) => updateStatistic(stat.id, { label: e.target.value })}
+                                placeholder="Rank"
+                                className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Current Value</label>
+                              <input
+                                type="text"
+                                value={stat.value}
+                                onChange={(e) => updateStatistic(stat.id, { value: e.target.value })}
+                                placeholder="Diamond"
+                                className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Prefix Emoji</label>
+                              <input
+                                type="text"
+                                value={stat.prefix || ""}
+                                onChange={(e) => updateStatistic(stat.id, { prefix: e.target.value })}
+                                placeholder="🏆"
+                                className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Suffix / Unit</label>
+                              <input
+                                type="text"
+                                value={stat.suffix || ""}
+                                onChange={(e) => updateStatistic(stat.id, { suffix: e.target.value })}
+                                placeholder="pts"
+                                className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Subtab 3: Status Labels / Badges */}
+              {customTab === "labels" && (
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <p className="text-xs text-neutral-400">
+                      Add highlighted status badges such as MVP, Competitive, or Custom Tags to your presence.
+                    </p>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => addStatusLabel()}
+                        className="text-xs px-3 py-1.5 flex items-center gap-1.5 bg-[#141414] hover:bg-[#202020] text-white border-[#2a2a2a]"
+                      >
+                        <Plus size={13} /> Add Status Badge
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* One-click toggle presets */}
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <span className="text-[10px] text-neutral-500 uppercase font-mono">ONE-CLICK BADGES:</span>
+                    {[
+                      { emoji: "👑", label: "MVP", targetField: "details" as const },
+                      { emoji: "⚔️", label: "Competitive", targetField: "details" as const },
+                      { emoji: "🔥", label: "Trending", targetField: "details" as const },
+                      { emoji: "💎", label: "Pro", targetField: "details" as const },
+                      { emoji: "🟢", label: "Online", targetField: "state" as const },
+                      { emoji: "🎮", label: "In Match", targetField: "state" as const },
+                    ].map((badge, idx) => {
+                      const existing = (rpc.statusLabels || []).find((l) => l.label.toLowerCase() === badge.label.toLowerCase());
+                      const isActive = existing ? existing.enabled : false;
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            if (existing) {
+                              updateStatusLabel(existing.id, { enabled: !existing.enabled });
+                            } else {
+                              addStatusLabel({ emoji: badge.emoji, label: badge.label, targetField: badge.targetField });
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all flex items-center gap-1.5 ${
+                            isActive
+                              ? "bg-purple-950/40 border-purple-500/50 text-purple-200 shadow-sm"
+                              : "bg-[#111116] border-[#22222a] text-neutral-400 hover:text-white hover:border-neutral-700"
+                          }`}
+                        >
+                          <span>{badge.emoji}</span>
+                          <span>{badge.label}</span>
+                          <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-purple-400" : "bg-neutral-600"}`} />
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Status Labels List */}
+                  {!rpc.statusLabels || rpc.statusLabels.length === 0 ? (
+                    <div className="p-8 rounded-xl bg-[#070709] border border-[#1a1a22] text-center space-y-2">
+                      <Tag size={28} className="mx-auto text-neutral-600" />
+                      <p className="text-xs text-neutral-400 font-medium">No Status Badges Configured</p>
+                      <p className="text-[11px] text-neutral-600 max-w-sm mx-auto">
+                        Click any of the one-click badges above or add a custom badge to display on your activity.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {rpc.statusLabels.map((lbl, idx) => (
+                        <div
+                          key={lbl.id}
+                          className="p-3 rounded-xl bg-[#08080a] border border-[#1f1f24] flex items-center justify-between gap-3"
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <input
+                              type="text"
+                              value={lbl.emoji || ""}
+                              onChange={(e) => updateStatusLabel(lbl.id, { emoji: e.target.value })}
+                              placeholder="👑"
+                              className="w-10 bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white text-center focus:outline-none shrink-0"
+                            />
+                            <input
+                              type="text"
+                              value={lbl.label}
+                              onChange={(e) => updateStatusLabel(lbl.id, { label: e.target.value })}
+                              placeholder="MVP"
+                              className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            {/* Target Field */}
+                            <select
+                              value={lbl.targetField || "details"}
+                              onChange={(e) => updateStatusLabel(lbl.id, { targetField: e.target.value as any })}
+                              className="bg-[#121216] border border-[#22222a] text-[11px] text-neutral-300 rounded px-2 py-1 focus:outline-none"
+                            >
+                              <option value="details">Details (Top)</option>
+                              <option value="state">State (Bottom)</option>
+                            </select>
+
+                            {/* Toggle */}
+                            <button
+                              type="button"
+                              onClick={() => updateStatusLabel(lbl.id, { enabled: !lbl.enabled })}
+                              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border transition-colors ${
+                                lbl.enabled
+                                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                                  : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                              }`}
+                            >
+                              {lbl.enabled ? "ACTIVE" : "OFF"}
+                            </button>
+
+                            {/* Delete */}
+                            <button
+                              type="button"
+                              onClick={() => removeStatusLabel(lbl.id)}
+                              className="p-1.5 rounded hover:bg-red-950/40 text-neutral-500 hover:text-red-400"
+                              title="Delete Badge"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Section 4: Profile Action Buttons with Resizing & Modern Animated Toggles */}
             <div className="p-6 bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#181818] pb-3">
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <span className="text-[#d71920]">[03]</span> RICH PRESENCE ACTION BUTTONS & SIZING
+                    <span className="text-[#d71920]">[04]</span> RICH PRESENCE ACTION BUTTONS & SIZING
                   </h3>
                   <span className="text-[10px] text-neutral-500 uppercase">
                     DISCORD PROFILE CTA LINKS (MAX 2) & PREVIEW SIZE CONTROLS
@@ -2596,27 +3408,93 @@ export default function AccountRpcStudioPage() {
                   )}
                 </div>
 
-                {/* Activity Text Lines */}
-                <div className="flex-1 min-w-0 flex flex-col justify-center font-sans">
-                  <h4 className="text-white font-bold text-[15px] truncate leading-tight">
-                    {rpc.appName || "Pixel.gg"}
-                  </h4>
-                  {rpc.details && (
-                    <p className="text-[#dbdee1] text-[13px] truncate font-medium mt-0.5">
-                      {rpc.details}
-                    </p>
-                  )}
-                  {rpc.state && (
-                    <p className="text-[#949ba4] text-xs truncate mt-0.5">
-                      {rpc.state}
-                      {rpc.partySize && rpc.partyMax && ` (${rpc.partySize} of ${rpc.partyMax})`}
-                    </p>
-                  )}
-                  <p className="text-[#949ba4] text-[11px] truncate mt-1 flex items-center gap-1">
-                    <Clock size={11} className="shrink-0" />
-                    <span>{formatElapsed(elapsedSeconds)}</span>
-                  </p>
-                </div>
+                {/* Activity Text Lines (Enhanced with Streaks, Statistics & Status Labels) */}
+                {(() => {
+                  const compiledDetails = formatRichPresenceField(
+                    rpc.details,
+                    rpc.detailsEnabled,
+                    "details",
+                    rpc.statusLabels,
+                    rpc.streaks,
+                    rpc.statistics
+                  );
+
+                  const compiledState = formatRichPresenceField(
+                    rpc.state,
+                    rpc.stateEnabled,
+                    "state",
+                    rpc.statusLabels,
+                    rpc.streaks,
+                    rpc.statistics
+                  );
+
+                  const tMode = String(rpc.timestampMode ?? (rpc.startTimestamp ? "custom" : "now")).toLowerCase();
+                  let timestampStr: string | null = null;
+                  if (tMode === "now" || tMode === "1") {
+                    timestampStr = `${formatElapsed(elapsedSeconds)} elapsed`;
+                  } else if (tMode === "time" || tMode === "2") {
+                    const now = new Date();
+                    timestampStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+                  } else if (tMode === "custom" || tMode === "3") {
+                    if (rpc.startTimestamp) {
+                      timestampStr = `${formatElapsed(elapsedSeconds)} elapsed`;
+                    }
+                  }
+
+                  return (
+                    <div className="flex-1 min-w-0 flex flex-col justify-center font-sans">
+                      <h4 className="text-white font-bold text-[15px] truncate leading-tight">
+                        {rpc.appName || "Pixel.gg"}
+                      </h4>
+
+                      {compiledDetails && (
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <p className="text-[#dbdee1] text-[13px] truncate font-medium">
+                            {compiledDetails}
+                          </p>
+                          {rpc.detailsUrl && (
+                            <a
+                              href={rpc.detailsUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-neutral-400 hover:text-white shrink-0"
+                              title={`Details Link: ${rpc.detailsUrl}`}
+                            >
+                              <ExternalLink size={11} />
+                            </a>
+                          )}
+                        </div>
+                      )}
+
+                      {(compiledState || (rpc.partySize && rpc.partyMax)) && (
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <p className="text-[#949ba4] text-xs truncate">
+                            {compiledState}
+                            {rpc.partySize && rpc.partyMax && ` (${rpc.partySize} of ${rpc.partyMax})`}
+                          </p>
+                          {rpc.stateUrl && (
+                            <a
+                              href={rpc.stateUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-neutral-400 hover:text-white shrink-0"
+                              title={`State Link: ${rpc.stateUrl}`}
+                            >
+                              <ExternalLink size={11} />
+                            </a>
+                          )}
+                        </div>
+                      )}
+
+                      {timestampStr && (
+                        <p className="text-[#949ba4] text-[11px] truncate mt-1 flex items-center gap-1">
+                          <Clock size={11} className="shrink-0" />
+                          <span>{timestampStr}</span>
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Discord Action Buttons (Enforcing max 2 buttons, size customization, and independent toggle) */}

@@ -1,5 +1,6 @@
 import { prisma } from '@discord-rpc/database';
 import { io } from '../index';
+import { formatRichPresenceField } from '../utils/rpcFormat';
 
 export interface LiveActivity {
   name: string;
@@ -433,6 +434,31 @@ class PresenceManager {
       const startTime = dbRpc.startTimestamp ? new Date(dbRpc.startTimestamp).getTime() : null;
       const endTime = dbRpc.endTimestamp ? new Date(dbRpc.endTimestamp).getTime() : null;
 
+      let customCfg: any = {};
+      if ((dbRpc as any).customConfig) {
+        try {
+          customCfg = JSON.parse((dbRpc as any).customConfig) || {};
+        } catch (_) {}
+      }
+
+      const formattedDetails = formatRichPresenceField(
+        dbRpc.details,
+        customCfg.detailsEnabled,
+        'details',
+        customCfg.statusLabels,
+        customCfg.streaks,
+        customCfg.statistics
+      );
+
+      const formattedState = formatRichPresenceField(
+        dbRpc.state,
+        customCfg.stateEnabled,
+        'state',
+        customCfg.statusLabels,
+        customCfg.streaks,
+        customCfg.statistics
+      );
+
       const buttons: Array<{ label: string; url: string }> = [];
       if (dbRpc.button1Enabled !== false && dbRpc.button1Url) {
         buttons.push({ label: dbRpc.button1Label || 'View Profile', url: dbRpc.button1Url });
@@ -445,8 +471,8 @@ class PresenceManager {
         name: dbRpc.appName || 'Active Application',
         appName: dbRpc.appName || 'Active Application',
         type: typeof dbRpc.activityType === 'number' ? dbRpc.activityType : 0,
-        details: dbRpc.details || null,
-        state: dbRpc.state || null,
+        details: formattedDetails || null,
+        state: formattedState || null,
         largeImage: dbRpc.largeImage || null,
         largeImageText: dbRpc.largeImageText || null,
         smallImage: dbRpc.smallImage || null,
