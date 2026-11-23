@@ -1897,6 +1897,11 @@ export default function AccountRpcStudioPage() {
                     placeholder="1523632136878559302"
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
+                  {rpc.appId && !/^\d{16,21}$/.test(rpc.appId.trim()) && (
+                    <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-mono">
+                      <AlertCircle size={10} /> Must be a valid 16-21 digit Discord Application ID.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1957,6 +1962,11 @@ export default function AccountRpcStudioPage() {
                     placeholder={`https://twitch.tv/${currentUser?.username || "pixelgg"}`}
                     className="w-full bg-[#050505] border border-purple-500/40 focus:border-purple-400 rounded-lg p-2.5 text-xs text-white placeholder-purple-300/40 focus:outline-none transition-colors"
                   />
+                  {rpc.streamUrl && !/^https?:\/\/(www\.)?(twitch\.tv|youtube\.com)\/\w+/i.test(rpc.streamUrl.trim()) && (
+                    <p className="text-[10px] text-amber-300 mt-1 flex items-center gap-1 font-mono">
+                      <AlertCircle size={10} /> Stream link should be a valid Twitch or YouTube stream URL.
+                    </p>
+                  )}
                   <p className="text-[10px] text-neutral-400">
                     Discord Gateway requires a valid stream URL (e.g. Twitch or YouTube Live) to broadcast the purple Streaming indicator.
                   </p>
@@ -2017,6 +2027,11 @@ export default function AccountRpcStudioPage() {
                       placeholder="https://... (Opens when clicking Details in Discord)"
                       className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                     />
+                    {rpc.detailsUrl && !/^https?:\/\/.+/i.test(rpc.detailsUrl.trim()) && (
+                      <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-mono">
+                        <AlertCircle size={10} /> URL must start with http:// or https://
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -2072,6 +2087,11 @@ export default function AccountRpcStudioPage() {
                       placeholder="https://... (Opens when clicking State in Discord)"
                       className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                     />
+                    {rpc.stateUrl && !/^https?:\/\/.+/i.test(rpc.stateUrl.trim()) && (
+                      <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-mono">
+                        <AlertCircle size={10} /> URL must start with http:// or https://
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2110,6 +2130,11 @@ export default function AccountRpcStudioPage() {
                       className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors text-center"
                     />
                   </div>
+                  {typeof rpc.partySize === "number" && typeof rpc.partyMax === "number" && rpc.partySize > rpc.partyMax && (
+                    <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-mono">
+                      <AlertCircle size={10} /> Party size cannot exceed maximum party size.
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -2121,18 +2146,7 @@ export default function AccountRpcStudioPage() {
                     value={rpc.timestampMode || (rpc.startTimestamp ? "custom" : "now")}
                     onChange={(e) => {
                       const mode = e.target.value as any;
-                      if (mode === "now") {
-                        updateRpc({ timestampMode: "now", startTimestamp: null, endTimestamp: null });
-                      } else if (mode === "time") {
-                        updateRpc({ timestampMode: "time", startTimestamp: null, endTimestamp: null });
-                      } else if (mode === "none") {
-                        updateRpc({ timestampMode: "none", startTimestamp: null, endTimestamp: null });
-                      } else if (mode === "custom") {
-                        updateRpc({
-                          timestampMode: "custom",
-                          startTimestamp: rpc.startTimestamp || new Date().toISOString(),
-                        });
-                      }
+                      updateRpc({ timestampMode: mode });
                     }}
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white focus:outline-none transition-colors"
                   >
@@ -2146,33 +2160,40 @@ export default function AccountRpcStudioPage() {
 
               {/* Custom Timestamp Start/End Inputs */}
               {(rpc.timestampMode === "custom" || (!rpc.timestampMode && rpc.startTimestamp)) && (
-                <div className="p-3.5 rounded-xl bg-[#08080a] border border-[#1f1f28] grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fade-in">
-                  <div>
-                    <label className="block text-[10px] text-neutral-400 mb-1 uppercase">Start Timestamp</label>
-                    <input
-                      type="datetime-local"
-                      value={rpc.startTimestamp ? new Date(rpc.startTimestamp).toISOString().slice(0, 16) : ""}
-                      onChange={(e) =>
-                        updateRpc({
-                          startTimestamp: e.target.value ? new Date(e.target.value).toISOString() : null,
-                        })
-                      }
-                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white focus:outline-none"
-                    />
+                <div className="p-3.5 rounded-xl bg-[#08080a] border border-[#1f1f28] space-y-2 animate-fade-in">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] text-neutral-400 mb-1 uppercase font-semibold">Start Date & Time</label>
+                      <input
+                        type="datetime-local"
+                        value={rpc.startTimestamp ? new Date(rpc.startTimestamp).toISOString().slice(0, 16) : ""}
+                        onChange={(e) =>
+                          updateRpc({
+                            startTimestamp: e.target.value ? new Date(e.target.value).toISOString() : null,
+                          })
+                        }
+                        className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-neutral-400 mb-1 uppercase font-semibold">End Date & Time (Optional Countdown)</label>
+                      <input
+                        type="datetime-local"
+                        value={rpc.endTimestamp ? new Date(rpc.endTimestamp).toISOString().slice(0, 16) : ""}
+                        onChange={(e) =>
+                          updateRpc({
+                            endTimestamp: e.target.value ? new Date(e.target.value).toISOString() : null,
+                          })
+                        }
+                        className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white focus:outline-none"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-[10px] text-neutral-400 mb-1 uppercase">End Timestamp (Optional Countdown)</label>
-                    <input
-                      type="datetime-local"
-                      value={rpc.endTimestamp ? new Date(rpc.endTimestamp).toISOString().slice(0, 16) : ""}
-                      onChange={(e) =>
-                        updateRpc({
-                          endTimestamp: e.target.value ? new Date(e.target.value).toISOString() : null,
-                        })
-                      }
-                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white focus:outline-none"
-                    />
-                  </div>
+                  {rpc.startTimestamp && rpc.endTimestamp && new Date(rpc.startTimestamp).getTime() >= new Date(rpc.endTimestamp).getTime() && (
+                    <p className="text-[10px] text-amber-400 flex items-center gap-1 font-mono pt-1">
+                      <AlertCircle size={10} /> Start timestamp must be earlier than End timestamp.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -2416,6 +2437,11 @@ export default function AccountRpcStudioPage() {
                     placeholder="https://... (Opens when clicking large activity image in Discord)"
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
+                  {rpc.largeImageUrl && !/^https?:\/\/.+/i.test(rpc.largeImageUrl.trim()) && (
+                    <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-mono">
+                      <AlertCircle size={10} /> URL must start with http:// or https://
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -2613,6 +2639,11 @@ export default function AccountRpcStudioPage() {
                     placeholder="https://... (Opens when clicking small activity icon in Discord)"
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
+                  {rpc.smallImageUrl && !/^https?:\/\/.+/i.test(rpc.smallImageUrl.trim()) && (
+                    <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-mono">
+                      <AlertCircle size={10} /> URL must start with http:// or https://
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
