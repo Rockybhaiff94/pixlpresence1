@@ -14,6 +14,15 @@ async function resolveOptionalViewer(req: any) {
   if (req.user) return req.user;
   if (typeof req.isAuthenticated === 'function' && req.isAuthenticated()) return req.user;
 
+  // Session fallback
+  const sessionUserId = (req.session as any)?.userId || (req.session as any)?.passport?.user;
+  if (sessionUserId) {
+    try {
+      const sessionUser = await prisma.user.findUnique({ where: { id: sessionUserId } });
+      if (sessionUser) return sessionUser;
+    } catch (_) {}
+  }
+
   let token: string | null = null;
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {

@@ -35,8 +35,23 @@ import {
 } from "lucide-react";
 import { AccountLayout } from "@/components/account/AccountLayout";
 import { Button } from "@/components/nothing/Button";
-import { apiFetch, getStoredToken, setStoredToken } from "@/lib/api";
+import { apiFetch, getApiBaseUrl, getStoredToken, setStoredToken } from "@/lib/api";
+import { io, Socket } from "socket.io-client";
+import { useAuth } from "@/context/AuthContext";
 import { ImageCustomizerModal, CropData } from "@/components/rpc/ImageCustomizerModal";
+
+function formatRelativeTime(dateInput: string | Date | undefined): string {
+  if (!dateInput) return "Recently";
+  const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
+  const elapsed = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (elapsed < 15) return "Just now";
+  if (elapsed < 60) return `${elapsed}s ago`;
+  const mins = Math.floor(elapsed / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
 
 interface RpcConfig {
   appId?: string;
@@ -151,6 +166,7 @@ const PRESETS: Record<string, Partial<RpcConfig>> = {
 };
 
 export default function AccountRpcStudioPage() {
+  const { user: authUser, token: authContextToken, status: authStatus } = useAuth();
   const [token, setToken] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
@@ -188,9 +204,48 @@ export default function AccountRpcStudioPage() {
     expiresAtMs: number;
   } | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
-  const [linkedDevices, setLinkedDevices] = useState<
-    { id: string; deviceName: string; consumedAt: string; lastUsedAt: string }[]
-  >([]);
+
+  type DeviceConnState =
+    | "not_linked"
+    | "authorizing"
+    | "linking"
+    | "connected"
+    | "syncing"
+    | "reconnecting"
+    | "disconnected"
+    | "offline"
+    | "unauthorized"
+    | "discord_unavailable"
+    | "error";
+
+  type DevicePubStatus =
+    | "not_published"
+    | "preparing"
+    | "publishing"
+    | "active"
+    | "update_pending"
+    | "failed"
+    | "cleared";
+
+  interface LinkedDeviceItem {
+    id: string;
+    deviceName?: string;
+    consumedAt: string;
+    lastUsedAt?: string;
+    createdAt?: string;
+    isOnline?: boolean;
+    connectionState?: DeviceConnState;
+    discordAvailable?: boolean;
+    publishingStatus?: DevicePubStatus;
+    pluginVersion?: string;
+    lastAppliedRevision?: number;
+    activeTitle?: string | null;
+    lastError?: string | null;
+  }
+
+  const [linkedDevices, setLinkedDevices] = useState<LinkedDeviceItem[]>([]);
+  const [unlinkingDeviceId, setUnlinkingDeviceId] = useState<string | null>(null);
+  const [confirmedRevision, setConfirmedRevision] = useState<number | null>(null);
   const [copiedInstallCmd, setCopiedInstallCmd] = useState(false);
 
   // Monotonic session tracking & in-flight abort refs to completely eliminate UI flickering
@@ -401,7 +456,7 @@ export default function AccountRpcStudioPage() {
         const [tokenRes, rpcRes, accountRes] = await Promise.all([
           apiFetch("/api/profile/me/token"),
           apiFetch("/api/rpc/me"),
-          apiFetch("/api/account"),
+          apiFetch("/api/account/overview"),
         ]);
 
         if (tokenRes.ok) {
@@ -410,6 +465,9 @@ export default function AccountRpcStudioPage() {
             setToken(tokenData.token);
             setStoredToken(tokenData.token);
           }
+        } else if (authUser?.appToken) {
+          setToken(authUser.appToken);
+          setStoredToken(authUser.appToken);
         }
 
         if (accountRes.ok) {
@@ -417,6 +475,8 @@ export default function AccountRpcStudioPage() {
           if (accountData?.user) {
             setCurrentUser(accountData.user);
           }
+        } else if (authUser) {
+          setCurrentUser(authUser as any);
         }
 
         if (rpcRes.ok) {
@@ -475,6 +535,64 @@ export default function AccountRpcStudioPage() {
       // ignore
     }
   };
+
+  // Real-time bidirectional connection and synchronization socket
+  useEffect(() => {
+    const currentToken = getStoredToken() || token;
+    if (!currentToken) return;
+
+    let socket: Socket | null = null;
+    try {
+      const socketUrl = getApiBaseUrl();
+      socket = io(socketUrl, {
+        transports: ["websocket", "polling"],
+        withCredentials: true,
+      });
+
+      socket.on("connect", () => {
+        socket?.emit("authenticate", currentToken, { clientType: "web" });
+      });
+
+      socket.on("device_linked", () => {
+        fetchLinkedDevices();
+      });
+
+      socket.on("device_status_update", (updatedDevice: any) => {
+        setLinkedDevices((prev) => {
+          const index = prev.findIndex((d) => d.id === updatedDevice.deviceId || d.id === updatedDevice.id);
+          if (index !== -1) {
+            const copy = [...prev];
+            copy[index] = { ...copy[index], ...updatedDevice };
+            return copy;
+          }
+          return [...prev, updatedDevice];
+        });
+      });
+
+      socket.on("device_revoked", (revoked: { deviceId: string; reason: string }) => {
+        setLinkedDevices((prev) => prev.filter((d) => d.id !== revoked.deviceId));
+      });
+
+      socket.on("rpc_sync_confirmed", (ack: { revision: number; publishingStatus: string; activeTitle?: string }) => {
+        setSyncStatus("synced");
+        setLastSyncedTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+        setConfirmedRevision(ack.revision);
+      });
+    } catch (err) {
+      console.warn("[RPC Studio] Socket init notice:", err);
+    }
+
+    const interval = setInterval(() => {
+      fetchLinkedDevices();
+    }, 30000);
+
+    return () => {
+      clearInterval(interval);
+      if (socket) {
+        socket.disconnect();
+      }
+    };
+  }, [token]);
 
   // Helper to completely purge active timers and abort in-flight requests
   const clearSessionPointers = () => {
@@ -538,8 +656,23 @@ export default function AccountRpcStudioPage() {
     setLinkingState("generating");
 
     try {
-      // Ensure we have the user's active token from localStorage, cookie, or live profile
-      let currentToken = getStoredToken() || token;
+      // Ensure we have the user's active token from localStorage, cookie, auth context, or live profile
+      let currentToken = getStoredToken() || authContextToken || authUser?.appToken || token;
+      
+      if (!currentToken) {
+        try {
+          const authMeRes = await apiFetch("/api/auth/me", { signal: controller.signal });
+          if (authMeRes.ok) {
+            const authMeData = await authMeRes.json();
+            if (authMeData?.appToken) {
+              currentToken = authMeData.appToken;
+              setToken(authMeData.appToken);
+              setStoredToken(authMeData.appToken);
+            }
+          }
+        } catch (_) {}
+      }
+
       if (!currentToken) {
         try {
           const tRes = await apiFetch("/api/profile/me/token", { signal: controller.signal });
@@ -554,16 +687,35 @@ export default function AccountRpcStudioPage() {
         } catch (_) {}
       }
 
-      const headers: Record<string, string> = {};
+      // If user is truly unauthenticated
+      if (!currentToken && authStatus === "UNAUTHENTICATED") {
+        setIsAuthError(true);
+        throw new Error("Authentication required. Please sign in with Discord to generate a device linking code.");
+      }
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
       if (currentToken) {
         headers["Authorization"] = `Bearer ${currentToken}`;
       }
 
-      let res = await apiFetch("/api/rpc/device/authorize", {
-        method: "POST",
-        headers,
-        signal: controller.signal,
-      });
+      let res: Response;
+      try {
+        res = await apiFetch("/api/rpc/device/authorize", {
+          method: "POST",
+          headers,
+          signal: controller.signal,
+        });
+      } catch (directErr: any) {
+        // Fallback to relative URL through Next.js proxy if direct API URL failed
+        res = await fetch("/api/rpc/device/authorize", {
+          method: "POST",
+          headers,
+          credentials: "include",
+          signal: controller.signal,
+        });
+      }
 
       // If unauthorized, attempt a fresh token retrieval and retry once before failing
       if (res.status === 401) {
@@ -576,11 +728,20 @@ export default function AccountRpcStudioPage() {
               setToken(freshData.token);
               setStoredToken(freshData.token);
               headers["Authorization"] = `Bearer ${currentToken}`;
-              res = await apiFetch("/api/rpc/device/authorize", {
-                method: "POST",
-                headers,
-                signal: controller.signal,
-              });
+              try {
+                res = await apiFetch("/api/rpc/device/authorize", {
+                  method: "POST",
+                  headers,
+                  signal: controller.signal,
+                });
+              } catch (_) {
+                res = await fetch("/api/rpc/device/authorize", {
+                  method: "POST",
+                  headers,
+                  credentials: "include",
+                  signal: controller.signal,
+                });
+              }
             }
           }
         } catch (_) {}
@@ -595,7 +756,7 @@ export default function AccountRpcStudioPage() {
         const errJson = await res.json().catch(() => null);
         if (res.status === 401) {
           setIsAuthError(true);
-          throw new Error("Authentication required. Please sign in or refresh your session to link your Discord account.");
+          throw new Error("Authentication required. Please sign in with Discord to link your Discord client.");
         }
         throw new Error(errJson?.error || `Server returned HTTP ${res.status}`);
       }
@@ -680,7 +841,11 @@ export default function AccountRpcStudioPage() {
         return;
       }
       console.error("[RPC Studio] Failed to generate device linking code:", err);
-      setLinkingError(err?.message || "A network or server error occurred. Please check your connection and try again.");
+      const msg = err?.message || "A network or server error occurred. Please check your connection and try again.";
+      if (msg.includes("401") || msg.toLowerCase().includes("auth") || msg.toLowerCase().includes("unauthorized") || authStatus === "UNAUTHENTICATED") {
+        setIsAuthError(true);
+      }
+      setLinkingError(msg);
       setLinkingState("failed");
     }
   };
@@ -702,16 +867,28 @@ export default function AccountRpcStudioPage() {
   };
 
   const handleUnlinkDevice = async (deviceId: string) => {
-    if (!confirm("Unlink this device from your Rich Presence?")) return;
+    if (!confirm("Disconnect and unlink this Discord client from your Pixel.gg profile?")) return;
+    setUnlinkingDeviceId(deviceId);
+
+    // Optimistically update device list locally
+    setLinkedDevices((prev) => prev.filter((d) => d.id !== deviceId));
+
     try {
+      const activeTok = getStoredToken() || token;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (activeTok) headers["Authorization"] = `Bearer ${activeTok}`;
+
       await apiFetch("/api/rpc/device/revoke", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ deviceId }),
       });
       fetchLinkedDevices();
     } catch (err) {
       console.error("Failed to unlink device", err);
+      fetchLinkedDevices();
+    } finally {
+      setUnlinkingDeviceId(null);
     }
   };
 
@@ -946,14 +1123,27 @@ export default function AccountRpcStudioPage() {
             {/* Quick Link Action Button based on strict single state */}
             <div className="flex flex-col items-end gap-3 w-full lg:w-auto">
               {(linkingState === "idle" || linkingState === "cancelled") && (
-                <Button
-                  onClick={handleGenerateLinkingCode}
-                  variant="solid-white"
-                  className="px-6 py-2.5 text-xs font-bold tracking-wider flex items-center gap-2"
-                >
-                  <Plug size={14} />
-                  GENERATE LINKING CODE
-                </Button>
+                !getStoredToken() && !authContextToken && !authUser?.appToken && !token && authStatus === "UNAUTHENTICATED" ? (
+                  <Button
+                    onClick={() => {
+                      window.location.href = "/auth/discord";
+                    }}
+                    variant="solid-white"
+                    className="px-6 py-2.5 text-xs font-bold tracking-wider flex items-center gap-2"
+                  >
+                    <Plug size={14} />
+                    SIGN IN TO LINK CLIENT
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleGenerateLinkingCode}
+                    variant="solid-white"
+                    className="px-6 py-2.5 text-xs font-bold tracking-wider flex items-center gap-2"
+                  >
+                    <Plug size={14} />
+                    GENERATE LINKING CODE
+                  </Button>
+                )
               )}
 
               {linkingState === "generating" && (
@@ -1061,33 +1251,135 @@ export default function AccountRpcStudioPage() {
           {linkingState === "failed" && (
             <div className="p-5 rounded-xl bg-red-950/20 border border-red-500/40 text-center max-w-md mx-auto space-y-2 animate-fade-in">
               <p className="text-red-300 font-bold text-xs uppercase tracking-wider">
-                Failed to Generate Linking Code
+                {isAuthError ? "Authentication Required" : "Failed to Generate Linking Code"}
               </p>
               <p className="text-neutral-400 text-[11px] leading-relaxed">
                 {linkingError || "A network or server error occurred. Please check your connection and try again."}
               </p>
               <div className="flex items-center justify-center gap-2 pt-1">
-                {isAuthError && (
+                {isAuthError ? (
+                  <>
+                    <Button
+                      variant="solid-white"
+                      onClick={() => {
+                        window.location.href = "/auth/discord";
+                      }}
+                      className="text-xs px-4 py-1.5"
+                    >
+                      SIGN IN WITH DISCORD
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handleGenerateLinkingCode}
+                      className="text-xs px-3 py-1.5"
+                    >
+                      RETRY
+                    </Button>
+                  </>
+                ) : (
                   <Button
                     variant="solid-white"
-                    onClick={() => {
-                      window.location.href = "/auth/discord";
-                    }}
+                    onClick={handleGenerateLinkingCode}
                     className="text-xs px-4 py-1.5"
                   >
-                    SIGN IN WITH DISCORD
+                    RETRY
                   </Button>
                 )}
-                <Button
-                  variant={isAuthError ? "outline" : "solid-white"}
-                  onClick={handleGenerateLinkingCode}
-                  className="text-xs px-4 py-1.5"
-                >
-                  RETRY
-                </Button>
               </div>
             </div>
           )}
+
+          {/* Integration Health & Synchronization Status Card */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3.5 rounded-xl bg-[#0a0a0d] border border-[#1c1c22]">
+            <div className="space-y-1">
+              <span className="text-[10px] uppercase font-mono text-neutral-500 tracking-wider">Integration</span>
+              <p className="text-xs font-semibold flex items-center gap-1.5">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    linkedDevices.some((d) => d.isOnline)
+                      ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]"
+                      : linkedDevices.length > 0
+                      ? "bg-amber-400"
+                      : "bg-neutral-600"
+                  }`}
+                />
+                <span
+                  className={
+                    linkedDevices.some((d) => d.isOnline)
+                      ? "text-emerald-400"
+                      : linkedDevices.length > 0
+                      ? "text-amber-400"
+                      : "text-neutral-400"
+                  }
+                >
+                  {linkedDevices.some((d) => d.isOnline)
+                    ? "Connected"
+                    : linkedDevices.length > 0
+                    ? "Standby"
+                    : "Not Linked"}
+                </span>
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-[10px] uppercase font-mono text-neutral-500 tracking-wider">Discord Client</span>
+              <p className="text-xs font-semibold flex items-center gap-1.5">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    linkedDevices.some((d) => d.discordAvailable) ? "bg-emerald-400" : "bg-neutral-600"
+                  }`}
+                />
+                <span
+                  className={
+                    linkedDevices.some((d) => d.discordAvailable) ? "text-emerald-400" : "text-neutral-400"
+                  }
+                >
+                  {linkedDevices.some((d) => d.discordAvailable)
+                    ? "Detected"
+                    : linkedDevices.length > 0
+                    ? "Not Running"
+                    : "—"}
+                </span>
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-[10px] uppercase font-mono text-neutral-500 tracking-wider">Rich Presence</span>
+              <p className="text-xs font-semibold flex items-center gap-1.5">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    linkedDevices.some((d) => d.publishingStatus === "active")
+                      ? "bg-emerald-400 animate-pulse"
+                      : "bg-neutral-600"
+                  }`}
+                />
+                <span
+                  className={
+                    linkedDevices.some((d) => d.publishingStatus === "active")
+                      ? "text-emerald-400"
+                      : "text-neutral-400"
+                  }
+                >
+                  {linkedDevices.some((d) => d.publishingStatus === "active")
+                    ? "Streaming"
+                    : linkedDevices.length > 0
+                    ? "Idle"
+                    : "—"}
+                </span>
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-[10px] uppercase font-mono text-neutral-500 tracking-wider">Sync Revision</span>
+              <p className="text-xs font-mono font-semibold text-white">
+                {confirmedRevision !== null
+                  ? `Rev #${confirmedRevision}`
+                  : linkedDevices[0]?.lastAppliedRevision
+                  ? `Rev #${linkedDevices[0].lastAppliedRevision}`
+                  : "Sync Ready"}
+              </p>
+            </div>
+          </div>
 
           {/* Connected Devices List */}
           <div className="space-y-3 pt-2">
@@ -1112,22 +1404,62 @@ export default function AccountRpcStudioPage() {
                 {linkedDevices.map((dev) => (
                   <div
                     key={dev.id}
-                    className="p-3.5 rounded-xl bg-[#0e0e12] border border-[#222228] flex items-center justify-between text-xs"
+                    className="p-3.5 rounded-xl bg-[#0e0e12] border border-[#222228] flex items-center justify-between text-xs gap-3"
                   >
-                    <div className="space-y-0.5">
-                      <p className="text-white font-semibold flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                        {dev.deviceName || "Vencord Discord Client"}
-                      </p>
-                      <p className="text-[10px] text-neutral-500">
-                        Linked {new Date(dev.consumedAt).toLocaleDateString()} &bull; Active recently
-                      </p>
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`w-2 h-2 rounded-full shrink-0 ${
+                            dev.isOnline
+                              ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"
+                              : "bg-neutral-500"
+                          }`}
+                        />
+                        <p className="text-white font-semibold truncate text-xs">
+                          {dev.deviceName || "Vencord Discord Client"}
+                        </p>
+                        {dev.pluginVersion && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-[#181820] text-neutral-400 border border-[#262630]">
+                            v{dev.pluginVersion}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 text-[10px] text-neutral-400 flex-wrap">
+                        <span>
+                          {dev.isOnline ? "Online" : "Offline"} &bull; {formatRelativeTime(dev.lastUsedAt || dev.consumedAt)}
+                        </span>
+                        {dev.discordAvailable !== undefined && (
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-mono ${
+                              dev.discordAvailable
+                                ? "text-emerald-400 bg-emerald-950/40 border border-emerald-500/30"
+                                : "text-amber-400 bg-amber-950/40 border border-amber-500/30"
+                            }`}
+                          >
+                            {dev.discordAvailable ? "Discord Active" : "Discord Inactive"}
+                          </span>
+                        )}
+                        {dev.lastAppliedRevision && (
+                          <span className="text-[9px] font-mono text-neutral-500">
+                            Rev #{dev.lastAppliedRevision}
+                          </span>
+                        )}
+                      </div>
+
+                      {dev.activeTitle && (
+                        <p className="text-[10px] text-neutral-500 truncate font-mono">
+                          Presence: &ldquo;{dev.activeTitle}&rdquo;
+                        </p>
+                      )}
                     </div>
 
                     <button
                       onClick={() => handleUnlinkDevice(dev.id)}
-                      className="px-2.5 py-1 rounded bg-[#181820] hover:bg-red-950/40 text-neutral-400 hover:text-red-400 border border-[#282830] hover:border-red-500/40 text-[11px] transition-colors cursor-pointer"
+                      disabled={unlinkingDeviceId === dev.id}
+                      className="px-2.5 py-1 rounded bg-[#181820] hover:bg-red-950/40 text-neutral-400 hover:text-red-400 border border-[#282830] hover:border-red-500/40 text-[11px] transition-colors cursor-pointer shrink-0 disabled:opacity-50 flex items-center gap-1"
                     >
+                      {unlinkingDeviceId === dev.id && <RefreshCw size={10} className="animate-spin" />}
                       Unlink
                     </button>
                   </div>

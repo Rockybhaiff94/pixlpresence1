@@ -7,6 +7,7 @@ import { io } from '../index'; // Import socket io
 import { uploadRateLimiter } from '../rateLimiter'; // Import upload rate limiter
 import { resolveDiscordAvatarUrl } from '../auth';
 import { presenceManager, LiveActivity } from '../services/presenceManager';
+import { rpcSyncHub } from '../services/rpcSyncHub';
 
 export const rpcRouter = Router();
 
@@ -327,8 +328,19 @@ rpcRouter.post('/device/verify', async (req: any, res) => {
 
     // Notify connected browser session via websocket if active
     io.to(`user_${deviceAuth.userId}`).emit('device_linked', {
+      deviceId: updated.id,
       deviceName,
       linkedAt: updated.consumedAt,
+    });
+
+    // Register active heartbeat in sync hub
+    await rpcSyncHub.handleHeartbeat({
+      deviceId: updated.id,
+      deviceToken,
+      pluginVersion: '1.1.0',
+      discordAvailable: true,
+      publishingStatus: 'active',
+      timestamp: Date.now(),
     });
 
     // Initialize default Rich Presence if user does not have one yet
@@ -370,6 +382,7 @@ rpcRouter.post('/device/verify', async (req: any, res) => {
 /**
  * POST /api/rpc/device/revoke
  * Allows unlinking a device. Can be called with either session or Bearer deviceToken.
+ * Broadcasts bidirectional real-time disconnect events to connected plugins and website.
  */
 rpcRouter.post('/device/revoke', requireAuth, async (req: any, res) => {
   try {
@@ -377,42 +390,25 @@ rpcRouter.post('/device/revoke', requireAuth, async (req: any, res) => {
 
     if (deviceId) {
       // User revoking a specific device from web dashboard
-      await prisma.rpcDeviceAuthorization.updateMany({
-        where: {
-          id: deviceId,
-          userId: req.user.id,
-        },
-        data: {
-          status: 'REVOKED',
-          revokedAt: new Date(),
-        },
-      });
-      return res.json({ success: true, message: 'Device unlinked.' });
+      await rpcSyncHub.handleDeviceRevoked(deviceId, req.user.id, 'unlinked_from_dashboard');
+      return res.json({ success: true, message: 'Device unlinked.', deviceId });
     }
 
     if (req.deviceAuth) {
       // Plugin revoking its own token
-      await prisma.rpcDeviceAuthorization.update({
-        where: { id: req.deviceAuth.id },
-        data: {
-          status: 'REVOKED',
-          revokedAt: new Date(),
-        },
-      });
-      return res.json({ success: true, message: 'Current device unlinked.' });
+      await rpcSyncHub.handleDeviceRevoked(req.deviceAuth.id, req.user.id, 'disconnected_from_plugin');
+      return res.json({ success: true, message: 'Current device unlinked.', deviceId: req.deviceAuth.id });
     }
 
     // Revoke all devices for current user
-    await prisma.rpcDeviceAuthorization.updateMany({
-      where: {
-        userId: req.user.id,
-        status: 'CONSUMED',
-      },
-      data: {
-        status: 'REVOKED',
-        revokedAt: new Date(),
-      },
+    const devices = await prisma.rpcDeviceAuthorization.findMany({
+      where: { userId: req.user.id, status: 'CONSUMED' },
+      select: { id: true },
     });
+
+    for (const d of devices) {
+      await rpcSyncHub.handleDeviceRevoked(d.id, req.user.id, 'all_devices_unlinked');
+    }
 
     res.json({ success: true, message: 'All devices unlinked.' });
   } catch (err) {
@@ -423,28 +419,43 @@ rpcRouter.post('/device/revoke', requireAuth, async (req: any, res) => {
 
 /**
  * GET /api/rpc/device/list
- * Returns the list of currently linked devices for the user.
+ * Returns the list of currently linked devices for the user with live connection state.
  */
 rpcRouter.get('/device/list', requireAuth, async (req: any, res) => {
   try {
-    const devices = await prisma.rpcDeviceAuthorization.findMany({
-      where: {
-        userId: req.user.id,
-        status: 'CONSUMED',
-      },
-      select: {
-        id: true,
-        deviceName: true,
-        consumedAt: true,
-        lastUsedAt: true,
-        createdAt: true,
-      },
-      orderBy: { lastUsedAt: 'desc' },
-    });
+    const devices = await rpcSyncHub.getDevicesForUser(req.user.id);
     res.json(devices);
   } catch (err) {
     console.error('[Device List Error]:', err);
     res.status(500).json({ error: 'Failed to fetch linked devices' });
+  }
+});
+
+/**
+ * POST /api/rpc/device/heartbeat
+ * Periodic heartbeat from Vencord plugin (15s interval) to confirm connectivity and Discord RPC health.
+ */
+rpcRouter.post('/device/heartbeat', requireAuth, async (req: any, res) => {
+  try {
+    const payload = req.body || {};
+    const updated = await rpcSyncHub.handleHeartbeat({
+      ...payload,
+      deviceId: req.deviceAuth?.id || payload.deviceId,
+      deviceToken: req.deviceAuth?.deviceToken || payload.deviceToken,
+    });
+
+    if (!updated) {
+      return res.status(401).json({ error: 'Device unauthorized or revoked', disconnected: true });
+    }
+
+    res.json({
+      success: true,
+      runtime: updated,
+      serverTime: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('[Device Heartbeat Error]:', err);
+    res.status(500).json({ error: 'Failed to process heartbeat' });
   }
 });
 
@@ -507,6 +518,7 @@ rpcRouter.get('/me', requireAuth, async (req: any, res) => {
     // Attach user profile metadata for client convenience
     responseData.username = currentUser.username;
     responseData.userAvatar = resolvedAvatar;
+    responseData.revision = rpc.updatedAt ? new Date(rpc.updatedAt).getTime() : Date.now();
 
     res.json(responseData);
   } catch (err) {
@@ -582,6 +594,11 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
     }
 
     fullPayload.username = currentUser.username;
+    const revision = Date.now();
+    fullPayload.revision = revision;
+
+    // Broadcast revision-controlled configuration to connected Vencord plugins in real time
+    rpcSyncHub.broadcastConfigUpdate(currentUser.id, fullPayload, revision);
 
     // Emit a Socket.io event to notify active desktop/browser clients
     const rpcRecord = rpc as typeof rpc & { enableDiscordRpc?: boolean; showProfileRpc?: boolean };

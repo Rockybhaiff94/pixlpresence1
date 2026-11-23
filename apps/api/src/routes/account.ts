@@ -14,7 +14,20 @@ export const accountRouter = Router();
 
 // Middleware to check authentication via Session OR Bearer Token OR Token Cookie
 const requireAuth = async (req: any, res: any, next: any) => {
+  if (req.user) return next();
   if (req.isAuthenticated && req.isAuthenticated()) return next();
+
+  // Session fallback
+  const sessionUserId = (req.session as any)?.userId || (req.session as any)?.passport?.user;
+  if (sessionUserId) {
+    try {
+      const sessionUser = await prisma.user.findUnique({ where: { id: sessionUserId } });
+      if (sessionUser) {
+        req.user = sessionUser;
+        return next();
+      }
+    } catch (_) {}
+  }
   
   let token: string | null = null;
   const authHeader = req.headers.authorization;

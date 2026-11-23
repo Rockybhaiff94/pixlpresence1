@@ -21,21 +21,42 @@ export const StatusCard: React.FC<StatusCardProps> = ({
         switch (state.status) {
             case "connected":
                 return {
-                    label: "Connected & Active",
+                    label: state.discordAvailable ? "Connected & Active" : "Connected (Discord RPC Busy)",
                     color: "var(--status-positive, #23a55a)",
                     bg: "rgba(35, 165, 90, 0.15)",
                     border: "rgba(35, 165, 90, 0.4)"
                 };
-            case "connecting":
+            case "syncing":
                 return {
-                    label: "Verifying / Syncing...",
+                    label: "Syncing Configuration...",
                     color: "var(--status-warning, #f0b232)",
                     bg: "rgba(240, 178, 50, 0.15)",
                     border: "rgba(240, 178, 50, 0.4)"
                 };
+            case "reconnecting":
+                return {
+                    label: `Reconnecting (Attempt ${state.retryCount})...`,
+                    color: "var(--status-warning, #f0b232)",
+                    bg: "rgba(240, 178, 50, 0.15)",
+                    border: "rgba(240, 178, 50, 0.4)"
+                };
+            case "offline":
+                return {
+                    label: "Offline (Backend Unreachable)",
+                    color: "var(--status-warning, #f0b232)",
+                    bg: "rgba(240, 178, 50, 0.15)",
+                    border: "rgba(240, 178, 50, 0.4)"
+                };
+            case "discord_unavailable":
+                return {
+                    label: "Discord RPC Unavailable",
+                    color: "var(--status-danger, #f23f43)",
+                    bg: "rgba(242, 63, 67, 0.15)",
+                    border: "rgba(242, 63, 67, 0.4)"
+                };
             case "unauthorized":
                 return {
-                    label: "Unauthorized (Session Expired)",
+                    label: "Unauthorized (Session Revoked)",
                     color: "var(--status-danger, #f23f43)",
                     bg: "rgba(242, 63, 67, 0.15)",
                     border: "rgba(242, 63, 67, 0.4)"
@@ -47,16 +68,17 @@ export const StatusCard: React.FC<StatusCardProps> = ({
                     bg: "rgba(242, 63, 67, 0.15)",
                     border: "rgba(242, 63, 67, 0.4)"
                 };
-            case "rate_limited":
+            case "disconnected":
                 return {
-                    label: "Rate Limited (Backing Off)",
-                    color: "var(--status-warning, #f0b232)",
-                    bg: "rgba(240, 178, 50, 0.15)",
-                    border: "rgba(240, 178, 50, 0.4)"
+                    label: "Disconnected",
+                    color: "var(--text-muted, #949ba4)",
+                    bg: "rgba(148, 155, 164, 0.15)",
+                    border: "rgba(148, 155, 164, 0.3)"
                 };
+            case "not_linked":
             default:
                 return {
-                    label: tokenConfigured ? "Idle" : "Not Connected",
+                    label: tokenConfigured ? "Idle" : "Not Linked",
                     color: "var(--text-muted, #949ba4)",
                     bg: "rgba(148, 155, 164, 0.15)",
                     border: "rgba(148, 155, 164, 0.3)"

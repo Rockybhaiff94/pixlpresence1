@@ -29,23 +29,46 @@ export interface RpcResponse {
     showProfileRpc?: boolean | null;
     enableDiscordRpc?: boolean | null;
     username?: string | null;
+    revision?: number | null;
 }
 
-export type ConnectionStatus =
-    | "disconnected"
-    | "connecting"
+export type ConnectionStateEnum =
+    | "not_linked"
+    | "authorizing"
+    | "linking"
     | "connected"
+    | "syncing"
+    | "reconnecting"
+    | "disconnected"
+    | "offline"
     | "unauthorized"
-    | "error"
-    | "rate_limited";
+    | "discord_unavailable"
+    | "error";
+
+export type PublishingStatus =
+    | "not_published"
+    | "preparing"
+    | "publishing"
+    | "active"
+    | "update_pending"
+    | "failed"
+    | "cleared";
+
+// Backwards-compatible alias for existing UI components
+export type ConnectionStatus = ConnectionStateEnum;
 
 export interface ConnectionState {
-    status: ConnectionStatus;
+    status: ConnectionStateEnum;
+    discordAvailable: boolean;
+    publishingStatus: PublishingStatus;
+    appliedRevision: number;
     lastSync: Date | null;
+    lastHeartbeat: Date | null;
     lastError: string | null;
     retryCount: number;
     activeTitle: string | null;
     linkedUsername: string | null;
+    deviceId: string | null;
 }
 
 export interface DiscordActivity {

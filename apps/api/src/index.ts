@@ -36,6 +36,7 @@ import { platformRouter } from './routes/platform';
 import { Server } from 'socket.io';
 import http from 'http';
 import { startBot, stopBot, getBotStatus, botEvents } from 'bot';
+import { rpcSyncHub } from './services/rpcSyncHub';
 
 const app = express();
 const server = http.createServer(app);
@@ -44,6 +45,7 @@ export const io = new Server(server, {
     origin: '*',
   }
 });
+rpcSyncHub.initialize(io);
 
 io.on('connection', (socket) => {
   // PixelsRPC Vencord plugin will emit 'authenticate' with user's App Token
