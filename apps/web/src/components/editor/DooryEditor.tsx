@@ -19,6 +19,15 @@ import { DooryCanvasWorkspace } from "./DooryCanvasWorkspace";
 import { DooryTopBar, DeviceMode, SaveDraftStatus } from "./DooryTopBar";
 import { EditorPropertiesPanel } from "./EditorPropertiesPanel";
 import { exportToPng, exportToSvg, exportToJson } from "./canvasExport";
+import {
+  inspectCanvasIssues,
+  executeAutoFix,
+  AutoFixIssue,
+} from "./autoFixEngine";
+import {
+  AutoSaveSettingsModal,
+  AutoSaveSettings,
+} from "./AutoSaveSettingsModal";
 
 interface DooryEditorProps {
   initialElements?: EditorElement[];
@@ -95,6 +104,65 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
   const [saveStatus, setSaveStatus] = useState<SaveDraftStatus>("idle");
   const [publishing, setPublishing] = useState<boolean>(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
+
+  // Auto Save & Auto Fix Preferences
+  const [autoSaveSettings, setAutoSaveSettings] = useState<AutoSaveSettings>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("pixel_studio_autosave_settings");
+        if (stored) {
+          return JSON.parse(stored);
+        }
+      } catch {}
+    }
+    return {
+      autoSaveEnabled: true,
+      saveDelaySec: 2,
+      recoveryProtectionEnabled: true,
+      autoFixOnSave: false,
+    };
+  });
+
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [detectedIssues, setDetectedIssues] = useState<AutoFixIssue[]>([]);
+
+  // Sequential revision & in-flight save tracking
+  const revisionRef = useRef<number>(0);
+  const lastSavedRevisionRef = useRef<number>(0);
+  const isSavingRef = useRef<boolean>(false);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Background inspection for non-destructive Auto Fix issues
+  useEffect(() => {
+    const issues = inspectCanvasIssues(elements, canvas);
+    setDetectedIssues(issues);
+  }, [elements, canvas]);
+
+  // Persist Auto Save Settings changes
+  const handleUpdateAutoSaveSettings = (newSettings: AutoSaveSettings) => {
+    setAutoSaveSettings(newSettings);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("pixel_studio_autosave_settings", JSON.stringify(newSettings));
+      } catch {}
+    }
+    showToast("Settings updated");
+  };
+
+  // Safe Non-Destructive Auto Fix Execution
+  const handleRunAutoFix = () => {
+    const { fixedElements, fixedCanvas, issues } = executeAutoFix(elements, canvas);
+    if (issues.length === 0) {
+      showToast("No layout errors found – canvas is clean!");
+      return;
+    }
+
+    pushHistory(fixedElements, fixedCanvas);
+    setElements(fixedElements);
+    setCanvas(fixedCanvas);
+    showToast(`Auto Fix applied ${issues.length} correction(s)`);
+  };
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -462,31 +530,132 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
     }
   };
 
-  // Save Draft (Inline 3-State Animation, Zero Layout Shift)
-  const handleSaveDraft = () => {
-    if (saveStatus === "saving") return;
+  // Save Draft Implementation (Immediate or Debounced)
+  const performSave = async (options?: { isBackgroundAutoSave?: boolean }) => {
+    if (isSavingRef.current) {
+      // If already saving, the incremented revisionRef ensures another save will trigger once ready
+      return;
+    }
 
+    const currentRev = revisionRef.current;
+    isSavingRef.current = true;
     setSaveStatus("saving");
 
-    setTimeout(() => {
-      try {
+    try {
+      // 1. Redundant local draft persistence
+      if (typeof window !== "undefined") {
         localStorage.setItem("pixel_studio_elements_draft", JSON.stringify(elements));
         localStorage.setItem("pixel_studio_canvas_draft", JSON.stringify(canvas));
-        setSaveStatus("saved");
-        setIsDirty(false);
-
-        // Auto revert to idle after 2 seconds
-        setTimeout(() => {
-          setSaveStatus("idle");
-        }, 2000);
-      } catch {
-        setSaveStatus("error");
-        setTimeout(() => {
-          setSaveStatus("idle");
-        }, 2500);
+        localStorage.setItem("pixel_studio_draft_timestamp", new Date().toISOString());
       }
-    }, 600);
+
+      // 2. Remote backend synchronization (if user is authenticated or profile endpoint available)
+      try {
+        await fetch("/api/profile", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            designConfig: {
+              canvas: {
+                width: canvas.width,
+                height: canvas.height,
+                background: canvas.background,
+                elements,
+              },
+            },
+          }),
+        });
+      } catch {
+        // Fallback to offline saved status if network request fails
+        if (typeof window !== "undefined" && !navigator.onLine) {
+          setSaveStatus("offline");
+          isSavingRef.current = false;
+          return;
+        }
+      }
+
+      lastSavedRevisionRef.current = currentRev;
+      setSaveStatus("saved");
+      setIsDirty(false);
+
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      setLastSavedTime(timeStr);
+
+      // Auto revert to idle after 2 seconds
+      setTimeout(() => {
+        setSaveStatus((prev) => (prev === "saved" ? "idle" : prev));
+      }, 2000);
+    } catch {
+      setSaveStatus("error");
+      setTimeout(() => {
+        setSaveStatus((prev) => (prev === "error" ? "idle" : prev));
+      }, 3000);
+    } finally {
+      isSavingRef.current = false;
+      // If newer revisions accumulated while saving was in progress, schedule another save
+      if (revisionRef.current > currentRev && autoSaveSettings.autoSaveEnabled) {
+        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = setTimeout(() => {
+          performSave({ isBackgroundAutoSave: true });
+        }, 1000);
+      }
+    }
   };
+
+  // Manual Save (immediate, cancels any pending debounce timer)
+  const handleSaveDraft = () => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    revisionRef.current += 1;
+    performSave({ isBackgroundAutoSave: false });
+  };
+
+  // Debounced Auto Save Effect when elements or canvas change
+  useEffect(() => {
+    if (!autoSaveSettings.autoSaveEnabled) return;
+    if (!isDirty) return;
+
+    revisionRef.current += 1;
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    debounceTimerRef.current = setTimeout(() => {
+      // Auto Fix on save option if enabled in settings
+      if (autoSaveSettings.autoFixOnSave) {
+        const { fixedElements, fixedCanvas, issues } = executeAutoFix(elements, canvas);
+        if (issues.length > 0) {
+          setElements(fixedElements);
+          setCanvas(fixedCanvas);
+        }
+      }
+      performSave({ isBackgroundAutoSave: true });
+    }, Math.max(1, autoSaveSettings.saveDelaySec) * 1000);
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [elements, canvas, isDirty, autoSaveSettings]);
+
+  // Window beforeunload prompt to prevent unsaved data loss
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty && autoSaveSettings.recoveryProtectionEnabled) {
+        e.preventDefault();
+        e.returnValue = "You have unsaved changes in Pixel.gg Studio. Are you sure you want to leave?";
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty, autoSaveSettings.recoveryProtectionEnabled]);
 
   // Publish live
   const handlePublish = async () => {
@@ -532,6 +701,10 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
         saveStatus={saveStatus}
         publishing={publishing}
         isDirty={isDirty}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
+        issuesCount={detectedIssues.length}
+        lastSavedTime={lastSavedTime}
+        onRunAutoFix={handleRunAutoFix}
       />
 
       {/* 2. Main Studio Row: DrawerHost + (ContextualToolbar + CanvasWorkspace) + PropertiesPanel */}
@@ -620,6 +793,17 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
           <span>{toastMsg}</span>
         </div>
       )}
+
+      {/* Auto Save & Auto Fix Preferences Modal */}
+      <AutoSaveSettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+        settings={autoSaveSettings}
+        onUpdateSettings={handleUpdateAutoSaveSettings}
+        elements={elements}
+        canvas={canvas}
+        onApplyFixes={handleRunAutoFix}
+      />
     </div>
   );
 };

@@ -18,10 +18,20 @@ import {
   FileImage,
   FileCode,
   FileJson,
+  Sliders,
+  Wrench,
+  CloudOff,
+  CloudCheck,
 } from "lucide-react";
 
 export type DeviceMode = "desktop" | "tablet" | "mobile";
-export type SaveDraftStatus = "idle" | "saving" | "saved" | "error";
+export type SaveDraftStatus =
+  | "idle"
+  | "saving"
+  | "saved"
+  | "unsaved"
+  | "error"
+  | "offline";
 
 interface DooryTopBarProps {
   title: string;
@@ -38,6 +48,10 @@ interface DooryTopBarProps {
   saveStatus: SaveDraftStatus;
   publishing: boolean;
   isDirty?: boolean;
+  onOpenSettings?: () => void;
+  issuesCount?: number;
+  lastSavedTime?: string | null;
+  onRunAutoFix?: () => void;
 }
 
 export const DooryTopBar: React.FC<DooryTopBarProps> = ({
@@ -55,15 +69,69 @@ export const DooryTopBar: React.FC<DooryTopBarProps> = ({
   saveStatus,
   publishing,
   isDirty,
+  onOpenSettings,
+  issuesCount = 0,
+  lastSavedTime,
+  onRunAutoFix,
 }) => {
   const [isExportOpen, setIsExportOpen] = useState(false);
+
+  // Status badge config
+  const getStatusDisplay = () => {
+    switch (saveStatus) {
+      case "saving":
+        return {
+          icon: <Loader2 size={11} className="animate-spin text-[#4ADE80]" />,
+          text: "Saving...",
+          color: "text-[#4ADE80] border-[#22C55E]/40 bg-[#123D29]/40",
+          dot: "bg-emerald-400 animate-pulse",
+        };
+      case "saved":
+        return {
+          icon: <Check size={11} className="text-[#4ADE80]" />,
+          text: lastSavedTime ? `Saved ${lastSavedTime}` : "All changes saved",
+          color: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10",
+          dot: "bg-emerald-400",
+        };
+      case "unsaved":
+        return {
+          icon: <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />,
+          text: "Unsaved changes",
+          color: "text-amber-400 border-amber-500/30 bg-amber-500/10",
+          dot: "bg-amber-400",
+        };
+      case "offline":
+        return {
+          icon: <CloudOff size={11} className="text-amber-300" />,
+          text: "Offline – Saved locally",
+          color: "text-amber-300 border-amber-500/30 bg-amber-500/10",
+          dot: "bg-amber-400",
+        };
+      case "error":
+        return {
+          icon: <AlertCircle size={11} className="text-rose-400" />,
+          text: "Save Failed – Retry",
+          color: "text-rose-400 border-rose-500/30 bg-rose-500/10",
+          dot: "bg-rose-400",
+        };
+      default:
+        return {
+          icon: <span className="w-1.5 h-1.5 rounded-full bg-neutral-500" />,
+          text: "Ready",
+          color: "text-neutral-400 border-neutral-700 bg-neutral-900/60",
+          dot: "bg-neutral-500",
+        };
+    }
+  };
+
+  const statusInfo = getStatusDisplay();
 
   return (
     <header
       className="h-14 border-b border-[#1e1e24] bg-[#09090c] px-4 flex items-center justify-between text-xs font-mono text-[#ededed] shrink-0 z-30 select-none"
       data-testid="doory-topbar"
     >
-      {/* Left: Brand & Title */}
+      {/* Left: Brand, Title & Auto Save Status Indicator */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 pr-3 border-r border-[#22222a]">
           <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
@@ -77,16 +145,21 @@ export const DooryTopBar: React.FC<DooryTopBarProps> = ({
           type="text"
           value={title}
           onChange={(e) => onUpdateTitle(e.target.value)}
-          className="bg-transparent border border-transparent hover:border-[#262632] focus:border-white focus:bg-[#121216] px-2 py-1 rounded text-xs font-mono font-bold text-white outline-none w-32 sm:w-48 transition-colors truncate"
+          className="bg-transparent border border-transparent hover:border-[#262632] focus:border-white focus:bg-[#121216] px-2 py-1 rounded text-xs font-mono font-bold text-white outline-none w-28 sm:w-44 transition-colors truncate"
           placeholder="Untitled Design"
           data-testid="project-title-input"
         />
 
-        {isDirty && (
-          <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 font-semibold hidden md:inline">
-            UNSAVED
-          </span>
-        )}
+        {/* Subtle Live Save Status Badge (Zero Layout Shift, Fixed Max Width) */}
+        <div
+          data-testid="autosave-status-badge"
+          data-status={saveStatus}
+          className={`hidden lg:flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] border transition-colors ${statusInfo.color}`}
+          title="Autosave status"
+        >
+          {statusInfo.icon}
+          <span className="truncate max-w-[140px]">{statusInfo.text}</span>
+        </div>
       </div>
 
       {/* Center: History Controls & Device Switcher */}
@@ -169,6 +242,41 @@ export const DooryTopBar: React.FC<DooryTopBarProps> = ({
 
       {/* Right Actions: Export Dropdown, Save Draft (Inline Animated 3-State), Publish */}
       <div className="flex items-center gap-2">
+        {/* Auto Fix / Studio Settings Modal Trigger */}
+        {onOpenSettings && (
+          <button
+            onClick={onOpenSettings}
+            data-testid="autosave-settings-trigger"
+            className="relative px-2.5 py-1 rounded-lg border border-[#2a2a34] bg-[#121216] hover:bg-[#1a1a22] text-neutral-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5 text-[11px]"
+            title="Auto Save & Auto Fix Settings"
+          >
+            <Sliders size={12} className="text-neutral-400" />
+            <span className="hidden xl:inline">Settings</span>
+            {issuesCount > 0 && (
+              <span
+                data-testid="autofix-badge-count"
+                className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-bold"
+                title={`${issuesCount} layout issue(s) detected`}
+              >
+                {issuesCount}
+              </span>
+            )}
+          </button>
+        )}
+
+        {/* Quick Auto Fix Button if issues detected */}
+        {issuesCount > 0 && onRunAutoFix && (
+          <button
+            onClick={onRunAutoFix}
+            data-testid="quick-autofix-trigger"
+            className="px-2 py-1 rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 transition-colors cursor-pointer flex items-center gap-1 text-[11px] animate-pulse"
+            title="Click to auto-repair canvas issues"
+          >
+            <Wrench size={11} />
+            <span className="hidden md:inline">Auto Fix</span>
+          </button>
+        )}
+
         {/* Export Graphic Dropdown Menu */}
         <div className="relative">
           <button
