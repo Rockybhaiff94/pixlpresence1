@@ -97,7 +97,7 @@ const DEFAULT_RPC: RpcConfig = {
   largeImageText: "PIXEL.GG Platform",
   largeImageCrop: null,
   smallImageEnabled: true,
-  smallImage: "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
+  smallImage: "https://pixlpresence1-web.vercel.app/server-icon.png",
   smallImageText: "PIXEL.GG",
   smallImageCrop: null,
   button1Enabled: true,
@@ -120,7 +120,7 @@ const PRESETS: Record<string, Partial<RpcConfig>> = {
     appName: "Pixel.gg",
     state: "Browsing Pixel.gg",
     details: "Customizing Rich Presence",
-    largeImage: "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
+    largeImage: "https://pixlpresence1-web.vercel.app/server-icon.png",
     largeImageText: "Pixel.gg Platform",
     smallImage: "",
     smallImageText: "",
@@ -413,7 +413,7 @@ export default function AccountRpcStudioPage() {
       largeImage: userAvatar || DEFAULT_RPC.largeImage,
       largeImageText: `@${username} on PIXEL.GG`,
       largeImageCrop: null,
-      smallImage: "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
+      smallImage: "https://pixlpresence1-web.vercel.app/server-icon.png",
       smallImageText: "PIXEL.GG",
       smallImageCrop: null,
       button1Enabled: true,
@@ -2204,7 +2204,7 @@ export default function AccountRpcStudioPage() {
                       onClick={() =>
                         updateRpc({
                           smallImage:
-                            "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
+                            "https://pixlpresence1-web.vercel.app/server-icon.png",
                           smallImageText: "PIXEL.GG",
                           smallImageCrop: null,
                           smallImageEnabled: true,

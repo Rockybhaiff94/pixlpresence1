@@ -75,7 +75,7 @@ export function DiscordRpcCard({
           details: "Designing Nothing OS Presence",
           state: "Pixel.gg Studio Engine",
           largeImage:
-            "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
+            "https://pixlpresence1-web.vercel.app/server-icon.png",
           largeImageText: "Visual Studio Code",
           activityType: 0,
         }

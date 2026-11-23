@@ -37,7 +37,7 @@ export function getDefaultRpcConfig(user: {
     largeImageText: `@${user.username || 'User'} on PIXEL.GG`,
     largeImageCrop: null,
     smallImageEnabled: true,
-    smallImage: 'https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png',
+    smallImage: 'https://pixlpresence1-web.vercel.app/server-icon.png',
     smallImageText: 'PIXEL.GG',
     smallImageCrop: null,
     button1Enabled: true,

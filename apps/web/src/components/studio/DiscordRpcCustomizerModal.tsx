@@ -174,10 +174,10 @@ export const DiscordRpcCustomizerModal: React.FC<DiscordRpcCustomizerModalProps>
         details: "Night City • Phantom Liberty",
         state: "Exploring Dogtown (Level 50)",
         largeImage:
-          "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
+          "https://pixlpresence1-web.vercel.app/server-icon.png",
         largeImageText: "Cyberpunk 2077",
         smallImage:
-          "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
+          "https://pixlpresence1-web.vercel.app/server-icon.png",
         activityType: 0,
         partySize: 1,
         partyMax: 4,

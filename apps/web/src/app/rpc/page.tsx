@@ -247,7 +247,7 @@ export default function PixelsRpcPublicPage() {
                       />
                       <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-[#1e1f22] p-0.5 border-2 border-[#1e1f22]">
                         <img
-                          src="https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png"
+                          src="https://pixlpresence1-web.vercel.app/server-icon.png"
                           alt="Small icon"
                           className="w-full h-full rounded-full object-cover"
                         />
