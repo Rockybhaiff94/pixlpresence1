@@ -193,6 +193,9 @@ const assetResolutionCache = new Map<string, string>();
 async function resolveDiscordAsset(appId: string, assetInput: string | null | undefined): Promise<string | undefined> {
     if (!assetInput || !assetInput.trim()) return undefined;
     const raw = assetInput.trim();
+    if (raw.startsWith("http://") || raw.startsWith("https://") || raw.startsWith("mp:")) {
+        return raw;
+    }
     const cacheKey = `${appId}:${raw}`;
     if (assetResolutionCache.has(cacheKey)) {
         return assetResolutionCache.get(cacheKey);

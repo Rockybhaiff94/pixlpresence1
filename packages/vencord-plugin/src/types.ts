@@ -36,6 +36,7 @@ export type ConnectionStateEnum =
     | "not_linked"
     | "authorizing"
     | "linking"
+    | "connecting"
     | "connected"
     | "syncing"
     | "reconnecting"
