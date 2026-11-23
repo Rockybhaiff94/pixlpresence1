@@ -83,7 +83,7 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
   });
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [zoom, setZoom] = useState<number>(0.85);
+  const [zoom, setZoom] = useState<number>(1.0);
   const [isDirty, setIsDirty] = useState<boolean>(false);
 
   // History Stack for Undo/Redo
@@ -420,9 +420,9 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
     });
   };
 
-  // Fit to screen
+  // Fit to screen (Default 100% Scale with proportional workspace centering)
   const handleFitScreen = () => {
-    setZoom(0.85);
+    setZoom(1.0);
   };
 
   // Export handlers

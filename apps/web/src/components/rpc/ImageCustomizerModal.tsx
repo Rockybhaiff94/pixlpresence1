@@ -156,6 +156,50 @@ export function ImageCustomizerModal({
     setOffsetY(0);
   };
 
+  // Helper to empirically verify if an image URL loads successfully before applying
+  const verifyImageLoads = (url: string, timeoutMs = 6000): Promise<{ ok: boolean; reason?: string }> => {
+    return new Promise((resolve) => {
+      if (!url || typeof url !== "string") {
+        return resolve({ ok: false, reason: "No URL provided." });
+      }
+
+      const img = new Image();
+      let settled = false;
+
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          img.src = "";
+          resolve({
+            ok: false,
+            reason: "Image load timed out. The server hosting the image did not respond within 6 seconds.",
+          });
+        }
+      }, timeoutMs);
+
+      img.onload = () => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve({ ok: true });
+        }
+      };
+
+      img.onerror = () => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve({
+            ok: false,
+            reason: "The image URL returned an error, could not be retrieved, or was blocked.",
+          });
+        }
+      };
+
+      img.src = url;
+    });
+  };
+
   const handleSaveAndApply = async () => {
     if (!imageSrc) {
       setErrorMessage("Please select or upload an image first.");
@@ -173,8 +217,16 @@ export function ImageCustomizerModal({
       offsetY,
     };
 
-    // If already a remote URL (and not freshly loaded data URL), apply directly
+    // If already a remote URL: verify it actually loads as an image before applying
     if (imageSrc.startsWith("http://") || imageSrc.startsWith("https://")) {
+      const check = await verifyImageLoads(imageSrc);
+      if (!check.ok) {
+        setErrorMessage(
+          `Image verification failed: ${check.reason || "Unable to load image."} Please check the link or upload a file directly.`
+        );
+        setUploading(false);
+        return;
+      }
       onApply(imageSrc, cropData);
       setUploading(false);
       onClose();
@@ -201,6 +253,20 @@ export function ImageCustomizerModal({
       }
 
       const data = await res.json();
+      if (!data?.url) {
+        throw new Error("Server succeeded but did not return a valid asset URL.");
+      }
+
+      // Verify the returned URL actually returns a loadable image
+      const check = await verifyImageLoads(data.url);
+      if (!check.ok) {
+        setErrorMessage(
+          `Image saved but verification failed: ${check.reason || "The uploaded image URL could not be retrieved."} Please check server connection.`
+        );
+        setUploading(false);
+        return;
+      }
+
       onApply(data.url, cropData);
       onClose();
     } catch (err: any) {

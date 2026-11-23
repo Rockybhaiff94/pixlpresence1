@@ -9,6 +9,8 @@ import {
   UploadCloud,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
+  ChevronLeft,
   PaintBucket,
   Layers,
   Move,
@@ -24,6 +26,7 @@ import { DockPortalTooltip, DockTooltipData } from "./DockPortalTooltip";
 
 export type DockMode = "main" | "directory" | "settings";
 export type DockPosition = "bottom" | "top" | "left" | "right" | "float";
+export type DockOrientation = "horizontal" | "vertical";
 
 export interface ToolSelection {
   type: "category" | "view";
@@ -64,7 +67,7 @@ export interface StudioFloatingDockProps {
   isDockLocked?: boolean;
   onDockLockChange?: (locked: boolean) => void;
   moreOptionsPanelSize?: number;
-  snapThreshold?: number; // In px (160–190px range)
+  snapThreshold?: number; // In px (150–190px range)
 }
 
 // Utility: format shortcut display for human readability
@@ -112,7 +115,7 @@ export const PRIMARY_DOCK_TOOLS = [
   { id: "media", label: "Media", icon: UploadCloud, desc: "Upload files & media images" },
 ] as const;
 
-// 2. Additional Tools (Revealed vertically underneath when expanded)
+// 2. Additional Tools (Revealed when expanded in matching orientation)
 export const ADDITIONAL_DOCK_TOOLS = [
   { id: "canvas", label: "Canvas", icon: PaintBucket, desc: "Canvas color, dot-matrix & patterns" },
   { id: "layers", label: "Layers", icon: Layers, desc: "Manage layers & z-order hierarchy" },
@@ -130,7 +133,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   onDockLockChange,
   snapThreshold: propSnapThreshold,
 }) => {
-  // Expansion State: Collapsed by default (5 primary tools), expands vertically
+  // Expansion State: Collapsed by default (5 primary tools), expands in current orientation
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [showPlacementFlyout, setShowPlacementFlyout] = useState<boolean>(false);
 
@@ -181,19 +184,64 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   const [edge, setEdge] = useState<DockPosition>(externalPosition || "bottom");
   const [ratio, setRatio] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
 
+  // SINGLE SOURCE OF TRUTH FOR ORIENTATION:
+  // Top and Bottom force "horizontal".
+  // Left and Right force "vertical".
+  // Floating preserves the last chosen orientation.
+  const [orientation, setOrientation] = useState<DockOrientation>(() => {
+    if (externalPosition === "left" || externalPosition === "right") return "vertical";
+    if (externalPosition === "top" || externalPosition === "bottom") return "horizontal";
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("pixel_studio_dock_orientation") as DockOrientation;
+        if (saved === "horizontal" || saved === "vertical") return saved;
+      } catch {}
+    }
+    return "horizontal";
+  });
+
+  // Unified single source of truth boolean read by container, children, and measurements
+  const isVertical = orientation === "vertical";
+
   // Customizable Lock State & Shortcut
   const [isLocked, setIsLocked] = useState<boolean>(propLocked ?? false);
   const [lockShortcut, setLockShortcut] = useState<string>(propShortcut || "CapsLock");
 
-  // Snapping distance threshold (default ~175px calibrated to 160–190 CSS pixels)
+  // Snapping distance threshold (default ~175px calibrated to 150–190 CSS pixels)
   const snapThreshold = propSnapThreshold ?? 175;
+
+  // Function to atomically update edge and enforce orientation rule
+  const updateEdgeAndOrientation = useCallback(
+    (newEdge: DockPosition) => {
+      setEdge(newEdge);
+      onPositionChange(newEdge);
+
+      if (newEdge === "top" || newEdge === "bottom") {
+        setOrientation("horizontal");
+        try {
+          localStorage.setItem("pixel_studio_dock_orientation", "horizontal");
+        } catch {}
+      } else if (newEdge === "left" || newEdge === "right") {
+        setOrientation("vertical");
+        try {
+          localStorage.setItem("pixel_studio_dock_orientation", "vertical");
+        } catch {}
+      }
+      // "float" preserves existing orientation!
+
+      try {
+        localStorage.setItem("pixel_studio_dock_position", newEdge);
+      } catch {}
+    },
+    [onPositionChange]
+  );
 
   // Sync external position changes into internal edge state
   useEffect(() => {
     if (externalPosition && externalPosition !== edge && !dragState.isDragging) {
-      setEdge(externalPosition);
+      updateEdgeAndOrientation(externalPosition);
     }
-  }, [externalPosition]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [externalPosition, edge, updateEdgeAndOrientation]);
 
   // Sync prop changes for lock and shortcut
   useEffect(() => {
@@ -231,8 +279,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
       if (savedCoords) {
         const parsed = JSON.parse(savedCoords);
         if (parsed.edge) {
-          setEdge(parsed.edge);
-          onPositionChange(parsed.edge);
+          updateEdgeAndOrientation(parsed.edge);
         }
         if (typeof parsed.ratioX === "number" && typeof parsed.ratioY === "number") {
           setRatio({ x: parsed.ratioX, y: parsed.ratioY });
@@ -240,8 +287,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
       } else {
         const savedPos = localStorage.getItem("pixel_studio_dock_position") as DockPosition;
         if (savedPos) {
-          setEdge(savedPos);
-          onPositionChange(savedPos);
+          updateEdgeAndOrientation(savedPos);
         }
       }
 
@@ -314,9 +360,6 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
-
-  // Determine orientation: Left and Right edges are vertical; Top, Bottom and Float are horizontal when collapsed
-  const isVertical = edge === "left" || edge === "right";
 
   // Check if a tool is currently active
   const isToolActive = (toolId: string) => {
@@ -402,8 +445,8 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
       const container = containerRef?.current || document.body;
       const containerRect = container.getBoundingClientRect();
       const dockEl = dockRef.current;
-      const dockWidth = dockEl?.offsetWidth || (isVertical ? 44 : 288);
-      const dockHeight = dockEl?.offsetHeight || (isVertical ? 288 : 44);
+      const dockWidth = dockEl?.offsetWidth || (isVertical ? 44 : 290);
+      const dockHeight = dockEl?.offsetHeight || (isVertical ? 290 : 44);
 
       const newX = Math.max(
         0,
@@ -449,10 +492,22 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
 
       let newEdge: DockPosition = "float";
       if (minDist <= snapThreshold) {
-        if (minDist === distBottom) newEdge = "bottom";
-        else if (minDist === distTop) newEdge = "top";
-        else if (minDist === distLeft) newEdge = "left";
-        else newEdge = "right";
+        if (minDist === distBottom) {
+          newEdge = "bottom";
+          setOrientation("horizontal");
+        } else if (minDist === distTop) {
+          newEdge = "top";
+          setOrientation("horizontal");
+        } else if (minDist === distLeft) {
+          newEdge = "left";
+          setOrientation("vertical");
+        } else {
+          newEdge = "right";
+          setOrientation("vertical");
+        }
+      } else {
+        newEdge = "float";
+        // Floating preserves existing orientation!
       }
 
       const maxAvailableX = Math.max(1, containerRect.width - dockRect.width);
@@ -473,6 +528,14 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
           "pixel_studio_dock_coords",
           JSON.stringify({ edge: newEdge, ratioX, ratioY })
         );
+        localStorage.setItem(
+          "pixel_studio_dock_orientation",
+          newEdge === "top" || newEdge === "bottom"
+            ? "horizontal"
+            : newEdge === "left" || newEdge === "right"
+            ? "vertical"
+            : orientation
+        );
       } catch {}
     } else {
       setDragState({ isDragging: false, currentPos: null });
@@ -487,7 +550,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   };
 
   // ========================================================
-  // POSITION-AWARE DOCK & VERTICAL EXPANSION CALCULATIONS
+  // POSITION-AWARE DOCK & UNIFIED ORIENTATION CALCULATIONS
   // ========================================================
 
   const currentContainerWidth = containerRef?.current
@@ -517,10 +580,13 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
       };
     }
 
-    const collapsedWidth = isVertical ? 44 : 288;
-    const collapsedHeight = isVertical ? 288 : 44;
-    const expandedWidth = 48;
-    const expandedHeight = Math.min(containerHeight - 16, 430);
+    // Single source of truth dimensions:
+    // Horizontal mode: height is 44px, width expands horizontally (290px -> 440px)
+    // Vertical mode: width is 44px, height expands vertically (290px -> 440px)
+    const collapsedWidth = isVertical ? 44 : 290;
+    const collapsedHeight = isVertical ? 290 : 44;
+    const expandedWidth = isVertical ? 44 : Math.min(containerWidth - 16, 440);
+    const expandedHeight = isVertical ? Math.min(containerHeight - 16, 440) : 44;
 
     const dockWidth = isExpanded ? expandedWidth : collapsedWidth;
     const dockHeight = isExpanded ? expandedHeight : collapsedHeight;
@@ -528,22 +594,17 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
     const baseTransition =
       "left 220ms cubic-bezier(0.16, 1, 0.3, 1), top 220ms cubic-bezier(0.16, 1, 0.3, 1), width 220ms cubic-bezier(0.16, 1, 0.3, 1), height 220ms cubic-bezier(0.16, 1, 0.3, 1), border-radius 180ms ease, box-shadow 180ms ease";
 
-    const maxX = Math.max(0, containerWidth - collapsedWidth);
-    const maxY = Math.max(0, containerHeight - collapsedHeight);
+    const maxX = Math.max(0, containerWidth - dockWidth);
+    const maxY = Math.max(0, containerHeight - dockHeight);
     const dockLeft = Math.max(8, Math.min(maxX - 8, ratio.x * maxX));
     const dockTop = Math.max(8, Math.min(maxY - 8, ratio.y * maxY));
-    const dockCenterX = dockLeft + collapsedWidth / 2;
-    const dockCenterY = dockTop + collapsedHeight / 2;
 
-    // Bottom edge attachment
+    // Bottom edge attachment (Horizontal layout)
     if (edge === "bottom") {
-      const leftPos = isExpanded
-        ? Math.max(8, Math.min(containerWidth - expandedWidth - 8, dockCenterX - expandedWidth / 2))
-        : dockLeft;
       return {
         position: "absolute",
         bottom: 0,
-        left: `${leftPos}px`,
+        left: `${dockLeft}px`,
         top: "auto",
         right: "auto",
         width: `${dockWidth}px`,
@@ -554,15 +615,12 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
       };
     }
 
-    // Top edge attachment
+    // Top edge attachment (Horizontal layout)
     if (edge === "top") {
-      const leftPos = isExpanded
-        ? Math.max(8, Math.min(containerWidth - expandedWidth - 8, dockCenterX - expandedWidth / 2))
-        : dockLeft;
       return {
         position: "absolute",
         top: 0,
-        left: `${leftPos}px`,
+        left: `${dockLeft}px`,
         bottom: "auto",
         right: "auto",
         width: `${dockWidth}px`,
@@ -573,15 +631,12 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
       };
     }
 
-    // Left edge attachment
+    // Left edge attachment (Vertical layout)
     if (edge === "left") {
-      const topPos = isExpanded
-        ? Math.max(8, Math.min(containerHeight - expandedHeight - 8, dockCenterY - expandedHeight / 2))
-        : dockTop;
       return {
         position: "absolute",
         left: 0,
-        top: `${topPos}px`,
+        top: `${dockTop}px`,
         right: "auto",
         bottom: "auto",
         width: `${dockWidth}px`,
@@ -592,15 +647,12 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
       };
     }
 
-    // Right edge attachment
+    // Right edge attachment (Vertical layout)
     if (edge === "right") {
-      const topPos = isExpanded
-        ? Math.max(8, Math.min(containerHeight - expandedHeight - 8, dockCenterY - expandedHeight / 2))
-        : dockTop;
       return {
         position: "absolute",
         right: 0,
-        top: `${topPos}px`,
+        top: `${dockTop}px`,
         left: "auto",
         bottom: "auto",
         width: `${dockWidth}px`,
@@ -611,17 +663,11 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
       };
     }
 
-    // Float mode
-    const leftPos = isExpanded
-      ? Math.max(8, Math.min(containerWidth - expandedWidth - 8, dockCenterX - expandedWidth / 2))
-      : dockLeft;
-    const topPos = isExpanded
-      ? Math.max(8, Math.min(containerHeight - expandedHeight - 8, dockCenterY - expandedHeight / 2))
-      : dockTop;
+    // Float mode (Preserves current orientation)
     return {
       position: "absolute",
-      left: `${leftPos}px`,
-      top: `${topPos}px`,
+      left: `${dockLeft}px`,
+      top: `${dockTop}px`,
       right: "auto",
       bottom: "auto",
       width: `${dockWidth}px`,
@@ -682,6 +728,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         isDragging ? "cursor-grabbing" : ""
       }`}
       data-testid="studio-floating-dock"
+      data-dock-orientation={orientation}
       data-dock-expanded={isExpanded}
     >
       {/* Dock Shell */}
@@ -703,344 +750,265 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         )}
 
         {/* ======================================================== */}
-        {/* COLLAPSED DOCK LAYOUT (DEFAULT 5 PRIMARY TOOLS + EXPAND) */}
+        {/* UNIFIED DOCK CONTENT: SINGLE SOURCE OF TRUTH ORIENTATION */}
+        {/* Both container and icons read from the exact same isVertical */}
         {/* ======================================================== */}
-        {!isExpanded && (
+        <div
+          className={`flex ${
+            isVertical ? "flex-col py-1.5 px-1" : "flex-row px-2 py-1"
+          } items-center justify-between w-full h-full gap-1`}
+          data-testid={isExpanded ? "dock-expanded-container" : "dock-collapsed-container"}
+        >
+          {/* Dedicated Move Handle */}
           <div
-            className={`flex ${
-              isVertical ? "flex-col py-1 px-1" : "flex-row px-1.5 py-1"
-            } items-center justify-between w-full h-full gap-1`}
+            data-dock-move-handle="true"
+            onClick={() => {
+              if (hasMovedPastThresholdRef.current) return;
+              const nextLock = !isLocked;
+              setIsLocked(nextLock);
+              try {
+                localStorage.setItem("pixel_studio_dock_locked", String(nextLock));
+              } catch {}
+              onDockLockChange?.(nextLock);
+            }}
+            onMouseEnter={(e) =>
+              showTooltip(e, {
+                id: "dock-lock",
+                label: isLocked ? "Dock is Locked" : "Move Dock",
+                desc: isLocked
+                  ? `Dock is locked in place. Click or press [${formatShortcutDisplay(lockShortcut)}] to unlock.`
+                  : `Drag handle to move dock. Click or press [${formatShortcutDisplay(lockShortcut)}] to lock.`,
+                hotkey: formatShortcutDisplay(lockShortcut),
+              })
+            }
+            onMouseLeave={hideTooltip}
+            className={`transition-colors flex items-center justify-center shrink-0 cursor-pointer ${
+              isLocked
+                ? "text-amber-400 hover:text-amber-300"
+                : "text-neutral-500 hover:text-neutral-300 cursor-grab active:cursor-grabbing"
+            } ${isVertical ? "w-8 h-4 my-0.5" : "w-4 h-8 mx-0.5"}`}
+            title={isLocked ? "Dock Locked" : "Drag to move dock"}
           >
-            {/* Dedicated Move Handle */}
-            <div
-              data-dock-move-handle="true"
-              onClick={() => {
-                if (hasMovedPastThresholdRef.current) return;
-                const nextLock = !isLocked;
-                setIsLocked(nextLock);
-                try {
-                  localStorage.setItem("pixel_studio_dock_locked", String(nextLock));
-                } catch {}
-                onDockLockChange?.(nextLock);
-              }}
-              onMouseEnter={(e) =>
-                showTooltip(e, {
-                  id: "dock-lock",
-                  label: isLocked ? "Dock is Locked" : "Move Dock",
-                  desc: isLocked
-                    ? `Dock is locked in place. Click or press [${formatShortcutDisplay(lockShortcut)}] to unlock.`
-                    : `Drag handle to move dock. Click or press [${formatShortcutDisplay(lockShortcut)}] to lock.`,
-                  hotkey: formatShortcutDisplay(lockShortcut),
-                })
-              }
-              onMouseLeave={hideTooltip}
-              onFocus={(e) =>
-                showTooltip(e, {
-                  id: "dock-lock",
-                  label: isLocked ? "Dock is Locked" : "Move Dock",
-                  desc: isLocked
-                    ? `Dock is locked in place. Click or press [${formatShortcutDisplay(lockShortcut)}] to unlock.`
-                    : `Drag handle to move dock. Click or press [${formatShortcutDisplay(lockShortcut)}] to lock.`,
-                  hotkey: formatShortcutDisplay(lockShortcut),
-                })
-              }
-              onBlur={hideTooltip}
-              className={`transition-colors flex items-center justify-center shrink-0 cursor-pointer ${
-                isLocked
-                  ? "text-amber-400 hover:text-amber-300"
-                  : "text-neutral-500 hover:text-neutral-300 cursor-grab active:cursor-grabbing"
-              } ${isVertical ? "w-8 h-4 my-0.5" : "w-4 h-8 mx-0.5"}`}
-              title={isLocked ? "Dock Locked" : "Drag to move dock"}
-            >
-              {isLocked ? (
-                <Lock size={12} className="shrink-0" />
-              ) : isVertical ? (
-                <GripHorizontal size={13} />
-              ) : (
-                <GripVertical size={13} />
-              )}
-            </div>
-
-            {/* Exactly 5 Primary Tool Icons */}
-            {PRIMARY_DOCK_TOOLS.map((tool) => {
-              const Icon = tool.icon;
-              const active = isToolActive(tool.id);
-
-              return (
-                <button
-                  key={tool.id}
-                  type="button"
-                  onClick={() => handleToolClick(tool.id)}
-                  onMouseEnter={(e) =>
-                    showTooltip(e, {
-                      id: `dock-${tool.id}`,
-                      label: tool.label,
-                      desc: tool.desc,
-                    })
-                  }
-                  onMouseLeave={hideTooltip}
-                  onFocus={(e) =>
-                    showTooltip(e, {
-                      id: `dock-${tool.id}`,
-                      label: tool.label,
-                      desc: tool.desc,
-                    })
-                  }
-                  onBlur={hideTooltip}
-                  data-testid={`dock-tool-${tool.id}`}
-                  data-active={active}
-                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 relative cursor-pointer ${
-                    active
-                      ? "bg-white/20 text-white border border-white/30 shadow-md shadow-black/40 scale-105"
-                      : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
-                  }`}
-                  aria-label={tool.label}
-                >
-                  <Icon size={16} />
-                  {active && (
-                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#d71920] shadow-[0_0_6px_#d71920]" />
-                  )}
-                </button>
-              );
-            })}
-
-            {/* Expand / More Button */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                hideTooltip();
-                setIsExpanded(true);
-              }}
-              onMouseEnter={(e) =>
-                showTooltip(e, {
-                  id: "dock-expand",
-                  label: "More Tools",
-                  desc: "Expand remaining editor tools vertically in a single column",
-                })
-              }
-              onMouseLeave={hideTooltip}
-              onFocus={(e) =>
-                showTooltip(e, {
-                  id: "dock-expand",
-                  label: "More Tools",
-                  desc: "Expand remaining editor tools vertically in a single column",
-                })
-              }
-              onBlur={hideTooltip}
-              data-testid="dock-expand-button"
-              className="w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 cursor-pointer text-neutral-400 hover:text-white hover:bg-white/10"
-              aria-label="Expand more tools vertically"
-            >
-              <ChevronDown size={15} />
-            </button>
+            {isLocked ? (
+              <Lock size={12} className="shrink-0" />
+            ) : isVertical ? (
+              <GripHorizontal size={13} />
+            ) : (
+              <GripVertical size={13} />
+            )}
           </div>
-        )}
 
-        {/* ======================================================== */}
-        {/* EXPANDED VERTICAL DOCK LAYOUT (SINGLE COLUMN, 1 PER ROW) */}
-        {/* ======================================================== */}
-        {isExpanded && (
-          <div
-            className="flex flex-col items-center justify-between w-full h-full py-1.5 px-1 gap-1"
-            data-testid="dock-expanded-column"
+          {/* Exactly 5 Primary Tool Icons */}
+          {PRIMARY_DOCK_TOOLS.map((tool) => {
+            const Icon = tool.icon;
+            const active = isToolActive(tool.id);
+
+            return (
+              <button
+                key={tool.id}
+                type="button"
+                onClick={() => handleToolClick(tool.id)}
+                onMouseEnter={(e) =>
+                  showTooltip(e, {
+                    id: `dock-${tool.id}`,
+                    label: tool.label,
+                    desc: tool.desc,
+                  })
+                }
+                onMouseLeave={hideTooltip}
+                onFocus={(e) =>
+                  showTooltip(e, {
+                    id: `dock-${tool.id}`,
+                    label: tool.label,
+                    desc: tool.desc,
+                  })
+                }
+                onBlur={hideTooltip}
+                data-testid={`dock-tool-${tool.id}`}
+                data-active={active}
+                className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 relative cursor-pointer shrink-0 ${
+                  active
+                    ? "bg-white/20 text-white border border-white/30 shadow-md shadow-black/40 scale-105"
+                    : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
+                }`}
+                aria-label={tool.label}
+              >
+                <Icon size={16} />
+                {active && (
+                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#d71920] shadow-[0_0_6px_#d71920]" />
+                )}
+              </button>
+            );
+          })}
+
+          {/* Expand / Collapse Button (Directional Chevron matching current orientation) */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              hideTooltip();
+              setIsExpanded(!isExpanded);
+            }}
+            onMouseEnter={(e) =>
+              showTooltip(e, {
+                id: "dock-expand",
+                label: isExpanded ? "Collapse Tools" : "More Tools",
+                desc: isExpanded
+                  ? "Collapse dock back to 5 primary tool icons"
+                  : isVertical
+                  ? "Expand remaining editor tools vertically"
+                  : "Expand remaining editor tools horizontally",
+              })
+            }
+            onMouseLeave={hideTooltip}
+            onFocus={(e) =>
+              showTooltip(e, {
+                id: "dock-expand",
+                label: isExpanded ? "Collapse Tools" : "More Tools",
+                desc: isExpanded
+                  ? "Collapse dock back to 5 primary tool icons"
+                  : isVertical
+                  ? "Expand remaining editor tools vertically"
+                  : "Expand remaining editor tools horizontally",
+              })
+            }
+            onBlur={hideTooltip}
+            data-testid={isExpanded ? "dock-collapse-button" : "dock-expand-button"}
+            className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 cursor-pointer shrink-0 ${
+              isExpanded
+                ? "text-white bg-white/15 hover:bg-white/25"
+                : "text-neutral-400 hover:text-white hover:bg-white/10"
+            }`}
+            aria-label={isExpanded ? "Collapse dock" : "Expand more tools"}
           >
-            {/* Top Move Handle */}
-            <div
-              data-dock-move-handle="true"
-              onClick={() => {
-                if (hasMovedPastThresholdRef.current) return;
-                const nextLock = !isLocked;
-                setIsLocked(nextLock);
-                try {
-                  localStorage.setItem("pixel_studio_dock_locked", String(nextLock));
-                } catch {}
-                onDockLockChange?.(nextLock);
-              }}
-              onMouseEnter={(e) =>
-                showTooltip(e, {
-                  id: "dock-lock",
-                  label: isLocked ? "Dock is Locked" : "Move Dock",
-                  desc: isLocked
-                    ? `Dock is locked in place. Click or press [${formatShortcutDisplay(lockShortcut)}] to unlock.`
-                    : `Drag handle to move dock. Click or press [${formatShortcutDisplay(lockShortcut)}] to lock.`,
-                  hotkey: formatShortcutDisplay(lockShortcut),
-                })
-              }
-              onMouseLeave={hideTooltip}
-              className={`transition-colors flex items-center justify-center shrink-0 cursor-pointer w-8 h-4 my-0.5 ${
-                isLocked
-                  ? "text-amber-400 hover:text-amber-300"
-                  : "text-neutral-500 hover:text-neutral-300 cursor-grab active:cursor-grabbing"
-              }`}
-              title={isLocked ? "Dock Locked" : "Drag to move dock"}
-            >
-              {isLocked ? <Lock size={12} /> : <GripHorizontal size={13} />}
-            </div>
+            {isVertical ? (
+              isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />
+            ) : (
+              isExpanded ? <ChevronLeft size={15} /> : <ChevronRight size={15} />
+            )}
+          </button>
 
-            {/* 1. Original 5 Primary Tools in their exact positions */}
-            {PRIMARY_DOCK_TOOLS.map((tool) => {
-              const Icon = tool.icon;
-              const active = isToolActive(tool.id);
+          {/* Additional Tools when Expanded (matching current orientation) */}
+          {isExpanded && (
+            <>
+              {/* Orientation-aligned Divider Separator Line */}
+              <div
+                className={`bg-white/15 shrink-0 ${
+                  isVertical ? "w-5 h-[1px] my-0.5" : "w-[1px] h-5 mx-0.5"
+                }`}
+              />
 
-              return (
-                <button
-                  key={tool.id}
-                  type="button"
-                  onClick={() => handleToolClick(tool.id)}
-                  onMouseEnter={(e) =>
-                    showTooltip(e, {
-                      id: `dock-${tool.id}`,
-                      label: tool.label,
-                      desc: tool.desc,
-                    })
-                  }
-                  onMouseLeave={hideTooltip}
-                  data-testid={`dock-tool-${tool.id}`}
-                  data-active={active}
-                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 relative cursor-pointer shrink-0 ${
-                    active
-                      ? "bg-white/20 text-white border border-white/30 shadow-md shadow-black/40 scale-105"
-                      : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
-                  }`}
-                  aria-label={tool.label}
-                >
-                  <Icon size={16} />
-                  {active && (
-                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#d71920] shadow-[0_0_6px_#d71920]" />
-                  )}
-                </button>
-              );
-            })}
+              {/* Additional Tools: Canvas & Layers */}
+              {ADDITIONAL_DOCK_TOOLS.map((tool) => {
+                const Icon = tool.icon;
+                const active = isToolActive(tool.id);
 
-            {/* 2. Expand/Collapse Button (Toggle) */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                hideTooltip();
-                setIsExpanded(false);
-              }}
-              onMouseEnter={(e) =>
-                showTooltip(e, {
-                  id: "dock-collapse",
-                  label: "Collapse Dock",
-                  desc: "Collapse back to 5 primary tool icons",
-                })
-              }
-              onMouseLeave={hideTooltip}
-              data-testid="dock-collapse-button"
-              className="w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 cursor-pointer text-white bg-white/10 hover:bg-white/20 shrink-0"
-              aria-label="Collapse dock"
-            >
-              <ChevronUp size={15} />
-            </button>
+                return (
+                  <button
+                    key={tool.id}
+                    type="button"
+                    onClick={() => handleToolClick(tool.id)}
+                    onMouseEnter={(e) =>
+                      showTooltip(e, {
+                        id: `dock-${tool.id}`,
+                        label: tool.label,
+                        desc: tool.desc,
+                      })
+                    }
+                    onMouseLeave={hideTooltip}
+                    data-testid={`dock-tool-${tool.id}`}
+                    data-active={active}
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 relative cursor-pointer shrink-0 ${
+                      active
+                        ? "bg-white/20 text-white border border-white/30 shadow-md shadow-black/40 scale-105"
+                        : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
+                    }`}
+                    aria-label={tool.label}
+                  >
+                    <Icon size={16} />
+                    {active && (
+                      <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#d71920] shadow-[0_0_6px_#d71920]" />
+                    )}
+                  </button>
+                );
+              })}
 
-            {/* 3. Divider Separator Line */}
-            <div className="w-5 h-[1px] bg-white/15 my-0.5 shrink-0" />
+              {/* Dock Screen Placement Tool */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowPlacementFlyout(!showPlacementFlyout);
+                }}
+                onMouseEnter={(e) =>
+                  showTooltip(e, {
+                    id: "dock-placement-btn",
+                    label: "Screen Placement",
+                    desc: "Position dock on Top, Bottom, Left, Right or Float",
+                  })
+                }
+                onMouseLeave={hideTooltip}
+                data-testid="dock-tool-placement"
+                className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 cursor-pointer shrink-0 ${
+                  showPlacementFlyout
+                    ? "bg-white/20 text-white border border-white/30"
+                    : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
+                }`}
+                aria-label="Dock Screen Placement"
+              >
+                <Move size={15} />
+              </button>
 
-            {/* 4. Additional Tools Revealed Underneath */}
-            {ADDITIONAL_DOCK_TOOLS.map((tool) => {
-              const Icon = tool.icon;
-              const active = isToolActive(tool.id);
-
-              return (
-                <button
-                  key={tool.id}
-                  type="button"
-                  onClick={() => handleToolClick(tool.id)}
-                  onMouseEnter={(e) =>
-                    showTooltip(e, {
-                      id: `dock-${tool.id}`,
-                      label: tool.label,
-                      desc: tool.desc,
-                    })
-                  }
-                  onMouseLeave={hideTooltip}
-                  data-testid={`dock-tool-${tool.id}`}
-                  data-active={active}
-                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 relative cursor-pointer shrink-0 ${
-                    active
-                      ? "bg-white/20 text-white border border-white/30 shadow-md shadow-black/40 scale-105"
-                      : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
-                  }`}
-                  aria-label={tool.label}
-                >
-                  <Icon size={16} />
-                  {active && (
-                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#d71920] shadow-[0_0_6px_#d71920]" />
-                  )}
-                </button>
-              );
-            })}
-
-            {/* 5. Dock Screen Placement Tool */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowPlacementFlyout(!showPlacementFlyout);
-              }}
-              onMouseEnter={(e) =>
-                showTooltip(e, {
-                  id: "dock-placement-btn",
-                  label: "Screen Placement",
-                  desc: "Position dock on Top, Bottom, Left, Right or Float",
-                })
-              }
-              onMouseLeave={hideTooltip}
-              data-testid="dock-tool-placement"
-              className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 cursor-pointer shrink-0 ${
-                showPlacementFlyout
-                  ? "bg-white/20 text-white border border-white/30"
-                  : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
-              }`}
-              aria-label="Dock Screen Placement"
-            >
-              <Move size={15} />
-            </button>
-
-            {/* 6. Lock / Unlock Dock Tool */}
-            <button
-              type="button"
-              onClick={() => {
-                const nextLock = !isLocked;
-                setIsLocked(nextLock);
-                try {
-                  localStorage.setItem("pixel_studio_dock_locked", String(nextLock));
-                } catch {}
-                onDockLockChange?.(nextLock);
-              }}
-              onMouseEnter={(e) =>
-                showTooltip(e, {
-                  id: "dock-lock-btn",
-                  label: isLocked ? "Unlock Dock" : "Lock Dock",
-                  desc: isLocked ? "Unlock dock to move anywhere" : "Lock dock in its current position",
-                  hotkey: formatShortcutDisplay(lockShortcut),
-                })
-              }
-              onMouseLeave={hideTooltip}
-              data-testid="dock-tool-lock"
-              className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 cursor-pointer shrink-0 ${
-                isLocked
-                  ? "text-amber-400 hover:text-amber-300"
-                  : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
-              }`}
-              aria-label={isLocked ? "Unlock Dock" : "Lock Dock"}
-            >
-              {isLocked ? <Lock size={14} /> : <Unlock size={14} />}
-            </button>
-          </div>
-        )}
+              {/* Lock / Unlock Dock Tool */}
+              <button
+                type="button"
+                onClick={() => {
+                  const nextLock = !isLocked;
+                  setIsLocked(nextLock);
+                  try {
+                    localStorage.setItem("pixel_studio_dock_locked", String(nextLock));
+                  } catch {}
+                  onDockLockChange?.(nextLock);
+                }}
+                onMouseEnter={(e) =>
+                  showTooltip(e, {
+                    id: "dock-lock-btn",
+                    label: isLocked ? "Unlock Dock" : "Lock Dock",
+                    desc: isLocked
+                      ? "Unlock dock to move anywhere"
+                      : "Lock dock in its current position",
+                    hotkey: formatShortcutDisplay(lockShortcut),
+                  })
+                }
+                onMouseLeave={hideTooltip}
+                data-testid="dock-tool-lock"
+                className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 cursor-pointer shrink-0 ${
+                  isLocked
+                    ? "text-amber-400 hover:text-amber-300"
+                    : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
+                }`}
+                aria-label={isLocked ? "Unlock Dock" : "Lock Dock"}
+              >
+                {isLocked ? <Lock size={14} /> : <Unlock size={14} />}
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Screen Placement Flyout Popover */}
+      {/* Screen Placement Flyout Popover with safe screen orientation collision avoidance */}
       {showPlacementFlyout && (
         <div
           className={`absolute ${
-            edge === "right" ? "right-full mr-2" : "left-full ml-2"
+            edge === "right"
+              ? "right-full mr-2"
+              : edge === "left"
+              ? "left-full ml-2"
+              : edge === "top"
+              ? "top-full mt-2"
+              : "bottom-full mb-2"
           } ${
-            edge === "bottom" ? "bottom-0" : "top-1/2 -translate-y-1/2"
+            isVertical ? "top-1/2 -translate-y-1/2" : "left-1/2 -translate-x-1/2"
           } bg-[#101014]/98 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl p-1.5 z-50 flex flex-col gap-1 w-32 font-mono text-xs`}
           onMouseLeave={() => setShowPlacementFlyout(false)}
           data-testid="dock-placement-flyout"
@@ -1053,12 +1021,8 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
               key={pos}
               onClick={(e) => {
                 e.stopPropagation();
-                setEdge(pos);
-                onPositionChange(pos);
+                updateEdgeAndOrientation(pos);
                 setShowPlacementFlyout(false);
-                try {
-                  localStorage.setItem("pixel_studio_dock_position", pos);
-                } catch {}
               }}
               className={`px-2 py-1 rounded-lg text-[10px] font-mono capitalize text-left flex items-center justify-between cursor-pointer transition-colors ${
                 edge === pos

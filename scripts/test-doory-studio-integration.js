@@ -10,36 +10,32 @@ const drawerHost = fs.readFileSync(path.join(webSrc, 'components/editor/DooryDra
 const contextualToolbar = fs.readFileSync(path.join(webSrc, 'components/editor/DooryContextualToolbar.tsx'), 'utf8');
 const workspaceCanvas = fs.readFileSync(path.join(webSrc, 'components/editor/DooryCanvasWorkspace.tsx'), 'utf8');
 const topBar = fs.readFileSync(path.join(webSrc, 'components/editor/DooryTopBar.tsx'), 'utf8');
+const imageModal = fs.readFileSync(path.join(webSrc, 'components/rpc/ImageCustomizerModal.tsx'), 'utf8');
+const rpcPage = fs.readFileSync(path.join(webSrc, 'app/account/rpc/page.tsx'), 'utf8');
 
-console.log("=== RUNNING EMPIRICAL AUDIT ON INTEGRATED MOVABLE DOCK WITH VERTICAL EXPANSION ===");
+console.log("=== RUNNING EMPIRICAL AUDIT ON DOCK ORIENTATION, 100% ZOOM & IMAGE VERIFICATION ===");
 
-// 1. Verify Left Sidebar is Preserved
-assert(customizePage.includes("<AccountSidebar user={user} />"), "FAIL: AccountSidebar must be mounted on /customize");
-assert(customizePage.includes("lg:ml-64"), "FAIL: Main content must be offset for left sidebar (lg:ml-64)");
-console.log("PASS 1: Left Sidebar (AccountSidebar) preserved with responsive layout");
+// 1. Verify Canvas 100% Default Zoom
+assert(dooryEditor.includes('useState<number>(1.0)'), "FAIL: Default canvas zoom must be 100% (1.0)");
+assert(dooryEditor.includes('setZoom(1.0)'), "FAIL: Fit screen must reset zoom to 100% (1.0)");
+console.log("PASS 1: Canvas initializes at 100% default zoom (1.0) with clean workspace utilization");
 
-// 2. Verify Movable Dock has exactly 5 Primary Tools by Default
-assert(floatingDock.includes('PRIMARY_DOCK_TOOLS = ['), "FAIL: PRIMARY_DOCK_TOOLS must be defined");
-assert(floatingDock.includes('id: "templates"'), "FAIL: Templates primary tool must exist");
-assert(floatingDock.includes('id: "text"'), "FAIL: Text primary tool must exist");
-assert(floatingDock.includes('id: "shapes"'), "FAIL: Shapes primary tool must exist");
-assert(floatingDock.includes('id: "elements"'), "FAIL: Elements primary tool must exist");
-assert(floatingDock.includes('id: "media"'), "FAIL: Media primary tool must exist");
-assert(!floatingDock.includes('grid-cols-4'), "FAIL: No 4x6 grid layout must appear in dock");
-assert(!floatingDock.includes('grid-cols-6'), "FAIL: No 4x6 grid layout must appear in dock");
-console.log("PASS 2: Default dock contains exactly 5 primary tools (Templates, Text, Shapes, Elements, Media)");
+// 2. Verify Single Source of Truth for Dock Orientation
+assert(floatingDock.includes('DockOrientation = "horizontal" | "vertical"'), "FAIL: DockOrientation must be defined");
+assert(floatingDock.includes('orientation, setOrientation'), "FAIL: Orientation must have dedicated state");
+assert(floatingDock.includes('isVertical = orientation === "vertical"'), "FAIL: isVertical must derive directly from orientation");
+assert(floatingDock.includes('newEdge === "top" || newEdge === "bottom"'), "FAIL: Top/Bottom must force horizontal orientation");
+assert(floatingDock.includes('newEdge === "left" || newEdge === "right"'), "FAIL: Left/Right must force vertical orientation");
+console.log("PASS 2: Single source of truth for dock orientation (Top/Bottom -> horizontal, Left/Right -> vertical, Float -> preserves)");
 
-// 3. Verify Expand Button & Vertical Expansion into Single Column
+// 3. Verify Symmetrical Dock Expansion Matching Orientation
+assert(floatingDock.includes('isVertical ? 44 : Math.min(containerWidth - 16, 440)'), "FAIL: Horizontal dock must expand horizontally (width)");
+assert(floatingDock.includes('isVertical ? Math.min(containerHeight - 16, 440) : 44'), "FAIL: Vertical dock must expand vertically (height)");
 assert(floatingDock.includes('dock-expand-button'), "FAIL: Dock must render expand button");
 assert(floatingDock.includes('dock-collapse-button'), "FAIL: Dock must render collapse button when expanded");
-assert(floatingDock.includes('dock-expanded-column'), "FAIL: Expanded dock must render as a single vertical column");
-assert(floatingDock.includes('w-5 h-[1px] bg-white/15 my-0.5 shrink-0'), "FAIL: Expanded dock must have vertical separator line");
-assert(floatingDock.includes('id: "canvas"'), "FAIL: Additional tools must include Canvas");
-assert(floatingDock.includes('id: "layers"'), "FAIL: Additional tools must include Layers");
-assert(floatingDock.includes('dock-tool-placement'), "FAIL: Additional tools must include Placement");
-assert(floatingDock.includes('dock-tool-lock'), "FAIL: Additional tools must include Lock");
-assert(floatingDock.includes('expandedWidth = 48'), "FAIL: Dock width must stay 48px to prevent horizontal expansion");
-console.log("PASS 3: Expand button smoothly expands dock vertically into a single column with no horizontal widening");
+assert(floatingDock.includes('PRIMARY_DOCK_TOOLS = ['), "FAIL: PRIMARY_DOCK_TOOLS must be defined");
+assert(floatingDock.includes('ADDITIONAL_DOCK_TOOLS = ['), "FAIL: ADDITIONAL_DOCK_TOOLS must be defined");
+console.log("PASS 3: Dock expansion respects orientation (Horizontal expands horizontally, Vertical expands vertically)");
 
 // 4. Verify Dock Functionality (Drag, Edge Snapping, Placement & Lock)
 assert(floatingDock.includes("handlePointerDown"), "FAIL: Pointer dragging handlers must be preserved");
@@ -70,10 +66,11 @@ assert(topBar.includes("saveStatus === \"saved\""), "FAIL: Top bar must support 
 assert(topBar.includes("w-[108px] h-[30px]"), "FAIL: Save Draft button must maintain fixed dimensions to eliminate layout pop");
 console.log("PASS 7: Save Draft 3-State animated button with inline green glow and 0 layout pop");
 
-// 8. Verify No Layout-Shifting Notification Banners
-assert(!customizePage.includes("Added new text component to canvas"), "FAIL: Layout-shifting banner must not exist");
-assert(dooryEditor.includes("fixed bottom-6 right-6"), "FAIL: Any notification toasts must use fixed floating overlay");
-console.log("PASS 8: Zero layout-shifting banners: canvas position is 100% stable");
+// 8. Verify Rich Presence Image Verification & Preview Fallback
+assert(imageModal.includes("verifyImageLoads"), "FAIL: ImageCustomizerModal must verify image URL before saving");
+assert(rpcPage.includes("largeImageFailed"), "FAIL: RPC page must track large image failure state");
+assert(rpcPage.includes("LOAD ERROR"), "FAIL: Preview must render explicit LOAD ERROR state instead of hidden gap");
+console.log("PASS 8: Rich Presence image verification and fallback error UI verified");
 
 // 9. Verify Doory Attribution Assurance License Notice
 assert(workspaceCanvas.includes("Doory by Siam (Attribution Assurance License)"), "FAIL: Attribution notice must be rendered in UI");

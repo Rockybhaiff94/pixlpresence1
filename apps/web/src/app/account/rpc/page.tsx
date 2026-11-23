@@ -151,6 +151,8 @@ export default function AccountRpcStudioPage() {
   const [copiedSnippet, setCopiedSnippet] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(885); // 14:45 initial
+  const [largeImageFailed, setLargeImageFailed] = useState(false);
+  const [smallImageFailed, setSmallImageFailed] = useState(false);
   const [currentUser, setCurrentUser] = useState<{
     id?: string;
     username?: string;
@@ -438,6 +440,15 @@ export default function AccountRpcStudioPage() {
     }
     loadData();
   }, []);
+
+  // Reset image error states when URLs change
+  useEffect(() => {
+    setLargeImageFailed(false);
+  }, [rpc.largeImage, rpc.useProfileAvatar, currentUser?.avatar]);
+
+  useEffect(() => {
+    setSmallImageFailed(false);
+  }, [rpc.smallImage]);
 
   const fetchLinkedDevices = async () => {
     try {
@@ -1864,7 +1875,12 @@ export default function AccountRpcStudioPage() {
                 <div className="relative shrink-0">
                   <div className="w-20 h-20 rounded-2xl bg-[#2b2d31] overflow-hidden flex items-center justify-center border border-white/5 relative">
                     {/* Render resolved avatar if auto-sync is on, or custom large image with crop */}
-                    {(rpc.useProfileAvatar !== false ? (currentUser?.avatar || rpc.largeImage) : rpc.largeImage) ? (
+                    {largeImageFailed ? (
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-red-950/40 p-1 text-center border border-red-500/40" title="Image failed to load. Check that the image URL is accessible.">
+                        <AlertCircle size={20} className="text-red-400 mb-0.5" />
+                        <span className="text-[8px] text-red-300 font-mono leading-tight">LOAD ERROR</span>
+                      </div>
+                    ) : (rpc.useProfileAvatar !== false ? (currentUser?.avatar || rpc.largeImage) : rpc.largeImage) ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img
                         src={(rpc.useProfileAvatar !== false ? (currentUser?.avatar || rpc.largeImage) : rpc.largeImage) || ""}
@@ -1880,9 +1896,7 @@ export default function AccountRpcStudioPage() {
                               }
                             : undefined;
                         })()}
-                        onError={(e) => {
-                          (e.target as HTMLElement).style.display = "none";
-                        }}
+                        onError={() => setLargeImageFailed(true)}
                       />
                     ) : (
                       <Gamepad2 className="text-[#80848e]" size={32} />
@@ -1892,25 +1906,29 @@ export default function AccountRpcStudioPage() {
                   {rpc.smallImage && (
                     <div className="absolute -bottom-1.5 -right-1.5 w-7 h-7 rounded-full bg-[#1e1f22] p-[2px]">
                       <div className="w-full h-full rounded-full bg-[#2b2d31] overflow-hidden flex items-center justify-center relative">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={rpc.smallImage}
-                          alt={rpc.smallImageText || "Small asset"}
-                          title={rpc.smallImageText}
-                          className="w-full h-full object-cover"
-                          style={(() => {
-                            const crop = parseCrop(rpc.smallImageCrop);
-                            return crop
-                              ? {
-                                  transform: `scale(${crop.zoom}) translate(${crop.offsetX * 0.25}px, ${crop.offsetY * 0.25}px)`,
-                                  transformOrigin: "center center",
-                                }
-                              : undefined;
-                          })()}
-                          onError={(e) => {
-                            (e.target as HTMLElement).style.display = "none";
-                          }}
-                        />
+                        {smallImageFailed ? (
+                          <div className="w-full h-full flex items-center justify-center bg-red-950/60 text-red-400" title="Small icon failed to load.">
+                            <AlertCircle size={14} />
+                          </div>
+                        ) : (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={rpc.smallImage}
+                            alt={rpc.smallImageText || "Small asset"}
+                            title={rpc.smallImageText}
+                            className="w-full h-full object-cover"
+                            style={(() => {
+                              const crop = parseCrop(rpc.smallImageCrop);
+                              return crop
+                                ? {
+                                    transform: `scale(${crop.zoom}) translate(${crop.offsetX * 0.25}px, ${crop.offsetY * 0.25}px)`,
+                                    transformOrigin: "center center",
+                                  }
+                                : undefined;
+                            })()}
+                            onError={() => setSmallImageFailed(true)}
+                          />
+                        )}
                       </div>
                     </div>
                   )}
