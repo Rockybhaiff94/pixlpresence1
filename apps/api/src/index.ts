@@ -244,10 +244,12 @@ app.use('/uploads/rpc/:fileName', async (req, res, next) => {
       fs.writeFile(diskPath, asset.data, () => {});
 
       res.setHeader('Content-Type', asset.mimeType || 'image/png');
+      res.setHeader('Content-Length', String(asset.data.length));
       res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('X-Content-Type-Options', 'nosniff');
+      if (req.method === 'HEAD') return res.end();
       return res.end(asset.data);
     }
   } catch (err) {

@@ -1035,7 +1035,11 @@ rpcRouter.post('/upload', requireAuth, uploadRateLimiter, async (req: any, res) 
       fileName: savedAsset.fileName,
       fileSize: savedAsset.fileSize,
       mimeType: savedAsset.mimeType,
+      width: savedAsset.width,
+      height: savedAsset.height,
       isAnimated: savedAsset.isAnimated,
+      frameCount: savedAsset.frameCount ?? (savedAsset.isAnimated ? 2 : 1),
+      loopCount: savedAsset.loopCount ?? null,
       cropData: savedAsset.cropData,
       message: `${savedAsset.isAnimated ? 'Animated GIF' : 'Image'} uploaded and processed successfully!`,
     });

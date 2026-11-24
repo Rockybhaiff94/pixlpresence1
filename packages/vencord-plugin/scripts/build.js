@@ -12,6 +12,8 @@ const requiredFiles = [
   'index.ts',
   'settings.ts',
   'types.ts',
+  'rpcFormat.ts',
+  'assetResolver.ts',
   'styles.css',
   path.join('components', 'StatusCard.tsx'),
   path.join('components', 'ActionControls.tsx'),
@@ -39,6 +41,8 @@ if (!fs.existsSync(componentsDist)) {
 fs.copyFileSync(path.join(srcDir, 'index.ts'), path.join(pluginDistDir, 'index.ts'));
 fs.copyFileSync(path.join(srcDir, 'settings.ts'), path.join(pluginDistDir, 'settings.ts'));
 fs.copyFileSync(path.join(srcDir, 'types.ts'), path.join(pluginDistDir, 'types.ts'));
+fs.copyFileSync(path.join(srcDir, 'rpcFormat.ts'), path.join(pluginDistDir, 'rpcFormat.ts'));
+fs.copyFileSync(path.join(srcDir, 'assetResolver.ts'), path.join(pluginDistDir, 'assetResolver.ts'));
 fs.copyFileSync(path.join(srcDir, 'styles.css'), path.join(pluginDistDir, 'styles.css'));
 if (fs.existsSync(path.join(srcDir, 'native.ts'))) {
   fs.copyFileSync(path.join(srcDir, 'native.ts'), path.join(pluginDistDir, 'native.ts'));
@@ -68,6 +72,8 @@ if (fs.existsSync(webPluginDir)) {
   fs.copyFileSync(path.join(srcDir, 'index.ts'), path.join(webPluginDir, 'index.ts'));
   fs.copyFileSync(path.join(srcDir, 'settings.ts'), path.join(webPluginDir, 'settings.ts'));
   fs.copyFileSync(path.join(srcDir, 'types.ts'), path.join(webPluginDir, 'types.ts'));
+  fs.copyFileSync(path.join(srcDir, 'rpcFormat.ts'), path.join(webPluginDir, 'rpcFormat.ts'));
+  fs.copyFileSync(path.join(srcDir, 'assetResolver.ts'), path.join(webPluginDir, 'assetResolver.ts'));
   fs.copyFileSync(path.join(srcDir, 'styles.css'), path.join(webPluginDir, 'styles.css'));
   if (fs.existsSync(path.join(srcDir, 'native.ts'))) {
     fs.copyFileSync(path.join(srcDir, 'native.ts'), path.join(webPluginDir, 'native.ts'));
@@ -137,6 +143,33 @@ const standaloneBundle = `/**
         return null;
     }
 
+    let sessionNowTimestamp = null;
+    const assetCache = new Map();
+
+    async function resolveAsset(appId, input) {
+        if (!input || !String(input).trim()) return undefined;
+        const raw = String(input).trim();
+        if (raw.startsWith('mp:') || raw.startsWith('spotify:') || raw.startsWith('twitch:')) return raw;
+        let target = raw;
+        if (/^https?:\\/\\/(cdn|media)\\.discordapp\\.(com|net)\\//i.test(raw)) {
+            const anim = /(\\ba_[a-f0-9]{8,}\\b|\\.gif|\\.webp)/i.test(raw);
+            target = 'https://wsrv.nl/' + (anim ? 'avatar.gif' : 'avatar.png') + '?url=' + encodeURIComponent(raw) + (anim ? '&n=-1' : '');
+        }
+        const key = appId + ':' + target;
+        if (assetCache.has(key)) return assetCache.get(key);
+        const utils = window.Vencord?.Webpack?.Common?.ApplicationAssetUtils;
+        if (utils && typeof utils.fetchAssetIds === 'function') {
+            try {
+                const res = await utils.fetchAssetIds(appId, [target]);
+                if (Array.isArray(res) && res[0]) {
+                    assetCache.set(key, res[0]);
+                    return res[0];
+                }
+            } catch (_) {}
+        }
+        return target;
+    }
+
     function clearActivity() {
         const dispatcher = getDispatcher();
         if (dispatcher) {
@@ -147,26 +180,36 @@ const standaloneBundle = `/**
             });
         }
         lastActivityHash = null;
+        sessionNowTimestamp = null;
     }
 
-    function applyActivity(rpc) {
-        if (!config.enabled) {
+    async function applyActivity(rpc) {
+        if (!config.enabled || rpc.enableDiscordRpc === false) {
             clearActivity();
             return;
         }
+
+        const typeMap = { playing: 0, streaming: 1, listening: 2, watching: 3, competing: 5 };
+        const actType = typeof rpc.activityType === 'number'
+            ? rpc.activityType
+            : (typeMap[String(rpc.activityType || 'streaming').toLowerCase()] ?? 1);
 
         const buttons = [];
         if (rpc.button1Enabled !== false && rpc.button1Label && rpc.button1Url) buttons.push({ label: rpc.button1Label.trim(), url: rpc.button1Url.trim() });
         if (rpc.button2Enabled !== false && rpc.button2Label && rpc.button2Url) buttons.push({ label: rpc.button2Label.trim(), url: rpc.button2Url.trim() });
 
+        const appId = rpc.appId || DEFAULT_APP_ID;
         const activity = {
-            application_id: rpc.appId || DEFAULT_APP_ID,
+            application_id: appId,
             name: rpc.appName || 'Pixel.gg',
-            type: 0
+            type: actType
         };
 
-        if (rpc.state) activity.state = rpc.state.trim();
-        if (rpc.details) activity.details = rpc.details.trim();
+        if (actType === 1 && rpc.streamUrl) activity.url = rpc.streamUrl.trim();
+        if (rpc.stateEnabled !== false && rpc.state) activity.state = rpc.state.trim();
+        if (rpc.detailsEnabled !== false && rpc.details) activity.details = rpc.details.trim();
+        if (rpc.detailsUrl) activity.details_url = rpc.detailsUrl.trim();
+        if (rpc.stateUrl) activity.state_url = rpc.stateUrl.trim();
 
         const isLargeEnabled = rpc.largeImageEnabled !== false;
         const isSmallEnabled = rpc.smallImageEnabled !== false;
@@ -175,13 +218,22 @@ const standaloneBundle = `/**
 
         if (hasLarge || hasSmall) {
             activity.assets = {};
-            if (hasLarge && rpc.largeImage) activity.assets.large_image = rpc.largeImage.trim();
+            if (hasLarge && rpc.largeImage) activity.assets.large_image = await resolveAsset(appId, rpc.largeImage);
             if (hasLarge && rpc.largeImageText) activity.assets.large_text = rpc.largeImageText.trim();
-            if (hasSmall && rpc.smallImage) activity.assets.small_image = rpc.smallImage.trim();
+            if (hasLarge && rpc.largeImageUrl) activity.assets.large_url = rpc.largeImageUrl.trim();
+            if (hasSmall && rpc.smallImage) activity.assets.small_image = await resolveAsset(appId, rpc.smallImage);
             if (hasSmall && rpc.smallImageText) activity.assets.small_text = rpc.smallImageText.trim();
+            if (hasSmall && rpc.smallImageUrl) activity.assets.small_url = rpc.smallImageUrl.trim();
         }
 
-        if (rpc.startTimestamp || rpc.endTimestamp) {
+        const tMode = String(rpc.timestampMode || 'now').toLowerCase();
+        if (tMode === 'now' || tMode === '1') {
+            if (!sessionNowTimestamp) sessionNowTimestamp = Date.now();
+            activity.timestamps = { start: sessionNowTimestamp };
+        } else if (tMode === 'time' || tMode === '2') {
+            const now = new Date();
+            activity.timestamps = { start: new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() };
+        } else if (rpc.startTimestamp || rpc.endTimestamp) {
             activity.timestamps = {};
             if (rpc.startTimestamp) activity.timestamps.start = Math.floor(new Date(rpc.startTimestamp).getTime());
             if (rpc.endTimestamp) activity.timestamps.end = Math.floor(new Date(rpc.endTimestamp).getTime());
@@ -260,7 +312,7 @@ const standaloneBundle = `/**
 
     const PixelsRPC = {
         name: 'PixelsRPC',
-        version: '1.0.0',
+        version: '1.2.0',
         start(options = {}) {
             if (options.token) {
                 config.token = options.token.trim();

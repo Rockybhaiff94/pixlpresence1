@@ -21,6 +21,48 @@ import {
 import { Button } from "@/components/nothing/Button";
 import { apiFetch } from "@/lib/api";
 
+function countGifFramesFromBytes(bytes: Uint8Array): number {
+  if (!bytes || bytes.length < 14) return 0;
+  // Check GIF87a / GIF89a header
+  if (bytes[0] !== 0x47 || bytes[1] !== 0x49 || bytes[2] !== 0x46 || bytes[3] !== 0x38) return 0;
+  let pos = 13;
+  const packed = bytes[10];
+  if ((packed & 0x80) !== 0) {
+    pos += 3 * (1 << ((packed & 0x07) + 1));
+  }
+  let frames = 0;
+  const skipSubBlocks = () => {
+    while (pos < bytes.length) {
+      const len = bytes[pos++];
+      if (len === 0) break;
+      pos += len;
+    }
+  };
+  while (pos < bytes.length) {
+    const b = bytes[pos++];
+    if (b === 0x3b) break;
+    if (b === 0x21) {
+      if (pos >= bytes.length) break;
+      pos++; // extension label
+      skipSubBlocks();
+    } else if (b === 0x2c) {
+      frames++;
+      if (pos + 9 > bytes.length) break;
+      const imgPacked = bytes[pos + 8];
+      pos += 9;
+      if ((imgPacked & 0x80) !== 0) {
+        pos += 3 * (1 << ((imgPacked & 0x07) + 1));
+      }
+      if (pos >= bytes.length) break;
+      pos++; // LZW min code size
+      skipSubBlocks();
+    } else {
+      break;
+    }
+  }
+  return frames;
+}
+
 export interface CropData {
   cropX: number;
   cropY: number;
@@ -65,6 +107,7 @@ export function ImageCustomizerModal({
   const [fileName, setFileName] = useState<string>("");
   const [fileSize, setFileSize] = useState<number>(0);
   const [isAnimated, setIsAnimated] = useState<boolean>(false);
+  const [inputFrameCount, setInputFrameCount] = useState<number>(1);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Transformation states
@@ -154,6 +197,18 @@ export function ImageCustomizerModal({
     setFileName(file.name);
     setFileSize(file.size);
     setIsAnimated(isGif);
+    setInputFrameCount(1);
+
+    if (isGif) {
+      file.arrayBuffer().then((buf) => {
+        if (seq !== requestSeqRef.current || !isOpenRef.current) return;
+        const frames = countGifFramesFromBytes(new Uint8Array(buf));
+        if (frames > 0) {
+          setInputFrameCount(frames);
+          setIsAnimated(frames > 1);
+        }
+      }).catch(() => {});
+    }
 
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -293,7 +348,25 @@ export function ImageCustomizerModal({
       }
 
       if (isGif && contentType && !contentType.includes("gif") && !contentType.includes("octet-stream")) {
-        console.warn(`[ImageCustomizer] Note: Expected image/gif but received ${contentType}`);
+        return {
+          ok: false,
+          reason: `GIF animation lost: expected image/gif from storage, received "${contentType}".`,
+        };
+      }
+
+      if (isGif && inputFrameCount > 1) {
+        try {
+          const buf = await res.arrayBuffer();
+          const servedFrames = countGifFramesFromBytes(new Uint8Array(buf));
+          if (servedFrames <= 1) {
+            return {
+              ok: false,
+              reason: `Animated GIF lost frames during processing/delivery (input: ${inputFrameCount} frames, served: ${servedFrames} frame).`,
+            };
+          }
+        } catch {
+          // Ignore stream body read error if image decodable test runs next
+        }
       }
 
       // 2. Empirically verify image decoding in the browser
@@ -421,6 +494,11 @@ export function ImageCustomizerModal({
       }
 
       canonicalUrl = data.url;
+      if (isAnimated && inputFrameCount > 1 && (data.mimeType !== "image/gif" || (typeof data.frameCount === "number" && data.frameCount <= 1))) {
+        setErrorMessage(
+          `Warning: Upload saved, but animation metadata indicates ${data.frameCount ?? 1} frame(s) (${data.mimeType || "unknown"}).`
+        );
+      }
       setSavedAssetUrl(canonicalUrl);
       setImageSrc(canonicalUrl);
       setVerificationState("upload_success");

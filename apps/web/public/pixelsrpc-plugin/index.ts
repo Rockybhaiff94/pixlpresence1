@@ -5,14 +5,18 @@ import { settings } from "./settings";
 import { SettingsAbout } from "./components/SettingsAbout";
 import { ConnectionState, DiscordActivity, RpcResponse } from "./types";
 import { formatRichPresenceField } from "./rpcFormat";
+import { resolveAssetForDiscord, getSafeUrlHost } from "./assetResolver";
 
 const SOCKET_ID = "pixels-rpc";
 const DEFAULT_APP_ID = "1523632136878559302";
+const PLUGIN_VERSION = "1.2.0";
 
 let syncTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let heartbeatTimerId: ReturnType<typeof setInterval> | null = null;
 let activeAbortController: AbortController | null = null;
 let lastActivityHash: string | null = null;
+let sessionNowTimestamp: number | null = null;
+let lastTimestampMode: string | null = null;
 
 let state: ConnectionState = {
     status: "not_linked",
@@ -81,7 +85,7 @@ async function sendHeartbeat(): Promise<void> {
             body: JSON.stringify({
                 deviceId: state.deviceId || undefined,
                 deviceToken: token,
-                pluginVersion: "1.1.0",
+                pluginVersion: PLUGIN_VERSION,
                 discordAvailable,
                 publishingStatus: state.publishingStatus,
                 lastAppliedRevision: state.appliedRevision,
@@ -133,6 +137,12 @@ function logDebug(message: string, ...args: any[]) {
     }
 }
 
+function logGifDiagnostic(stage: string, details: Record<string, any>) {
+    if (settings.store.debugLogging) {
+        console.log(`[PixelsRPC][GIF] ${stage}`, details);
+    }
+}
+
 function getDispatcher() {
     return FluxDispatcher ?? findByProps("dispatch", "isDispatching");
 }
@@ -153,6 +163,8 @@ export function clearActivity() {
     });
 
     lastActivityHash = null;
+    sessionNowTimestamp = null;
+    lastTimestampMode = null;
     updateState({ activeTitle: null });
     logDebug("Local activity cleared.");
 }
@@ -192,54 +204,20 @@ function resolveActivityType(rawType: string | number | null | undefined): { typ
 const assetResolutionCache = new Map<string, string>();
 let applySequence = 0;
 
-async function resolveDiscordAsset(appId: string, assetInput: string | null | undefined): Promise<string | undefined> {
-    if (!assetInput || !assetInput.trim()) return undefined;
-    const raw = assetInput.trim();
-
-    // Already in Discord Media Proxy format (mp:external/...)
-    if (raw.startsWith("mp:")) {
-        return raw;
-    }
-
-    const cacheKey = `${appId}:${raw}`;
-    if (assetResolutionCache.has(cacheKey)) {
-        return assetResolutionCache.get(cacheKey);
-    }
-
-    // Determine target URL vs. Discord Developer Portal asset key
-    let target = raw;
-    const isRemoteUrl = /^https?:\/\//i.test(raw);
-
-    if (isRemoteUrl && !raw.includes("wsrv.nl")) {
-        const isAnimatedUrl = /(\.gif|\.webp|format=gif|image\/gif|tenor\.com|giphy\.com)/i.test(raw);
-        const isBackendUpload = raw.includes("/uploads/rpc/");
-
-        // Our own /uploads/rpc/ GIFs are already size-capped (<= 8MB) and dimension-safe by ImageAssetService.
-        // Avoid unnecessary re-scaling on animated backend GIFs so wsrv.nl preserves every frame & timing,
-        // while still providing Cloudflare Edge caching (<50ms) and &n=-1 multi-frame animation support.
-        if (isBackendUpload && isAnimatedUrl) {
-            target = `https://wsrv.nl/?url=${encodeURIComponent(raw)}&n=-1`;
-        } else {
-            target = `https://wsrv.nl/?url=${encodeURIComponent(raw)}&w=320&h=320&fit=cover${isAnimatedUrl ? "&n=-1" : ""}`;
-        }
-    }
-
-    try {
-        if (ApplicationAssetUtils && typeof ApplicationAssetUtils.fetchAssetIds === "function") {
-            const resolvedList = await ApplicationAssetUtils.fetchAssetIds(appId, [target]);
-            if (Array.isArray(resolvedList) && resolvedList[0]) {
-                const assetId = resolvedList[0];
-                assetResolutionCache.set(cacheKey, assetId);
-                logDebug(`[PixelsRPC] Resolved Discord asset [${raw}] -> [${assetId}]`);
-                return assetId;
-            }
-        }
-    } catch (e) {
-        logDebug("[PixelsRPC] Asset resolution via ApplicationAssetUtils failed for:", target, e);
-    }
-
-    // Fallback: For remote URLs return the fast Cloudflare-proxied target; for asset keys return raw
-    return isRemoteUrl ? target : raw;
+async function resolveDiscordAsset(
+    appId: string,
+    assetInput: string | null | undefined,
+    slot: "largeImage" | "smallImage" = "largeImage"
+): Promise<string | undefined> {
+    return resolveAssetForDiscord({
+        appId,
+        assetInput,
+        slot,
+        cache: assetResolutionCache,
+        fetchAssetIds: ApplicationAssetUtils?.fetchAssetIds?.bind(ApplicationAssetUtils),
+        getAssetImage: (ApplicationAssetUtils as any)?.getAssetImage?.bind(ApplicationAssetUtils),
+        onDiagnostic: logGifDiagnostic
+    });
 }
 
 async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> {
@@ -265,6 +243,8 @@ async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> 
     let stateEnabled = rpc.stateEnabled;
     let largeImageUrl = rpc.largeImageUrl;
     let smallImageUrl = rpc.smallImageUrl;
+    let largeImageEnabled = rpc.largeImageEnabled;
+    let smallImageEnabled = rpc.smallImageEnabled;
     let timestampMode = rpc.timestampMode;
 
     if (rpc.customConfig && typeof rpc.customConfig === "string") {
@@ -280,6 +260,8 @@ async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> 
                 if (stateEnabled === undefined && parsed.stateEnabled !== undefined) stateEnabled = parsed.stateEnabled;
                 if (largeImageUrl === undefined && parsed.largeImageUrl !== undefined) largeImageUrl = parsed.largeImageUrl;
                 if (smallImageUrl === undefined && parsed.smallImageUrl !== undefined) smallImageUrl = parsed.smallImageUrl;
+                if (largeImageEnabled === undefined && parsed.largeImageEnabled !== undefined) largeImageEnabled = parsed.largeImageEnabled;
+                if (smallImageEnabled === undefined && parsed.smallImageEnabled !== undefined) smallImageEnabled = parsed.smallImageEnabled;
                 if (timestampMode === undefined && parsed.timestampMode !== undefined) timestampMode = parsed.timestampMode;
             }
         } catch (_) {}
@@ -328,15 +310,15 @@ async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> 
 
     // Resolve Large Image and Small Icon with Discord Asset system
     // Respect independent enable/disable toggles (largeImageEnabled and smallImageEnabled)
-    const isLargeEnabled = (rpc as any).largeImageEnabled !== false;
-    const isSmallEnabled = (rpc as any).smallImageEnabled !== false;
+    const isLargeEnabled = largeImageEnabled !== false;
+    const isSmallEnabled = smallImageEnabled !== false;
     const hasLarge = Boolean(isLargeEnabled && rpc.largeImage && rpc.largeImage.trim());
     const hasSmall = Boolean(isSmallEnabled && rpc.smallImage && rpc.smallImage.trim());
 
     if (hasLarge || hasSmall) {
         activity.assets = {};
         if (hasLarge && rpc.largeImage) {
-            const resolvedLarge = await resolveDiscordAsset(appId, rpc.largeImage.trim());
+            const resolvedLarge = await resolveDiscordAsset(appId, rpc.largeImage.trim(), "largeImage");
             if (resolvedLarge) activity.assets.large_image = resolvedLarge;
             if (rpc.largeImageText && rpc.largeImageText.trim()) {
                 activity.assets.large_text = rpc.largeImageText.trim().slice(0, 128);
@@ -346,7 +328,7 @@ async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> 
             }
         }
         if (hasSmall && rpc.smallImage) {
-            const resolvedSmall = await resolveDiscordAsset(appId, rpc.smallImage.trim());
+            const resolvedSmall = await resolveDiscordAsset(appId, rpc.smallImage.trim(), "smallImage");
             if (resolvedSmall) activity.assets.small_image = resolvedSmall;
             if (rpc.smallImageText && rpc.smallImageText.trim()) {
                 activity.assets.small_text = rpc.smallImageText.trim().slice(0, 128);
@@ -362,29 +344,47 @@ async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> 
     const tMode = String(timestampMode ?? "now").toLowerCase();
     if (store.showTimestamps && tMode !== "none" && tMode !== "0") {
         if (tMode === "now" || tMode === "1") {
+            // Preserve a stable session start timestamp across polls so Discord does not
+            // reset the timer or restart GIF playback every 15 seconds.
+            if (!sessionNowTimestamp || lastTimestampMode !== "now") {
+                sessionNowTimestamp = Date.now();
+            }
+            lastTimestampMode = "now";
             activity.timestamps = {
-                start: Date.now()
+                start: sessionNowTimestamp
             };
         } else if (tMode === "time" || tMode === "2") {
+            lastTimestampMode = "time";
             const now = new Date();
-            const startOfDay = Date.now() - (now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()) * 1000;
+            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
             activity.timestamps = {
                 start: startOfDay
             };
-        } else if (tMode === "custom" || tMode === "3" || rpc.startTimestamp || rpc.endTimestamp) {
+        } else if (tMode === "custom" || tMode === "3" || rpc.startTimestamp !== undefined || rpc.endTimestamp !== undefined) {
+            lastTimestampMode = "custom";
             activity.timestamps = {};
-            if (rpc.startTimestamp) {
-                const start = new Date(rpc.startTimestamp).getTime();
+            if (rpc.startTimestamp !== null && rpc.startTimestamp !== undefined && rpc.startTimestamp !== "") {
+                const start = typeof rpc.startTimestamp === "number"
+                    ? rpc.startTimestamp
+                    : /^\d+$/.test(String(rpc.startTimestamp).trim())
+                        ? Number(rpc.startTimestamp)
+                        : new Date(rpc.startTimestamp).getTime();
                 if (!Number.isNaN(start)) activity.timestamps.start = Math.floor(start);
             }
-            if (rpc.endTimestamp) {
-                const end = new Date(rpc.endTimestamp).getTime();
+            if (rpc.endTimestamp !== null && rpc.endTimestamp !== undefined && rpc.endTimestamp !== "") {
+                const end = typeof rpc.endTimestamp === "number"
+                    ? rpc.endTimestamp
+                    : /^\d+$/.test(String(rpc.endTimestamp).trim())
+                        ? Number(rpc.endTimestamp)
+                        : new Date(rpc.endTimestamp).getTime();
                 if (!Number.isNaN(end)) activity.timestamps.end = Math.floor(end);
             }
-            if (!activity.timestamps.start && !activity.timestamps.end) {
+            if (activity.timestamps.start === undefined && activity.timestamps.end === undefined) {
                 delete activity.timestamps;
             }
         }
+    } else {
+        lastTimestampMode = "none";
     }
 
     // Custom Buttons (2 independently configurable buttons with validation)
@@ -492,6 +492,18 @@ export async function applyActivity(rpc: RpcResponse) {
     }
 
     try {
+        logGifDiagnostic("Activity payload prepared", {
+            appId: activity.application_id,
+            activityType: activity.type,
+            revision: rpc.revision || state.appliedRevision,
+            largeInputHost: rpc.largeImage ? getSafeUrlHost(rpc.largeImage) : null,
+            smallInputHost: rpc.smallImage ? getSafeUrlHost(rpc.smallImage) : null,
+            largeResolvedCategory: activity.assets?.large_image?.startsWith("mp:external/") ? "mp:external" : activity.assets?.large_image ? "asset_or_url" : "none",
+            smallResolvedCategory: activity.assets?.small_image?.startsWith("mp:external/") ? "mp:external" : activity.assets?.small_image ? "asset_or_url" : "none",
+            largeEndsWithGif: Boolean(activity.assets?.large_image && /\.gif(\?|$)/i.test(activity.assets.large_image)),
+            smallEndsWithGif: Boolean(activity.assets?.small_image && /\.gif(\?|$)/i.test(activity.assets.small_image))
+        });
+
         dispatcher.dispatch({
             type: "LOCAL_ACTIVITY_UPDATE",
             socketId: SOCKET_ID,
@@ -505,6 +517,11 @@ export async function applyActivity(rpc: RpcResponse) {
             discordAvailable: true,
             appliedRevision: rpc.revision || state.appliedRevision + 1,
             lastError: null
+        });
+        logGifDiagnostic("LOCAL_ACTIVITY_UPDATE dispatched", {
+            revision: rpc.revision || state.appliedRevision,
+            largeImage: activity.assets?.large_image || null,
+            smallImage: activity.assets?.small_image || null
         });
         logDebug("Updated local Discord presence:", activity);
     } catch (dispatchErr: any) {

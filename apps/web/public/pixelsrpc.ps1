@@ -327,6 +327,8 @@ function Install-PixelsRpcPlugin {
             "index.ts",
             "settings.ts",
             "types.ts",
+            "rpcFormat.ts",
+            "assetResolver.ts",
             "native.ts",
             "styles.css",
             "components/StatusCard.tsx",
@@ -350,6 +352,8 @@ function Install-PixelsRpcPlugin {
         (Join-Path $targetPluginDir "index.ts"),
         (Join-Path $targetPluginDir "settings.ts"),
         (Join-Path $targetPluginDir "types.ts"),
+        (Join-Path $targetPluginDir "rpcFormat.ts"),
+        (Join-Path $targetPluginDir "assetResolver.ts"),
         (Join-Path $targetComponentsDir "StatusCard.tsx"),
         (Join-Path $targetComponentsDir "ActionControls.tsx"),
         (Join-Path $targetComponentsDir "SettingsAbout.tsx")
