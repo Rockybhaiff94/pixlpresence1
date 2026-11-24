@@ -1,28 +1,27 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   LayoutTemplate,
   Type,
   Shapes,
   Sparkles,
   UploadCloud,
-  ChevronDown,
   ChevronUp,
-  ChevronRight,
   ChevronLeft,
+  PanelTop,
   PaintBucket,
   Layers,
-  Move,
   Lock,
-  Unlock,
   GripHorizontal,
   GripVertical,
-  Check,
+  X,
 } from "lucide-react";
 import { StudioTab } from "@/types/studio";
 import { StudioView } from "./StudioTopBar";
 import { DockPortalTooltip, DockTooltipData } from "./DockPortalTooltip";
+import { getDooryToolTitle } from "@/components/editor/DooryDrawerHost";
 
 export type DockMode = "main" | "directory" | "settings";
 export type DockPosition = "bottom" | "top" | "left" | "right" | "float";
@@ -48,10 +47,12 @@ export interface StudioFloatingDockProps {
   // Editor tools integration
   activeTool?: string | null;
   onToggleTool?: (tool: string) => void;
+  onCloseToolPanel?: () => void;
+  renderToolPanel?: (toolId: string) => React.ReactNode;
 
   // Direct actions invoked from App Directory
   onAddEmbed?: () => void;
-  onAddElement?: (type: any) => void;
+  onAddElement?: (type: unknown) => void;
   onOpenSocialSelector?: () => void;
   onOpenRpcCustomizer?: () => void;
 
@@ -126,6 +127,8 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   onPositionChange,
   activeTool,
   onToggleTool,
+  onCloseToolPanel,
+  renderToolPanel,
   onSelectTool,
   containerRef,
   dockLockShortcut: propShortcut,
@@ -133,12 +136,53 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   onDockLockChange,
   snapThreshold: propSnapThreshold,
 }) => {
-  // Expansion State: Collapsed by default (5 primary tools), expands in current orientation
+  const prefersReducedMotion = useReducedMotion();
+
+  // Collapsed dock additional-tools expansion state (preserves pre-panel bar state)
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
-  const [showPlacementFlyout, setShowPlacementFlyout] = useState<boolean>(false);
 
   const [dockTooltip, setDockTooltip] = useState<DockTooltipData | null>(null);
   const dockRef = useRef<HTMLDivElement>(null);
+  const lastToolTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelCloseBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  // Normalize editor tool IDs cleanly (dock 'media' <-> 'images', 'canvas' <-> 'background')
+  const normalizedActiveTool =
+    activeTool === "media"
+      ? "images"
+      : activeTool === "canvas"
+      ? "background"
+      : activeTool || null;
+
+  // Morph Panel Visual State Machine & Last Selected Tool tracking:
+  // Keeps active panel content fading out gracefully during close contraction
+  const [prevNormalizedTool, setPrevNormalizedTool] = useState<string | null>(normalizedActiveTool);
+  const [displayTool, setDisplayTool] = useState<string | null>(normalizedActiveTool);
+  const [lastSelectedTool, setLastSelectedTool] = useState<string | null>(normalizedActiveTool);
+  const [isClosingPanel, setIsClosingPanel] = useState<boolean>(false);
+  const isClosingPanelRef = useRef<boolean>(false);
+  const closingTimerRef = useRef<number | null>(null);
+
+  if (normalizedActiveTool !== prevNormalizedTool) {
+    setPrevNormalizedTool(normalizedActiveTool);
+    if (normalizedActiveTool) {
+      setIsClosingPanel(false);
+      setDisplayTool(normalizedActiveTool);
+      setLastSelectedTool(normalizedActiveTool);
+    } else if (displayTool) {
+      setIsClosingPanel(true);
+    }
+  }
+
+  const isPanelExpanded = Boolean(normalizedActiveTool) && !isClosingPanel;
+  const showMorphPanelShell = Boolean(normalizedActiveTool) || isClosingPanel;
+
+  const clearClosingTimer = useCallback(() => {
+    if (closingTimerRef.current !== null) {
+      window.clearTimeout(closingTimerRef.current);
+      closingTimerRef.current = null;
+    }
+  }, []);
 
   const showTooltip = useCallback(
     (
@@ -151,6 +195,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         preferredSide?: "top" | "bottom" | "left" | "right";
       }
     ) => {
+      if (showMorphPanelShell) return;
       const rect = e.currentTarget.getBoundingClientRect();
       setDockTooltip({
         id: data.id,
@@ -161,12 +206,42 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         preferredSide: data.preferredSide,
       });
     },
-    []
+    [showMorphPanelShell]
   );
 
   const hideTooltip = useCallback(() => {
     setDockTooltip(null);
   }, []);
+
+  // Manage closing timer lifecycle and tooltip dismissal cleanly without synchronous setState in effect
+  useEffect(() => {
+    isClosingPanelRef.current = isClosingPanel;
+    if (!isClosingPanel) {
+      clearClosingTimer();
+      return;
+    }
+
+    const closeDurationMs = prefersReducedMotion ? 20 : 300;
+    clearClosingTimer();
+    closingTimerRef.current = window.setTimeout(() => {
+      closingTimerRef.current = null;
+      isClosingPanelRef.current = false;
+      setIsClosingPanel(false);
+      setDisplayTool(null);
+      if (lastToolTriggerRef.current && document.activeElement === panelCloseBtnRef.current) {
+        lastToolTriggerRef.current.focus({ preventScroll: true });
+      }
+    }, closeDurationMs);
+
+    return () => clearClosingTimer();
+  }, [isClosingPanel, clearClosingTimer, prefersReducedMotion]);
+
+  // Dismiss tooltip when morph panel opens
+  useEffect(() => {
+    if (!showMorphPanelShell) return;
+    const rafId = window.requestAnimationFrame(() => setDockTooltip(null));
+    return () => window.cancelAnimationFrame(rafId);
+  }, [showMorphPanelShell]);
 
   // Dismiss tooltip on scroll or resize
   useEffect(() => {
@@ -203,9 +278,11 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   // Unified single source of truth boolean read by container, children, and measurements
   const isVertical = orientation === "vertical";
 
-  // Customizable Lock State & Shortcut
-  const [isLocked, setIsLocked] = useState<boolean>(propLocked ?? false);
-  const [lockShortcut, setLockShortcut] = useState<string>(propShortcut || "CapsLock");
+  // Customizable Lock State & Shortcut (props override internal state when controlled)
+  const [internalLocked, setIsLocked] = useState<boolean>(propLocked ?? false);
+  const [internalShortcut, setLockShortcut] = useState<string>(propShortcut || "CapsLock");
+  const isLocked = propLocked ?? internalLocked;
+  const lockShortcut = propShortcut || internalShortcut;
 
   // Snapping distance threshold (default ~175px calibrated to 150–190 CSS pixels)
   const snapThreshold = propSnapThreshold ?? 175;
@@ -236,22 +313,6 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
     [onPositionChange]
   );
 
-  // Sync external position changes into internal edge state
-  useEffect(() => {
-    if (externalPosition && externalPosition !== edge && !dragState.isDragging) {
-      updateEdgeAndOrientation(externalPosition);
-    }
-  }, [externalPosition, edge, updateEdgeAndOrientation]);
-
-  // Sync prop changes for lock and shortcut
-  useEffect(() => {
-    if (propLocked !== undefined) setIsLocked(propLocked);
-  }, [propLocked]);
-
-  useEffect(() => {
-    if (propShortcut) setLockShortcut(propShortcut);
-  }, [propShortcut]);
-
   // Unified Atomic Drag State Machine
   interface DragState {
     isDragging: boolean;
@@ -263,49 +324,153 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   });
   const isDragging = dragState.isDragging;
   const dragCurrentPos = dragState.currentPos;
+
+  // Sync external position prop changes cleanly during render without cascading effects
+  const [prevExternalPosition, setPrevExternalPosition] = useState<DockPosition>(externalPosition);
+  if (externalPosition !== prevExternalPosition) {
+    setPrevExternalPosition(externalPosition);
+    if (externalPosition && externalPosition !== edge && !isDragging) {
+      setEdge(externalPosition);
+      if (externalPosition === "top" || externalPosition === "bottom") {
+        setOrientation("horizontal");
+      } else if (externalPosition === "left" || externalPosition === "right") {
+        setOrientation("vertical");
+      }
+    }
+  }
+
+  // Separate interaction state refs so synthetic drag clicks NEVER leak onto subsequent clicks:
+  // 1. isPointerDownRef: active pointer gesture started on move handle
+  // 2. hasMovedPastThresholdRef: current pointer gesture crossed >= 5px drag threshold
+  // 3. suppressNextClickRef: suppress ONLY the single synthetic click emitted by a finished drag
   const isPointerDownRef = useRef(false);
+  const activePointerIdRef = useRef<number | null>(null);
   const dragStartPointerRef = useRef({ x: 0, y: 0 });
   const dragStartDockPosRef = useRef({ x: 0, y: 0 });
+  const latestDragPosRef = useRef<{ x: number; y: number } | null>(null);
   const hasMovedPastThresholdRef = useRef(false);
+  const suppressNextClickRef = useRef(false);
+  const suppressClickTimerRef = useRef<number | null>(null);
 
-  // Re-render trigger on window / container resize
-  const [, setResizeTick] = useState(0);
+  const clearSuppressClickTimer = useCallback(() => {
+    if (suppressClickTimerRef.current !== null) {
+      window.clearTimeout(suppressClickTimerRef.current);
+      suppressClickTimerRef.current = null;
+    }
+  }, []);
 
-  // Restore saved dock position & coordinates from localStorage on mount
+  // Measured workspace host bounds (uses offsetParent so top/bottom/right/left stay exact)
+  const [hostSize, setHostSize] = useState<{ width: number; height: number }>(() => ({
+    width: typeof window !== "undefined" ? window.innerWidth : 1200,
+    height: typeof window !== "undefined" ? window.innerHeight : 800,
+  }));
+
+  const measureHostSize = useCallback(() => {
+    const dockEl = dockRef.current;
+    const hostEl =
+      (dockEl?.offsetParent as HTMLElement | null) || containerRef?.current || null;
+    if (hostEl && hostEl.clientWidth > 0 && hostEl.clientHeight > 0) {
+      setHostSize((prev) =>
+        prev.width === hostEl.clientWidth && prev.height === hostEl.clientHeight
+          ? prev
+          : { width: hostEl.clientWidth, height: hostEl.clientHeight }
+      );
+    } else if (typeof window !== "undefined") {
+      setHostSize((prev) =>
+        prev.width === window.innerWidth && prev.height === window.innerHeight
+          ? prev
+          : { width: window.innerWidth, height: window.innerHeight }
+      );
+    }
+  }, [containerRef]);
+
+  useLayoutEffect(() => {
+    measureHostSize();
+  }, [measureHostSize]);
+
+  // Restore saved dock position & coordinates from localStorage after mount without hydration mismatch
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try {
-      const savedCoords = localStorage.getItem("pixel_studio_dock_coords");
-      if (savedCoords) {
-        const parsed = JSON.parse(savedCoords);
-        if (parsed.edge) {
-          updateEdgeAndOrientation(parsed.edge);
+    const rafId = window.requestAnimationFrame(() => {
+      try {
+        const savedCoords = localStorage.getItem("pixel_studio_dock_coords");
+        if (savedCoords) {
+          const parsed = JSON.parse(savedCoords);
+          if (parsed.edge) {
+            updateEdgeAndOrientation(parsed.edge);
+          }
+          if (typeof parsed.ratioX === "number" && typeof parsed.ratioY === "number") {
+            setRatio({ x: parsed.ratioX, y: parsed.ratioY });
+          }
+        } else {
+          const savedPos = localStorage.getItem("pixel_studio_dock_position") as DockPosition;
+          if (savedPos) {
+            updateEdgeAndOrientation(savedPos);
+          }
         }
-        if (typeof parsed.ratioX === "number" && typeof parsed.ratioY === "number") {
-          setRatio({ x: parsed.ratioX, y: parsed.ratioY });
-        }
-      } else {
-        const savedPos = localStorage.getItem("pixel_studio_dock_position") as DockPosition;
-        if (savedPos) {
-          updateEdgeAndOrientation(savedPos);
-        }
-      }
 
-      const savedLock = localStorage.getItem("pixel_studio_dock_locked");
-      if (savedLock !== null) {
-        setIsLocked(savedLock === "true");
-      }
-      const savedShortcut = localStorage.getItem("pixel_studio_dock_lock_shortcut");
-      if (savedShortcut) {
-        setLockShortcut(savedShortcut);
-      }
-    } catch {}
+        const savedLock = localStorage.getItem("pixel_studio_dock_locked");
+        if (savedLock !== null) {
+          setIsLocked(savedLock === "true");
+        }
+        const savedShortcut = localStorage.getItem("pixel_studio_dock_lock_shortcut");
+        if (savedShortcut) {
+          setLockShortcut(savedShortcut);
+        }
+      } catch {}
+    });
+    return () => window.cancelAnimationFrame(rafId);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Keyboard shortcut listener to toggle Dock Lock
+  // Window & Container Resize Observer
+  useEffect(() => {
+    const handleResize = () => measureHostSize();
+    window.addEventListener("resize", handleResize);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => measureHostSize());
+      const hostEl =
+        (dockRef.current?.offsetParent as HTMLElement | null) || containerRef?.current;
+      if (hostEl) resizeObserver.observe(hostEl);
+      if (containerRef?.current && containerRef.current !== hostEl) {
+        resizeObserver.observe(containerRef.current);
+      }
+    }
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      resizeObserver?.disconnect();
+    };
+  }, [containerRef, measureHostSize]);
+
+  // Close panel gracefully with duplicate-close protection
+  const handleRequestClosePanel = useCallback(() => {
+    if (isClosingPanelRef.current) return;
+    if (!normalizedActiveTool && !displayTool) return;
+
+    hideTooltip();
+
+    if (onCloseToolPanel) {
+      onCloseToolPanel();
+    } else if (normalizedActiveTool) {
+      onToggleTool?.(normalizedActiveTool);
+    }
+  }, [normalizedActiveTool, displayTool, hideTooltip, onCloseToolPanel, onToggleTool]);
+
+  // Escape-to-close active tool panel & CapsLock shortcut to toggle Dock Lock
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
+      if (e.key === "Escape" && (isPanelExpanded || normalizedActiveTool)) {
+        if (!e.defaultPrevented) {
+          e.preventDefault();
+          e.stopPropagation();
+          handleRequestClosePanel();
+        }
+        return;
+      }
+
+      const target = e.target as HTMLElement | null;
       if (
         target &&
         (target.tagName === "INPUT" ||
@@ -331,51 +496,41 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [lockShortcut, onDockLockChange]);
-
-  // Window & Container Resize Observer
-  useEffect(() => {
-    const handleResize = () => setResizeTick((t) => t + 1);
-    window.addEventListener("resize", handleResize);
-
-    let resizeObserver: ResizeObserver | null = null;
-    if (containerRef?.current && typeof ResizeObserver !== "undefined") {
-      resizeObserver = new ResizeObserver(() => handleResize());
-      resizeObserver.observe(containerRef.current);
-    }
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-      resizeObserver?.disconnect();
-    };
-  }, [containerRef]);
-
-  // Close flyouts on outside click
-  useEffect(() => {
-    const handleOutsideClick = (e: MouseEvent) => {
-      if (dockRef.current && !dockRef.current.contains(e.target as Node)) {
-        setShowPlacementFlyout(false);
-      }
-    };
-    document.addEventListener("mousedown", handleOutsideClick);
-    return () => document.removeEventListener("mousedown", handleOutsideClick);
-  }, []);
+  }, [lockShortcut, onDockLockChange, isPanelExpanded, normalizedActiveTool, handleRequestClosePanel]);
 
   // Check if a tool is currently active
   const isToolActive = (toolId: string) => {
-    if (!activeTool) return false;
-    if (toolId === "media" && (activeTool === "media" || activeTool === "images")) return true;
-    if (toolId === "canvas" && (activeTool === "canvas" || activeTool === "background")) return true;
-    return activeTool === toolId;
+    if (!isPanelExpanded || !normalizedActiveTool) return false;
+    if (toolId === "media" && (normalizedActiveTool === "media" || normalizedActiveTool === "images")) {
+      return true;
+    }
+    if (
+      toolId === "canvas" &&
+      (normalizedActiveTool === "canvas" || normalizedActiveTool === "background")
+    ) {
+      return true;
+    }
+    return normalizedActiveTool === toolId;
   };
 
-  // Tool Click Handler
-  const handleToolClick = (toolId: string) => {
+  // Tool Click Handler (with clean mapping preservation)
+  const handleToolClick = (
+    toolId: string,
+    triggerBtn?: HTMLButtonElement | null
+  ) => {
+    if (triggerBtn) {
+      lastToolTriggerRef.current = triggerBtn;
+    }
+    hideTooltip();
+
     if (toolId === "media") {
+      setLastSelectedTool("images");
       onToggleTool?.("images");
     } else if (toolId === "canvas") {
+      setLastSelectedTool("background");
       onToggleTool?.("background");
     } else {
+      setLastSelectedTool(toolId);
       onToggleTool?.(toolId);
     }
     onSelectTool?.({
@@ -389,9 +544,245 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   // CORE POINTER DRAG & INTELLIGENT EDGE SNAPPING SYSTEM
   // ========================================================
 
+  const getHostBoundsRect = useCallback(() => {
+    const dockEl = dockRef.current;
+    const hostEl =
+      (dockEl?.offsetParent as HTMLElement | null) || containerRef?.current || document.body;
+    return hostEl.getBoundingClientRect();
+  }, [containerRef]);
+
+  const finishDragGesture = useCallback(
+    (didDrag: boolean, pointerId?: number) => {
+      isPointerDownRef.current = false;
+      activePointerIdRef.current = null;
+      hasMovedPastThresholdRef.current = false;
+
+      if (pointerId !== undefined && dockRef.current) {
+        try {
+          if (dockRef.current.hasPointerCapture?.(pointerId)) {
+            dockRef.current.releasePointerCapture(pointerId);
+          }
+        } catch {}
+      }
+
+      if (didDrag) {
+        // Suppress ONLY the single synthetic click produced by releasing this drag
+        clearSuppressClickTimer();
+        suppressNextClickRef.current = true;
+        suppressClickTimerRef.current = window.setTimeout(() => {
+          suppressNextClickRef.current = false;
+          suppressClickTimerRef.current = null;
+        }, 80);
+
+        const dockEl = dockRef.current;
+        if (!dockEl) {
+          setDragState({ isDragging: false, currentPos: null });
+          return;
+        }
+
+        const containerRect = getHostBoundsRect();
+        const dockDomRect = dockEl.getBoundingClientRect();
+        const dockWidth = dockEl.offsetWidth || dockDomRect.width;
+        const dockHeight = dockEl.offsetHeight || dockDomRect.height;
+
+        // Prefer exact synchronous pointer-computed position so fast flick drags
+        // never snap using a 1-frame-stale DOM rect before React commits.
+        const relPos = latestDragPosRef.current;
+        latestDragPosRef.current = null;
+        const absLeft = relPos ? containerRect.left + relPos.x : dockDomRect.left;
+        const absTop = relPos ? containerRect.top + relPos.y : dockDomRect.top;
+        const dockRect = {
+          left: absLeft,
+          top: absTop,
+          right: absLeft + dockWidth,
+          bottom: absTop + dockHeight,
+          width: dockWidth,
+          height: dockHeight,
+        };
+
+        const distTop = Math.abs(dockRect.top - containerRect.top);
+        const distBottom = Math.abs(containerRect.bottom - dockRect.bottom);
+        const distLeft = Math.abs(dockRect.left - containerRect.left);
+        const distRight = Math.abs(containerRect.right - dockRect.right);
+
+        const minDist = Math.min(distTop, distBottom, distLeft, distRight);
+
+        let newEdge: DockPosition = "float";
+        let nextOrientation: DockOrientation = orientation;
+        if (minDist <= snapThreshold) {
+          if (minDist === distBottom) {
+            newEdge = "bottom";
+            nextOrientation = "horizontal";
+          } else if (minDist === distTop) {
+            newEdge = "top";
+            nextOrientation = "horizontal";
+          } else if (minDist === distLeft) {
+            newEdge = "left";
+            nextOrientation = "vertical";
+          } else {
+            newEdge = "right";
+            nextOrientation = "vertical";
+          }
+        } else {
+          newEdge = "float";
+          // Floating preserves existing orientation!
+        }
+
+        const maxAvailableX = Math.max(1, containerRect.width - dockRect.width);
+        const maxAvailableY = Math.max(1, containerRect.height - dockRect.height);
+
+        const ratioX = Math.max(
+          0,
+          Math.min(1, (dockRect.left - containerRect.left) / maxAvailableX)
+        );
+        const ratioY = Math.max(
+          0,
+          Math.min(1, (dockRect.top - containerRect.top) / maxAvailableY)
+        );
+
+        setOrientation(nextOrientation);
+        setEdge(newEdge);
+        setRatio({ x: ratioX, y: ratioY });
+        setDragState({ isDragging: false, currentPos: null });
+
+        onPositionChange(newEdge);
+
+        try {
+          localStorage.setItem("pixel_studio_dock_position", newEdge);
+          localStorage.setItem(
+            "pixel_studio_dock_coords",
+            JSON.stringify({ edge: newEdge, ratioX, ratioY })
+          );
+          localStorage.setItem("pixel_studio_dock_orientation", nextOrientation);
+        } catch {}
+      } else {
+        suppressNextClickRef.current = false;
+        setDragState({ isDragging: false, currentPos: null });
+      }
+    },
+    [clearSuppressClickTimer, getHostBoundsRect, orientation, snapThreshold, onPositionChange]
+  );
+
+  const handlePointerCancel = useCallback(
+    (e?: React.PointerEvent<HTMLDivElement>) => {
+      isPointerDownRef.current = false;
+      activePointerIdRef.current = null;
+      hasMovedPastThresholdRef.current = false;
+      suppressNextClickRef.current = false;
+      clearSuppressClickTimer();
+      if (e && dockRef.current) {
+        try {
+          if (dockRef.current.hasPointerCapture?.(e.pointerId)) {
+            dockRef.current.releasePointerCapture(e.pointerId);
+          }
+        } catch {}
+      }
+      setDragState({ isDragging: false, currentPos: null });
+    },
+    [clearSuppressClickTimer]
+  );
+
+  const processPointerMove = useCallback(
+    (clientX: number, clientY: number, pointerId: number) => {
+      if (!isPointerDownRef.current || isLocked || showMorphPanelShell) {
+        return;
+      }
+      if (activePointerIdRef.current !== null && pointerId !== activePointerIdRef.current) {
+        return;
+      }
+
+      const dx = clientX - dragStartPointerRef.current.x;
+      const dy = clientY - dragStartPointerRef.current.y;
+      const dist = Math.hypot(dx, dy);
+
+      if (!hasMovedPastThresholdRef.current && dist >= 5) {
+        hasMovedPastThresholdRef.current = true;
+        try {
+          dockRef.current?.setPointerCapture?.(pointerId);
+        } catch {}
+      }
+
+      if (hasMovedPastThresholdRef.current) {
+        const containerRect = getHostBoundsRect();
+        const dockEl = dockRef.current;
+        const dockWidth = dockEl?.offsetWidth || (isVertical ? 44 : 264);
+        const dockHeight = dockEl?.offsetHeight || (isVertical ? 264 : 44);
+
+        const newX = Math.max(
+          0,
+          Math.min(containerRect.width - dockWidth, dragStartDockPosRef.current.x + dx)
+        );
+        const newY = Math.max(
+          0,
+          Math.min(containerRect.height - dockHeight, dragStartDockPosRef.current.y + dy)
+        );
+
+        latestDragPosRef.current = { x: newX, y: newY };
+        setDragState({
+          isDragging: true,
+          currentPos: { x: newX, y: newY },
+        });
+      }
+    },
+    [getHostBoundsRect, isLocked, isVertical, showMorphPanelShell]
+  );
+
+  // Global window pointer move/up/cancel fallback + unmount cleanup so fast flicks & state never break
+  useEffect(() => {
+    const handleWindowPointerMove = (e: PointerEvent) => {
+      if (!isPointerDownRef.current) return;
+      processPointerMove(e.clientX, e.clientY, e.pointerId);
+    };
+
+    const handleWindowPointerUp = (e: PointerEvent) => {
+      if (!isPointerDownRef.current) return;
+      if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) {
+        return;
+      }
+      finishDragGesture(hasMovedPastThresholdRef.current, e.pointerId);
+    };
+
+    const handleWindowPointerCancel = (e: PointerEvent) => {
+      if (!isPointerDownRef.current) return;
+      if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) {
+        return;
+      }
+      handlePointerCancel();
+    };
+
+    window.addEventListener("pointermove", handleWindowPointerMove);
+    window.addEventListener("pointerup", handleWindowPointerUp);
+    window.addEventListener("pointercancel", handleWindowPointerCancel);
+
+    return () => {
+      window.removeEventListener("pointermove", handleWindowPointerMove);
+      window.removeEventListener("pointerup", handleWindowPointerUp);
+      window.removeEventListener("pointercancel", handleWindowPointerCancel);
+      clearSuppressClickTimer();
+      clearClosingTimer();
+      isPointerDownRef.current = false;
+      activePointerIdRef.current = null;
+      hasMovedPastThresholdRef.current = false;
+      suppressNextClickRef.current = false;
+    };
+  }, [
+    processPointerMove,
+    finishDragGesture,
+    handlePointerCancel,
+    clearSuppressClickTimer,
+    clearClosingTimer,
+  ]);
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    if (isLocked) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+
+    // Always clear stale drag / suppression flags on any new pointer interaction
+    // BEFORE checking move handle so normal clicks are never blocked.
+    clearSuppressClickTimer();
+    suppressNextClickRef.current = false;
+    hasMovedPastThresholdRef.current = false;
+
+    if (isLocked || showMorphPanelShell) return;
 
     const target = e.target as HTMLElement;
     const isMoveControl = target.closest('[data-dock-move-handle="true"]');
@@ -410,295 +801,281 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
     if (!dockEl) return;
 
     const rect = dockEl.getBoundingClientRect();
-    const container = containerRef?.current || document.body;
-    const containerRect = container.getBoundingClientRect();
+    const containerRect = getHostBoundsRect();
 
     dragStartPointerRef.current = { x: e.clientX, y: e.clientY };
     dragStartDockPosRef.current = {
       x: rect.left - containerRect.left,
       y: rect.top - containerRect.top,
     };
-    hasMovedPastThresholdRef.current = false;
+    latestDragPosRef.current = null;
+    activePointerIdRef.current = e.pointerId;
     isPointerDownRef.current = true;
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isPointerDownRef.current || isLocked) {
+    if (!isPointerDownRef.current || isLocked || showMorphPanelShell) {
       if (isDragging) {
         setDragState({ isDragging: false, currentPos: null });
       }
       return;
     }
-
-    const dx = e.clientX - dragStartPointerRef.current.x;
-    const dy = e.clientY - dragStartPointerRef.current.y;
-    const dist = Math.hypot(dx, dy);
-
-    if (!hasMovedPastThresholdRef.current && dist >= 5) {
-      hasMovedPastThresholdRef.current = true;
-      try {
-        e.currentTarget.setPointerCapture(e.pointerId);
-      } catch {}
-    }
-
-    if (hasMovedPastThresholdRef.current) {
-      const container = containerRef?.current || document.body;
-      const containerRect = container.getBoundingClientRect();
-      const dockEl = dockRef.current;
-      const dockWidth = dockEl?.offsetWidth || (isVertical ? 44 : 290);
-      const dockHeight = dockEl?.offsetHeight || (isVertical ? 290 : 44);
-
-      const newX = Math.max(
-        0,
-        Math.min(containerRect.width - dockWidth, dragStartDockPosRef.current.x + dx)
-      );
-      const newY = Math.max(
-        0,
-        Math.min(containerRect.height - dockHeight, dragStartDockPosRef.current.y + dy)
-      );
-
-      setDragState({
-        isDragging: true,
-        currentPos: { x: newX, y: newY },
-      });
-    }
+    processPointerMove(e.clientX, e.clientY, e.pointerId);
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!isPointerDownRef.current) return;
-    isPointerDownRef.current = false;
-
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {}
-
-    if (hasMovedPastThresholdRef.current) {
-      const container = containerRef?.current || document.body;
-      const containerRect = container.getBoundingClientRect();
-      const dockEl = dockRef.current;
-      if (!dockEl) {
-        setDragState({ isDragging: false, currentPos: null });
-        return;
-      }
-
-      const dockRect = dockEl.getBoundingClientRect();
-
-      const distTop = Math.abs(dockRect.top - containerRect.top);
-      const distBottom = Math.abs(containerRect.bottom - dockRect.bottom);
-      const distLeft = Math.abs(dockRect.left - containerRect.left);
-      const distRight = Math.abs(containerRect.right - dockRect.right);
-
-      const minDist = Math.min(distTop, distBottom, distLeft, distRight);
-
-      let newEdge: DockPosition = "float";
-      if (minDist <= snapThreshold) {
-        if (minDist === distBottom) {
-          newEdge = "bottom";
-          setOrientation("horizontal");
-        } else if (minDist === distTop) {
-          newEdge = "top";
-          setOrientation("horizontal");
-        } else if (minDist === distLeft) {
-          newEdge = "left";
-          setOrientation("vertical");
-        } else {
-          newEdge = "right";
-          setOrientation("vertical");
-        }
-      } else {
-        newEdge = "float";
-        // Floating preserves existing orientation!
-      }
-
-      const maxAvailableX = Math.max(1, containerRect.width - dockRect.width);
-      const maxAvailableY = Math.max(1, containerRect.height - dockRect.height);
-
-      const ratioX = Math.max(0, Math.min(1, (dockRect.left - containerRect.left) / maxAvailableX));
-      const ratioY = Math.max(0, Math.min(1, (dockRect.top - containerRect.top) / maxAvailableY));
-
-      setEdge(newEdge);
-      setRatio({ x: ratioX, y: ratioY });
-      setDragState({ isDragging: false, currentPos: null });
-
-      onPositionChange(newEdge);
-
-      try {
-        localStorage.setItem("pixel_studio_dock_position", newEdge);
-        localStorage.setItem(
-          "pixel_studio_dock_coords",
-          JSON.stringify({ edge: newEdge, ratioX, ratioY })
-        );
-        localStorage.setItem(
-          "pixel_studio_dock_orientation",
-          newEdge === "top" || newEdge === "bottom"
-            ? "horizontal"
-            : newEdge === "left" || newEdge === "right"
-            ? "vertical"
-            : orientation
-        );
-      } catch {}
-    } else {
-      setDragState({ isDragging: false, currentPos: null });
+    if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) {
+      return;
     }
+    finishDragGesture(hasMovedPastThresholdRef.current, e.pointerId);
   };
 
   const handleClickCapture = (e: React.MouseEvent) => {
-    if (hasMovedPastThresholdRef.current) {
+    if (suppressNextClickRef.current) {
+      clearSuppressClickTimer();
+      suppressNextClickRef.current = false;
       e.stopPropagation();
       e.preventDefault();
     }
   };
 
   // ========================================================
-  // POSITION-AWARE DOCK & UNIFIED ORIENTATION CALCULATIONS
+  // EDGE-ANCHORED DOCK & EXPANDED MORPH PANEL GEOMETRY
   // ========================================================
 
-  const currentContainerWidth = containerRef?.current
-    ? containerRef.current.clientWidth
-    : typeof window !== "undefined"
-    ? window.innerWidth
-    : 1200;
-  const currentContainerHeight = containerRef?.current
-    ? containerRef.current.clientHeight
-    : typeof window !== "undefined"
-    ? window.innerHeight
-    : 800;
+  const containerWidth = hostSize.width;
+  const containerHeight = hostSize.height;
 
-  const computeDockStyle = (): React.CSSProperties => {
-    const containerWidth = currentContainerWidth;
-    const containerHeight = currentContainerHeight;
+  // Preserved collapsed/expanded-tools bar dimensions (single source of truth)
+  const collapsedWidth = isVertical ? 44 : Math.min(containerWidth - 16, 264);
+  const collapsedHeight = isVertical ? Math.min(containerHeight - 16, 264) : 44;
+  const expandedWidth = isVertical ? 44 : Math.min(containerWidth - 16, 352);
+  const expandedHeight = isVertical ? Math.min(containerHeight - 16, 352) : 44;
 
-    // While dragging: follow pointer directly with zero transition delay
-    if (isDragging && dragCurrentPos) {
-      return {
-        position: "absolute",
-        left: `${dragCurrentPos.x}px`,
-        top: `${dragCurrentPos.y}px`,
-        transition: "none",
-        zIndex: 50,
-        touchAction: "none",
-      };
-    }
+  const barWidth = Math.min(containerWidth, isExpanded ? expandedWidth : collapsedWidth);
+  const barHeight = Math.min(containerHeight, isExpanded ? expandedHeight : collapsedHeight);
 
-    // Single source of truth dimensions:
-    // Horizontal mode: height is 44px, width expands horizontally (290px -> 440px)
-    // Vertical mode: width is 44px, height expands vertically (290px -> 440px)
-    const collapsedWidth = isVertical ? 44 : 290;
-    const collapsedHeight = isVertical ? 290 : 44;
-    const expandedWidth = isVertical ? 44 : Math.min(containerWidth - 16, 440);
-    const expandedHeight = isVertical ? Math.min(containerHeight - 16, 440) : 44;
+  const clampAlongAxis = (ratioVal: number, maxSpan: number, margin = 8) => {
+    if (maxSpan <= margin * 2) return Math.max(0, maxSpan / 2);
+    return Math.max(margin, Math.min(maxSpan - margin, ratioVal * maxSpan));
+  };
 
-    const dockWidth = isExpanded ? expandedWidth : collapsedWidth;
-    const dockHeight = isExpanded ? expandedHeight : collapsedHeight;
+  // Anchor from collapsed coordinates so the bottom/trailing More toggle stays stationary during expansion
+  const collapsedMaxX = Math.max(0, containerWidth - collapsedWidth);
+  const collapsedMaxY = Math.max(0, containerHeight - collapsedHeight);
+  const collapsedLeft = clampAlongAxis(ratio.x, collapsedMaxX, 8);
+  const collapsedTop = clampAlongAxis(ratio.y, collapsedMaxY, 8);
 
-    const baseTransition =
-      "left 220ms cubic-bezier(0.16, 1, 0.3, 1), top 220ms cubic-bezier(0.16, 1, 0.3, 1), width 220ms cubic-bezier(0.16, 1, 0.3, 1), height 220ms cubic-bezier(0.16, 1, 0.3, 1), border-radius 180ms ease, box-shadow 180ms ease";
+  const barRatioLeft =
+    isExpanded && !isVertical
+      ? Math.max(8, collapsedLeft + collapsedWidth - barWidth)
+      : collapsedLeft;
+  const barRatioTop =
+    isExpanded && isVertical
+      ? Math.max(8, collapsedTop + collapsedHeight - barHeight)
+      : collapsedTop;
 
-    const maxX = Math.max(0, containerWidth - dockWidth);
-    const maxY = Math.max(0, containerHeight - dockHeight);
-    const dockLeft = Math.max(8, Math.min(maxX - 8, ratio.x * maxX));
-    const dockTop = Math.max(8, Math.min(maxY - 8, ratio.y * maxY));
-
-    // Bottom edge attachment (Horizontal layout)
+  const getDockBarRect = () => {
     if (edge === "bottom") {
       return {
-        position: "absolute",
-        bottom: 0,
-        left: `${dockLeft}px`,
-        top: "auto",
-        right: "auto",
-        width: `${dockWidth}px`,
-        height: `${dockHeight}px`,
-        transition: baseTransition,
-        zIndex: 40,
-        touchAction: "none",
+        left: barRatioLeft,
+        top: Math.max(0, containerHeight - barHeight),
+        width: barWidth,
+        height: barHeight,
       };
     }
-
-    // Top edge attachment (Horizontal layout)
     if (edge === "top") {
       return {
-        position: "absolute",
+        left: barRatioLeft,
         top: 0,
-        left: `${dockLeft}px`,
-        bottom: "auto",
-        right: "auto",
-        width: `${dockWidth}px`,
-        height: `${dockHeight}px`,
-        transition: baseTransition,
-        zIndex: 40,
-        touchAction: "none",
+        width: barWidth,
+        height: barHeight,
       };
     }
-
-    // Left edge attachment (Vertical layout)
     if (edge === "left") {
       return {
-        position: "absolute",
         left: 0,
-        top: `${dockTop}px`,
-        right: "auto",
-        bottom: "auto",
-        width: `${dockWidth}px`,
-        height: `${dockHeight}px`,
-        transition: baseTransition,
-        zIndex: 40,
-        touchAction: "none",
+        top: barRatioTop,
+        width: barWidth,
+        height: barHeight,
       };
     }
-
-    // Right edge attachment (Vertical layout)
     if (edge === "right") {
       return {
-        position: "absolute",
-        right: 0,
-        top: `${dockTop}px`,
-        left: "auto",
-        bottom: "auto",
-        width: `${dockWidth}px`,
-        height: `${dockHeight}px`,
-        transition: baseTransition,
-        zIndex: 40,
-        touchAction: "none",
+        left: Math.max(0, containerWidth - barWidth),
+        top: barRatioTop,
+        width: barWidth,
+        height: barHeight,
       };
     }
-
-    // Float mode (Preserves current orientation)
     return {
-      position: "absolute",
-      left: `${dockLeft}px`,
-      top: `${dockTop}px`,
-      right: "auto",
-      bottom: "auto",
-      width: `${dockWidth}px`,
-      height: `${dockHeight}px`,
-      transition: baseTransition,
-      zIndex: 40,
-      touchAction: "none",
+      left: barRatioLeft,
+      top: barRatioTop,
+      width: barWidth,
+      height: barHeight,
     };
   };
 
-  const getCornerClasses = () => {
+  const dockBarRect = getDockBarRect();
+
+  const getExpandedPanelRect = () => {
+    const safeMargin = containerWidth < 640 ? 8 : 12;
+    const isHorizontalEdge = edge === "top" || edge === "bottom";
+    const desiredW = isHorizontalEdge ? 356 : 336;
+    const desiredH = isHorizontalEdge ? 460 : 540;
+
+    const maxAvailW =
+      edge === "left" || edge === "right"
+        ? Math.max(200, containerWidth - safeMargin)
+        : Math.max(200, containerWidth - safeMargin * 2);
+    const maxAvailH =
+      edge === "top" || edge === "bottom"
+        ? Math.max(180, containerHeight - safeMargin)
+        : Math.max(180, containerHeight - safeMargin * 2);
+
+    const panelWidth = Math.min(desiredW, maxAvailW, containerWidth);
+    const panelHeight = Math.min(desiredH, maxAvailH, containerHeight);
+
+    const dockCenterX = dockBarRect.left + dockBarRect.width / 2;
+    const dockCenterY = dockBarRect.top + dockBarRect.height / 2;
+
+    const clampHorizontal = (rawLeft: number) => {
+      const maxLeft = containerWidth - panelWidth - safeMargin;
+      if (maxLeft <= safeMargin) {
+        return Math.max(0, Math.round((containerWidth - panelWidth) / 2));
+      }
+      return Math.round(Math.max(safeMargin, Math.min(maxLeft, rawLeft)));
+    };
+
+    const clampVertical = (rawTop: number) => {
+      const maxTop = containerHeight - panelHeight - safeMargin;
+      if (maxTop <= safeMargin) {
+        return Math.max(0, Math.round((containerHeight - panelHeight) / 2));
+      }
+      return Math.round(Math.max(safeMargin, Math.min(maxTop, rawTop)));
+    };
+
+    if (edge === "left") {
+      return {
+        left: 0,
+        top: clampVertical(dockCenterY - panelHeight / 2),
+        width: panelWidth,
+        height: panelHeight,
+      };
+    }
+
+    if (edge === "right") {
+      return {
+        left: Math.max(0, containerWidth - panelWidth),
+        top: clampVertical(dockCenterY - panelHeight / 2),
+        width: panelWidth,
+        height: panelHeight,
+      };
+    }
+
+    if (edge === "top") {
+      return {
+        left: clampHorizontal(dockCenterX - panelWidth / 2),
+        top: 0,
+        width: panelWidth,
+        height: panelHeight,
+      };
+    }
+
+    if (edge === "bottom") {
+      return {
+        left: clampHorizontal(dockCenterX - panelWidth / 2),
+        top: Math.max(0, containerHeight - panelHeight),
+        width: panelWidth,
+        height: panelHeight,
+      };
+    }
+
+    // Floating: expands evenly around the dock's existing center within safe bounds
+    return {
+      left: clampHorizontal(dockCenterX - panelWidth / 2),
+      top: clampVertical(dockCenterY - panelHeight / 2),
+      width: panelWidth,
+      height: panelHeight,
+    };
+  };
+
+  const expandedPanelRect = getExpandedPanelRect();
+
+  const getShellCornerRadii = (forPanel: boolean) => {
+    const r = forPanel ? 18 : 16;
     if (isDragging || edge === "float") {
-      return "rounded-2xl border border-white/15";
+      return {
+        borderTopLeftRadius: r,
+        borderTopRightRadius: r,
+        borderBottomRightRadius: r,
+        borderBottomLeftRadius: r,
+      };
     }
     switch (edge) {
       case "bottom":
-        return "rounded-t-2xl rounded-b-none border-b-0";
+        return {
+          borderTopLeftRadius: r,
+          borderTopRightRadius: r,
+          borderBottomRightRadius: 0,
+          borderBottomLeftRadius: 0,
+        };
       case "top":
-        return "rounded-b-2xl rounded-t-none border-t-0";
+        return {
+          borderTopLeftRadius: 0,
+          borderTopRightRadius: 0,
+          borderBottomRightRadius: r,
+          borderBottomLeftRadius: r,
+        };
       case "left":
-        return "rounded-r-2xl rounded-l-none border-l-0";
+        return {
+          borderTopLeftRadius: 0,
+          borderTopRightRadius: r,
+          borderBottomRightRadius: r,
+          borderBottomLeftRadius: 0,
+        };
       case "right":
-        return "rounded-l-2xl rounded-r-none border-r-0";
+        return {
+          borderTopLeftRadius: r,
+          borderTopRightRadius: 0,
+          borderBottomRightRadius: 0,
+          borderBottomLeftRadius: r,
+        };
       default:
-        return "rounded-2xl border border-white/15";
+        return {
+          borderTopLeftRadius: r,
+          borderTopRightRadius: r,
+          borderBottomRightRadius: r,
+          borderBottomLeftRadius: r,
+        };
+    }
+  };
+
+  const getEdgeBorderClasses = () => {
+    if (isDragging || edge === "float") {
+      return "border border-white/15";
+    }
+    switch (edge) {
+      case "bottom":
+        return "border border-white/15 border-b-0";
+      case "top":
+        return "border border-white/15 border-t-0";
+      case "left":
+        return "border border-white/15 border-l-0";
+      case "right":
+        return "border border-white/15 border-r-0";
+      default:
+        return "border border-white/15";
     }
   };
 
   const getShadowClass = () => {
     if (isDragging) {
       return "shadow-[0_20px_50px_rgba(0,0,0,0.85)] ring-1 ring-white/20";
+    }
+    if (showMorphPanelShell) {
+      return "shadow-[0_24px_64px_rgba(0,0,0,0.88)]";
     }
     switch (edge) {
       case "bottom":
@@ -715,253 +1092,180 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
     }
   };
 
+  const activeToolEntry =
+    PRIMARY_DOCK_TOOLS.find(
+      (t) =>
+        t.id === displayTool ||
+        (t.id === "media" && displayTool === "images")
+    ) ||
+    ADDITIONAL_DOCK_TOOLS.find(
+      (t) =>
+        t.id === displayTool ||
+        (t.id === "canvas" && displayTool === "background")
+    );
+  const ActiveSectionIcon = activeToolEntry?.icon || Layers;
+  const activeSectionTitle = getDooryToolTitle(displayTool);
+
+  const targetShellGeometry =
+    isDragging && dragCurrentPos
+      ? {
+          left: dragCurrentPos.x,
+          top: dragCurrentPos.y,
+          width: dockBarRect.width,
+          height: dockBarRect.height,
+          ...getShellCornerRadii(false),
+        }
+      : isPanelExpanded
+      ? {
+          left: expandedPanelRect.left,
+          top: expandedPanelRect.top,
+          width: expandedPanelRect.width,
+          height: expandedPanelRect.height,
+          ...getShellCornerRadii(true),
+        }
+      : {
+          left: dockBarRect.left,
+          top: dockBarRect.top,
+          width: dockBarRect.width,
+          height: dockBarRect.height,
+          ...getShellCornerRadii(false),
+        };
+
+  const shellTransition = prefersReducedMotion
+    ? { duration: 0.01 }
+    : isDragging
+    ? { duration: 0 }
+    : isPanelExpanded
+    ? { duration: 0.34, ease: [0.16, 1, 0.3, 1] as const }
+    : isClosingPanel
+    ? { duration: 0.3, ease: [0.4, 0, 0.2, 1] as const }
+    : { duration: 0.26, ease: [0.16, 1, 0.3, 1] as const };
+
   return (
-    <div
+    <motion.div
       ref={dockRef}
-      style={computeDockStyle()}
+      initial={false}
+      animate={targetShellGeometry}
+      transition={shellTransition}
+      style={{
+        position: "absolute",
+        right: "auto",
+        bottom: "auto",
+        zIndex: isDragging ? 50 : showMorphPanelShell ? 45 : 40,
+        touchAction: showMorphPanelShell ? "auto" : "none",
+      }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
       onClickCapture={handleClickCapture}
       className={`select-none font-mono pointer-events-auto ${
         isDragging ? "cursor-grabbing" : ""
       }`}
       data-testid="studio-floating-dock"
       data-dock-orientation={orientation}
+      data-dock-edge={edge}
       data-dock-expanded={isExpanded}
+      data-dock-panel-open={isPanelExpanded}
+      data-active-tool={displayTool || ""}
+      data-last-tool={lastSelectedTool || ""}
     >
-      {/* Dock Shell */}
+      {/* Unified Morphing Dock / Tool Panel Shell */}
       <div
-        className={`bg-[#0a0a0d]/96 backdrop-blur-2xl border border-white/15 flex flex-col overflow-hidden transition-all duration-200 relative ${getCornerClasses()} ${getShadowClass()} w-full h-full`}
+        className={`bg-[#0b0b0f]/98 backdrop-blur-2xl flex flex-col overflow-hidden relative w-full h-full ${getEdgeBorderClasses()} ${getShadowClass()}`}
+        style={{
+          borderRadius: "inherit",
+        }}
       >
         {/* Subtle Edge Contact Line */}
         {!isDragging && edge === "bottom" && (
-          <div className="absolute bottom-0 inset-x-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none" />
+          <div className="absolute bottom-0 inset-x-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none z-20" />
         )}
         {!isDragging && edge === "top" && (
-          <div className="absolute top-0 inset-x-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none" />
+          <div className="absolute top-0 inset-x-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none z-20" />
         )}
         {!isDragging && edge === "left" && (
-          <div className="absolute left-0 inset-y-0 w-[1.5px] bg-gradient-to-b from-transparent via-white/25 to-transparent pointer-events-none" />
+          <div className="absolute left-0 inset-y-0 w-[1.5px] bg-gradient-to-b from-transparent via-white/25 to-transparent pointer-events-none z-20" />
         )}
         {!isDragging && edge === "right" && (
-          <div className="absolute right-0 inset-y-0 w-[1.5px] bg-gradient-to-b from-transparent via-white/25 to-transparent pointer-events-none" />
+          <div className="absolute right-0 inset-y-0 w-[1.5px] bg-gradient-to-b from-transparent via-white/25 to-transparent pointer-events-none z-20" />
         )}
 
-        {/* ======================================================== */}
-        {/* UNIFIED DOCK CONTENT: SINGLE SOURCE OF TRUTH ORIENTATION */}
-        {/* Both container and icons read from the exact same isVertical */}
-        {/* ======================================================== */}
-        <div
-          className={`flex ${
-            isVertical ? "flex-col py-1.5 px-1" : "flex-row px-2 py-1"
-          } items-center justify-between w-full h-full gap-1`}
-          data-testid={isExpanded ? "dock-expanded-container" : "dock-collapsed-container"}
-        >
-          {/* Dedicated Move Handle */}
-          <div
-            data-dock-move-handle="true"
-            onClick={() => {
-              if (hasMovedPastThresholdRef.current) return;
-              const nextLock = !isLocked;
-              setIsLocked(nextLock);
-              try {
-                localStorage.setItem("pixel_studio_dock_locked", String(nextLock));
-              } catch {}
-              onDockLockChange?.(nextLock);
-            }}
-            onMouseEnter={(e) =>
-              showTooltip(e, {
-                id: "dock-lock",
-                label: isLocked ? "Dock is Locked" : "Move Dock",
-                desc: isLocked
-                  ? `Dock is locked in place. Click or press [${formatShortcutDisplay(lockShortcut)}] to unlock.`
-                  : `Drag handle to move dock. Click or press [${formatShortcutDisplay(lockShortcut)}] to lock.`,
-                hotkey: formatShortcutDisplay(lockShortcut),
-              })
-            }
-            onMouseLeave={hideTooltip}
-            className={`transition-colors flex items-center justify-center shrink-0 cursor-pointer ${
-              isLocked
-                ? "text-amber-400 hover:text-amber-300"
-                : "text-neutral-500 hover:text-neutral-300 cursor-grab active:cursor-grabbing"
-            } ${isVertical ? "w-8 h-4 my-0.5" : "w-4 h-8 mx-0.5"}`}
-            title={isLocked ? "Dock Locked" : "Drag to move dock"}
-          >
-            {isLocked ? (
-              <Lock size={12} className="shrink-0" />
-            ) : isVertical ? (
-              <GripHorizontal size={13} />
-            ) : (
-              <GripVertical size={13} />
-            )}
-          </div>
+        <AnimatePresence mode="wait" initial={false}>
+          {showMorphPanelShell && displayTool ? (
+            <motion.section
+              key="dock-morphed-panel"
+              id="dock-morphed-tool-panel"
+              role="region"
+              aria-label={activeSectionTitle}
+              data-testid="doory-drawer-host"
+              data-active-tool={displayTool}
+              initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 6 }}
+              animate={
+                isClosingPanel
+                  ? prefersReducedMotion
+                    ? { opacity: 0 }
+                    : { opacity: 0, y: 4 }
+                  : { opacity: 1, y: 0 }
+              }
+              exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
+              transition={
+                prefersReducedMotion
+                  ? { duration: 0.01 }
+                  : isClosingPanel
+                  ? { duration: 0.14, ease: "easeIn" }
+                  : { duration: 0.19, delay: 0.06, ease: "easeOut" }
+              }
+              className="flex flex-col w-full h-full min-h-0"
+            >
+              {/* Expanded Tool Panel Header */}
+              <div className="h-11 px-4 border-b border-[#1e1e24] flex items-center justify-between shrink-0 bg-[#0a0a0d]">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#d71920] shrink-0" aria-hidden="true" />
+                  <ActiveSectionIcon size={14} className="text-neutral-400 shrink-0" aria-hidden="true" />
+                  <h3 className="text-xs font-mono font-bold text-white uppercase tracking-wider truncate">
+                    {activeSectionTitle}
+                  </h3>
+                </div>
+                <button
+                  ref={panelCloseBtnRef}
+                  type="button"
+                  onClick={handleRequestClosePanel}
+                  disabled={isClosingPanel}
+                  className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+                  title="Close tool panel (Esc)"
+                  aria-label="Close tool panel"
+                  data-testid="doory-drawer-close"
+                >
+                  <X size={15} />
+                </button>
+              </div>
 
-          {/* Exactly 5 Primary Tool Icons */}
-          {PRIMARY_DOCK_TOOLS.map((tool) => {
-            const Icon = tool.icon;
-            const active = isToolActive(tool.id);
-
-            return (
-              <button
-                key={tool.id}
-                type="button"
-                onClick={() => handleToolClick(tool.id)}
-                onMouseEnter={(e) =>
-                  showTooltip(e, {
-                    id: `dock-${tool.id}`,
-                    label: tool.label,
-                    desc: tool.desc,
-                  })
-                }
-                onMouseLeave={hideTooltip}
-                onFocus={(e) =>
-                  showTooltip(e, {
-                    id: `dock-${tool.id}`,
-                    label: tool.label,
-                    desc: tool.desc,
-                  })
-                }
-                onBlur={hideTooltip}
-                data-testid={`dock-tool-${tool.id}`}
-                data-active={active}
-                className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 relative cursor-pointer shrink-0 ${
-                  active
-                    ? "bg-white/20 text-white border border-white/30 shadow-md shadow-black/40 scale-105"
-                    : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
-                }`}
-                aria-label={tool.label}
-              >
-                <Icon size={16} />
-                {active && (
-                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#d71920] shadow-[0_0_6px_#d71920]" />
-                )}
-              </button>
-            );
-          })}
-
-          {/* Expand / Collapse Button (Directional Chevron matching current orientation) */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              hideTooltip();
-              setIsExpanded(!isExpanded);
-            }}
-            onMouseEnter={(e) =>
-              showTooltip(e, {
-                id: "dock-expand",
-                label: isExpanded ? "Collapse Tools" : "More Tools",
-                desc: isExpanded
-                  ? "Collapse dock back to 5 primary tool icons"
-                  : isVertical
-                  ? "Expand remaining editor tools vertically"
-                  : "Expand remaining editor tools horizontally",
-              })
-            }
-            onMouseLeave={hideTooltip}
-            onFocus={(e) =>
-              showTooltip(e, {
-                id: "dock-expand",
-                label: isExpanded ? "Collapse Tools" : "More Tools",
-                desc: isExpanded
-                  ? "Collapse dock back to 5 primary tool icons"
-                  : isVertical
-                  ? "Expand remaining editor tools vertically"
-                  : "Expand remaining editor tools horizontally",
-              })
-            }
-            onBlur={hideTooltip}
-            data-testid={isExpanded ? "dock-collapse-button" : "dock-expand-button"}
-            className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 cursor-pointer shrink-0 ${
-              isExpanded
-                ? "text-white bg-white/15 hover:bg-white/25"
-                : "text-neutral-400 hover:text-white hover:bg-white/10"
-            }`}
-            aria-label={isExpanded ? "Collapse dock" : "Expand more tools"}
-          >
-            {isVertical ? (
-              isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />
-            ) : (
-              isExpanded ? <ChevronLeft size={15} /> : <ChevronRight size={15} />
-            )}
-          </button>
-
-          {/* Additional Tools when Expanded (matching current orientation) */}
-          {isExpanded && (
-            <>
-              {/* Orientation-aligned Divider Separator Line */}
-              <div
-                className={`bg-white/15 shrink-0 ${
-                  isVertical ? "w-5 h-[1px] my-0.5" : "w-[1px] h-5 mx-0.5"
-                }`}
-              />
-
-              {/* Additional Tools: Canvas & Layers */}
-              {ADDITIONAL_DOCK_TOOLS.map((tool) => {
-                const Icon = tool.icon;
-                const active = isToolActive(tool.id);
-
-                return (
-                  <button
-                    key={tool.id}
-                    type="button"
-                    onClick={() => handleToolClick(tool.id)}
-                    onMouseEnter={(e) =>
-                      showTooltip(e, {
-                        id: `dock-${tool.id}`,
-                        label: tool.label,
-                        desc: tool.desc,
-                      })
-                    }
-                    onMouseLeave={hideTooltip}
-                    data-testid={`dock-tool-${tool.id}`}
-                    data-active={active}
-                    className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 relative cursor-pointer shrink-0 ${
-                      active
-                        ? "bg-white/20 text-white border border-white/30 shadow-md shadow-black/40 scale-105"
-                        : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
-                    }`}
-                    aria-label={tool.label}
-                  >
-                    <Icon size={16} />
-                    {active && (
-                      <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#d71920] shadow-[0_0_6px_#d71920]" />
-                    )}
-                  </button>
-                );
-              })}
-
-              {/* Dock Screen Placement Tool */}
+              {/* Integrated Existing Tool Panel Body */}
+              <div className="flex-1 min-h-0 flex flex-col">
+                {renderToolPanel ? renderToolPanel(displayTool) : null}
+              </div>
+            </motion.section>
+          ) : (
+            <motion.div
+              key="dock-collapsed-bar"
+              initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.94 }}
+              transition={
+                prefersReducedMotion
+                  ? { duration: 0.01 }
+                  : { duration: 0.14, ease: "easeOut" }
+              }
+              className={`flex ${
+                isVertical ? "flex-col py-1.5 px-1" : "flex-row px-2 py-1"
+              } items-center w-full h-full gap-1.5`}
+              data-testid={isExpanded ? "dock-expanded-container" : "dock-collapsed-container"}
+            >
+              {/* Top / Leading Move Handle (Single visible control for movement & lock) */}
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowPlacementFlyout(!showPlacementFlyout);
-                }}
-                onMouseEnter={(e) =>
-                  showTooltip(e, {
-                    id: "dock-placement-btn",
-                    label: "Screen Placement",
-                    desc: "Position dock on Top, Bottom, Left, Right or Float",
-                  })
-                }
-                onMouseLeave={hideTooltip}
-                data-testid="dock-tool-placement"
-                className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 cursor-pointer shrink-0 ${
-                  showPlacementFlyout
-                    ? "bg-white/20 text-white border border-white/30"
-                    : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
-                }`}
-                aria-label="Dock Screen Placement"
-              >
-                <Move size={15} />
-              </button>
-
-              {/* Lock / Unlock Dock Tool */}
-              <button
-                type="button"
+                data-dock-move-handle="true"
                 onClick={() => {
                   const nextLock = !isLocked;
                   setIsLocked(nextLock);
@@ -972,74 +1276,208 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                 }}
                 onMouseEnter={(e) =>
                   showTooltip(e, {
-                    id: "dock-lock-btn",
-                    label: isLocked ? "Unlock Dock" : "Lock Dock",
+                    id: "dock-lock",
+                    label: isLocked ? "Dock is Locked" : "Move Dock",
                     desc: isLocked
-                      ? "Unlock dock to move anywhere"
-                      : "Lock dock in its current position",
+                      ? `Dock is locked in place. Click or press [${formatShortcutDisplay(lockShortcut)}] to unlock.`
+                      : `Drag handle to move dock. Click or press [${formatShortcutDisplay(lockShortcut)}] to lock.`,
                     hotkey: formatShortcutDisplay(lockShortcut),
                   })
                 }
                 onMouseLeave={hideTooltip}
-                data-testid="dock-tool-lock"
-                className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 cursor-pointer shrink-0 ${
+                className={`transition-colors flex items-center justify-center shrink-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 cursor-pointer ${
                   isLocked
                     ? "text-amber-400 hover:text-amber-300"
+                    : "text-neutral-500 hover:text-neutral-300 cursor-grab active:cursor-grabbing"
+                } ${isVertical ? "w-8 h-4 my-0.5" : "w-4 h-8 mx-0.5"}`}
+                title={isLocked ? "Dock Locked" : "Drag to move dock"}
+                aria-label={isLocked ? "Unlock dock position" : "Drag handle or click to lock dock"}
+                aria-pressed={isLocked}
+              >
+                {isLocked ? (
+                  <Lock size={12} className="shrink-0" />
+                ) : isVertical ? (
+                  <GripHorizontal size={13} />
+                ) : (
+                  <GripVertical size={13} />
+                )}
+              </button>
+
+              {/* 5 Primary Tool Icons */}
+              {PRIMARY_DOCK_TOOLS.map((tool) => {
+                const Icon = tool.icon;
+                const active = isToolActive(tool.id);
+
+                return (
+                  <button
+                    key={tool.id}
+                    type="button"
+                    onClick={(e) => handleToolClick(tool.id, e.currentTarget)}
+                    onMouseEnter={(e) =>
+                      showTooltip(e, {
+                        id: `dock-${tool.id}`,
+                        label: tool.label,
+                        desc: tool.desc,
+                      })
+                    }
+                    onMouseLeave={hideTooltip}
+                    onFocus={(e) =>
+                      showTooltip(e, {
+                        id: `dock-${tool.id}`,
+                        label: tool.label,
+                        desc: tool.desc,
+                      })
+                    }
+                    onBlur={hideTooltip}
+                    data-testid={`dock-tool-${tool.id}`}
+                    data-active={active}
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-150 relative cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${
+                      active
+                        ? "bg-white/18 text-white border border-white/25 shadow-sm shadow-black/40"
+                        : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
+                    }`}
+                    aria-label={tool.label}
+                    aria-expanded={active}
+                    aria-controls="dock-morphed-tool-panel"
+                  >
+                    <Icon size={16} />
+                    {active && (
+                      <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#d71920]" />
+                    )}
+                  </button>
+                );
+              })}
+
+              {/* Additional Tools Revealed ABOVE Bottom Toggle (No Redundant Move/Lock Controls) */}
+              <AnimatePresence initial={false}>
+                {isExpanded && (
+                  <motion.div
+                    key="dock-additional-tools"
+                    initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.94 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.94 }}
+                    transition={
+                      prefersReducedMotion
+                        ? { duration: 0.01 }
+                        : { duration: 0.17, ease: "easeOut" }
+                    }
+                    className={`flex items-center shrink-0 ${
+                      isVertical ? "flex-col gap-1.5" : "flex-row gap-1.5"
+                    }`}
+                    data-testid="dock-additional-tools-group"
+                  >
+                    {/* Orientation-aligned Divider */}
+                    <div
+                      className={`bg-white/15 shrink-0 ${
+                        isVertical ? "w-5 h-[1px] my-0.5" : "w-[1px] h-5 mx-0.5"
+                      }`}
+                    />
+
+                    {/* Additional Tools: Canvas & Layers */}
+                    {ADDITIONAL_DOCK_TOOLS.map((tool) => {
+                      const Icon = tool.icon;
+                      const active = isToolActive(tool.id);
+
+                      return (
+                        <button
+                          key={tool.id}
+                          type="button"
+                          onClick={(e) => handleToolClick(tool.id, e.currentTarget)}
+                          onMouseEnter={(e) =>
+                            showTooltip(e, {
+                              id: `dock-${tool.id}`,
+                              label: tool.label,
+                              desc: tool.desc,
+                            })
+                          }
+                          onMouseLeave={hideTooltip}
+                          onFocus={(e) =>
+                            showTooltip(e, {
+                              id: `dock-${tool.id}`,
+                              label: tool.label,
+                              desc: tool.desc,
+                            })
+                          }
+                          onBlur={hideTooltip}
+                          data-testid={`dock-tool-${tool.id}`}
+                          data-active={active}
+                          className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-150 relative cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${
+                            active
+                              ? "bg-white/18 text-white border border-white/25 shadow-sm shadow-black/40"
+                              : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
+                          }`}
+                          aria-label={tool.label}
+                          aria-expanded={active}
+                          aria-controls="dock-morphed-tool-panel"
+                        >
+                          <Icon size={16} />
+                          {active && (
+                            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#d71920]" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Persistent Bottom / Trailing More Toggle (Anchored in place; switches PanelTop <-> Arrow) */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  hideTooltip();
+                  setIsExpanded((prev) => !prev);
+                }}
+                onMouseEnter={(e) =>
+                  showTooltip(e, {
+                    id: "dock-expand",
+                    label: isExpanded ? "Collapse Tools" : "More Tools",
+                    desc: isExpanded
+                      ? "Hide additional canvas & layer tools"
+                      : "Reveal Canvas & Layers tools above",
+                  })
+                }
+                onMouseLeave={hideTooltip}
+                onFocus={(e) =>
+                  showTooltip(e, {
+                    id: "dock-expand",
+                    label: isExpanded ? "Collapse Tools" : "More Tools",
+                    desc: isExpanded
+                      ? "Hide additional canvas & layer tools"
+                      : "Reveal Canvas & Layers tools above",
+                  })
+                }
+                onBlur={hideTooltip}
+                data-testid="dock-more-toggle"
+                data-expanded={isExpanded}
+                className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${
+                  isVertical ? "mt-auto" : "ml-auto"
+                } ${
+                  isExpanded
+                    ? "text-white bg-white/12 hover:bg-white/20 border border-white/15"
                     : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
                 }`}
-                aria-label={isLocked ? "Unlock Dock" : "Lock Dock"}
+                aria-label={isExpanded ? "Collapse additional tools" : "More tools"}
+                aria-expanded={isExpanded}
               >
-                {isLocked ? <Lock size={14} /> : <Unlock size={14} />}
+                {isExpanded ? (
+                  isVertical ? (
+                    <ChevronUp size={15} />
+                  ) : (
+                    <ChevronLeft size={15} />
+                  )
+                ) : (
+                  <PanelTop size={16} />
+                )}
               </button>
-            </>
+            </motion.div>
           )}
-        </div>
+        </AnimatePresence>
       </div>
 
-      {/* Screen Placement Flyout Popover with safe screen orientation collision avoidance */}
-      {showPlacementFlyout && (
-        <div
-          className={`absolute ${
-            edge === "right"
-              ? "right-full mr-2"
-              : edge === "left"
-              ? "left-full ml-2"
-              : edge === "top"
-              ? "top-full mt-2"
-              : "bottom-full mb-2"
-          } ${
-            isVertical ? "top-1/2 -translate-y-1/2" : "left-1/2 -translate-x-1/2"
-          } bg-[#101014]/98 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl p-1.5 z-50 flex flex-col gap-1 w-32 font-mono text-xs`}
-          onMouseLeave={() => setShowPlacementFlyout(false)}
-          data-testid="dock-placement-flyout"
-        >
-          <div className="text-[9px] text-neutral-500 uppercase px-1.5 py-0.5 font-bold">
-            Dock Placement
-          </div>
-          {(["bottom", "top", "left", "right", "float"] as DockPosition[]).map((pos) => (
-            <button
-              key={pos}
-              onClick={(e) => {
-                e.stopPropagation();
-                updateEdgeAndOrientation(pos);
-                setShowPlacementFlyout(false);
-              }}
-              className={`px-2 py-1 rounded-lg text-[10px] font-mono capitalize text-left flex items-center justify-between cursor-pointer transition-colors ${
-                edge === pos
-                  ? "bg-white text-black font-bold"
-                  : "text-neutral-300 hover:text-white hover:bg-white/10"
-              }`}
-              data-testid={`placement-${pos}`}
-            >
-              <span>{pos}</span>
-              {edge === pos && <Check size={11} />}
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* Portaled Collision-Aware Floating Tooltip */}
-      <DockPortalTooltip tooltip={dockTooltip} dockEdge={edge} />
-    </div>
+      <DockPortalTooltip tooltip={showMorphPanelShell ? null : dockTooltip} dockEdge={edge} />
+    </motion.div>
   );
 };

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { AccountSidebar } from "@/components/account/AccountSidebar";
 import { StudioFloatingDock, DockPosition } from "@/components/studio/StudioFloatingDock";
@@ -10,10 +10,26 @@ export default function CustomizePage() {
   const { user } = useAuth();
   const workspaceContainerRef = useRef<HTMLDivElement>(null);
 
-  // Preserved dock positioning with localStorage persistence
-  const [dockPosition, setDockPosition] = useState<DockPosition>(() => {
-    if (typeof window !== "undefined") {
+  // Initialize matching SSR ("bottom"), then hydrate saved dock position cleanly without hydration mismatch
+  const [dockPosition, setDockPosition] = useState<DockPosition>("bottom");
+
+  useEffect(() => {
+    const rafId = window.requestAnimationFrame(() => {
       try {
+        const savedCoords = localStorage.getItem("pixel_studio_dock_coords");
+        if (savedCoords) {
+          const parsed = JSON.parse(savedCoords);
+          if (
+            parsed?.edge === "bottom" ||
+            parsed?.edge === "top" ||
+            parsed?.edge === "left" ||
+            parsed?.edge === "right" ||
+            parsed?.edge === "float"
+          ) {
+            setDockPosition(parsed.edge as DockPosition);
+            return;
+          }
+        }
         const saved = localStorage.getItem("pixel_studio_dock_position");
         if (
           saved === "bottom" ||
@@ -22,12 +38,12 @@ export default function CustomizePage() {
           saved === "right" ||
           saved === "float"
         ) {
-          return saved as DockPosition;
+          setDockPosition(saved as DockPosition);
         }
       } catch {}
-    }
-    return "bottom";
-  });
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#050505] text-[#ededed] flex flex-col lg:flex-row font-mono select-none overflow-hidden h-screen">

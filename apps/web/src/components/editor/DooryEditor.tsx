@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   EditorElement,
   CanvasBackground,
@@ -12,7 +12,7 @@ import {
   ImageElement,
   StickerElement,
 } from "./editorTypes";
-import { DooryToolRail, DooryRailTool } from "./DooryToolRail";
+import { DooryRailTool } from "./DooryToolRail";
 import { DooryDrawerHost } from "./DooryDrawerHost";
 import { DooryContextualToolbar } from "./DooryContextualToolbar";
 import { DooryCanvasWorkspace } from "./DooryCanvasWorkspace";
@@ -22,7 +22,6 @@ import { exportToPng, exportToSvg, exportToJson } from "./canvasExport";
 import {
   inspectCanvasIssues,
   executeAutoFix,
-  AutoFixIssue,
 } from "./autoFixEngine";
 import {
   AutoSaveSettingsModal,
@@ -67,15 +66,16 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
   });
 
   // Adjust canvas dimensions when device mode changes
-  useEffect(() => {
-    if (deviceMode === "desktop") {
+  const handleDeviceModeChange = useCallback((mode: DeviceMode) => {
+    setDeviceMode(mode);
+    if (mode === "desktop") {
       setCanvas((prev) => ({ ...prev, width: 960, height: 540 }));
-    } else if (deviceMode === "tablet") {
+    } else if (mode === "tablet") {
       setCanvas((prev) => ({ ...prev, width: 768, height: 432 }));
-    } else if (deviceMode === "mobile") {
+    } else if (mode === "mobile") {
       setCanvas((prev) => ({ ...prev, width: 390, height: 600 }));
     }
-  }, [deviceMode]);
+  }, []);
 
   // Elements State
   const [elements, setElements] = useState<EditorElement[]>(() => {
@@ -96,8 +96,14 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
   const [isDirty, setIsDirty] = useState<boolean>(false);
 
   // History Stack for Undo/Redo
-  const [history, setHistory] = useState<EditorHistoryState[]>([]);
-  const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  const [history, setHistory] = useState<EditorHistoryState[]>(() => [
+    {
+      elements: JSON.parse(JSON.stringify(elements)),
+      selectedId: null,
+      canvas: JSON.parse(JSON.stringify(canvas)),
+    },
+  ]);
+  const [historyIndex, setHistoryIndex] = useState<number>(0);
   const isHistoryActionRef = useRef<boolean>(false);
 
   // Save Draft & Publish State
@@ -125,7 +131,6 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
   });
 
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [detectedIssues, setDetectedIssues] = useState<AutoFixIssue[]>([]);
 
   // Sequential revision & in-flight save tracking
   const revisionRef = useRef<number>(0);
@@ -134,10 +139,10 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Background inspection for non-destructive Auto Fix issues
-  useEffect(() => {
-    const issues = inspectCanvasIssues(elements, canvas);
-    setDetectedIssues(issues);
-  }, [elements, canvas]);
+  const detectedIssues = useMemo(
+    () => inspectCanvasIssues(elements, canvas),
+    [elements, canvas]
+  );
 
   // Persist Auto Save Settings changes
   const handleUpdateAutoSaveSettings = (newSettings: AutoSaveSettings) => {
@@ -191,19 +196,6 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
     [historyIndex, selectedId, onElementsChange]
   );
 
-  // Initialize history
-  useEffect(() => {
-    if (history.length === 0) {
-      const initialSnapshot: EditorHistoryState = {
-        elements: JSON.parse(JSON.stringify(elements)),
-        selectedId: null,
-        canvas: JSON.parse(JSON.stringify(canvas)),
-      };
-      setHistory([initialSnapshot]);
-      setHistoryIndex(0);
-    }
-  }, []);
-
   const handleUndo = () => {
     if (historyIndex > 0) {
       isHistoryActionRef.current = true;
@@ -236,10 +228,14 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
     }
   };
 
-  // Tool Drawer toggle
-  const handleToggleTool = (tool: DooryRailTool) => {
+  // Tool Drawer toggle & close
+  const handleToggleTool = useCallback((tool: DooryRailTool) => {
     setActiveTool((prev) => (prev === tool ? null : tool));
-  };
+  }, []);
+
+  const handleCloseTool = useCallback(() => {
+    setActiveTool(null);
+  }, []);
 
   // Add Shape
   const handleAddShape = (kind: ShapeKind) => {
@@ -679,6 +675,29 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
   };
 
   const selectedElement = elements.find((el) => el.id === selectedId) || null;
+  const hasDockChildren = React.Children.count(children) > 0;
+
+  const renderEmbeddedToolPanel = (toolId: string) => (
+    <DooryDrawerHost
+      embedded
+      activeTool={toolId as DooryRailTool}
+      onClose={handleCloseTool}
+      elements={elements}
+      selectedId={selectedId}
+      onSelect={setSelectedId}
+      onAddShape={handleAddShape}
+      onAddText={handleAddText}
+      onAddSticker={handleAddSticker}
+      onAddImage={handleAddImage}
+      onApplyTemplate={handleApplyTemplate}
+      onUpdateElement={handleUpdateElement}
+      onDeleteElement={handleDeleteElement}
+      onDuplicateElement={handleDuplicateElement}
+      onReorderElement={handleReorderElement}
+      canvas={canvas}
+      onUpdateCanvas={handleUpdateCanvas}
+    />
+  );
 
   return (
     <div
@@ -690,7 +709,7 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
         title={title}
         onUpdateTitle={setTitle}
         deviceMode={deviceMode}
-        setDeviceMode={setDeviceMode}
+        setDeviceMode={handleDeviceModeChange}
         canUndo={historyIndex > 0}
         canRedo={historyIndex < history.length - 1}
         onUndo={handleUndo}
@@ -707,29 +726,31 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
         onRunAutoFix={handleRunAutoFix}
       />
 
-      {/* 2. Main Studio Row: DrawerHost + (ContextualToolbar + CanvasWorkspace) + PropertiesPanel */}
+      {/* 2. Main Studio Row: (ContextualToolbar + CanvasWorkspace w/ Morphing Dock Overlay) + PropertiesPanel */}
       <div className="flex-1 flex min-h-0 overflow-hidden relative">
-        {/* Expandable Tool Drawer Host (Opened via movable dock tools) */}
-        <DooryDrawerHost
-          activeTool={activeTool}
-          onClose={() => setActiveTool(null)}
-          elements={elements}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          onAddShape={handleAddShape}
-          onAddText={handleAddText}
-          onAddSticker={handleAddSticker}
-          onAddImage={handleAddImage}
-          onApplyTemplate={handleApplyTemplate}
-          onUpdateElement={handleUpdateElement}
-          onDeleteElement={handleDeleteElement}
-          onDuplicateElement={handleDuplicateElement}
-          onReorderElement={handleReorderElement}
-          canvas={canvas}
-          onUpdateCanvas={handleUpdateCanvas}
-        />
+        {/* Fallback Sidebar Drawer only when no dock overlay child is mounted */}
+        {!hasDockChildren && (
+          <DooryDrawerHost
+            activeTool={activeTool}
+            onClose={handleCloseTool}
+            elements={elements}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onAddShape={handleAddShape}
+            onAddText={handleAddText}
+            onAddSticker={handleAddSticker}
+            onAddImage={handleAddImage}
+            onApplyTemplate={handleApplyTemplate}
+            onUpdateElement={handleUpdateElement}
+            onDeleteElement={handleDeleteElement}
+            onDuplicateElement={handleDuplicateElement}
+            onReorderElement={handleReorderElement}
+            canvas={canvas}
+            onUpdateCanvas={handleUpdateCanvas}
+          />
+        )}
 
-        {/* Canvas & Contextual Toolbar Column */}
+        {/* Canvas & Contextual Toolbar Column (Never shifted or resized by dock panel) */}
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
           {/* Dynamic Contextual Toolbar: Morphs with selection, fixed height, 0 layout shift */}
           <DooryContextualToolbar
@@ -759,13 +780,18 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
               onFitScreen={handleFitScreen}
             />
 
-            {/* Preserved Movable Dock with Integrated Editor Tools */}
+            {/* Preserved Movable Dock Morphing into Tool Panel Overlay */}
             {React.Children.map(children, (child) => {
               if (React.isValidElement(child)) {
-                return React.cloneElement(child as React.ReactElement<any>, {
-                  activeTool,
-                  onToggleTool: handleToggleTool,
-                });
+                return React.cloneElement(
+                  child as React.ReactElement<Record<string, unknown>>,
+                  {
+                    activeTool,
+                    onToggleTool: handleToggleTool,
+                    onCloseToolPanel: handleCloseTool,
+                    renderToolPanel: renderEmbeddedToolPanel,
+                  }
+                );
               }
               return child;
             })}

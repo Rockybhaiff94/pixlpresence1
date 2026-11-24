@@ -52,6 +52,7 @@ import { STARTER_TEMPLATES } from "./editorPresets";
 interface DooryDrawerHostProps {
   activeTool: DooryRailTool | null;
   onClose: () => void;
+  embedded?: boolean;
   elements: EditorElement[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
@@ -76,9 +77,33 @@ interface DooryDrawerHostProps {
   }) => void;
 }
 
+export function getDooryToolTitle(tool: DooryRailTool | string | null): string {
+  switch (tool) {
+    case "templates":
+      return "Templates & Layouts";
+    case "text":
+      return "Typography & Text";
+    case "shapes":
+      return "Shapes & Geometries";
+    case "elements":
+      return "Graphics & Stickers";
+    case "images":
+    case "media":
+      return "Images & Media";
+    case "background":
+    case "canvas":
+      return "Canvas Background";
+    case "layers":
+      return "Layers & Hierarchy";
+    default:
+      return "Tool Panel";
+  }
+}
+
 export const DooryDrawerHost: React.FC<DooryDrawerHostProps> = ({
   activeTool,
   onClose,
+  embedded = false,
   elements,
   selectedId,
   onSelect,
@@ -121,55 +146,13 @@ export const DooryDrawerHost: React.FC<DooryDrawerHostProps> = ({
     setImageUrlInput("");
   };
 
-  const getToolTitle = () => {
-    switch (activeTool) {
-      case "templates":
-        return "Templates & Layouts";
-      case "text":
-        return "Typography & Text";
-      case "shapes":
-        return "Shapes & Geometries";
-      case "elements":
-        return "Graphics & Stickers";
-      case "images":
-      case "media":
-        return "Images & Media";
-      case "background":
-      case "canvas":
-        return "Canvas Background";
-      case "layers":
-        return "Layers & Hierarchy";
-      default:
-        return "Tool Panel";
-    }
-  };
+  const toolTitle = getDooryToolTitle(activeTool);
 
-  return (
-    <aside
-      className="w-80 bg-[#0e0e12] border-r border-[#1e1e24] flex flex-col h-full select-none z-10 shrink-0 shadow-2xl animate-in slide-in-from-left duration-200"
-      data-testid="doory-drawer-host"
-      data-active-tool={activeTool}
+  const bodyContent = (
+    <div
+      className="flex-1 min-h-0 overflow-y-auto p-4 space-y-5 custom-scrollbar"
+      data-testid="doory-drawer-body"
     >
-      {/* Drawer Header */}
-      <div className="h-11 px-4 border-b border-[#1e1e24] flex items-center justify-between shrink-0 bg-[#0a0a0c]">
-        <div className="flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#d71920]" />
-          <h3 className="text-xs font-mono font-bold text-white uppercase tracking-wider">
-            {getToolTitle()}
-          </h3>
-        </div>
-        <button
-          onClick={onClose}
-          className="p-1 rounded-md text-neutral-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-          title="Close drawer (Esc)"
-          data-testid="doory-drawer-close"
-        >
-          <X size={15} />
-        </button>
-      </div>
-
-      {/* Drawer Content Body */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-5 custom-scrollbar">
         {/* ===================== TEMPLATES DRAWER ===================== */}
         {activeTool === "templates" && (
           <div className="space-y-4">
@@ -699,6 +682,38 @@ export const DooryDrawerHost: React.FC<DooryDrawerHostProps> = ({
           </div>
         )}
       </div>
+  );
+
+  if (embedded) {
+    return bodyContent;
+  }
+
+  return (
+    <aside
+      className="w-80 bg-[#0e0e12] border-r border-[#1e1e24] flex flex-col h-full select-none z-10 shrink-0 shadow-2xl animate-in slide-in-from-left duration-200"
+      data-testid="doory-drawer-host"
+      data-active-tool={activeTool}
+    >
+      {/* Drawer Header */}
+      <div className="h-11 px-4 border-b border-[#1e1e24] flex items-center justify-between shrink-0 bg-[#0a0a0c]">
+        <div className="flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#d71920]" />
+          <h3 className="text-xs font-mono font-bold text-white uppercase tracking-wider">
+            {toolTitle}
+          </h3>
+        </div>
+        <button
+          onClick={onClose}
+          className="p-1 rounded-md text-neutral-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+          title="Close drawer (Esc)"
+          data-testid="doory-drawer-close"
+        >
+          <X size={15} />
+        </button>
+      </div>
+
+      {/* Drawer Content Body */}
+      {bodyContent}
     </aside>
   );
 };
