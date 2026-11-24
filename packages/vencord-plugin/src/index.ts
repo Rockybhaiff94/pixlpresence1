@@ -196,50 +196,42 @@ async function resolveDiscordAsset(appId: string, assetInput: string | null | un
     if (!assetInput || !assetInput.trim()) return undefined;
     const raw = assetInput.trim();
 
-    // Already in Discord Media Proxy format (mp:external/...)
+    // Discord's media proxy identifiers are already resolved.
     if (raw.startsWith("mp:")) {
         return raw;
     }
 
+    // IMPORTANT: External image URLs must be sent directly in the activity payload.
+    // Discord converts them to mp: identifiers on the Gateway. Do not run external
+    // URLs through ApplicationAssetUtils.fetchAssetIds: that utility resolves
+    // Developer Portal asset keys, and that upload path cannot preserve GIF animation.
+    // Passing the original public URL lets Discord's Media Proxy serve animated GIF/WebP.
+    if (/^https?:\/\//i.test(raw)) {
+        return raw;
+    }
+
+    // Only non-URL values are Developer Portal application asset keys.
     const cacheKey = `${appId}:${raw}`;
     if (assetResolutionCache.has(cacheKey)) {
         return assetResolutionCache.get(cacheKey);
     }
 
-    // Determine target URL vs. Discord Developer Portal asset key
-    let target = raw;
-    const isRemoteUrl = /^https?:\/\//i.test(raw);
-
-    if (isRemoteUrl && !raw.includes("wsrv.nl")) {
-        const isAnimatedUrl = /(\.gif|\.webp|format=gif|image\/gif|tenor\.com|giphy\.com)/i.test(raw);
-        const isBackendUpload = raw.includes("/uploads/rpc/");
-
-        // Our own /uploads/rpc/ GIFs are already size-capped (<= 8MB) and dimension-safe by ImageAssetService.
-        // Avoid unnecessary re-scaling on animated backend GIFs so wsrv.nl preserves every frame & timing,
-        // while still providing Cloudflare Edge caching (<50ms) and &n=-1 multi-frame animation support.
-        if (isBackendUpload && isAnimatedUrl) {
-            target = `https://wsrv.nl/?url=${encodeURIComponent(raw)}&n=-1`;
-        } else {
-            target = `https://wsrv.nl/?url=${encodeURIComponent(raw)}&w=320&h=320&fit=cover${isAnimatedUrl ? "&n=-1" : ""}`;
-        }
-    }
-
     try {
         if (ApplicationAssetUtils && typeof ApplicationAssetUtils.fetchAssetIds === "function") {
-            const resolvedList = await ApplicationAssetUtils.fetchAssetIds(appId, [target]);
+            const resolvedList = await ApplicationAssetUtils.fetchAssetIds(appId, [raw]);
             if (Array.isArray(resolvedList) && resolvedList[0]) {
                 const assetId = resolvedList[0];
                 assetResolutionCache.set(cacheKey, assetId);
-                logDebug(`[PixelsRPC] Resolved Discord asset [${raw}] -> [${assetId}]`);
+                logDebug(`[PixelsRPC] Resolved Discord application asset key [${raw}] -> [${assetId}]`);
                 return assetId;
             }
         }
     } catch (e) {
-        logDebug("[PixelsRPC] Asset resolution via ApplicationAssetUtils failed for:", target, e);
+        logDebug("[PixelsRPC] Application asset key resolution failed for:", raw, e);
     }
 
-    // Fallback: For remote URLs return the fast Cloudflare-proxied target; for asset keys return raw
-    return isRemoteUrl ? target : raw;
+    // Preserve the key as a fallback if Discord's application-asset lookup is unavailable.
+    return raw;
 }
 
 async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> {
