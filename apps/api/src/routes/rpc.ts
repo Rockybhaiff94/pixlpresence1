@@ -717,6 +717,9 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
     if (rawData.stateEnabled !== undefined) updatedCustomConfig.stateEnabled = Boolean(rawData.stateEnabled);
     if (rawData.largeImageUrl !== undefined) updatedCustomConfig.largeImageUrl = rawData.largeImageUrl ? String(rawData.largeImageUrl).trim() : null;
     if (rawData.smallImageUrl !== undefined) updatedCustomConfig.smallImageUrl = rawData.smallImageUrl ? String(rawData.smallImageUrl).trim() : null;
+    if (rawData.largeImageEnabled !== undefined) updatedCustomConfig.largeImageEnabled = Boolean(rawData.largeImageEnabled);
+    if (rawData.smallImageEnabled !== undefined) updatedCustomConfig.smallImageEnabled = Boolean(rawData.smallImageEnabled);
+    if (rawData.buttonSize !== undefined) updatedCustomConfig.buttonSize = buttonSize;
     if (rawData.timestampMode !== undefined) updatedCustomConfig.timestampMode = rawData.timestampMode;
     if (rawData.streaks !== undefined) updatedCustomConfig.streaks = Array.isArray(rawData.streaks) ? rawData.streaks : [];
     if (rawData.statistics !== undefined) updatedCustomConfig.statistics = Array.isArray(rawData.statistics) ? rawData.statistics : [];

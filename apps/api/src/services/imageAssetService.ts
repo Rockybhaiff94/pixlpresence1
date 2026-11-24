@@ -295,6 +295,63 @@ export class ImageAssetService {
   }
 
   /**
+   * Process an animated WebP: preserves animation frames and stays within 8MB limit.
+   */
+  public static async processAnimatedWebp(
+    buffer: Buffer,
+    crop?: CropParameters | null
+  ): Promise<ProcessedImageResult> {
+    const pipeline = sharp(buffer, { animated: true, failOnError: true });
+    const metadata = await pipeline.metadata();
+
+    const origWidth = metadata.width || this.TARGET_DIMENSION;
+    const pageHeight = metadata.pageHeight || metadata.height || this.TARGET_DIMENSION;
+
+    if (origWidth > this.MAX_DIMENSION || pageHeight > this.MAX_DIMENSION) {
+      throw new Error(`WebP dimensions exceed maximum allowed limit of ${this.MAX_DIMENSION}x${this.MAX_DIMENSION} pixels.`);
+    }
+
+    const hasCustomCrop = Boolean(
+      crop &&
+      (crop.zoom !== 1 || (crop.offsetX && crop.offsetX !== 0) || (crop.offsetY && crop.offsetY !== 0))
+    );
+
+    if (!hasCustomCrop && origWidth <= 512 && pageHeight <= 512 && buffer.length <= 8 * 1024 * 1024) {
+      return {
+        buffer,
+        mimeType: 'image/webp',
+        ext: 'webp',
+        width: origWidth,
+        height: pageHeight,
+        fileSize: buffer.length,
+        isAnimated: true,
+      };
+    }
+
+    const targetSize = Math.min(320, Math.max(origWidth, pageHeight));
+    const processedBuffer = await pipeline
+      .resize(targetSize, targetSize, { fit: 'cover', position: 'center' })
+      .webp({ quality: 82, effort: 4 })
+      .toBuffer();
+
+    const finalMeta = await sharp(processedBuffer, { animated: true }).metadata().catch(() => ({
+      width: targetSize,
+      height: targetSize,
+      pageHeight: targetSize,
+    }));
+
+    return {
+      buffer: processedBuffer,
+      mimeType: 'image/webp',
+      ext: 'webp',
+      width: finalMeta.width || targetSize,
+      height: finalMeta.pageHeight || finalMeta.height || targetSize,
+      fileSize: processedBuffer.length,
+      isAnimated: true,
+    };
+  }
+
+  /**
    * Complete end-to-end processing and storage pipeline for a user-uploaded asset
    */
   public static async processAndSaveAsset(options: AssetUploadOptions): Promise<ImageAssetRecord> {
@@ -321,8 +378,12 @@ export class ImageAssetService {
     // 3. Image processing
     let processed: ProcessedImageResult;
     try {
-      if (validation.ext === 'gif' && validation.isAnimated) {
+      if (validation.ext === 'gif') {
+        // Always route GIFs through animated GIF pipeline — never convert GIF to static PNG/JPEG
         processed = await this.processAnimatedGif(fileBuffer, cropData);
+      } else if (validation.ext === 'webp' && validation.isAnimated) {
+        // Preserve animated WebP frames without flattening to static PNG
+        processed = await this.processAnimatedWebp(fileBuffer, cropData);
       } else {
         processed = await this.processStaticImage(fileBuffer, cropData);
       }

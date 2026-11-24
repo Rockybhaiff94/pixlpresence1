@@ -190,6 +190,7 @@ function resolveActivityType(rawType: string | number | null | undefined): { typ
 }
 
 const assetResolutionCache = new Map<string, string>();
+let applySequence = 0;
 
 async function resolveDiscordAsset(appId: string, assetInput: string | null | undefined): Promise<string | undefined> {
     if (!assetInput || !assetInput.trim()) return undefined;
@@ -205,18 +206,22 @@ async function resolveDiscordAsset(appId: string, assetInput: string | null | un
         return assetResolutionCache.get(cacheKey);
     }
 
-    // Determine target URL for Discord asset resolution
+    // Determine target URL vs. Discord Developer Portal asset key
     let target = raw;
+    const isRemoteUrl = /^https?:\/\//i.test(raw);
 
-    // Discord external asset proxy explicitly rejects cdn.discordapp.com and media.discordapp.net to prevent proxy recursion.
-    // Furthermore, direct hosting URLs (e.g. Render/ephemeral backends) can trigger Discord 504/404 timeouts or exceed
-    // Discord's 8MB proxy cap. Routing all remote HTTP/HTTPS image assets through Cloudflare Edge (wsrv.nl) guarantees:
-    // 1) <50ms instant response to Discord's media proxy, preventing proxy timeouts (question mark dice).
-    // 2) Dimensional scaling and compression strictly under 8MB.
-    // 3) Full animated GIF frame preservation with &n=-1.
-    if (/https?:\/\//i.test(raw) && !raw.includes("wsrv.nl")) {
-        const isGif = raw.toLowerCase().includes(".gif");
-        target = `https://wsrv.nl/?url=${encodeURIComponent(raw)}&w=320&h=320&fit=cover${isGif ? "&n=-1" : ""}`;
+    if (isRemoteUrl && !raw.includes("wsrv.nl")) {
+        const isAnimatedUrl = /(\.gif|\.webp|format=gif|image\/gif|tenor\.com|giphy\.com)/i.test(raw);
+        const isBackendUpload = raw.includes("/uploads/rpc/");
+
+        // Our own /uploads/rpc/ GIFs are already size-capped (<= 8MB) and dimension-safe by ImageAssetService.
+        // Avoid unnecessary re-scaling on animated backend GIFs so wsrv.nl preserves every frame & timing,
+        // while still providing Cloudflare Edge caching (<50ms) and &n=-1 multi-frame animation support.
+        if (isBackendUpload && isAnimatedUrl) {
+            target = `https://wsrv.nl/?url=${encodeURIComponent(raw)}&n=-1`;
+        } else {
+            target = `https://wsrv.nl/?url=${encodeURIComponent(raw)}&w=320&h=320&fit=cover${isAnimatedUrl ? "&n=-1" : ""}`;
+        }
     }
 
     try {
@@ -233,8 +238,8 @@ async function resolveDiscordAsset(appId: string, assetInput: string | null | un
         logDebug("[PixelsRPC] Asset resolution via ApplicationAssetUtils failed for:", target, e);
     }
 
-    // Fallback: If Discord's proxy or Developer Portal doesn't return an ID, return target
-    return target;
+    // Fallback: For remote URLs return the fast Cloudflare-proxied target; for asset keys return raw
+    return isRemoteUrl ? target : raw;
 }
 
 async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> {
@@ -455,7 +460,12 @@ export async function applyActivity(rpc: RpcResponse) {
 
     updateState({ publishingStatus: "publishing" });
 
+    const currentSeq = ++applySequence;
     const activity = await buildDiscordActivity(rpc);
+    if (currentSeq !== applySequence) {
+        logDebug(`Discarding stale async activity build #${currentSeq} (latest: #${applySequence})`);
+        return;
+    }
     const hash = JSON.stringify(activity);
 
     const dispatcher = getDispatcher();

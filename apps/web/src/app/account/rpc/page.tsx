@@ -67,6 +67,46 @@ function formatRelativeTime(dateInput: string | Date | undefined): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function parseTimestampMs(val: string | number | null | undefined): number | null {
+  if (val === 0 || val === "0") return 0;
+  if (val === null || val === undefined || val === "") return null;
+  if (typeof val === "number") return Number.isFinite(val) ? val : null;
+  const num = Number(val);
+  if (!Number.isNaN(num) && /^\d+$/.test(String(val).trim())) return num;
+  const parsed = Date.parse(String(val));
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function toLocalDateStr(val: string | number | null | undefined): string {
+  const ms = parseTimestampMs(val);
+  if (ms === null) return "";
+  const d = new Date(ms);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function toLocalTimeStr(val: string | number | null | undefined): string {
+  const ms = parseTimestampMs(val);
+  if (ms === null) return "";
+  const d = new Date(ms);
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${h}:${min}`;
+}
+
+function combineLocalDateTimeToIso(dateStr: string, timeStr: string): string | null {
+  if (!dateStr && !timeStr) return null;
+  const baseDate = dateStr || toLocalDateStr(Date.now());
+  const baseTime = timeStr || "00:00";
+  const [y, m, d] = baseDate.split("-").map((n) => parseInt(n, 10));
+  const [hh, mm] = baseTime.split(":").map((n) => parseInt(n, 10));
+  if ([y, m, d, hh, mm].some((n) => Number.isNaN(n))) return null;
+  const local = new Date(y, m - 1, d, hh, mm, 0, 0);
+  return Number.isNaN(local.getTime()) ? null : local.toISOString();
+}
+
 interface RpcConfig {
   appId?: string;
   appName?: string;
@@ -329,8 +369,8 @@ export default function AccountRpcStudioPage() {
       const targetRpc = currentRpcRef.current;
       const payload: any = {
         ...targetRpc,
-        partySize: targetRpc.partySize ? Number(targetRpc.partySize) : null,
-        partyMax: targetRpc.partyMax ? Number(targetRpc.partyMax) : null,
+        partySize: targetRpc.partySize !== null && targetRpc.partySize !== undefined ? Number(targetRpc.partySize) : null,
+        partyMax: targetRpc.partyMax !== null && targetRpc.partyMax !== undefined ? Number(targetRpc.partyMax) : null,
       };
       // Strip virtual and read-only fields so Prisma does not throw validation errors
       delete payload.revision;
@@ -340,9 +380,6 @@ export default function AccountRpcStudioPage() {
       delete payload.updatedAt;
       delete payload.username;
       delete payload.userAvatar;
-      delete payload.buttonSize;
-      delete payload.largeImageEnabled;
-      delete payload.smallImageEnabled;
       delete payload.enabled;
 
       let res = await apiFetch("/api/rpc/me", {
@@ -388,6 +425,8 @@ export default function AccountRpcStudioPage() {
 
   // Helper to update RPC state and synchronously sync to localStorage + auto-save/sync
   const updateRpc = (updates: Partial<RpcConfig>) => {
+    if (updates.largeImage !== undefined) setLargeImageFailed(false);
+    if (updates.smallImage !== undefined) setSmallImageFailed(false);
     isDirtyRef.current = true;
     const version = ++rpcVersionRef.current;
     setRpc((prev) => {
@@ -420,8 +459,14 @@ export default function AccountRpcStudioPage() {
     };
   }, [executeAutoSaveAndSync]);
 
-  // Custom Streaks, Statistics & Status Labels tab state
+  // Custom Streaks, Statistics & Status Labels tab state & progressive disclosure toggles
   const [customTab, setCustomTab] = useState<"streaks" | "statistics" | "labels">("streaks");
+  const [showActivityUrls, setShowActivityUrls] = useState(false);
+  const [showLargeAdvanced, setShowLargeAdvanced] = useState(false);
+  const [showSmallAdvanced, setShowSmallAdvanced] = useState(false);
+  const [expandedCustomItems, setExpandedCustomItems] = useState<Record<string, boolean>>({});
+  const toggleCustomItemAdvanced = (id: string) =>
+    setExpandedCustomItems((prev) => ({ ...prev, [id]: !prev[id] }));
 
   // Streak handlers
   const addStreak = (streak?: Partial<CustomStreak>) => {
@@ -1862,16 +1907,15 @@ export default function AccountRpcStudioPage() {
               </div>
             </div>
 
-            {/* Section 1: Application Identity & Activity Type Customization */}
-            <div className="p-6 bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl space-y-5">
+            {/* A. General Activity */}
+            <div className="p-5 bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl space-y-4">
               <div className="flex items-center justify-between border-b border-[#181818] pb-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <span className="text-[#d71920]">[01]</span> APPLICATION & ACTIVITY TYPE
+                  <span className="text-[#d71920]">[01]</span> GENERAL ACTIVITY
                 </h3>
-                <span className="text-[10px] text-neutral-500 uppercase">DISCORD GATEWAY SPEC</span>
+                <span className="text-[10px] text-neutral-500 uppercase">CORE IDENTITY</span>
               </div>
 
-              {/* Core App Information */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
@@ -1888,7 +1932,7 @@ export default function AccountRpcStudioPage() {
 
                 <div>
                   <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
-                    Discord Client ID (App ID)
+                    Application ID (Client ID)
                   </label>
                   <input
                     type="text"
@@ -1907,19 +1951,16 @@ export default function AccountRpcStudioPage() {
 
               {/* Activity Type Selector */}
               <div className="space-y-2 pt-2 border-t border-[#181818]">
-                <div className="flex items-center justify-between">
-                  <label className="block text-[11px] font-semibold text-neutral-400 uppercase">
-                    Activity Type (Discord Status Badge)
-                  </label>
-                  <span className="text-[10px] text-purple-400 font-mono">DEFAULT: STREAMING</span>
-                </div>
+                <label className="block text-[11px] font-semibold text-neutral-400 uppercase">
+                  Activity Type
+                </label>
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                   {[
-                    { id: "streaming", label: "Streaming", desc: "Type 1 (Twitch / Live)", icon: Tv, badge: "PURPLE BADGE" },
-                    { id: "playing", label: "Playing", desc: "Type 0 (Game / App)", icon: Play, badge: "GREEN BADGE" },
-                    { id: "listening", label: "Listening", desc: "Type 2 (Music / Audio)", icon: Headphones, badge: "SPOTIFY STYLE" },
-                    { id: "watching", label: "Watching", desc: "Type 3 (Video / Stream)", icon: Eye, badge: "MEDIA STYLE" },
-                    { id: "competing", label: "Competing", desc: "Type 5 (Tournament)", icon: Trophy, badge: "ARENA STYLE" },
+                    { id: "streaming", label: "Streaming", desc: "Type 1 (Live)", icon: Tv },
+                    { id: "playing", label: "Playing", desc: "Type 0 (Game)", icon: Play },
+                    { id: "listening", label: "Listening", desc: "Type 2 (Music)", icon: Headphones },
+                    { id: "watching", label: "Watching", desc: "Type 3 (Media)", icon: Eye },
+                    { id: "competing", label: "Competing", desc: "Type 5 (Arena)", icon: Trophy },
                   ].map((item) => {
                     const active = (rpc.activityType || "streaming") === item.id;
                     const Icon = item.icon;
@@ -1928,15 +1969,15 @@ export default function AccountRpcStudioPage() {
                         key={item.id}
                         type="button"
                         onClick={() => updateRpc({ activityType: item.id as any })}
-                        className={`p-3 rounded-xl border text-left transition-all ${active
+                        className={`p-2.5 rounded-xl border text-left transition-all ${active
                           ? item.id === "streaming"
-                            ? "bg-purple-950/30 border-purple-500 text-white shadow-lg shadow-purple-950/50"
+                            ? "bg-purple-950/30 border-purple-500 text-white shadow-lg shadow-purple-950/40"
                             : "bg-[#141419] border-white text-white shadow-lg"
                           : "bg-[#050505] border-[#222222] text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
                           }`}
                       >
-                        <div className="flex items-center gap-2 mb-1">
-                          <Icon size={14} className={active ? (item.id === "streaming" ? "text-purple-400" : "text-white") : "text-neutral-500"} />
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <Icon size={13} className={active ? (item.id === "streaming" ? "text-purple-400" : "text-white") : "text-neutral-500"} />
                           <span className="text-xs font-bold">{item.label}</span>
                         </div>
                         <p className="text-[10px] text-neutral-500 truncate">{item.desc}</p>
@@ -1945,68 +1986,75 @@ export default function AccountRpcStudioPage() {
                   })}
                 </div>
               </div>
+            </div>
 
-              {/* Streaming Broadcast URL (Required for Type 1) */}
-              {(rpc.activityType || "streaming") === "streaming" && (
-                <div className="p-3.5 rounded-xl bg-purple-950/20 border border-purple-500/30 space-y-2 animate-fade-in">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-semibold text-purple-300 uppercase flex items-center gap-1.5">
-                      <Tv size={12} className="text-purple-400" /> Streaming Broadcast URL
-                    </label>
-                    <span className="text-[10px] text-purple-400 font-mono">TWITCH / YOUTUBE URL</span>
-                  </div>
+            {/* C. Streaming Settings (Conditional — only shown when Streaming is selected) */}
+            {(rpc.activityType || "streaming") === "streaming" && (
+              <div className="p-5 bg-[#0a0a0a] border border-purple-500/30 rounded-2xl space-y-3 animate-fade-in">
+                <div className="flex items-center justify-between border-b border-purple-500/20 pb-2.5">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span className="text-purple-400">[LIVE]</span> STREAMING SETTINGS
+                  </h3>
+                  <span className="text-[10px] text-purple-400 font-mono uppercase">TWITCH / YOUTUBE</span>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
+                    Stream Link
+                  </label>
                   <input
                     type="url"
                     value={rpc.streamUrl || ""}
                     onChange={(e) => updateRpc({ streamUrl: e.target.value })}
                     placeholder={`https://twitch.tv/${currentUser?.username || "pixelgg"}`}
-                    className="w-full bg-[#050505] border border-purple-500/40 focus:border-purple-400 rounded-lg p-2.5 text-xs text-white placeholder-purple-300/40 focus:outline-none transition-colors"
+                    className="w-full bg-[#050505] border border-purple-500/40 focus:border-purple-400 rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
                   {rpc.streamUrl && !/^https?:\/\/(www\.)?(twitch\.tv|youtube\.com)\/\w+/i.test(rpc.streamUrl.trim()) && (
                     <p className="text-[10px] text-amber-300 mt-1 flex items-center gap-1 font-mono">
                       <AlertCircle size={10} /> Stream link should be a valid Twitch or YouTube stream URL.
                     </p>
                   )}
-                  <p className="text-[10px] text-neutral-400">
-                    Discord Gateway requires a valid stream URL (e.g. Twitch or YouTube Live) to broadcast the purple Streaming indicator.
-                  </p>
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* Activity Details & State */}
-              <div className="space-y-4 pt-1">
-                {/* Details Line */}
-                <div className="p-3.5 rounded-xl bg-[#08080a] border border-[#1a1a20] space-y-2.5">
+            {/* B. Activity Information */}
+            <div className="p-5 bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl space-y-4">
+              <div className="flex items-center justify-between border-b border-[#181818] pb-3">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <span className="text-[#d71920]">[02]</span> ACTIVITY INFORMATION
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowActivityUrls((v) => !v)}
+                  className="text-[10px] font-mono text-neutral-400 hover:text-white px-2 py-1 rounded bg-[#141418] border border-[#24242c] flex items-center gap-1 transition-colors"
+                >
+                  <Link2 size={11} />
+                  {showActivityUrls ? "Hide Clickable URLs" : "Clickable URLs"}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Details / Line 1 */}
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <label className="text-[11px] font-semibold text-neutral-300 uppercase">
-                        Details Line (Top Line)
-                      </label>
-                      <span className="text-[10px] text-neutral-500 font-mono">
-                        ({(rpc.details || "").length}/128)
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono font-bold text-neutral-400">
-                        {rpc.detailsEnabled !== false ? "VISIBLE" : "HIDDEN"}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => updateRpc({ detailsEnabled: rpc.detailsEnabled === false ? true : false })}
-                        className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          rpc.detailsEnabled !== false ? "bg-white" : "bg-[#252530]"
+                    <label className="text-[11px] font-semibold text-neutral-400 uppercase">
+                      Details (Line 1) <span className="text-neutral-600 font-mono">({(rpc.details || "").length}/128)</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => updateRpc({ detailsEnabled: rpc.detailsEnabled === false ? true : false })}
+                      aria-label="Toggle Details Line"
+                      className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+                        rpc.detailsEnabled !== false ? "bg-white" : "bg-[#252530]"
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-black transition ${
+                          rpc.detailsEnabled !== false ? "translate-x-3" : "translate-x-0"
                         }`}
-                      >
-                        <span
-                          className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
-                            rpc.detailsEnabled !== false ? "translate-x-3" : "translate-x-0"
-                          }`}
-                        />
-                      </button>
-                    </div>
+                      />
+                    </button>
                   </div>
-
                   <input
                     type="text"
                     maxLength={128}
@@ -2015,58 +2063,29 @@ export default function AccountRpcStudioPage() {
                     placeholder="Welcome to my profile!"
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
-
-                  <div className="pt-1">
-                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase flex items-center gap-1">
-                      <Link2 size={11} className="text-neutral-500" /> Details Clickable URL (Optional)
-                    </label>
-                    <input
-                      type="url"
-                      value={rpc.detailsUrl || ""}
-                      onChange={(e) => updateRpc({ detailsUrl: e.target.value })}
-                      placeholder="https://... (Opens when clicking Details in Discord)"
-                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
-                    />
-                    {rpc.detailsUrl && !/^https?:\/\/.+/i.test(rpc.detailsUrl.trim()) && (
-                      <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-mono">
-                        <AlertCircle size={10} /> URL must start with http:// or https://
-                      </p>
-                    )}
-                  </div>
                 </div>
 
-                {/* State Line */}
-                <div className="p-3.5 rounded-xl bg-[#08080a] border border-[#1a1a20] space-y-2.5">
+                {/* State / Line 2 */}
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <label className="text-[11px] font-semibold text-neutral-300 uppercase">
-                        State Line (Bottom Line)
-                      </label>
-                      <span className="text-[10px] text-neutral-500 font-mono">
-                        ({(rpc.state || "").length}/128)
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono font-bold text-neutral-400">
-                        {rpc.stateEnabled !== false ? "VISIBLE" : "HIDDEN"}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => updateRpc({ stateEnabled: rpc.stateEnabled === false ? true : false })}
-                        className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          rpc.stateEnabled !== false ? "bg-white" : "bg-[#252530]"
+                    <label className="text-[11px] font-semibold text-neutral-400 uppercase">
+                      State (Line 2) <span className="text-neutral-600 font-mono">({(rpc.state || "").length}/128)</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => updateRpc({ stateEnabled: rpc.stateEnabled === false ? true : false })}
+                      aria-label="Toggle State Line"
+                      className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+                        rpc.stateEnabled !== false ? "bg-white" : "bg-[#252530]"
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-black transition ${
+                          rpc.stateEnabled !== false ? "translate-x-3" : "translate-x-0"
                         }`}
-                      >
-                        <span
-                          className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
-                            rpc.stateEnabled !== false ? "translate-x-3" : "translate-x-0"
-                          }`}
-                        />
-                      </button>
-                    </div>
+                      />
+                    </button>
                   </div>
-
                   <input
                     type="text"
                     maxLength={128}
@@ -2075,126 +2094,93 @@ export default function AccountRpcStudioPage() {
                     placeholder="Discover my personal page on PIXEL.GG."
                     className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                   />
+                </div>
+              </div>
 
-                  <div className="pt-1">
-                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase flex items-center gap-1">
-                      <Link2 size={11} className="text-neutral-500" /> State Clickable URL (Optional)
-                    </label>
+              {(showActivityUrls || rpc.detailsUrl || rpc.stateUrl) && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[#181818]">
+                  <div>
+                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Details Clickable URL</label>
+                    <input
+                      type="url"
+                      value={rpc.detailsUrl || ""}
+                      onChange={(e) => updateRpc({ detailsUrl: e.target.value })}
+                      placeholder="https://..."
+                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none"
+                    />
+                    {rpc.detailsUrl && !/^https?:\/\/.+/i.test(rpc.detailsUrl.trim()) && (
+                      <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-mono">
+                        <AlertCircle size={10} /> Must start with http:// or https://
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase">State Clickable URL</label>
                     <input
                       type="url"
                       value={rpc.stateUrl || ""}
                       onChange={(e) => updateRpc({ stateUrl: e.target.value })}
-                      placeholder="https://... (Opens when clicking State in Discord)"
-                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
+                      placeholder="https://..."
+                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none"
                     />
                     {rpc.stateUrl && !/^https?:\/\/.+/i.test(rpc.stateUrl.trim()) && (
                       <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-mono">
-                        <AlertCircle size={10} /> URL must start with http:// or https://
+                        <AlertCircle size={10} /> Must start with http:// or https://
                       </p>
                     )}
                   </div>
                 </div>
+              )}
+            </div>
+
+            {/* D. Party Settings */}
+            <div className="p-5 bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl space-y-3">
+              <div className="flex items-center justify-between border-b border-[#181818] pb-2.5">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <span className="text-[#d71920]">[03]</span> PARTY SETTINGS
+                </h3>
+                <span className="text-[10px] text-neutral-500 uppercase">OPTIONAL</span>
               </div>
-
-              {/* Party configuration & Timestamp mode */}
-              <div className="pt-2 border-t border-[#181818] grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase flex items-center gap-1.5">
-                    <Users size={12} className="text-neutral-500" />
-                    Party Size (Current / Max)
+                  <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
+                    Party Size
                   </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min="0"
-                      value={rpc.partySize ?? ""}
-                      onChange={(e) =>
-                        updateRpc({
-                          partySize: e.target.value === "" ? null : parseInt(e.target.value, 10),
-                        })
-                      }
-                      placeholder="1"
-                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors text-center"
-                    />
-                    <span className="text-neutral-500 text-xs">/</span>
-                    <input
-                      type="number"
-                      min="1"
-                      value={rpc.partyMax ?? ""}
-                      onChange={(e) =>
-                        updateRpc({
-                          partyMax: e.target.value === "" ? null : parseInt(e.target.value, 10),
-                        })
-                      }
-                      placeholder="4"
-                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors text-center"
-                    />
-                  </div>
-                  {typeof rpc.partySize === "number" && typeof rpc.partyMax === "number" && rpc.partySize > rpc.partyMax && (
-                    <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-mono">
-                      <AlertCircle size={10} /> Party size cannot exceed maximum party size.
-                    </p>
-                  )}
+                  <input
+                    type="number"
+                    min="0"
+                    value={rpc.partySize ?? ""}
+                    onChange={(e) =>
+                      updateRpc({
+                        partySize: e.target.value === "" ? null : parseInt(e.target.value, 10),
+                      })
+                    }
+                    placeholder="1"
+                    className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
+                  />
                 </div>
-
                 <div>
-                  <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase flex items-center gap-1.5">
-                    <Clock size={12} className="text-neutral-500" />
-                    Timestamp Mode
+                  <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
+                    Maximum Party Size
                   </label>
-                  <select
-                    value={rpc.timestampMode || (rpc.startTimestamp ? "custom" : "now")}
-                    onChange={(e) => {
-                      const mode = e.target.value as any;
-                      updateRpc({ timestampMode: mode });
-                    }}
-                    className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white focus:outline-none transition-colors"
-                  >
-                    <option value="now">Dynamic Elapsed (00:00 elapsed since open)</option>
-                    <option value="time">Local Clock Time (Current Local Hour/Min)</option>
-                    <option value="custom">Custom Timestamp (Fixed Start / End Time)</option>
-                    <option value="none">Disabled (No Timestamp)</option>
-                  </select>
+                  <input
+                    type="number"
+                    min="1"
+                    value={rpc.partyMax ?? ""}
+                    onChange={(e) =>
+                      updateRpc({
+                        partyMax: e.target.value === "" ? null : parseInt(e.target.value, 10),
+                      })
+                    }
+                    placeholder="4"
+                    className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
+                  />
                 </div>
               </div>
-
-              {/* Custom Timestamp Start/End Inputs */}
-              {(rpc.timestampMode === "custom" || (!rpc.timestampMode && rpc.startTimestamp)) && (
-                <div className="p-3.5 rounded-xl bg-[#08080a] border border-[#1f1f28] space-y-2 animate-fade-in">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] text-neutral-400 mb-1 uppercase font-semibold">Start Date & Time</label>
-                      <input
-                        type="datetime-local"
-                        value={rpc.startTimestamp ? new Date(rpc.startTimestamp).toISOString().slice(0, 16) : ""}
-                        onChange={(e) =>
-                          updateRpc({
-                            startTimestamp: e.target.value ? new Date(e.target.value).toISOString() : null,
-                          })
-                        }
-                        className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-neutral-400 mb-1 uppercase font-semibold">End Date & Time (Optional Countdown)</label>
-                      <input
-                        type="datetime-local"
-                        value={rpc.endTimestamp ? new Date(rpc.endTimestamp).toISOString().slice(0, 16) : ""}
-                        onChange={(e) =>
-                          updateRpc({
-                            endTimestamp: e.target.value ? new Date(e.target.value).toISOString() : null,
-                          })
-                        }
-                        className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                  {rpc.startTimestamp && rpc.endTimestamp && new Date(rpc.startTimestamp).getTime() >= new Date(rpc.endTimestamp).getTime() && (
-                    <p className="text-[10px] text-amber-400 flex items-center gap-1 font-mono pt-1">
-                      <AlertCircle size={10} /> Start timestamp must be earlier than End timestamp.
-                    </p>
-                  )}
-                </div>
+              {typeof rpc.partySize === "number" && typeof rpc.partyMax === "number" && rpc.partySize > rpc.partyMax && (
+                <p className="text-[10px] text-amber-400 flex items-center gap-1 font-mono">
+                  <AlertCircle size={10} /> Party size cannot exceed maximum party size.
+                </p>
               )}
             </div>
 
@@ -2203,10 +2189,10 @@ export default function AccountRpcStudioPage() {
               <div className="flex items-center justify-between border-b border-[#181818] pb-3">
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <span className="text-[#d71920]">[02]</span> VISUAL ASSETS & CUSTOM IMAGES
+                    <span className="text-[#d71920]">[04]</span> VISUAL ASSETS
                   </h3>
                   <span className="text-[10px] text-neutral-500 uppercase">
-                    PFP AUTO-SYNC, CUSTOM UPLOADS & ANIMATED GIFS (UP TO 5MB)
+                    PNG, JPG, WEBP & ANIMATED GIFS (UP TO 10MB)
                   </span>
                 </div>
               </div>
@@ -2397,23 +2383,10 @@ export default function AccountRpcStudioPage() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 items-end">
                   <div>
                     <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
-                      Direct Image URL
-                    </label>
-                    <input
-                      type="text"
-                      value={rpc.largeImage || ""}
-                      onChange={(e) => updateRpc({ largeImage: e.target.value, useProfileAvatar: false })}
-                      placeholder="https://..."
-                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
-                      Large Image Tooltip Text
+                      Tooltip Text
                     </label>
                     <input
                       type="text"
@@ -2423,26 +2396,51 @@ export default function AccountRpcStudioPage() {
                       className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                     />
                   </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setShowLargeAdvanced((v) => !v)}
+                      className="text-[10px] font-mono text-neutral-400 hover:text-white px-3 py-2 rounded-lg bg-[#121216] border border-[#22222a] flex items-center gap-1.5 transition-colors"
+                    >
+                      <Link2 size={11} />
+                      {showLargeAdvanced ? "Hide Advanced URLs" : "Advanced (URL / Asset Key)"}
+                    </button>
+                  </div>
                 </div>
 
-                <div className="pt-1">
-                  <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase flex items-center gap-1.5">
-                    <Link2 size={12} className="text-neutral-500" />
-                    Large Image Clickable URL (Optional)
-                  </label>
-                  <input
-                    type="url"
-                    value={rpc.largeImageUrl || ""}
-                    onChange={(e) => updateRpc({ largeImageUrl: e.target.value })}
-                    placeholder="https://... (Opens when clicking large activity image in Discord)"
-                    className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
-                  />
-                  {rpc.largeImageUrl && !/^https?:\/\/.+/i.test(rpc.largeImageUrl.trim()) && (
-                    <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-mono">
-                      <AlertCircle size={10} /> URL must start with http:// or https://
-                    </p>
-                  )}
-                </div>
+                {(showLargeAdvanced || Boolean(rpc.largeImageUrl)) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[#181818]">
+                    <div>
+                      <label className="block text-[10px] text-neutral-500 mb-1 uppercase">
+                        Image URL or Discord Asset Key
+                      </label>
+                      <input
+                        type="text"
+                        value={rpc.largeImage || ""}
+                        onChange={(e) => updateRpc({ largeImage: e.target.value, useProfileAvatar: false })}
+                        placeholder="https://... or asset_key"
+                        className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-neutral-500 mb-1 uppercase">
+                        Clickable URL (Optional)
+                      </label>
+                      <input
+                        type="url"
+                        value={rpc.largeImageUrl || ""}
+                        onChange={(e) => updateRpc({ largeImageUrl: e.target.value })}
+                        placeholder="https://..."
+                        className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
+                      />
+                      {rpc.largeImageUrl && !/^https?:\/\/.+/i.test(rpc.largeImageUrl.trim()) && (
+                        <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-mono">
+                          <AlertCircle size={10} /> URL must start with http:// or https://
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Small Activity Icon Upload & Customization */}
@@ -2599,23 +2597,10 @@ export default function AccountRpcStudioPage() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 items-end">
                   <div>
                     <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
-                      Small Image URL (Badge)
-                    </label>
-                    <input
-                      type="text"
-                      value={rpc.smallImage || ""}
-                      onChange={(e) => updateRpc({ smallImage: e.target.value })}
-                      placeholder="https://..."
-                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase">
-                      Small Image Tooltip Text
+                      Tooltip Text
                     </label>
                     <input
                       type="text"
@@ -2625,39 +2610,222 @@ export default function AccountRpcStudioPage() {
                       className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
                     />
                   </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setShowSmallAdvanced((v) => !v)}
+                      className="text-[10px] font-mono text-neutral-400 hover:text-white px-3 py-2 rounded-lg bg-[#121216] border border-[#22222a] flex items-center gap-1.5 transition-colors"
+                    >
+                      <Link2 size={11} />
+                      {showSmallAdvanced ? "Hide Advanced URLs" : "Advanced (URL / Asset Key)"}
+                    </button>
+                  </div>
                 </div>
 
-                <div className="pt-1">
-                  <label className="block text-[11px] font-semibold text-neutral-400 mb-1.5 uppercase flex items-center gap-1.5">
-                    <Link2 size={12} className="text-neutral-500" />
-                    Small Image Clickable URL (Optional)
-                  </label>
-                  <input
-                    type="url"
-                    value={rpc.smallImageUrl || ""}
-                    onChange={(e) => updateRpc({ smallImageUrl: e.target.value })}
-                    placeholder="https://... (Opens when clicking small activity icon in Discord)"
-                    className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2.5 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
-                  />
-                  {rpc.smallImageUrl && !/^https?:\/\/.+/i.test(rpc.smallImageUrl.trim()) && (
-                    <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-mono">
-                      <AlertCircle size={10} /> URL must start with http:// or https://
-                    </p>
-                  )}
-                </div>
+                {(showSmallAdvanced || Boolean(rpc.smallImageUrl)) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[#181818]">
+                    <div>
+                      <label className="block text-[10px] text-neutral-500 mb-1 uppercase">
+                        Icon URL or Discord Asset Key
+                      </label>
+                      <input
+                        type="text"
+                        value={rpc.smallImage || ""}
+                        onChange={(e) => updateRpc({ smallImage: e.target.value })}
+                        placeholder="https://... or asset_key"
+                        className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-neutral-500 mb-1 uppercase">
+                        Clickable URL (Optional)
+                      </label>
+                      <input
+                        type="url"
+                        value={rpc.smallImageUrl || ""}
+                        onChange={(e) => updateRpc({ smallImageUrl: e.target.value })}
+                        placeholder="https://..."
+                        className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none transition-colors"
+                      />
+                      {rpc.smallImageUrl && !/^https?:\/\/.+/i.test(rpc.smallImageUrl.trim()) && (
+                        <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-mono">
+                          <AlertCircle size={10} /> URL must start with http:// or https://
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Section 3: Custom Streaks, Statistics & Status Labels */}
-            <div className="p-6 bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl space-y-5">
+            {/* G. Timestamp Section */}
+            <div className="p-5 bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl space-y-4">
+              <div className="flex items-center justify-between border-b border-[#181818] pb-3">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <span className="text-[#d71920]">[05]</span> TIMESTAMP
+                </h3>
+                <span className="text-[10px] text-neutral-500 font-mono uppercase">
+                  {Intl.DateTimeFormat().resolvedOptions().timeZone || "LOCAL TIME"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { id: "now", label: "Now", desc: "Elapsed from open" },
+                  { id: "time", label: "Time", desc: "Local clock time" },
+                  { id: "custom", label: "Custom", desc: "Start / End dates" },
+                  { id: "none", label: "None", desc: "No timestamp" },
+                ].map((opt) => {
+                  const activeMode = rpc.timestampMode || (parseTimestampMs(rpc.startTimestamp) !== null ? "custom" : "now");
+                  const active = activeMode === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => updateRpc({ timestampMode: opt.id as any })}
+                      className={`p-2.5 rounded-xl border text-left transition-all ${
+                        active
+                          ? "bg-[#141419] border-white text-white shadow-sm"
+                          : "bg-[#050505] border-[#222222] text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
+                      }`}
+                    >
+                      <div className="text-xs font-bold">{opt.label}</div>
+                      <div className="text-[10px] text-neutral-500 truncate">{opt.desc}</div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {(rpc.timestampMode === "custom" || (!rpc.timestampMode && parseTimestampMs(rpc.startTimestamp) !== null)) && (() => {
+                const startMs = parseTimestampMs(rpc.startTimestamp);
+                const endMs = parseTimestampMs(rpc.endTimestamp);
+                const hasInvalidRange = startMs !== null && endMs !== null && endMs <= startMs;
+
+                return (
+                  <div className="p-4 rounded-xl bg-[#08080a] border border-[#1f1f28] space-y-4 animate-fade-in">
+                    {/* Custom Start Date & Time */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] text-neutral-400 uppercase font-semibold">
+                          Custom Start (Optional)
+                        </label>
+                        {startMs !== null && (
+                          <button
+                            type="button"
+                            onClick={() => updateRpc({ startTimestamp: null })}
+                            className="text-[10px] text-neutral-400 hover:text-red-400 font-mono transition-colors"
+                          >
+                            Clear Start
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <input
+                          type="date"
+                          value={toLocalDateStr(rpc.startTimestamp)}
+                          onChange={(e) => {
+                            const nextIso = combineLocalDateTimeToIso(
+                              e.target.value,
+                              toLocalTimeStr(rpc.startTimestamp) || "00:00"
+                            );
+                            updateRpc({ startTimestamp: nextIso });
+                          }}
+                          className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white focus:outline-none"
+                        />
+                        <input
+                          type="time"
+                          value={toLocalTimeStr(rpc.startTimestamp)}
+                          onChange={(e) => {
+                            const nextIso = combineLocalDateTimeToIso(
+                              toLocalDateStr(rpc.startTimestamp) || toLocalDateStr(Date.now()),
+                              e.target.value
+                            );
+                            updateRpc({ startTimestamp: nextIso });
+                          }}
+                          className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Custom End Date & Time */}
+                    <div className="space-y-2 pt-2 border-t border-[#181820]">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] text-neutral-400 uppercase font-semibold">
+                          Custom End / Countdown (Optional)
+                        </label>
+                        {endMs !== null && (
+                          <button
+                            type="button"
+                            onClick={() => updateRpc({ endTimestamp: null })}
+                            className="text-[10px] text-neutral-400 hover:text-red-400 font-mono transition-colors"
+                          >
+                            Clear End
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <input
+                          type="date"
+                          value={toLocalDateStr(rpc.endTimestamp)}
+                          onChange={(e) => {
+                            const nextIso = combineLocalDateTimeToIso(
+                              e.target.value,
+                              toLocalTimeStr(rpc.endTimestamp) || "23:59"
+                            );
+                            updateRpc({ endTimestamp: nextIso });
+                          }}
+                          className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white focus:outline-none"
+                        />
+                        <input
+                          type="time"
+                          value={toLocalTimeStr(rpc.endTimestamp)}
+                          onChange={(e) => {
+                            const nextIso = combineLocalDateTimeToIso(
+                              toLocalDateStr(rpc.endTimestamp) || toLocalDateStr(Date.now()),
+                              e.target.value
+                            );
+                            updateRpc({ endTimestamp: nextIso });
+                          }}
+                          className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Timestamp Display Info & Validation */}
+                    <div className="pt-2 border-t border-[#181820] flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono text-neutral-500">
+                      <span>
+                        {startMs !== null && endMs !== null
+                          ? "Showing countdown / duration range"
+                          : startMs !== null
+                            ? "Showing elapsed time from start"
+                            : endMs !== null
+                              ? "Showing countdown to end time"
+                              : "Select a start or end date/time"}
+                      </span>
+                      {(startMs !== null || endMs !== null) && (
+                        <span>
+                          Unix: {startMs !== null ? `${startMs}` : "—"} / {endMs !== null ? `${endMs}` : "—"}
+                        </span>
+                      )}
+                    </div>
+
+                    {hasInvalidRange && (
+                      <p className="text-[10px] text-amber-400 flex items-center gap-1 font-mono">
+                        <AlertCircle size={10} /> End timestamp must be later than Start timestamp.
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Section 6: Custom Streaks, Statistics & Status Labels */}
+            <div className="p-5 bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#181818] pb-3">
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <span className="text-[#d71920]">[03]</span> CUSTOM STREAKS, STATISTICS & STATUS LABELS
+                    <span className="text-[#d71920]">[06]</span> CUSTOM STREAKS & STATS
                   </h3>
-                  <span className="text-[10px] text-neutral-500 uppercase">
-                    INTEGRATED COUNTERS, BADGES & HIGHLIGHTS EMBEDDED DIRECTLY INTO DISCORD PRESENCE
-                  </span>
                 </div>
 
                 {/* Sub-navigation tabs */}
@@ -2699,176 +2867,179 @@ export default function AccountRpcStudioPage() {
 
               {/* Subtab 1: Streaks */}
               {customTab === "streaks" && (
-                <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <p className="text-xs text-neutral-400">
-                      Display consecutive daily activities, gaming win streaks, or milestone counters formatted into Details or State.
-                    </p>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => addStreak()}
-                        className="text-xs px-3 py-1.5 flex items-center gap-1.5 bg-[#141414] hover:bg-[#202020] text-white border-[#2a2a2a]"
-                      >
-                        <Plus size={13} /> Add Streak
-                      </Button>
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[
+                        { name: "Win Streak", value: 7, prefix: "🔥", suffix: "Wins", targetField: "details" as const },
+                        { name: "Daily Grind", value: 14, prefix: "⚡", suffix: "Days", targetField: "details" as const },
+                        { name: "Match Streak", value: 25, prefix: "🏆", suffix: "W", targetField: "state" as const },
+                      ].map((preset, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => addStreak(preset)}
+                          className="px-2.5 py-1 rounded-lg bg-[#111116] hover:bg-[#1a1a22] border border-[#22222a] text-[11px] text-neutral-300 hover:text-white transition-colors flex items-center gap-1"
+                        >
+                          <span>{preset.prefix}</span>
+                          <span>{preset.value} {preset.name}</span>
+                          <Plus size={10} className="text-neutral-500" />
+                        </button>
+                      ))}
                     </div>
-                  </div>
-
-                  {/* Quick Preset Buttons */}
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
-                    <span className="text-[10px] text-neutral-500 uppercase font-mono">QUICK PRESETS:</span>
-                    {[
-                      { name: "Win Streak", value: 7, prefix: "🔥", suffix: "Wins", targetField: "details" as const },
-                      { name: "Daily Grind", value: 14, prefix: "⚡", suffix: "Days", targetField: "details" as const },
-                      { name: "Match Streak", value: 25, prefix: "🏆", suffix: "W", targetField: "state" as const },
-                    ].map((preset, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => addStreak(preset)}
-                        className="px-2.5 py-1 rounded-lg bg-[#111116] hover:bg-[#1a1a22] border border-[#22222a] text-[11px] text-neutral-300 hover:text-white transition-colors flex items-center gap-1"
-                      >
-                        <span>{preset.prefix}</span>
-                        <span>
-                          {preset.value} {preset.suffix} {preset.name}
-                        </span>
-                        <Plus size={10} className="text-neutral-500 ml-0.5" />
-                      </button>
-                    ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => addStreak()}
+                      className="text-xs px-3 py-1.5 flex items-center gap-1.5 bg-[#141414] hover:bg-[#202020] text-white border-[#2a2a2a]"
+                    >
+                      <Plus size={13} /> Add Streak
+                    </Button>
                   </div>
 
                   {/* Streaks List */}
                   {!rpc.streaks || rpc.streaks.length === 0 ? (
-                    <div className="p-8 rounded-xl bg-[#070709] border border-[#1a1a22] text-center space-y-2">
-                      <Flame size={28} className="mx-auto text-neutral-600" />
-                      <p className="text-xs text-neutral-400 font-medium">No Custom Streaks Configured</p>
-                      <p className="text-[11px] text-neutral-600 max-w-sm mx-auto">
-                        Add a streak like &quot;🔥 12 Win Streak&quot; to showcase your performance directly on Discord.
-                      </p>
+                    <div className="p-6 rounded-xl bg-[#070709] border border-[#1a1a22] text-center space-y-1.5">
+                      <Flame size={22} className="mx-auto text-neutral-600" />
+                      <p className="text-xs text-neutral-400 font-medium">No Custom Streaks</p>
+                      <p className="text-[11px] text-neutral-600">Pick a preset above or add a streak.</p>
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      {rpc.streaks.map((streak, idx) => (
-                        <div
-                          key={streak.id}
-                          className="p-3.5 rounded-xl bg-[#08080a] border border-[#1f1f24] space-y-3 transition-colors hover:border-[#2a2a32]"
-                        >
-                          <div className="flex items-center justify-between gap-2 border-b border-[#181820] pb-2.5">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-mono text-neutral-500">#{idx + 1}</span>
-                              <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                                {streak.prefix && <span>{streak.prefix}</span>}
-                                <span>{streak.value}</span>
-                                {streak.suffix && <span>{streak.suffix}</span>}
-                                <span>{streak.name}</span>
-                              </span>
+                    <div className="space-y-2.5">
+                      {rpc.streaks.map((streak, idx) => {
+                        const isExpanded = Boolean(expandedCustomItems[streak.id]);
+                        return (
+                          <div
+                            key={streak.id}
+                            className={`p-3 rounded-xl border space-y-2.5 transition-colors ${
+                              streak.enabled
+                                ? "bg-[#08080a] border-[#252530]"
+                                : "bg-[#060608] border-[#16161c] opacity-70"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-[10px] font-mono text-neutral-500">#{idx + 1}</span>
+                                <span className="text-xs font-bold text-white truncate">
+                                  {streak.prefix ? `${streak.prefix} ` : ""}
+                                  {streak.value}
+                                  {streak.suffix ? ` ${streak.suffix}` : ""} {streak.name}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => updateStreak(streak.id, { enabled: !streak.enabled })}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border transition-colors ${
+                                    streak.enabled
+                                      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/35"
+                                      : "bg-neutral-800/80 text-neutral-500 border-neutral-700"
+                                  }`}
+                                >
+                                  {streak.enabled ? "ON" : "OFF"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleCustomItemAdvanced(streak.id)}
+                                  className="px-2 py-0.5 rounded text-[10px] font-mono text-neutral-400 hover:text-white bg-[#121216] border border-[#22222a]"
+                                >
+                                  {isExpanded ? "Less" : "Options"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeStreak(streak.id)}
+                                  className="p-1 rounded hover:bg-red-950/40 text-neutral-500 hover:text-red-400"
+                                  title="Delete Streak"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
                             </div>
 
-                            <div className="flex items-center gap-1.5">
-                              {/* Target Field Selector */}
-                              <select
-                                value={streak.targetField || "details"}
-                                onChange={(e) => updateStreak(streak.id, { targetField: e.target.value as any })}
-                                className="bg-[#121216] border border-[#22222a] text-[11px] text-neutral-300 rounded px-2 py-1 focus:outline-none"
-                              >
-                                <option value="details">Append to Details (Top)</option>
-                                <option value="state">Append to State (Bottom)</option>
-                              </select>
-
-                              {/* Toggle */}
-                              <button
-                                type="button"
-                                onClick={() => updateStreak(streak.id, { enabled: !streak.enabled })}
-                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border transition-colors ${
-                                  streak.enabled
-                                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                                    : "bg-neutral-800 text-neutral-400 border-neutral-700"
-                                }`}
-                              >
-                                {streak.enabled ? "ACTIVE" : "OFF"}
-                              </button>
-
-                              {/* Reorder Up */}
-                              <button
-                                type="button"
-                                disabled={idx === 0}
-                                onClick={() => moveStreak(idx, "up")}
-                                className="p-1 rounded hover:bg-[#1a1a20] text-neutral-400 hover:text-white disabled:opacity-20"
-                                title="Move Up"
-                              >
-                                <ArrowUp size={12} />
-                              </button>
-
-                              {/* Reorder Down */}
-                              <button
-                                type="button"
-                                disabled={idx === (rpc.streaks?.length || 0) - 1}
-                                onClick={() => moveStreak(idx, "down")}
-                                className="p-1 rounded hover:bg-[#1a1a20] text-neutral-400 hover:text-white disabled:opacity-20"
-                                title="Move Down"
-                              >
-                                <ArrowDown size={12} />
-                              </button>
-
-                              {/* Delete */}
-                              <button
-                                type="button"
-                                onClick={() => removeStreak(streak.id)}
-                                className="p-1 rounded hover:bg-red-950/40 text-neutral-500 hover:text-red-400"
-                                title="Delete Streak"
-                              >
-                                <Trash2 size={12} />
-                              </button>
+                            {/* Primary Streak Fields */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                              <div>
+                                <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Name</label>
+                                <input
+                                  type="text"
+                                  value={streak.name}
+                                  onChange={(e) => updateStreak(streak.id, { name: e.target.value })}
+                                  placeholder="Win Streak"
+                                  className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Value</label>
+                                <input
+                                  type="number"
+                                  value={streak.value}
+                                  onChange={(e) => updateStreak(streak.id, { value: parseInt(e.target.value, 10) || 0 })}
+                                  placeholder="5"
+                                  className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none"
+                                />
+                              </div>
                             </div>
+
+                            {/* Collapsible Advanced Options */}
+                            {isExpanded && (
+                              <div className="pt-2 border-t border-[#181820] space-y-2.5">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                                  <div>
+                                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Prefix</label>
+                                    <input
+                                      type="text"
+                                      value={streak.prefix || ""}
+                                      onChange={(e) => updateStreak(streak.id, { prefix: e.target.value })}
+                                      placeholder="🔥"
+                                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white focus:outline-none"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Suffix</label>
+                                    <input
+                                      type="text"
+                                      value={streak.suffix || ""}
+                                      onChange={(e) => updateStreak(streak.id, { suffix: e.target.value })}
+                                      placeholder="Wins"
+                                      className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white focus:outline-none"
+                                    />
+                                  </div>
+                                  <div className="col-span-2 sm:col-span-1">
+                                    <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Line</label>
+                                    <select
+                                      value={streak.targetField || "details"}
+                                      onChange={(e) => updateStreak(streak.id, { targetField: e.target.value as any })}
+                                      className="w-full bg-[#050505] border border-[#222222] text-xs text-white rounded-lg p-2 focus:outline-none"
+                                    >
+                                      <option value="details">Details (Top)</option>
+                                      <option value="state">State (Bottom)</option>
+                                    </select>
+                                  </div>
+                                </div>
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    disabled={idx === 0}
+                                    onClick={() => moveStreak(idx, "up")}
+                                    className="px-2 py-1 rounded bg-[#121216] border border-[#22222a] text-[10px] text-neutral-400 hover:text-white disabled:opacity-30 flex items-center gap-1"
+                                  >
+                                    <ArrowUp size={11} /> Up
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={idx === (rpc.streaks?.length || 0) - 1}
+                                    onClick={() => moveStreak(idx, "down")}
+                                    className="px-2 py-1 rounded bg-[#121216] border border-[#22222a] text-[10px] text-neutral-400 hover:text-white disabled:opacity-30 flex items-center gap-1"
+                                  >
+                                    <ArrowDown size={11} /> Down
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
-
-                          {/* Streak Inputs */}
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                            <div>
-                              <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Streak Name</label>
-                              <input
-                                type="text"
-                                value={streak.name}
-                                onChange={(e) => updateStreak(streak.id, { name: e.target.value })}
-                                placeholder="Win Streak"
-                                className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Count / Value</label>
-                              <input
-                                type="number"
-                                value={streak.value}
-                                onChange={(e) => updateStreak(streak.id, { value: parseInt(e.target.value, 10) || 0 })}
-                                placeholder="5"
-                                className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Prefix Emoji</label>
-                              <input
-                                type="text"
-                                value={streak.prefix || ""}
-                                onChange={(e) => updateStreak(streak.id, { prefix: e.target.value })}
-                                placeholder="🔥"
-                                className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-neutral-500 mb-1 uppercase">Suffix / Unit</label>
-                              <input
-                                type="text"
-                                value={streak.suffix || ""}
-                                onChange={(e) => updateStreak(streak.id, { suffix: e.target.value })}
-                                placeholder="Wins"
-                                className="w-full bg-[#050505] border border-[#222222] focus:border-white rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -3276,6 +3447,11 @@ export default function AccountRpcStudioPage() {
                       placeholder={`https://pixel.gg/${currentUser?.username || "username"}`}
                       className="w-full bg-[#050505] border border-[#222222] rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-white"
                     />
+                    {rpc.button1Url && !/^https?:\/\/.+/i.test(rpc.button1Url.trim()) && (
+                      <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-mono">
+                        <AlertCircle size={10} /> URL must start with http:// or https://
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -3327,6 +3503,11 @@ export default function AccountRpcStudioPage() {
                       placeholder="https://pixel.gg/rpc"
                       className="w-full bg-[#050505] border border-[#222222] rounded-lg p-2 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-white"
                     />
+                    {rpc.button2Url && !/^https?:\/\/.+/i.test(rpc.button2Url.trim()) && (
+                      <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-mono">
+                        <AlertCircle size={10} /> URL must start with http:// or https://
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>

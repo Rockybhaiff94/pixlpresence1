@@ -82,6 +82,15 @@ export function ImageCustomizerModal({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const requestSeqRef = useRef<number>(0);
+  const isOpenRef = useRef<boolean>(isOpen);
+
+  useEffect(() => {
+    isOpenRef.current = isOpen;
+    if (!isOpen) {
+      requestSeqRef.current++;
+    }
+  }, [isOpen]);
 
   const MAX_VERIFICATION_ATTEMPTS = 3;
   const ATTEMPT_TIMEOUTS = [8000, 10000, 12000]; // Progressive timeouts: 8s, 10s, 12s
@@ -109,6 +118,7 @@ export function ImageCustomizerModal({
   if (!isOpen) return null;
 
   const handleFileProcess = (file: File) => {
+    const seq = ++requestSeqRef.current;
     setErrorMessage(null);
     setVerificationState("idle");
     setSavedAssetUrl(null);
@@ -147,6 +157,7 @@ export function ImageCustomizerModal({
 
     const reader = new FileReader();
     reader.onload = (e) => {
+      if (seq !== requestSeqRef.current || !isOpenRef.current) return;
       const result = e.target?.result as string;
       setImageSrc(result);
       setZoom(1);
@@ -305,11 +316,15 @@ export function ImageCustomizerModal({
    */
   const verifyImageWithRetries = async (
     url: string,
-    isGif: boolean
-  ): Promise<{ ok: boolean; reason?: string }> => {
+    isGif: boolean,
+    seq: number
+  ): Promise<{ ok: boolean; reason?: string; cancelled?: boolean }> => {
     let lastReason = "Image verification failed.";
 
     for (let attempt = 1; attempt <= MAX_VERIFICATION_ATTEMPTS; attempt++) {
+      if (seq !== requestSeqRef.current || !isOpenRef.current) {
+        return { ok: false, cancelled: true };
+      }
       setVerificationAttempt(attempt);
       if (attempt > 1) {
         setVerificationState("verification_delayed");
@@ -319,6 +334,9 @@ export function ImageCustomizerModal({
 
       const timeoutMs = ATTEMPT_TIMEOUTS[attempt - 1] || 10000;
       const result = await verifySingleAttempt(url, timeoutMs, isGif);
+      if (seq !== requestSeqRef.current || !isOpenRef.current) {
+        return { ok: false, cancelled: true };
+      }
 
       if (result.ok) {
         setVerificationState("verified");
@@ -344,6 +362,7 @@ export function ImageCustomizerModal({
       return;
     }
 
+    const seq = ++requestSeqRef.current;
     setErrorMessage(null);
 
     const cropData: CropData = {
@@ -356,7 +375,8 @@ export function ImageCustomizerModal({
 
     // If imageSrc is already an external HTTP/HTTPS URL
     if (imageSrc.startsWith("http://") || imageSrc.startsWith("https://")) {
-      const check = await verifyImageWithRetries(imageSrc, isAnimated);
+      const check = await verifyImageWithRetries(imageSrc, isAnimated, seq);
+      if (check.cancelled || seq !== requestSeqRef.current || !isOpenRef.current) return;
       if (check.ok) {
         onApply(imageSrc, cropData);
         onClose();
@@ -387,12 +407,15 @@ export function ImageCustomizerModal({
         body: JSON.stringify(payload),
       });
 
+      if (seq !== requestSeqRef.current || !isOpenRef.current) return;
+
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.error || `Upload failed (HTTP ${res.status})`);
       }
 
       const data = await res.json();
+      if (seq !== requestSeqRef.current || !isOpenRef.current) return;
       if (!data?.url) {
         throw new Error("Server succeeded but did not return a valid asset URL.");
       }
@@ -402,6 +425,7 @@ export function ImageCustomizerModal({
       setImageSrc(canonicalUrl);
       setVerificationState("upload_success");
     } catch (err: any) {
+      if (seq !== requestSeqRef.current || !isOpenRef.current) return;
       console.error("[ImageCustomizer] Upload error:", err);
       setVerificationState("failed");
       setErrorMessage(err.message || "Failed to upload image. Please try again.");
@@ -415,12 +439,14 @@ export function ImageCustomizerModal({
     }
 
     // Upload succeeded! Now verify accessibility & decodability
-    const check = await verifyImageWithRetries(canonicalUrl, isAnimated);
+    const check = await verifyImageWithRetries(canonicalUrl, isAnimated, seq);
+    if (check.cancelled || seq !== requestSeqRef.current || !isOpenRef.current) return;
     if (check.ok) {
       setVerificationState("verified");
       // Brief timeout so user sees green verification confirmation
       setTimeout(() => {
-        onApply(canonicalUrl, cropData);
+        if (seq !== requestSeqRef.current || !isOpenRef.current) return;
+        onApply(canonicalUrl!, cropData);
         onClose();
       }, 350);
       return;
@@ -450,8 +476,10 @@ export function ImageCustomizerModal({
     const urlToVerify = savedAssetUrl || imageSrc;
     if (!urlToVerify) return;
 
+    const seq = ++requestSeqRef.current;
     setErrorMessage(null);
-    const check = await verifyImageWithRetries(urlToVerify, isAnimated);
+    const check = await verifyImageWithRetries(urlToVerify, isAnimated, seq);
+    if (check.cancelled || seq !== requestSeqRef.current || !isOpenRef.current) return;
     if (check.ok) {
       const cropData: CropData = {
         cropX: offsetX,
@@ -461,6 +489,7 @@ export function ImageCustomizerModal({
         offsetY,
       };
       setTimeout(() => {
+        if (seq !== requestSeqRef.current || !isOpenRef.current) return;
         onApply(urlToVerify, cropData);
         onClose();
       }, 350);
