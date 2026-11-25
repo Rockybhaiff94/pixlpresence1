@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence } from "framer-motion";
 import { AlertCircle, Layers, Sliders, X } from "lucide-react";
+import { ComponentDockViewState } from "../studio/StudioFloatingDock";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -56,7 +58,10 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
 
-  const [addPanelCollapsed, setAddPanelCollapsed] = useState(false);
+  const [dockNavState, setDockNavState] = useState<ComponentDockViewState>("normal");
+  const [preservedDockRatio, setPreservedDockRatio] = useState<{ x: number; y: number } | null>(
+    null
+  );
   const [narrowRightTab, setNarrowRightTab] = useState<"layers" | "properties">("layers");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [mediaModalState, setMediaModalState] = useState<{
@@ -800,12 +805,16 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
 
       {/* Main 3-Column Studio Body */}
       <div className="flex-1 flex min-h-0 overflow-hidden relative">
-        {/* Left: Add Element Component Library */}
-        <AddElementPanel
-          onAddComponent={(type) => insertComponent(type)}
-          collapsed={addPanelCollapsed}
-          onToggleCollapse={() => setAddPanelCollapsed((p) => !p)}
-        />
+        {/* State 3: Full Elements Panel (Mutually exclusive with Component Dock) */}
+        <AnimatePresence mode="wait" initial={false}>
+          {dockNavState === "elements-panel" && (
+            <AddElementPanel
+              key="builder-elements-panel"
+              onAddComponent={(type) => insertComponent(type)}
+              onClose={() => setDockNavState("expanded-dock")}
+            />
+          )}
+        </AnimatePresence>
 
         {/* Center: Main Canvas Workspace + Floating Dock Mounted Inside */}
         <div className="flex-1 relative flex flex-col min-w-0 h-full overflow-hidden">
@@ -960,21 +969,30 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         </div>
       )}
 
-      {/* Existing Protected Dock (Mounted directly in <main> offsetParent scope, Untouched) */}
-      {React.Children.map(children, (child) => {
-        if (React.isValidElement(child)) {
-          return React.cloneElement(
-            child as React.ReactElement<Record<string, unknown>>,
-            {
-              activeTool: dockActiveTool,
-              onToggleTool: handleDockToggleTool,
-              onCloseToolPanel: handleDockCloseTool,
-              renderToolPanel: renderDockToolPanel,
+      {/* 3-State Component Dock (State 1: Normal | State 2: Expanded Dock; hidden in State 3) */}
+      <AnimatePresence mode="wait" initial={false}>
+        {dockNavState !== "elements-panel" &&
+          React.Children.map(children, (child) => {
+            if (React.isValidElement(child)) {
+              return React.cloneElement(
+                child as React.ReactElement<Record<string, unknown>>,
+                {
+                  componentDockMode: true,
+                  dockViewState: dockNavState,
+                  onDockViewStateChange: setDockNavState,
+                  onAddComponent: (type: BuilderComponentType) => insertComponent(type),
+                  savedRatio: preservedDockRatio,
+                  onRatioChange: setPreservedDockRatio,
+                  activeTool: dockActiveTool,
+                  onToggleTool: handleDockToggleTool,
+                  onCloseToolPanel: handleDockCloseTool,
+                  renderToolPanel: renderDockToolPanel,
+                }
+              );
             }
-          );
-        }
-        return child;
-      })}
+            return child;
+          })}
+      </AnimatePresence>
     </div>
   );
 };

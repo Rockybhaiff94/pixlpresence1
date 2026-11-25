@@ -10,6 +10,7 @@ import {
   UploadCloud,
   ChevronUp,
   ChevronLeft,
+  ChevronRight,
   PanelTop,
   PaintBucket,
   Layers,
@@ -22,10 +23,18 @@ import { StudioTab } from "@/types/studio";
 import { StudioView } from "./StudioTopBar";
 import { DockPortalTooltip, DockTooltipData } from "./DockPortalTooltip";
 import { getDooryToolTitle } from "@/components/editor/DooryDrawerHost";
+import { getBuilderComponentIcon } from "@/components/profile-builder/AddElementPanel";
+import {
+  LIBRARY_CATALOG_ORDER,
+  PROFILE_BUILDER_REGISTRY,
+  REGISTRY_CATEGORIES,
+} from "@/components/profile-builder/componentRegistry";
+import { BuilderComponentType } from "@/components/profile-builder/profileBuilderTypes";
 
 export type DockMode = "main" | "directory" | "settings";
 export type DockPosition = "bottom" | "top" | "left" | "right" | "float";
 export type DockOrientation = "horizontal" | "vertical";
+export type ComponentDockViewState = "normal" | "expanded-dock" | "elements-panel";
 
 export interface ToolSelection {
   type: "category" | "view";
@@ -69,6 +78,14 @@ export interface StudioFloatingDockProps {
   onDockLockChange?: (locked: boolean) => void;
   moreOptionsPanelSize?: number;
   snapThreshold?: number; // In px (150–190px range)
+
+  // 3-State Component Dock Navigation (Profile Builder Studio)
+  componentDockMode?: boolean;
+  dockViewState?: ComponentDockViewState;
+  onDockViewStateChange?: (state: ComponentDockViewState) => void;
+  onAddComponent?: (type: BuilderComponentType) => void;
+  savedRatio?: { x: number; y: number } | null;
+  onRatioChange?: (ratio: { x: number; y: number }) => void;
 }
 
 // Utility: format shortcut display for human readability
@@ -122,6 +139,27 @@ export const ADDITIONAL_DOCK_TOOLS = [
   { id: "layers", label: "Layers", icon: Layers, desc: "Manage layers & z-order hierarchy" },
 ] as const;
 
+// 3. Component Dock Primary Shortcuts (State 1: Normal Dock)
+export const PRIMARY_COMPONENT_SHORTCUTS: ReadonlyArray<{
+  type: BuilderComponentType;
+  label: string;
+  desc: string;
+}> = [
+    { type: "profile-image", label: "Profile", desc: "Profile Image & Name" },
+    { type: "subtitle", label: "Subtitle / Tagline", desc: "Add subtitle or tagline" },
+    { type: "description", label: "Description", desc: "Add rich bio description" },
+    { type: "badges-group", label: "Badges", desc: "Add achievement & status badges" },
+    { type: "social-group", label: "Social Media", desc: "Add social media links" },
+  ];
+
+// 4. Component Dock Categorized Library (State 2: Expanded Dock - Icons Only)
+export const COMPONENT_DOCK_GROUPS = REGISTRY_CATEGORIES.map((category) => ({
+  category,
+  items: LIBRARY_CATALOG_ORDER.map((type) => PROFILE_BUILDER_REGISTRY[type]).filter(
+    (entry) => entry.category === category.id
+  ),
+}));
+
 export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   position: externalPosition,
   onPositionChange,
@@ -135,11 +173,30 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   isDockLocked: propLocked,
   onDockLockChange,
   snapThreshold: propSnapThreshold,
+  componentDockMode = false,
+  dockViewState,
+  onDockViewStateChange,
+  onAddComponent,
+  savedRatio,
+  onRatioChange,
 }) => {
   const prefersReducedMotion = useReducedMotion();
 
   // Collapsed dock additional-tools expansion state (preserves pre-panel bar state)
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
+  const [internalDockViewState, setInternalDockViewState] =
+    useState<ComponentDockViewState>("normal");
+  const activeDockViewState: ComponentDockViewState = dockViewState ?? internalDockViewState;
+  const updateDockViewState = useCallback(
+    (next: ComponentDockViewState) => {
+      setInternalDockViewState(next);
+      onDockViewStateChange?.(next);
+    },
+    [onDockViewStateChange]
+  );
+  const isExpandedEffective = componentDockMode
+    ? activeDockViewState === "expanded-dock"
+    : isExpanded;
 
   const [dockTooltip, setDockTooltip] = useState<DockTooltipData | null>(null);
   const dockRef = useRef<HTMLDivElement>(null);
@@ -151,8 +208,8 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
     activeTool === "media"
       ? "images"
       : activeTool === "canvas"
-      ? "background"
-      : activeTool || null;
+        ? "background"
+        : activeTool || null;
 
   // Morph Panel Visual State Machine & Last Selected Tool tracking:
   // Keeps active panel content fading out gracefully during close contraction
@@ -257,7 +314,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
 
   // Position & Edge Attachment State
   const [edge, setEdge] = useState<DockPosition>(externalPosition || "bottom");
-  const [ratio, setRatio] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
+  const [ratio, setRatio] = useState<{ x: number; y: number }>(() => savedRatio ?? { x: 0.5, y: 0.5 });
 
   // SINGLE SOURCE OF TRUTH FOR ORIENTATION:
   // Top and Bottom force "horizontal".
@@ -270,13 +327,13 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
       try {
         const saved = localStorage.getItem("pixel_studio_dock_orientation") as DockOrientation;
         if (saved === "horizontal" || saved === "vertical") return saved;
-      } catch {}
+      } catch { }
     }
     return "horizontal";
   });
 
   // Unified single source of truth boolean read by container, children, and measurements
-  const isVertical = orientation === "vertical";
+  const isVertical = componentDockMode ? true : orientation === "vertical";
 
   // Customizable Lock State & Shortcut (props override internal state when controlled)
   const [internalLocked, setIsLocked] = useState<boolean>(propLocked ?? false);
@@ -293,24 +350,26 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
       setEdge(newEdge);
       onPositionChange(newEdge);
 
-      if (newEdge === "top" || newEdge === "bottom") {
+      if (componentDockMode) {
+        setOrientation("vertical");
+      } else if (newEdge === "top" || newEdge === "bottom") {
         setOrientation("horizontal");
         try {
           localStorage.setItem("pixel_studio_dock_orientation", "horizontal");
-        } catch {}
+        } catch { }
       } else if (newEdge === "left" || newEdge === "right") {
         setOrientation("vertical");
         try {
           localStorage.setItem("pixel_studio_dock_orientation", "vertical");
-        } catch {}
+        } catch { }
       }
       // "float" preserves existing orientation!
 
       try {
         localStorage.setItem("pixel_studio_dock_position", newEdge);
-      } catch {}
+      } catch { }
     },
-    [onPositionChange]
+    [componentDockMode, onPositionChange]
   );
 
   // Unified Atomic Drag State Machine
@@ -417,7 +476,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         if (savedShortcut) {
           setLockShortcut(savedShortcut);
         }
-      } catch {}
+      } catch { }
     });
     return () => window.cancelAnimationFrame(rafId);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -487,7 +546,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
           const next = !prev;
           try {
             localStorage.setItem("pixel_studio_dock_locked", String(next));
-          } catch {}
+          } catch { }
           onDockLockChange?.(next);
           return next;
         });
@@ -562,7 +621,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
           if (dockRef.current.hasPointerCapture?.(pointerId)) {
             dockRef.current.releasePointerCapture(pointerId);
           }
-        } catch {}
+        } catch { }
       }
 
       if (didDrag) {
@@ -608,14 +667,14 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         const minDist = Math.min(distTop, distBottom, distLeft, distRight);
 
         let newEdge: DockPosition = "float";
-        let nextOrientation: DockOrientation = orientation;
+        let nextOrientation: DockOrientation = componentDockMode ? "vertical" : orientation;
         if (minDist <= snapThreshold) {
           if (minDist === distBottom) {
             newEdge = "bottom";
-            nextOrientation = "horizontal";
+            nextOrientation = componentDockMode ? "vertical" : "horizontal";
           } else if (minDist === distTop) {
             newEdge = "top";
-            nextOrientation = "horizontal";
+            nextOrientation = componentDockMode ? "vertical" : "horizontal";
           } else if (minDist === distLeft) {
             newEdge = "left";
             nextOrientation = "vertical";
@@ -640,9 +699,11 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
           Math.min(1, (dockRect.top - containerRect.top) / maxAvailableY)
         );
 
+        const nextRatio = { x: ratioX, y: ratioY };
         setOrientation(nextOrientation);
         setEdge(newEdge);
-        setRatio({ x: ratioX, y: ratioY });
+        setRatio(nextRatio);
+        onRatioChange?.(nextRatio);
         setDragState({ isDragging: false, currentPos: null });
 
         onPositionChange(newEdge);
@@ -654,13 +715,21 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
             JSON.stringify({ edge: newEdge, ratioX, ratioY })
           );
           localStorage.setItem("pixel_studio_dock_orientation", nextOrientation);
-        } catch {}
+        } catch { }
       } else {
         suppressNextClickRef.current = false;
         setDragState({ isDragging: false, currentPos: null });
       }
     },
-    [clearSuppressClickTimer, getHostBoundsRect, orientation, snapThreshold, onPositionChange]
+    [
+      clearSuppressClickTimer,
+      componentDockMode,
+      getHostBoundsRect,
+      onPositionChange,
+      onRatioChange,
+      orientation,
+      snapThreshold,
+    ]
   );
 
   const handlePointerCancel = useCallback(
@@ -675,7 +744,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
           if (dockRef.current.hasPointerCapture?.(e.pointerId)) {
             dockRef.current.releasePointerCapture(e.pointerId);
           }
-        } catch {}
+        } catch { }
       }
       setDragState({ isDragging: false, currentPos: null });
     },
@@ -699,7 +768,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         hasMovedPastThresholdRef.current = true;
         try {
           dockRef.current?.setPointerCapture?.(pointerId);
-        } catch {}
+        } catch { }
       }
 
       if (hasMovedPastThresholdRef.current) {
@@ -849,30 +918,41 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
 
   // Preserved collapsed/expanded-tools bar dimensions (single source of truth)
   const collapsedWidth = isVertical ? 44 : Math.min(containerWidth - 16, 264);
-  const collapsedHeight = isVertical ? Math.min(containerHeight - 16, 264) : 44;
+  const collapsedHeight = componentDockMode
+    ? Math.min(containerHeight - 16, 268)
+    : isVertical
+      ? Math.min(containerHeight - 16, 264)
+      : 44;
   const expandedWidth = isVertical ? 44 : Math.min(containerWidth - 16, 352);
-  const expandedHeight = isVertical ? Math.min(containerHeight - 16, 352) : 44;
+  const expandedHeight = componentDockMode
+    ? Math.min(Math.max(collapsedHeight, containerHeight - 16), 636)
+    : isVertical
+      ? Math.min(containerHeight - 16, 352)
+      : 44;
 
-  const barWidth = Math.min(containerWidth, isExpanded ? expandedWidth : collapsedWidth);
-  const barHeight = Math.min(containerHeight, isExpanded ? expandedHeight : collapsedHeight);
+  const barWidth = Math.min(containerWidth, isExpandedEffective ? expandedWidth : collapsedWidth);
+  const barHeight = Math.min(containerHeight, isExpandedEffective ? expandedHeight : collapsedHeight);
 
   const clampAlongAxis = (ratioVal: number, maxSpan: number, margin = 8) => {
     if (maxSpan <= margin * 2) return Math.max(0, maxSpan / 2);
     return Math.max(margin, Math.min(maxSpan - margin, ratioVal * maxSpan));
   };
 
-  // Anchor from collapsed coordinates so the bottom/trailing More toggle stays stationary during expansion
+  // Anchor from collapsed coordinates so the dock position remains stable across expand/collapse
   const collapsedMaxX = Math.max(0, containerWidth - collapsedWidth);
   const collapsedMaxY = Math.max(0, containerHeight - collapsedHeight);
   const collapsedLeft = clampAlongAxis(ratio.x, collapsedMaxX, 8);
   const collapsedTop = clampAlongAxis(ratio.y, collapsedMaxY, 8);
 
   const barRatioLeft =
-    isExpanded && !isVertical
+    isExpandedEffective && !isVertical
       ? Math.max(8, collapsedLeft + collapsedWidth - barWidth)
       : collapsedLeft;
-  const barRatioTop =
-    isExpanded && isVertical
+  const barRatioTop = componentDockMode
+    ? isExpandedEffective
+      ? Math.max(8, Math.min(Math.max(8, containerHeight - barHeight - 8), collapsedTop))
+      : collapsedTop
+    : isExpandedEffective && isVertical
       ? Math.max(8, collapsedTop + collapsedHeight - barHeight)
       : collapsedTop;
 
@@ -1109,43 +1189,62 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   const targetShellGeometry =
     isDragging && dragCurrentPos
       ? {
-          left: dragCurrentPos.x,
-          top: dragCurrentPos.y,
-          width: dockBarRect.width,
-          height: dockBarRect.height,
-          ...getShellCornerRadii(false),
-        }
+        left: dragCurrentPos.x,
+        top: dragCurrentPos.y,
+        width: dockBarRect.width,
+        height: dockBarRect.height,
+        opacity: 1,
+        x: 0,
+        ...getShellCornerRadii(false),
+      }
       : isPanelExpanded
-      ? {
+        ? {
           left: expandedPanelRect.left,
           top: expandedPanelRect.top,
           width: expandedPanelRect.width,
           height: expandedPanelRect.height,
+          opacity: 1,
+          x: 0,
           ...getShellCornerRadii(true),
         }
-      : {
+        : {
           left: dockBarRect.left,
           top: dockBarRect.top,
           width: dockBarRect.width,
           height: dockBarRect.height,
+          opacity: 1,
+          x: 0,
           ...getShellCornerRadii(false),
         };
 
   const shellTransition = prefersReducedMotion
     ? { duration: 0.01 }
     : isDragging
-    ? { duration: 0 }
-    : isPanelExpanded
-    ? { duration: 0.34, ease: [0.16, 1, 0.3, 1] as const }
-    : isClosingPanel
-    ? { duration: 0.3, ease: [0.4, 0, 0.2, 1] as const }
-    : { duration: 0.26, ease: [0.16, 1, 0.3, 1] as const };
+      ? { duration: 0 }
+      : isPanelExpanded
+        ? { duration: 0.34, ease: [0.16, 1, 0.3, 1] as const }
+        : isClosingPanel
+          ? { duration: 0.3, ease: [0.4, 0, 0.2, 1] as const }
+          : { duration: 0.26, ease: [0.16, 1, 0.3, 1] as const };
 
   return (
     <motion.div
       ref={dockRef}
-      initial={false}
+      initial={
+        componentDockMode
+          ? prefersReducedMotion
+            ? { opacity: 1 }
+            : { opacity: 0, x: -16 }
+          : false
+      }
       animate={targetShellGeometry}
+      exit={
+        componentDockMode
+          ? prefersReducedMotion
+            ? { opacity: 0, transition: { duration: 0.01 } }
+            : { opacity: 0, x: -16, transition: { duration: 0.12, ease: "easeIn" } }
+          : undefined
+      }
       transition={shellTransition}
       style={{
         position: "absolute",
@@ -1159,13 +1258,13 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
       onClickCapture={handleClickCapture}
-      className={`select-none font-mono pointer-events-auto ${
-        isDragging ? "cursor-grabbing" : ""
-      }`}
+      className={`select-none font-mono pointer-events-auto ${isDragging ? "cursor-grabbing" : ""
+        }`}
       data-testid="studio-floating-dock"
       data-dock-orientation={orientation}
       data-dock-edge={edge}
-      data-dock-expanded={isExpanded}
+      data-dock-expanded={isExpandedEffective}
+      data-dock-view={componentDockMode ? activeDockViewState : isExpanded ? "expanded" : "normal"}
       data-dock-panel-open={isPanelExpanded}
       data-active-tool={displayTool || ""}
       data-last-tool={lastSelectedTool || ""}
@@ -1213,8 +1312,8 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                 prefersReducedMotion
                   ? { duration: 0.01 }
                   : isClosingPanel
-                  ? { duration: 0.14, ease: "easeIn" }
-                  : { duration: 0.19, delay: 0.06, ease: "easeOut" }
+                    ? { duration: 0.14, ease: "easeIn" }
+                    : { duration: 0.19, delay: 0.06, ease: "easeOut" }
               }
               className="flex flex-col w-full h-full min-h-0"
             >
@@ -1257,10 +1356,11 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                   ? { duration: 0.01 }
                   : { duration: 0.14, ease: "easeOut" }
               }
-              className={`flex ${
-                isVertical ? "flex-col py-1.5 px-1" : "flex-row px-2 py-1"
-              } items-center w-full h-full gap-1.5`}
-              data-testid={isExpanded ? "dock-expanded-container" : "dock-collapsed-container"}
+              className={`flex ${isVertical ? "flex-col py-1.5 px-1" : "flex-row px-2 py-1"
+                } items-center w-full h-full gap-1.5`}
+              data-testid={
+                isExpandedEffective ? "dock-expanded-container" : "dock-collapsed-container"
+              }
             >
               {/* Top / Leading Move Handle (Single visible control for movement & lock) */}
               <button
@@ -1271,7 +1371,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                   setIsLocked(nextLock);
                   try {
                     localStorage.setItem("pixel_studio_dock_locked", String(nextLock));
-                  } catch {}
+                  } catch { }
                   onDockLockChange?.(nextLock);
                 }}
                 onMouseEnter={(e) =>
@@ -1285,11 +1385,10 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                   })
                 }
                 onMouseLeave={hideTooltip}
-                className={`transition-colors flex items-center justify-center shrink-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 cursor-pointer ${
-                  isLocked
-                    ? "text-amber-400 hover:text-amber-300"
-                    : "text-neutral-500 hover:text-neutral-300 cursor-grab active:cursor-grabbing"
-                } ${isVertical ? "w-8 h-4 my-0.5" : "w-4 h-8 mx-0.5"}`}
+                className={`transition-colors flex items-center justify-center shrink-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 cursor-pointer ${isLocked
+                  ? "text-amber-400 hover:text-amber-300"
+                  : "text-neutral-500 hover:text-neutral-300 cursor-grab active:cursor-grabbing"
+                  } ${isVertical ? "w-8 h-4 my-0.5" : "w-4 h-8 mx-0.5"}`}
                 title={isLocked ? "Dock Locked" : "Drag to move dock"}
                 aria-label={isLocked ? "Unlock dock position" : "Drag handle or click to lock dock"}
                 aria-pressed={isLocked}
@@ -1303,178 +1402,376 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                 )}
               </button>
 
-              {/* 5 Primary Tool Icons */}
-              {PRIMARY_DOCK_TOOLS.map((tool) => {
-                const Icon = tool.icon;
-                const active = isToolActive(tool.id);
+              {/* Component Dock Navigation (State 1: Normal 5 Icons | State 2: Expanded 17 Icons Grouped) */}
+              {componentDockMode ? (
+                <>
+                  {!isExpandedEffective ? (
+                    <div
+                      className="flex flex-col items-center gap-1.5 w-full"
+                      data-testid="dock-primary-shortcuts"
+                    >
+                      {PRIMARY_COMPONENT_SHORTCUTS.map((shortcut) => {
+                        const Icon = getBuilderComponentIcon(shortcut.type);
+                        return (
+                          <button
+                            key={shortcut.type}
+                            type="button"
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData(
+                                "application/x-pixel-builder-type",
+                                shortcut.type
+                              );
+                              e.dataTransfer.effectAllowed = "copy";
+                            }}
+                            onClick={() => {
+                              hideTooltip();
+                              onAddComponent?.(shortcut.type);
+                            }}
+                            onMouseEnter={(e) =>
+                              showTooltip(e, {
+                                id: `dock-component-${shortcut.type}`,
+                                label: shortcut.label,
+                                desc: shortcut.desc,
+                              })
+                            }
+                            onMouseLeave={hideTooltip}
+                            onFocus={(e) =>
+                              showTooltip(e, {
+                                id: `dock-component-${shortcut.type}`,
+                                label: shortcut.label,
+                                desc: shortcut.desc,
+                              })
+                            }
+                            onBlur={hideTooltip}
+                            data-testid={`dock-component-${shortcut.type}`}
+                            className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-150 relative cursor-pointer shrink-0 text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                            aria-label={shortcut.label}
+                          >
+                            <Icon size={16} />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div
+                      className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex flex-col items-center gap-1 py-0.5"
+                      data-testid="dock-expanded-components-list"
+                    >
+                      {COMPONENT_DOCK_GROUPS.map(({ category, items }, groupIndex) => (
+                        <React.Fragment key={category.id}>
+                          {groupIndex > 0 && (
+                            <div
+                              className="w-5 h-[1px] bg-white/15 my-0.5 shrink-0"
+                              data-testid={`dock-group-separator-${category.id}`}
+                              role="separator"
+                            />
+                          )}
+                          {items.map((item) => {
+                            const Icon = getBuilderComponentIcon(item.type);
+                            return (
+                              <button
+                                key={item.type}
+                                type="button"
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData(
+                                    "application/x-pixel-builder-type",
+                                    item.type
+                                  );
+                                  e.dataTransfer.effectAllowed = "copy";
+                                }}
+                                onClick={() => {
+                                  hideTooltip();
+                                  onAddComponent?.(item.type);
+                                }}
+                                onMouseEnter={(e) =>
+                                  showTooltip(e, {
+                                    id: `dock-component-${item.type}`,
+                                    label: item.label,
+                                    desc: item.shortDesc,
+                                  })
+                                }
+                                onMouseLeave={hideTooltip}
+                                onFocus={(e) =>
+                                  showTooltip(e, {
+                                    id: `dock-component-${item.type}`,
+                                    label: item.label,
+                                    desc: item.shortDesc,
+                                  })
+                                }
+                                onBlur={hideTooltip}
+                                data-testid={`dock-component-${item.type}`}
+                                className="w-8 h-7 rounded-xl flex items-center justify-center transition-colors duration-150 relative cursor-pointer shrink-0 text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                                aria-label={item.label}
+                              >
+                                <Icon size={15} />
+                              </button>
+                            );
+                          })}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  )}
 
-                return (
+                  {/* Bottom Expand / Collapse Chevron Button */}
                   <button
-                    key={tool.id}
                     type="button"
-                    onClick={(e) => handleToolClick(tool.id, e.currentTarget)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      hideTooltip();
+                      updateDockViewState(isExpandedEffective ? "normal" : "expanded-dock");
+                    }}
                     onMouseEnter={(e) =>
                       showTooltip(e, {
-                        id: `dock-${tool.id}`,
-                        label: tool.label,
-                        desc: tool.desc,
+                        id: "dock-expand",
+                        label: isExpandedEffective ? "Collapse Dock" : "Expand Dock",
+                        desc: isExpandedEffective
+                          ? "Back to 5 primary shortcuts"
+                          : "Show all component categories",
                       })
                     }
                     onMouseLeave={hideTooltip}
                     onFocus={(e) =>
                       showTooltip(e, {
-                        id: `dock-${tool.id}`,
-                        label: tool.label,
-                        desc: tool.desc,
+                        id: "dock-expand",
+                        label: isExpandedEffective ? "Collapse Dock" : "Expand Dock",
+                        desc: isExpandedEffective
+                          ? "Back to 5 primary shortcuts"
+                          : "Show all component categories",
                       })
                     }
                     onBlur={hideTooltip}
-                    data-testid={`dock-tool-${tool.id}`}
-                    data-active={active}
-                    className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-150 relative cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${
-                      active
-                        ? "bg-white/18 text-white border border-white/25 shadow-sm shadow-black/40"
-                        : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
-                    }`}
-                    aria-label={tool.label}
-                    aria-expanded={active}
-                    aria-controls="dock-morphed-tool-panel"
+                    data-testid="dock-more-toggle"
+                    data-expanded={isExpandedEffective}
+                    className="w-8 h-8 rounded-full flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0 mt-auto bg-white/10 hover:bg-white/20 border border-white/15 text-neutral-200 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                    aria-label={isExpandedEffective ? "Collapse dock" : "Expand dock"}
+                    aria-expanded={isExpandedEffective}
                   >
-                    <Icon size={16} />
-                    {active && (
-                      <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#d71920]" />
+                    <motion.span
+                      animate={{ rotate: isExpandedEffective ? 0 : 180 }}
+                      transition={prefersReducedMotion ? { duration: 0.01 } : { duration: 0.2 }}
+                      className="flex items-center justify-center"
+                    >
+                      <ChevronUp size={15} />
+                    </motion.span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  {/* 5 Primary Tool Icons */}
+                  {PRIMARY_DOCK_TOOLS.map((tool) => {
+                    const Icon = tool.icon;
+                    const active = isToolActive(tool.id);
+
+                    return (
+                      <button
+                        key={tool.id}
+                        type="button"
+                        onClick={(e) => handleToolClick(tool.id, e.currentTarget)}
+                        onMouseEnter={(e) =>
+                          showTooltip(e, {
+                            id: `dock-${tool.id}`,
+                            label: tool.label,
+                            desc: tool.desc,
+                          })
+                        }
+                        onMouseLeave={hideTooltip}
+                        onFocus={(e) =>
+                          showTooltip(e, {
+                            id: `dock-${tool.id}`,
+                            label: tool.label,
+                            desc: tool.desc,
+                          })
+                        }
+                        onBlur={hideTooltip}
+                        data-testid={`dock-tool-${tool.id}`}
+                        data-active={active}
+                        className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-150 relative cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${active
+                          ? "bg-white/18 text-white border border-white/25 shadow-sm shadow-black/40"
+                          : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
+                          }`}
+                        aria-label={tool.label}
+                        aria-expanded={active}
+                        aria-controls="dock-morphed-tool-panel"
+                      >
+                        <Icon size={16} />
+                        {active && (
+                          <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#d71920]" />
+                        )}
+                      </button>
+                    );
+                  })}
+
+                  {/* Additional Tools Revealed ABOVE Bottom Toggle (No Redundant Move/Lock Controls) */}
+                  <AnimatePresence initial={false}>
+                    {isExpanded && (
+                      <motion.div
+                        key="dock-additional-tools"
+                        initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.94 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.94 }}
+                        transition={
+                          prefersReducedMotion
+                            ? { duration: 0.01 }
+                            : { duration: 0.17, ease: "easeOut" }
+                        }
+                        className={`flex items-center shrink-0 ${isVertical ? "flex-col gap-1.5" : "flex-row gap-1.5"
+                          }`}
+                        data-testid="dock-additional-tools-group"
+                      >
+                        {/* Orientation-aligned Divider */}
+                        <div
+                          className={`bg-white/15 shrink-0 ${isVertical ? "w-5 h-[1px] my-0.5" : "w-[1px] h-5 mx-0.5"
+                            }`}
+                        />
+
+                        {/* Additional Tools: Canvas & Layers */}
+                        {ADDITIONAL_DOCK_TOOLS.map((tool) => {
+                          const Icon = tool.icon;
+                          const active = isToolActive(tool.id);
+
+                          return (
+                            <button
+                              key={tool.id}
+                              type="button"
+                              onClick={(e) => handleToolClick(tool.id, e.currentTarget)}
+                              onMouseEnter={(e) =>
+                                showTooltip(e, {
+                                  id: `dock-${tool.id}`,
+                                  label: tool.label,
+                                  desc: tool.desc,
+                                })
+                              }
+                              onMouseLeave={hideTooltip}
+                              onFocus={(e) =>
+                                showTooltip(e, {
+                                  id: `dock-${tool.id}`,
+                                  label: tool.label,
+                                  desc: tool.desc,
+                                })
+                              }
+                              onBlur={hideTooltip}
+                              data-testid={`dock-tool-${tool.id}`}
+                              data-active={active}
+                              className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-150 relative cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${active
+                                ? "bg-white/18 text-white border border-white/25 shadow-sm shadow-black/40"
+                                : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
+                                }`}
+                              aria-label={tool.label}
+                              aria-expanded={active}
+                              aria-controls="dock-morphed-tool-panel"
+                            >
+                              <Icon size={16} />
+                              {active && (
+                                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#d71920]" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Persistent Bottom / Trailing More Toggle (Anchored in place; switches PanelTop <-> Arrow) */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      hideTooltip();
+                      setIsExpanded((prev) => !prev);
+                    }}
+                    onMouseEnter={(e) =>
+                      showTooltip(e, {
+                        id: "dock-expand",
+                        label: isExpanded ? "Collapse Tools" : "More Tools",
+                        desc: isExpanded
+                          ? "Hide additional canvas & layer tools"
+                          : "Reveal Canvas & Layers tools above",
+                      })
+                    }
+                    onMouseLeave={hideTooltip}
+                    onFocus={(e) =>
+                      showTooltip(e, {
+                        id: "dock-expand",
+                        label: isExpanded ? "Collapse Tools" : "More Tools",
+                        desc: isExpanded
+                          ? "Hide additional canvas & layer tools"
+                          : "Reveal Canvas & Layers tools above",
+                      })
+                    }
+                    onBlur={hideTooltip}
+                    data-testid="dock-more-toggle"
+                    data-expanded={isExpanded}
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${isVertical ? "mt-auto" : "ml-auto"
+                      } ${isExpanded
+                        ? "text-white bg-white/12 hover:bg-white/20 border border-white/15"
+                        : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
+                      }`}
+                    aria-label={isExpanded ? "Collapse additional tools" : "More tools"}
+                    aria-expanded={isExpanded}
+                  >
+                    {isExpanded ? (
+                      isVertical ? (
+                        <ChevronUp size={15} />
+                      ) : (
+                        <ChevronLeft size={15} />
+                      )
+                    ) : (
+                      <PanelTop size={16} />
                     )}
                   </button>
-                );
-              })}
-
-              {/* Additional Tools Revealed ABOVE Bottom Toggle (No Redundant Move/Lock Controls) */}
-              <AnimatePresence initial={false}>
-                {isExpanded && (
-                  <motion.div
-                    key="dock-additional-tools"
-                    initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.94 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.94 }}
-                    transition={
-                      prefersReducedMotion
-                        ? { duration: 0.01 }
-                        : { duration: 0.17, ease: "easeOut" }
-                    }
-                    className={`flex items-center shrink-0 ${
-                      isVertical ? "flex-col gap-1.5" : "flex-row gap-1.5"
-                    }`}
-                    data-testid="dock-additional-tools-group"
-                  >
-                    {/* Orientation-aligned Divider */}
-                    <div
-                      className={`bg-white/15 shrink-0 ${
-                        isVertical ? "w-5 h-[1px] my-0.5" : "w-[1px] h-5 mx-0.5"
-                      }`}
-                    />
-
-                    {/* Additional Tools: Canvas & Layers */}
-                    {ADDITIONAL_DOCK_TOOLS.map((tool) => {
-                      const Icon = tool.icon;
-                      const active = isToolActive(tool.id);
-
-                      return (
-                        <button
-                          key={tool.id}
-                          type="button"
-                          onClick={(e) => handleToolClick(tool.id, e.currentTarget)}
-                          onMouseEnter={(e) =>
-                            showTooltip(e, {
-                              id: `dock-${tool.id}`,
-                              label: tool.label,
-                              desc: tool.desc,
-                            })
-                          }
-                          onMouseLeave={hideTooltip}
-                          onFocus={(e) =>
-                            showTooltip(e, {
-                              id: `dock-${tool.id}`,
-                              label: tool.label,
-                              desc: tool.desc,
-                            })
-                          }
-                          onBlur={hideTooltip}
-                          data-testid={`dock-tool-${tool.id}`}
-                          data-active={active}
-                          className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-150 relative cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${
-                            active
-                              ? "bg-white/18 text-white border border-white/25 shadow-sm shadow-black/40"
-                              : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
-                          }`}
-                          aria-label={tool.label}
-                          aria-expanded={active}
-                          aria-controls="dock-morphed-tool-panel"
-                        >
-                          <Icon size={16} />
-                          {active && (
-                            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#d71920]" />
-                          )}
-                        </button>
-                      );
-                    })}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Persistent Bottom / Trailing More Toggle (Anchored in place; switches PanelTop <-> Arrow) */}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  hideTooltip();
-                  setIsExpanded((prev) => !prev);
-                }}
-                onMouseEnter={(e) =>
-                  showTooltip(e, {
-                    id: "dock-expand",
-                    label: isExpanded ? "Collapse Tools" : "More Tools",
-                    desc: isExpanded
-                      ? "Hide additional canvas & layer tools"
-                      : "Reveal Canvas & Layers tools above",
-                  })
-                }
-                onMouseLeave={hideTooltip}
-                onFocus={(e) =>
-                  showTooltip(e, {
-                    id: "dock-expand",
-                    label: isExpanded ? "Collapse Tools" : "More Tools",
-                    desc: isExpanded
-                      ? "Hide additional canvas & layer tools"
-                      : "Reveal Canvas & Layers tools above",
-                  })
-                }
-                onBlur={hideTooltip}
-                data-testid="dock-more-toggle"
-                data-expanded={isExpanded}
-                className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${
-                  isVertical ? "mt-auto" : "ml-auto"
-                } ${
-                  isExpanded
-                    ? "text-white bg-white/12 hover:bg-white/20 border border-white/15"
-                    : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
-                }`}
-                aria-label={isExpanded ? "Collapse additional tools" : "More tools"}
-                aria-expanded={isExpanded}
-              >
-                {isExpanded ? (
-                  isVertical ? (
-                    <ChevronUp size={15} />
-                  ) : (
-                    <ChevronLeft size={15} />
-                  )
-                ) : (
-                  <PanelTop size={16} />
-                )}
-              </button>
+                </>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
       </div>
+
+      {/* State 2 -> State 3 Side Expansion Control (Opens Full Elements Panel) */}
+      <AnimatePresence>
+        {componentDockMode && isExpandedEffective && !showMorphPanelShell && !isDragging && (
+          <motion.button
+            key="dock-open-elements-panel"
+            type="button"
+            initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.85, x: -4 }}
+            animate={{ opacity: 1, scale: 1, x: 0 }}
+            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.85, x: -4 }}
+            transition={
+              prefersReducedMotion ? { duration: 0.01 } : { duration: 0.16, ease: "easeOut" }
+            }
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              hideTooltip();
+              updateDockViewState("elements-panel");
+            }}
+            onMouseEnter={(e) =>
+              showTooltip(e, {
+                id: "dock-open-elements-panel",
+                label: "Open Elements Panel",
+                desc: "View full component list with names & search",
+              })
+            }
+            onMouseLeave={hideTooltip}
+            onFocus={(e) =>
+              showTooltip(e, {
+                id: "dock-open-elements-panel",
+                label: "Open Elements Panel",
+                desc: "View full component list with names & search",
+              })
+            }
+            onBlur={hideTooltip}
+            className={`absolute top-1/2 -translate-y-1/2 z-30 w-5 h-9 rounded-lg bg-[#14141c] hover:bg-[#1e1e29] border border-white/20 text-neutral-300 hover:text-white shadow-lg flex items-center justify-center cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${edge === "right" ? "-left-3" : "-right-3"
+              }`}
+            aria-label="Open Elements panel"
+            data-testid="dock-open-elements-panel"
+          >
+            {edge === "right" ? <ChevronLeft size={13} /> : <ChevronRight size={13} />}
+          </motion.button>
+        )}
+      </AnimatePresence>
 
       {/* Portaled Collision-Aware Floating Tooltip */}
       <DockPortalTooltip tooltip={showMorphPanelShell ? null : dockTooltip} dockEdge={edge} />

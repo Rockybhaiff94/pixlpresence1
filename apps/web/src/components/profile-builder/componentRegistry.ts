@@ -241,7 +241,7 @@ export const PROFILE_BUILDER_REGISTRY: Record<BuilderComponentType, ComponentReg
   "custom-component": {
     type: "custom-component",
     category: "advanced",
-    label: "Custom Component",
+    label: "Custom Components",
     shortDesc: "Configurable monochrome status widget",
     defaultWidth: 260,
     defaultHeight: 72,

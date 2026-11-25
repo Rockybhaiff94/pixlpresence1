@@ -10,8 +10,8 @@ export default function CustomizePage() {
   const { user } = useAuth();
   const workspaceContainerRef = useRef<HTMLDivElement>(null);
 
-  // Initialize matching SSR ("bottom"), then hydrate saved dock position cleanly without hydration mismatch
-  const [dockPosition, setDockPosition] = useState<DockPosition>("bottom");
+  // Initialize vertically anchored on the left edge, then hydrate saved dock position post-mount
+  const [dockPosition, setDockPosition] = useState<DockPosition>("left");
 
   useEffect(() => {
     const rafId = window.requestAnimationFrame(() => {

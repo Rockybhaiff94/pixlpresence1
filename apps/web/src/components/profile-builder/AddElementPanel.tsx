@@ -1,12 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   AlignLeft,
   Award,
   Box,
   ChevronDown,
   ChevronRight,
+  Code2,
   CreditCard,
   FileText,
   Gamepad2,
@@ -18,7 +20,6 @@ import {
   PaintBucket,
   Search,
   Share2,
-  Sparkles,
   Type,
   User,
   X,
@@ -35,6 +36,7 @@ interface AddElementPanelProps {
   onAddComponent: (type: BuilderComponentType) => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  onClose?: () => void;
 }
 
 export function getBuilderComponentIcon(
@@ -73,7 +75,7 @@ export function getBuilderComponentIcon(
       return PaintBucket;
     case "custom-component":
     default:
-      return Sparkles;
+      return Code2;
   }
 }
 
@@ -81,7 +83,9 @@ export const AddElementPanel: React.FC<AddElementPanelProps> = ({
   onAddComponent,
   collapsed = false,
   onToggleCollapse,
+  onClose,
 }) => {
+  const prefersReducedMotion = useReducedMotion();
   const [search, setSearch] = useState("");
   const [openCategories, setOpenCategories] = useState<Record<RegistryCategoryId, boolean>>({
     profile: true,
@@ -90,20 +94,10 @@ export const AddElementPanel: React.FC<AddElementPanelProps> = ({
   });
 
   if (collapsed) {
-    return (
-      <div className="w-9 shrink-0 bg-[#09090d] border-r border-[#1d1d24] flex flex-col items-center py-3">
-        <button
-          type="button"
-          onClick={onToggleCollapse}
-          className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 cursor-pointer"
-          title="Expand Add Element panel"
-          data-testid="add-panel-expand"
-        >
-          <ChevronRight size={14} />
-        </button>
-      </div>
-    );
+    return null;
   }
+
+  const handleClose = onClose || onToggleCollapse;
 
   const query = search.trim().toLowerCase();
 
@@ -127,22 +121,36 @@ export const AddElementPanel: React.FC<AddElementPanelProps> = ({
   const totalMatches = categorizedGroups.reduce((acc, g) => acc + g.items.length, 0);
 
   return (
-    <aside
-      className="w-52 shrink-0 bg-[#09090d] border-r border-[#1d1d24] flex flex-col h-full overflow-hidden font-mono select-none"
+    <motion.aside
+      initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, x: -24 }}
+      animate={{
+        opacity: 1,
+        x: 0,
+        transition: prefersReducedMotion
+          ? { duration: 0.01 }
+          : { duration: 0.2, delay: 0.1, ease: [0.16, 1, 0.3, 1] as const },
+      }}
+      exit={
+        prefersReducedMotion
+          ? { opacity: 0, transition: { duration: 0.01 } }
+          : { opacity: 0, x: -24, transition: { duration: 0.12, ease: "easeIn" as const } }
+      }
+      className="w-56 shrink-0 bg-[#09090d] border-r border-[#1d1d24] flex flex-col h-full overflow-hidden font-mono select-none absolute inset-y-0 left-0 z-40 sm:static sm:z-auto shadow-2xl sm:shadow-none"
       data-testid="builder-add-element-panel"
     >
       {/* Header */}
       <div className="px-3 py-2.5 border-b border-[#191921] flex items-center justify-between">
-        <span className="text-xs font-bold text-white tracking-tight">Add Element</span>
-        {onToggleCollapse && (
+        <span className="text-xs font-bold text-white tracking-tight">Elements</span>
+        {handleClose && (
           <button
             type="button"
-            onClick={onToggleCollapse}
-            className="p-1 rounded text-neutral-500 hover:text-white hover:bg-white/10 cursor-pointer"
-            title="Collapse Add Element panel"
-            data-testid="add-panel-collapse"
+            onClick={handleClose}
+            className="p-1 rounded text-neutral-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            title="Return to Expanded Dock"
+            aria-label="Close Elements panel"
+            data-testid="elements-panel-close"
           >
-            <X size={13} />
+            <X size={14} />
           </button>
         )}
       </div>
@@ -174,13 +182,18 @@ export const AddElementPanel: React.FC<AddElementPanelProps> = ({
 
       {/* Expandable Categories */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-2.5 space-y-3">
-        {categorizedGroups.map(({ category, items }) => {
+        {categorizedGroups.map(({ category, items }, groupIndex) => {
           if (query && items.length === 0) return null;
 
           const isOpen = query ? true : openCategories[category.id];
 
           return (
-            <div key={category.id} className="space-y-1.5">
+            <div
+              key={category.id}
+              className={`space-y-1.5 ${groupIndex > 0 ? "pt-2.5 border-t border-[#191921]" : ""
+                }`}
+              data-testid={`elements-category-${category.id}`}
+            >
               <button
                 type="button"
                 onClick={() => toggleCat(category.id)}
@@ -246,6 +259,6 @@ export const AddElementPanel: React.FC<AddElementPanelProps> = ({
           </div>
         )}
       </div>
-    </aside>
+    </motion.aside>
   );
 };

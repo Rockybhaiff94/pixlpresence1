@@ -72,7 +72,7 @@ async function setupContext(browser) {
     if (url.includes("/api/profile/me") && method === "PATCH") {
       try {
         savedPayloads.push(route.request().postDataJSON());
-      } catch {}
+      } catch { }
       return route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -143,10 +143,10 @@ async function runTests() {
       await page.goto(`${BASE_URL}/customize`, { waitUntil: "networkidle" });
       await page.waitForSelector('[data-testid="profile-builder-studio"]', { timeout: 15000 });
 
-      // Protected Dock, Left Add Element, Canvas, Right Layers, Right Properties, Bottom Bar
+      // Protected Component Dock starts in Normal State (mutually exclusive with Elements Panel), Canvas, Layers, Properties, Bottom Bar
       assert.strictEqual(await page.getByTestId("studio-floating-dock").isVisible(), true);
       assert.strictEqual(await page.getByTestId("builder-top-toolbar").isVisible(), true);
-      assert.strictEqual(await page.getByTestId("builder-add-element-panel").isVisible(), true);
+      assert.strictEqual(await page.getByTestId("builder-add-element-panel").count(), 0);
       assert.strictEqual(await page.getByTestId("builder-layers-panel").isVisible(), true);
       assert.strictEqual(await page.getByTestId("builder-bottom-bar").isVisible(), true);
 
@@ -161,6 +161,14 @@ async function runTests() {
       await page.getByTestId("canvas-width-input").press("Enter");
       assert.strictEqual(await page.getByTestId("canvas-width-input").inputValue(), "1600");
 
+      // Open State 2 (Expanded Dock) -> State 3 (Elements Panel), verify search, then close back to Expanded Dock
+      await page.getByTestId("dock-more-toggle").click();
+      await page.waitForSelector('[data-testid="dock-open-elements-panel"]', { timeout: 3000 });
+      await page.getByTestId("dock-open-elements-panel").click();
+      await page.waitForSelector('[data-testid="builder-add-element-panel"]', { timeout: 3000 });
+      await page.getByTestId("studio-floating-dock").waitFor({ state: "detached", timeout: 2000 });
+      assert.strictEqual(await page.getByTestId("studio-floating-dock").count(), 0);
+
       // Search Component Library (positive match & empty state)
       await page.getByTestId("add-element-search").fill("Gallery");
       assert.strictEqual(await page.getByTestId("library-add-image-gallery").isVisible(), true);
@@ -168,6 +176,11 @@ async function runTests() {
       await page.getByTestId("add-element-search").fill("zzzznotfound");
       assert.strictEqual(await page.getByTestId("add-element-empty").isVisible(), true);
       await page.getByTestId("add-element-search").fill("");
+
+      await page.getByTestId("elements-panel-close").click();
+      await page.waitForSelector('[data-testid="dock-expanded-container"]', { timeout: 3000 });
+      await page.getByTestId("builder-add-element-panel").waitFor({ state: "detached", timeout: 2000 });
+      assert.strictEqual(await page.getByTestId("builder-add-element-panel").count(), 0);
 
       // Click Embed in Canvas -> selects parent container (shows ft-add-element)
       const rootEmbed = page.getByTestId("canvas-node-embed-profile-root");
