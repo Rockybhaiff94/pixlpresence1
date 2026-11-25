@@ -116,6 +116,8 @@ async function setupContext(browser) {
       localStorage.removeItem("pixel_studio_dock_coords");
       localStorage.removeItem("pixel_studio_dock_orientation");
       localStorage.removeItem("pixel_studio_dock_locked");
+      localStorage.removeItem("pixel_studio_secondary_dock_state_v1");
+      localStorage.removeItem("pixel_studio_secondary_panel_state_v1");
     }
   });
 
@@ -143,12 +145,18 @@ async function runTests() {
       await page.goto(`${BASE_URL}/customize`, { waitUntil: "networkidle" });
       await page.waitForSelector('[data-testid="profile-builder-studio"]', { timeout: 15000 });
 
-      // Protected Component Dock starts in Normal State (mutually exclusive with Elements Panel), Canvas, Layers, Properties, Bottom Bar
+      // Protected Main Dock starts in Normal State, Secondary Dock starts compact (Properties/Layers/Add Elements), Bottom Bar visible
       assert.strictEqual(await page.getByTestId("studio-floating-dock").isVisible(), true);
+      assert.strictEqual(await page.getByTestId("secondary-floating-dock").isVisible(), true);
       assert.strictEqual(await page.getByTestId("builder-top-toolbar").isVisible(), true);
       assert.strictEqual(await page.getByTestId("builder-add-element-panel").count(), 0);
-      assert.strictEqual(await page.getByTestId("builder-layers-panel").isVisible(), true);
+      assert.strictEqual(await page.getByTestId("secondary-unified-panel").count(), 0);
       assert.strictEqual(await page.getByTestId("builder-bottom-bar").isVisible(), true);
+
+      // Open Secondary Unified Panel via Properties button (shows expandable Properties + Layers)
+      await page.getByTestId("secondary-dock-btn-properties").click();
+      await page.waitForSelector('[data-testid="builder-layers-panel"]', { timeout: 3000 });
+      assert.strictEqual(await page.getByTestId("builder-layers-panel").isVisible(), true);
 
       // Select Canvas (Level A)
       await page.getByTestId("subbar-select-canvas").click();
@@ -220,6 +228,8 @@ async function runTests() {
       const { context, page, pageErrors } = await setupContext(browser);
       await page.goto(`${BASE_URL}/customize`, { waitUntil: "networkidle" });
       await page.waitForSelector('[data-testid="profile-builder-studio"]', { timeout: 15000 });
+      await page.getByTestId("secondary-dock-btn-layers").click();
+      await page.waitForSelector('[data-testid="builder-layers-panel"]', { timeout: 3000 });
 
       const metricsBefore = await page.getByTestId("builder-status-metrics").innerText();
       assert(metricsBefore.includes("Nested: 1"), `Expected Nested: 1 in metrics, got: ${metricsBefore}`);
@@ -322,6 +332,10 @@ async function runTests() {
       await page.getByTestId("setting-toggle-grid").click();
       await page.getByTestId("settings-modal-close").click();
       assert.strictEqual(await page.getByTestId("canvas-grid-overlay").isVisible(), true);
+
+      // Open Secondary Dock -> Properties to inspect & edit node properties
+      await page.getByTestId("secondary-dock-btn-properties").click();
+      await page.waitForSelector('[data-testid="secondary-unified-panel"]', { timeout: 3000 });
 
       // Edit a child & verify Publish sends profileBuilder V2 payload and persists across reload
       await page.getByTestId("canvas-node-node-name-1").click();

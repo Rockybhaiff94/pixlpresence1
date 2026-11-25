@@ -422,7 +422,8 @@ export function createNodeFromRegistry(
   const { parentId, nodes, canvas, seed } = options;
   const parent = parentId ? nodes.find((n) => n.id === parentId) : null;
   const siblings = nodes.filter((n) => (n.parentId || null) === (parentId || null));
-  const nextZ = siblings.reduce((m, s) => Math.max(m, s.zIndex), 0) + 1;
+  const nonBgSiblings = siblings.filter((n) => n.type !== "background");
+  const nextZ = nonBgSiblings.reduce((m, s) => Math.max(m, s.zIndex), 0) + 1;
 
   const containerW = parent ? parent.width : canvas.width;
   const containerH = parent ? parent.height : canvas.height;
@@ -434,13 +435,18 @@ export function createNodeFromRegistry(
   let y = options.y;
   if (x === undefined || y === undefined) {
     if (!parent && type === "embed") {
-      x = Math.round((canvas.width - width) / 2 + (siblings.length % 4) * 28);
-      y = Math.round((canvas.height - height) / 2 + (siblings.length % 4) * 28);
+      x = Math.round((canvas.width - width) / 2 + (nonBgSiblings.length % 4) * 28);
+      y = Math.round((canvas.height - height) / 2 + (nonBgSiblings.length % 4) * 28);
     } else if (!parent && type === "background") {
       x = 0;
       y = 0;
+    } else if (!parent) {
+      // Independent root canvas component: place visibly near canvas top-left / staggered away from edges
+      const offsetIdx = nonBgSiblings.length % 6;
+      x = Math.round(Math.min(containerW - width - 24, 96 + offsetIdx * 36));
+      y = Math.round(Math.min(containerH - height - 24, 96 + offsetIdx * 36));
     } else if (parent?.type === "image-gallery") {
-      const idx = siblings.length;
+      const idx = nonBgSiblings.length;
       const cols = parent.config.galleryColumns ?? 3;
       const gap = parent.config.gallerySpacing ?? 10;
       const col = idx % cols;
@@ -449,7 +455,7 @@ export function createNodeFromRegistry(
       x = col * (cellW + gap);
       y = row * (86 + gap);
     } else {
-      const lastSiblingBottom = siblings.reduce((m, s) => Math.max(m, s.y + s.height), padding - 8);
+      const lastSiblingBottom = nonBgSiblings.reduce((m, s) => Math.max(m, s.y + s.height), padding - 8);
       x = Math.max(padding, 24);
       y = Math.min(Math.max(padding, lastSiblingBottom + 10), Math.max(padding, containerH - height - 16));
     }

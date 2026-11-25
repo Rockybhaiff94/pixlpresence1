@@ -2,6 +2,10 @@
 
 import React, { useState } from "react";
 import {
+  ArrowDown,
+  ArrowDownToLine,
+  ArrowUp,
+  ArrowUpToLine,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -31,8 +35,13 @@ interface LayersPanelProps {
   onToggleLock: (id: string) => void;
   onDuplicateNode: (id: string) => void;
   onDeleteNode: (id: string) => void;
-  onReorderNode: (id: string, direction: "up" | "down") => void;
+  onReorderNode: (id: string, direction: "top" | "up" | "down" | "bottom") => void;
   onReparentNode: (nodeId: string, newParentId: string | null) => { ok: boolean; error?: string };
+  onMoveLayerRelative?: (
+    draggedId: string,
+    targetId: string,
+    position: "before" | "after" | "inside"
+  ) => { ok: boolean; error?: string };
   onInvalidDrop?: (reason: string) => void;
 }
 
@@ -46,30 +55,62 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   onToggleLock,
   onDuplicateNode,
   onDeleteNode,
+  onReorderNode,
   onReparentNode,
+  onMoveLayerRelative,
   onInvalidDrop,
 }) => {
   const [collapsedIds, setCollapsedIds] = useState<Record<string, boolean>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | "canvas-root" | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    id: string | "canvas-root";
+    position: "before" | "after" | "inside";
+  } | null>(null);
 
   const toggleCollapse = (id: string) => {
     setCollapsedIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const handleDropOnTarget = (targetParentId: string | null) => {
+  const handleDropOnCanvasRoot = () => {
     if (!draggingId) return;
     const dragged = nodes.find((n) => n.id === draggingId);
     setDraggingId(null);
-    setDropTargetId(null);
-    if (!dragged) return;
-    if ((dragged.parentId || null) === targetParentId) return;
+    setDropTarget(null);
+    if (!dragged || dragged.type === "background") return;
+    if (dragged.parentId === null) return;
+    const res = onReparentNode(dragged.id, null);
+    if (!res.ok && res.error) onInvalidDrop?.(res.error);
+  };
 
+  const handleDropOnLayer = (
+    targetNode: BuilderNode,
+    position: "before" | "after" | "inside"
+  ) => {
+    if (!draggingId) return;
+    const dragged = nodes.find((n) => n.id === draggingId);
+    setDraggingId(null);
+    setDropTarget(null);
+    if (!dragged || dragged.id === targetNode.id) return;
+
+    if (targetNode.type === "background") {
+      onInvalidDrop?.("Cannot reorder above/inside fixed background layer.");
+      return;
+    }
+
+    if (onMoveLayerRelative) {
+      const res = onMoveLayerRelative(dragged.id, targetNode.id, position);
+      if (!res.ok && res.error) onInvalidDrop?.(res.error);
+      return;
+    }
+
+    // Legacy fallback if onMoveLayerRelative isn't wired
+    const targetParentId = position === "inside" ? targetNode.id : targetNode.parentId;
+    if ((dragged.parentId || null) === targetParentId) return;
     if (targetParentId) {
-      const targetNode = nodes.find((n) => n.id === targetParentId);
-      if (!targetNode || !isContainerType(targetNode.type)) {
+      const targetContainer = nodes.find((n) => n.id === targetParentId);
+      if (!targetContainer || !isContainerType(targetContainer.type)) {
         onInvalidDrop?.("Target component cannot contain child elements.");
         return;
       }
@@ -82,17 +123,19 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         return;
       }
     }
-
     const res = onReparentNode(dragged.id, targetParentId);
-    if (!res.ok && res.error) {
-      onInvalidDrop?.(res.error);
-    }
+    if (!res.ok && res.error) onInvalidDrop?.(res.error);
   };
 
   const renderTree = (parentId: string | null, depth: number): React.ReactNode => {
+    // Render frontmost layers at the top (highest zIndex first) and Background at bottom
     const siblings = nodes
       .filter((n) => (n.parentId || null) === parentId)
-      .sort((a, b) => a.zIndex - b.zIndex);
+      .sort((a, b) => {
+        if (a.type === "background" && b.type !== "background") return 1;
+        if (b.type === "background" && a.type !== "background") return -1;
+        return b.zIndex - a.zIndex;
+      });
 
     return siblings.map((node) => {
       const children = nodes.filter((n) => n.parentId === node.id);
@@ -100,7 +143,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
       const isCollapsed = Boolean(collapsedIds[node.id]);
       const isSelected = selectedId === node.id;
       const isEditing = editingId === node.id;
-      const isDropOver = dropTargetId === node.id;
+      const activeDrop = dropTarget?.id === node.id ? dropTarget.position : null;
       const Icon = getBuilderComponentIcon(node.type);
 
       return (
@@ -115,19 +158,41 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             }}
             onDragEnd={() => {
               setDraggingId(null);
-              setDropTargetId(null);
+              setDropTarget(null);
             }}
             onDragOver={(e) => {
-              if (!draggingId) return;
+              if (!draggingId || draggingId === node.id || node.type === "background") return;
               e.preventDefault();
               e.stopPropagation();
-              setDropTargetId(node.id);
+              const rect = e.currentTarget.getBoundingClientRect();
+              const relY = rect.height > 0 ? (e.clientY - rect.top) / rect.height : 0.5;
+              const position: "before" | "after" | "inside" = isContainerType(node.type)
+                ? relY < 0.28
+                  ? "before"
+                  : relY > 0.72
+                    ? "after"
+                    : "inside"
+                : relY < 0.5
+                  ? "before"
+                  : "after";
+              setDropTarget({ id: node.id, position });
             }}
             onDrop={(e) => {
               if (!draggingId) return;
               e.preventDefault();
               e.stopPropagation();
-              handleDropOnTarget(isContainerType(node.type) ? node.id : node.parentId);
+              const rect = e.currentTarget.getBoundingClientRect();
+              const relY = rect.height > 0 ? (e.clientY - rect.top) / rect.height : 0.5;
+              const position: "before" | "after" | "inside" = isContainerType(node.type)
+                ? relY < 0.28
+                  ? "before"
+                  : relY > 0.72
+                    ? "after"
+                    : "inside"
+                : relY < 0.5
+                  ? "before"
+                  : "after";
+              handleDropOnLayer(node, position);
             }}
             onClick={(e) => {
               e.stopPropagation();
@@ -135,13 +200,18 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             }}
             style={{ paddingLeft: `${8 + depth * 12}px` }}
             className={`group flex items-center justify-between gap-1 pr-1.5 py-1.5 rounded-lg border text-[11px] font-mono transition-colors cursor-pointer mb-0.5 ${
-              isDropOver
+              activeDrop === "inside"
                 ? "border-[#d71920] bg-[#d71920]/15"
-                : isSelected
-                  ? "bg-[#1a1a23] border-white/35 text-white"
-                  : "bg-[#101015] border-transparent hover:border-[#24242d] text-neutral-300 hover:text-white"
+                : activeDrop === "before"
+                  ? "border-transparent border-t-2 border-t-[#d71920] bg-[#16161f]"
+                  : activeDrop === "after"
+                    ? "border-transparent border-b-2 border-b-[#d71920] bg-[#16161f]"
+                    : isSelected
+                      ? "bg-[#1a1a23] border-[#d71920]/70 text-white"
+                      : "bg-[#101015] border-transparent hover:border-[#24242d] text-neutral-300 hover:text-white"
             } ${!node.visible ? "opacity-50" : ""}`}
             data-testid={`layer-row-${node.id}`}
+            data-z-index={node.zIndex}
           >
             <div className="flex items-center gap-1.5 min-w-0 flex-1">
               {canExpand ? (
@@ -287,16 +357,16 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           onDragOver={(e) => {
             if (!draggingId) return;
             e.preventDefault();
-            setDropTargetId("canvas-root");
+            setDropTarget({ id: "canvas-root", position: "inside" });
           }}
           onDrop={(e) => {
             if (!draggingId) return;
             e.preventDefault();
-            handleDropOnTarget(null);
+            handleDropOnCanvasRoot();
           }}
           onClick={() => onSelect(null)}
           className={`flex items-center justify-between px-2 py-1.5 rounded-lg border cursor-pointer text-[11px] ${
-            dropTargetId === "canvas-root"
+            dropTarget?.id === "canvas-root"
               ? "border-[#d71920] bg-[#d71920]/15 text-white"
               : selectedId === null
                 ? "bg-[#191922] border-white/30 text-white font-semibold"
@@ -317,6 +387,64 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
       <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-0.5">
         {renderTree(null, 0)}
       </div>
+
+      {/* Selected Layer Stacking Controls */}
+      {(() => {
+        const selectedLayer = selectedId ? nodes.find((n) => n.id === selectedId) : null;
+        if (!selectedLayer || selectedLayer.type === "background") return null;
+        return (
+          <div
+            className="px-2 py-1.5 border-t border-[#181820] bg-[#0b0b10] flex items-center justify-between gap-1 shrink-0"
+            data-testid="layers-order-controls"
+          >
+            <span className="text-[9px] text-neutral-500 uppercase tracking-wider truncate">
+              Order
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => onReorderNode(selectedLayer.id, "top")}
+                title="Bring to Front (Top)"
+                className="p-1 rounded bg-[#14141b] hover:bg-[#1e1e28] border border-[#24242e] text-neutral-300 hover:text-white cursor-pointer"
+                aria-label="Move layer to top"
+                data-testid="layers-move-top"
+              >
+                <ArrowUpToLine size={11} />
+              </button>
+              <button
+                type="button"
+                onClick={() => onReorderNode(selectedLayer.id, "up")}
+                title="Move Forward (Up)"
+                className="p-1 rounded bg-[#14141b] hover:bg-[#1e1e28] border border-[#24242e] text-neutral-300 hover:text-white cursor-pointer"
+                aria-label="Move layer up"
+                data-testid="layers-move-up"
+              >
+                <ArrowUp size={11} />
+              </button>
+              <button
+                type="button"
+                onClick={() => onReorderNode(selectedLayer.id, "down")}
+                title="Send Backward (Down)"
+                className="p-1 rounded bg-[#14141b] hover:bg-[#1e1e28] border border-[#24242e] text-neutral-300 hover:text-white cursor-pointer"
+                aria-label="Move layer down"
+                data-testid="layers-move-down"
+              >
+                <ArrowDown size={11} />
+              </button>
+              <button
+                type="button"
+                onClick={() => onReorderNode(selectedLayer.id, "bottom")}
+                title="Send to Back (Bottom)"
+                className="p-1 rounded bg-[#14141b] hover:bg-[#1e1e28] border border-[#24242e] text-neutral-300 hover:text-white cursor-pointer"
+                aria-label="Move layer to bottom"
+                data-testid="layers-move-bottom"
+              >
+                <ArrowDownToLine size={11} />
+              </button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

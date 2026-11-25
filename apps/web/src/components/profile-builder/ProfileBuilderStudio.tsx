@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
-import { AlertCircle, Layers, Sliders, X } from "lucide-react";
+import { AlertCircle, X } from "lucide-react";
 import { ComponentDockViewState } from "../studio/StudioFloatingDock";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -31,11 +31,15 @@ import { exportProfileBuilderJson, exportProfileBuilderPng } from "./profileBuil
 import { TopToolbar } from "./TopToolbar";
 import { AddElementPanel } from "./AddElementPanel";
 import { ProfileCanvasWorkspace } from "./ProfileCanvasWorkspace";
-import { LayersPanel } from "./LayersPanel";
-import { PropertiesPanel } from "./PropertiesPanel";
 import { BuilderSettingsModal, MediaUploadModal } from "./BuilderModals";
 import { DockBridgePanel } from "./DockBridgePanel";
 import { ProfileLiveActivityData } from "./ProfileBuilderRenderer";
+import { SecondaryDockPanelSystem } from "./SecondaryDockPanelSystem";
+import { AddElementsModal } from "./AddElementsModal";
+import {
+  DEFAULT_SECONDARY_DOCK_STATE,
+  SecondaryDockState,
+} from "./secondaryDockTypes";
 
 const DRAFT_STORAGE_KEY = "pixel_profile_builder_draft_v2";
 
@@ -62,7 +66,11 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
   const [preservedDockRatio, setPreservedDockRatio] = useState<{ x: number; y: number } | null>(
     null
   );
-  const [narrowRightTab, setNarrowRightTab] = useState<"layers" | "properties">("layers");
+  const studioBodyRef = useRef<HTMLDivElement>(null);
+  const [secondaryDockState, setSecondaryDockState] = useState<SecondaryDockState>(
+    DEFAULT_SECONDARY_DOCK_STATE
+  );
+  const [isAddElementsModalOpen, setIsAddElementsModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [mediaModalState, setMediaModalState] = useState<{
     open: boolean;
@@ -457,9 +465,9 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
   const handleReorderNode = useCallback(
     (id: string, direction: "top" | "up" | "down" | "bottom") => {
       const target = doc.nodes.find((n) => n.id === id);
-      if (!target) return;
+      if (!target || target.type === "background") return;
       const sibs = doc.nodes
-        .filter((n) => (n.parentId || null) === (target.parentId || null))
+        .filter((n) => (n.parentId || null) === (target.parentId || null) && n.type !== "background")
         .sort((a, b) => a.zIndex - b.zIndex);
       const idx = sibs.findIndex((s) => s.id === id);
       if (idx === -1) return;
@@ -472,13 +480,113 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
 
       const zMap = new Map<string, number>();
       reordered.forEach((n, i) => zMap.set(n.id, i + 1));
-      const nextNodes = doc.nodes.map((n) =>
-        zMap.has(n.id) ? { ...n, zIndex: zMap.get(n.id)! } : n
-      );
+      const nextNodes = doc.nodes.map((n) => {
+        if (n.type === "background") return { ...n, zIndex: 0 };
+        return zMap.has(n.id) ? { ...n, zIndex: zMap.get(n.id)! } : n;
+      });
       setDoc((prev) => ({ ...prev, nodes: nextNodes }));
       commitSnapshot(doc.canvas, nextNodes, selectedId);
     },
     [commitSnapshot, doc.canvas, doc.nodes, selectedId]
+  );
+
+  const handleMoveLayerRelative = useCallback(
+    (
+      draggedId: string,
+      targetId: string,
+      position: "before" | "after" | "inside"
+    ): { ok: boolean; error?: string } => {
+      const dragged = doc.nodes.find((n) => n.id === draggedId);
+      const target = doc.nodes.find((n) => n.id === targetId);
+      if (!dragged || !target || dragged.id === target.id) {
+        return { ok: false };
+      }
+      if (dragged.type === "background" || target.type === "background") {
+        return { ok: false, error: "Background layer cannot be reordered." };
+      }
+
+      const newParentId = position === "inside" ? target.id : target.parentId || null;
+
+      if (newParentId) {
+        const targetContainer = doc.nodes.find((n) => n.id === newParentId);
+        if (!targetContainer || !isContainerType(targetContainer.type)) {
+          return { ok: false, error: "Destination cannot contain child elements." };
+        }
+        if (wouldCreateCycle(dragged.id, newParentId, doc.nodes)) {
+          return { ok: false, error: "Invalid circular drop: parent cannot move into descendant." };
+        }
+        if (getNestingDepth(newParentId, doc.nodes) + 1 > MAX_NESTING_DEPTH) {
+          return { ok: false, error: `Exceeds max nesting depth (${MAX_NESTING_DEPTH}).` };
+        }
+      }
+
+      const parentChanged = (dragged.parentId || null) !== newParentId;
+      const updatedDragged: BuilderNode = parentChanged
+        ? {
+            ...dragged,
+            parentId: newParentId,
+            x: newParentId ? 20 : 120,
+            y: newParentId ? 20 : 120,
+          }
+        : dragged;
+
+      // Sort destination non-background siblings frontmost-first (descending zIndex) matching Layers tree UI
+      const destSiblings = doc.nodes
+        .filter(
+          (n) =>
+            n.id !== dragged.id &&
+            n.type !== "background" &&
+            (n.parentId || null) === newParentId
+        )
+        .sort((a, b) => b.zIndex - a.zIndex);
+
+      if (position === "inside") {
+        destSiblings.unshift(updatedDragged);
+      } else {
+        const targetIdx = destSiblings.findIndex((n) => n.id === target.id);
+        if (targetIdx === -1) {
+          destSiblings.unshift(updatedDragged);
+        } else {
+          const insertIdx = position === "before" ? targetIdx : targetIdx + 1;
+          destSiblings.splice(insertIdx, 0, updatedDragged);
+        }
+      }
+
+      const zMap = new Map<string, number>();
+      const total = destSiblings.length;
+      destSiblings.forEach((n, idx) => zMap.set(n.id, total - idx));
+
+      const nextNodes = doc.nodes.map((n) => {
+        if (n.type === "background") return { ...n, zIndex: 0 };
+        if (n.id === dragged.id) {
+          return { ...updatedDragged, zIndex: zMap.get(n.id) ?? n.zIndex };
+        }
+        return zMap.has(n.id) ? { ...n, zIndex: zMap.get(n.id)! } : n;
+      });
+
+      setDoc((prev) => ({
+        ...prev,
+        nodes: nextNodes,
+        metadata: { ...prev.metadata, updatedAt: new Date().toISOString() },
+      }));
+      commitSnapshot(doc.canvas, nextNodes, selectedId);
+      return { ok: true };
+    },
+    [commitSnapshot, doc.canvas, doc.nodes, selectedId]
+  );
+
+  const handleAddIndependentElement = useCallback(
+    (type: BuilderComponentType) => {
+      const createdId = insertComponent(type, null);
+      if (!createdId) return;
+      setIsAddElementsModalOpen(false);
+      setSecondaryDockState((prev) => ({
+        ...prev,
+        isPanelOpen: true,
+        activeSection: "properties",
+      }));
+    },
+    [insertComponent]
   );
 
   const handleReparentNode = useCallback(
@@ -804,8 +912,8 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       )}
 
       {/* Main 3-Column Studio Body */}
-      <div className="flex-1 flex min-h-0 overflow-hidden relative">
-        {/* State 3: Full Elements Panel (Mutually exclusive with Component Dock) */}
+      <div ref={studioBodyRef} className="flex-1 flex min-h-0 overflow-hidden relative">
+        {/* Main Dock State 3: Full Elements Panel (Mutually exclusive with Main Component Dock) */}
         <AnimatePresence mode="wait" initial={false}>
           {dockNavState === "elements-panel" && (
             <AddElementPanel
@@ -816,7 +924,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           )}
         </AnimatePresence>
 
-        {/* Center: Main Canvas Workspace + Floating Dock Mounted Inside */}
+        {/* Center: Main Canvas Workspace */}
         <div className="flex-1 relative flex flex-col min-w-0 h-full overflow-hidden">
           <ProfileCanvasWorkspace
             document={doc}
@@ -848,97 +956,54 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           />
         </div>
 
-        {/* Right: Single-Instance Layers + Properties (Side-by-side on xl, Tabbed on lg) */}
-        <aside className="hidden lg:flex flex-col xl:flex-row shrink-0 h-full border-l border-[#1d1d24] bg-[#09090d]">
-          {/* Tab Switcher (lg .. xl-1 only) */}
-          <div className="grid xl:hidden grid-cols-2 border-b border-[#181820] p-1 gap-1 bg-[#0b0b0f] w-64 shrink-0">
-            <button
-              type="button"
-              onClick={() => setNarrowRightTab("layers")}
-              className={`py-1 rounded text-[11px] font-bold cursor-pointer ${
-                narrowRightTab === "layers"
-                  ? "bg-white text-black"
-                  : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              Layers
-            </button>
-            <button
-              type="button"
-              onClick={() => setNarrowRightTab("properties")}
-              className={`py-1 rounded text-[11px] font-bold cursor-pointer ${
-                narrowRightTab === "properties"
-                  ? "bg-white text-black"
-                  : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              Properties
-            </button>
-          </div>
+        {/* Secondary Dock & Unified Editor Panel (Properties, Layers, Add Elements) */}
+        <SecondaryDockPanelSystem
+          hostRef={studioBodyRef}
+          canvas={doc.canvas}
+          nodes={doc.nodes}
+          selectedNode={selectedNode}
+          selectedId={selectedId}
+          deviceMode={deviceMode}
+          onSelect={setSelectedId}
+          onUpdateCanvas={handleUpdateCanvas}
+          onUpdateNode={handleUpdateNode}
+          onOpenMediaPicker={(cb, title, init) =>
+            setMediaModalState({
+              open: true,
+              title,
+              initialUrl: init || "",
+              onApply: cb,
+            })
+          }
+          onAddGalleryImage={(galleryId, url) =>
+            insertComponent("image", galleryId, undefined, undefined, {
+              config: { src: url || "", fit: "cover" },
+            })
+          }
+          onRenameNode={(id, name) => handleUpdateNode(id, { name })}
+          onToggleVisibility={handleToggleVisibility}
+          onToggleLock={handleToggleLock}
+          onDuplicateNode={handleDuplicateNode}
+          onDeleteNode={handleDeleteNode}
+          onReorderNode={(id, dir) => handleReorderNode(id, dir)}
+          onReparentNode={handleReparentNode}
+          onMoveLayerRelative={handleMoveLayerRelative}
+          onInvalidDrop={(reason) => {
+            setErrorBanner(reason);
+            setTimeout(() => setErrorBanner(null), 3500);
+          }}
+          onAddIndependentElement={handleAddIndependentElement}
+          dockState={secondaryDockState}
+          onDockStateChange={setSecondaryDockState}
+          onOpenAddElementsModal={() => setIsAddElementsModalOpen(true)}
+        />
 
-          <div
-            className={`${
-              narrowRightTab === "layers" ? "flex flex-1 min-h-0" : "hidden"
-            } xl:flex flex-col w-60 xl:w-52 xl:border-r xl:border-[#1a1a22] xl:h-full`}
-          >
-            <div className="hidden xl:flex px-3 py-2 border-b border-[#181820] items-center gap-1.5 text-[11px] font-bold text-white shrink-0">
-              <Layers size={12} className="text-neutral-400" />
-              <span>Layers</span>
-            </div>
-            <div className="flex-1 min-h-0">
-              <LayersPanel
-                canvas={doc.canvas}
-                nodes={doc.nodes}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                onRenameNode={(id, name) => handleUpdateNode(id, { name })}
-                onToggleVisibility={handleToggleVisibility}
-                onToggleLock={handleToggleLock}
-                onDuplicateNode={handleDuplicateNode}
-                onDeleteNode={handleDeleteNode}
-                onReorderNode={(id, dir) => handleReorderNode(id, dir)}
-                onReparentNode={handleReparentNode}
-                onInvalidDrop={(reason) => {
-                  setErrorBanner(reason);
-                  setTimeout(() => setErrorBanner(null), 3500);
-                }}
-              />
-            </div>
-          </div>
-
-          <div
-            className={`${
-              narrowRightTab === "properties" ? "flex flex-1 min-h-0" : "hidden"
-            } xl:flex flex-col w-60 xl:w-56 xl:h-full`}
-          >
-            <div className="hidden xl:flex px-3 py-2 border-b border-[#181820] items-center gap-1.5 text-[11px] font-bold text-white shrink-0">
-              <Sliders size={12} className="text-neutral-400" />
-              <span>Properties</span>
-            </div>
-            <div className="flex-1 min-h-0">
-              <PropertiesPanel
-                canvas={doc.canvas}
-                selectedNode={selectedNode}
-                deviceMode={deviceMode}
-                onUpdateCanvas={handleUpdateCanvas}
-                onUpdateNode={handleUpdateNode}
-                onOpenMediaPicker={(cb, title, init) =>
-                  setMediaModalState({
-                    open: true,
-                    title,
-                    initialUrl: init || "",
-                    onApply: cb,
-                  })
-                }
-                onAddGalleryImage={(galleryId, url) =>
-                  insertComponent("image", galleryId, undefined, undefined, {
-                    config: { src: url || "", fit: "cover" },
-                  })
-                }
-              />
-            </div>
-          </div>
-        </aside>
+        {/* Central Component-Selection Window for Independent Top-Level Canvas Elements */}
+        <AddElementsModal
+          isOpen={isAddElementsModalOpen}
+          onClose={() => setIsAddElementsModalOpen(false)}
+          onAddIndependentElement={handleAddIndependentElement}
+        />
       </div>
 
       {/* Settings & Media Upload Modals */}
