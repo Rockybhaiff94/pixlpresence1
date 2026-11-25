@@ -1046,6 +1046,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
                   dockViewState: dockNavState,
                   onDockViewStateChange: setDockNavState,
                   onAddComponent: (type: BuilderComponentType) => insertComponent(type),
+                  selectedComponentType: selectedNode?.type ?? null,
                   savedRatio: preservedDockRatio,
                   onRatioChange: setPreservedDockRatio,
                   activeTool: dockActiveTool,

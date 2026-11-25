@@ -82,8 +82,8 @@ export const AddElementsLibraryContent: React.FC<AddElementsLibraryContentProps>
             onClick={() => setActiveCategory("all")}
             className={`px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider shrink-0 transition-colors cursor-pointer ${
               activeCategory === "all"
-                ? "bg-[#d71920] text-white"
-                : "bg-[#121218] text-neutral-400 hover:text-white border border-[#22222c]"
+                ? "bg-[#858585] text-white border border-white"
+                : "bg-transparent text-white/80 hover:text-white border border-[#22222c]"
             }`}
             data-testid={`${itemTestIdPrefix}-cat-all`}
           >
@@ -96,8 +96,8 @@ export const AddElementsLibraryContent: React.FC<AddElementsLibraryContentProps>
               onClick={() => setActiveCategory(cat.id)}
               className={`px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider shrink-0 transition-colors cursor-pointer ${
                 activeCategory === cat.id
-                  ? "bg-[#d71920] text-white"
-                  : "bg-[#121218] text-neutral-400 hover:text-white border border-[#22222c]"
+                  ? "bg-[#858585] text-white border border-white"
+                  : "bg-transparent text-white/80 hover:text-white border border-[#22222c]"
               }`}
               data-testid={`${itemTestIdPrefix}-cat-${cat.id}`}
             >
@@ -130,7 +130,7 @@ export const AddElementsLibraryContent: React.FC<AddElementsLibraryContentProps>
                       className="flex flex-col items-start gap-1.5 p-2.5 rounded-xl bg-[#111116] hover:bg-[#191922] border border-[#22222c] hover:border-white/30 text-left transition-all cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                       data-testid={`${itemTestIdPrefix}-${item.type}`}
                     >
-                      <div className="w-7 h-7 rounded-lg bg-[#181821] border border-[#282834] group-hover:border-[#d71920]/60 flex items-center justify-center text-neutral-300 group-hover:text-white transition-colors">
+                      <div className="w-7 h-7 rounded-lg bg-[#181821] border border-[#282834] group-hover:border-white/50 flex items-center justify-center text-white/80 group-hover:text-white transition-colors">
                         <Icon size={14} />
                       </div>
                       <span className="text-[11px] font-semibold text-neutral-100 leading-tight truncate w-full">
@@ -231,7 +231,7 @@ export const AddElementsModal: React.FC<AddElementsModalProps> = ({
             {/* Header */}
             <div className="px-4 py-3 border-b border-[#1c1c24] flex items-center justify-between gap-3 bg-[#0c0c11] shrink-0">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-7 h-7 rounded-lg bg-[#d71920]/15 border border-[#d71920]/40 flex items-center justify-center text-[#d71920] shrink-0">
+                <div className="w-7 h-7 rounded-lg bg-[#858585]/35 border border-white flex items-center justify-center text-white shrink-0">
                   <Plus size={14} />
                 </div>
                 <div className="min-w-0">

@@ -201,14 +201,14 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             style={{ paddingLeft: `${8 + depth * 12}px` }}
             className={`group flex items-center justify-between gap-1 pr-1.5 py-1.5 rounded-lg border text-[11px] font-mono transition-colors cursor-pointer mb-0.5 ${
               activeDrop === "inside"
-                ? "border-[#d71920] bg-[#d71920]/15"
+                ? "border-white bg-white/15"
                 : activeDrop === "before"
-                  ? "border-transparent border-t-2 border-t-[#d71920] bg-[#16161f]"
+                  ? "border-transparent border-t-2 border-t-white bg-[#16161f]"
                   : activeDrop === "after"
-                    ? "border-transparent border-b-2 border-b-[#d71920] bg-[#16161f]"
+                    ? "border-transparent border-b-2 border-b-white bg-[#16161f]"
                     : isSelected
-                      ? "bg-[#1a1a23] border-[#d71920]/70 text-white"
-                      : "bg-[#101015] border-transparent hover:border-[#24242d] text-neutral-300 hover:text-white"
+                      ? "bg-[#858585]/45 border-white text-white"
+                      : "bg-[#101015] border-transparent hover:border-[#24242d] text-neutral-200 hover:text-white"
             } ${!node.visible ? "opacity-50" : ""}`}
             data-testid={`layer-row-${node.id}`}
             data-z-index={node.zIndex}
@@ -221,7 +221,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                     e.stopPropagation();
                     toggleCollapse(node.id);
                   }}
-                  className="p-0.5 rounded text-neutral-500 hover:text-white cursor-pointer shrink-0"
+                  className="p-0.5 rounded text-neutral-400 hover:text-white cursor-pointer shrink-0"
                   aria-label={isCollapsed ? "Expand container" : "Collapse container"}
                   data-testid={`layer-collapse-${node.id}`}
                 >
@@ -235,8 +235,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                 size={12}
                 className={`shrink-0 ${
                   node.type === "embed" || node.type === "nested-embed"
-                    ? "text-[#d71920]"
-                    : "text-neutral-400"
+                    ? "text-white"
+                    : "text-neutral-300"
                 }`}
               />
 
@@ -367,9 +367,9 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           onClick={() => onSelect(null)}
           className={`flex items-center justify-between px-2 py-1.5 rounded-lg border cursor-pointer text-[11px] ${
             dropTarget?.id === "canvas-root"
-              ? "border-[#d71920] bg-[#d71920]/15 text-white"
+              ? "border-white bg-white/15 text-white"
               : selectedId === null
-                ? "bg-[#191922] border-white/30 text-white font-semibold"
+                ? "bg-[#858585]/45 border-white text-white font-semibold"
                 : "bg-[#111116] border-[#22222b] text-neutral-300 hover:text-white"
           }`}
           data-testid="layer-root-canvas"

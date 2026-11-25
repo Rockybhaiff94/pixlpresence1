@@ -145,87 +145,182 @@ async function runTests() {
         .boundingBox();
       const handle = page.getByTestId("secondary-dock-handle");
 
-      // Drag -> Snap to TOP edge
-      let hBox = await handle.boundingBox();
-      await page.mouse.move(hBox.x + hBox.width / 2, hBox.y + hBox.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(
-        studioBodyBox.x + studioBodyBox.width * 0.5,
-        studioBodyBox.y + 18,
-        { steps: 10 }
-      );
-      await page.mouse.up();
-      await page.waitForTimeout(320);
+      async function assertDockGeometry(expected) {
+        const box = await secDock.boundingBox();
+        const radii = await secDock.evaluate((el) => {
+          const cs = getComputedStyle(el);
+          return {
+            tl: parseFloat(cs.borderTopLeftRadius),
+            tr: parseFloat(cs.borderTopRightRadius),
+            br: parseFloat(cs.borderBottomRightRadius),
+            bl: parseFloat(cs.borderBottomLeftRadius),
+          };
+        });
+        assert.strictEqual(await secDock.getAttribute("data-dock-corner"), expected.corner);
+        if (expected.flushTop) {
+          assert(Math.abs(box.y - studioBodyBox.y) <= 2, `Expected top flush, gap=${box.y - studioBodyBox.y}`);
+        }
+        if (expected.flushBottom) {
+          const gap = studioBodyBox.y + studioBodyBox.height - (box.y + box.height);
+          assert(Math.abs(gap) <= 2, `Expected bottom flush, gap=${gap}`);
+        }
+        if (expected.flushLeft) {
+          assert(Math.abs(box.x - studioBodyBox.x) <= 2, `Expected left flush, gap=${box.x - studioBodyBox.x}`);
+        }
+        if (expected.flushRight) {
+          const gap = studioBodyBox.x + studioBodyBox.width - (box.x + box.width);
+          assert(Math.abs(gap) <= 2, `Expected right flush, gap=${gap}`);
+        }
+        assert.deepStrictEqual(radii, expected.radii, `Radii mismatch for ${expected.name}`);
+      }
+
+      async function dragDockTo(targetX, targetY) {
+        const hBox = await handle.boundingBox();
+        await page.mouse.move(hBox.x + hBox.width / 2, hBox.y + hBox.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(targetX, targetY, { steps: 10 });
+        await page.mouse.up();
+        await page.waitForTimeout(340);
+      }
+
+      // 1. Default RIGHT-CENTER vertical dock + #858585/#FFFFFF selection color check
+      await assertDockGeometry({
+        name: "right-center",
+        corner: "none",
+        flushRight: true,
+        radii: { tl: 14, tr: 0, br: 0, bl: 14 },
+      });
+
+      const activeColorCheck = await page.getByTestId("secondary-dock-btn-properties").evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return { bg: cs.backgroundColor, border: cs.borderTopColor, color: cs.color };
+      });
+      assert.strictEqual(activeColorCheck.bg, "rgb(133, 133, 133)");
+      assert.strictEqual(activeColorCheck.border, "rgb(255, 255, 255)");
+      assert.strictEqual(activeColorCheck.color, "rgb(255, 255, 255)");
+
+      const inactiveColorCheck = await page.getByTestId("secondary-dock-btn-layers").evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return { bg: cs.backgroundColor, color: cs.color };
+      });
+      assert.strictEqual(inactiveColorCheck.bg, "rgba(0, 0, 0, 0)");
+      assert.strictEqual(inactiveColorCheck.color, "rgb(255, 255, 255)");
+
+      // 2. TOP-CENTER (horizontal, TL=0, TR=0, BR=14, BL=14)
+      await dragDockTo(studioBodyBox.x + studioBodyBox.width * 0.5, studioBodyBox.y + 10);
       assert.strictEqual(await secDock.getAttribute("data-dock-edge"), "top");
       assert.strictEqual(await secDock.getAttribute("data-dock-orientation"), "horizontal");
+      await assertDockGeometry({
+        name: "top-center",
+        corner: "none",
+        flushTop: true,
+        radii: { tl: 0, tr: 0, br: 14, bl: 14 },
+      });
 
-      // Drag -> Snap to LEFT edge (upper-left slot away from centered Main Dock)
-      hBox = await handle.boundingBox();
-      await page.mouse.move(hBox.x + hBox.width / 2, hBox.y + hBox.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(
-        studioBodyBox.x + 14,
-        studioBodyBox.y + 64,
-        { steps: 10 }
-      );
-      await page.mouse.up();
-      await page.waitForTimeout(320);
+      // Selection sync check across horizontal presentation & panel toggle
+      assert.strictEqual(await page.getByTestId("secondary-dock-btn-properties").getAttribute("data-active"), "true");
+      await page.getByTestId("secondary-dock-btn-layers").click();
+      await page.waitForSelector('[data-testid="secondary-unified-panel"]', { timeout: 3000 });
+      assert.strictEqual(await page.getByTestId("unified-tab-layers").getAttribute("data-active"), "true");
+      assert.strictEqual(await page.getByTestId("unified-tab-properties").getAttribute("data-active"), "false");
+      await page.getByTestId("unified-panel-close").click();
+      await page.waitForSelector('[data-testid="secondary-floating-dock"]', { timeout: 3000 });
+      await page.waitForTimeout(260);
+      assert.strictEqual(await page.getByTestId("secondary-dock-btn-layers").getAttribute("data-active"), "true");
+      assert.strictEqual(await page.getByTestId("secondary-dock-btn-properties").getAttribute("data-active"), "false");
+
+      // 3. TOP-RIGHT corner (flush top + flush right, TL=14, TR=0, BR=14, BL=14)
+      await dragDockTo(studioBodyBox.x + studioBodyBox.width - 12, studioBodyBox.y + 10);
+      await assertDockGeometry({
+        name: "top-right",
+        corner: "top-right",
+        flushTop: true,
+        flushRight: true,
+        radii: { tl: 14, tr: 0, br: 14, bl: 14 },
+      });
+
+      // 4. TOP-LEFT corner (flush top + flush left, TL=0, TR=14, BR=14, BL=14)
+      await dragDockTo(studioBodyBox.x + 12, studioBodyBox.y + 10);
+      await assertDockGeometry({
+        name: "top-left",
+        corner: "top-left",
+        flushTop: true,
+        flushLeft: true,
+        radii: { tl: 0, tr: 14, br: 14, bl: 14 },
+      });
+
+      // 5. LEFT-CENTER vertical (stays clear of Main Dock middle slot, preserves Layers selection)
+      await dragDockTo(studioBodyBox.x + 10, studioBodyBox.y + 92);
       assert.strictEqual(await secDock.getAttribute("data-dock-edge"), "left");
       assert.strictEqual(await secDock.getAttribute("data-dock-orientation"), "vertical");
+      assert.strictEqual(await page.getByTestId("secondary-dock-btn-layers").getAttribute("data-active"), "true");
+      await assertDockGeometry({
+        name: "left-center",
+        corner: "none",
+        flushLeft: true,
+        radii: { tl: 0, tr: 14, br: 14, bl: 0 },
+      });
 
-      // Drag -> Snap to BOTTOM edge
-      hBox = await handle.boundingBox();
-      await page.mouse.move(hBox.x + hBox.width / 2, hBox.y + hBox.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(
-        studioBodyBox.x + studioBodyBox.width * 0.5,
-        studioBodyBox.y + studioBodyBox.height - 16,
-        { steps: 10 }
-      );
-      await page.mouse.up();
-      await page.waitForTimeout(320);
+      // 6. BOTTOM-LEFT corner (flush bottom + flush left, TL=14, TR=14, BR=14, BL=0)
+      await dragDockTo(studioBodyBox.x + 12, studioBodyBox.y + studioBodyBox.height - 10);
+      await assertDockGeometry({
+        name: "bottom-left",
+        corner: "bottom-left",
+        flushBottom: true,
+        flushLeft: true,
+        radii: { tl: 14, tr: 14, br: 14, bl: 0 },
+      });
+
+      // 7. BOTTOM-CENTER (flush bottom, TL=14, TR=14, BR=0, BL=0)
+      await dragDockTo(studioBodyBox.x + studioBodyBox.width * 0.5, studioBodyBox.y + studioBodyBox.height - 10);
       assert.strictEqual(await secDock.getAttribute("data-dock-edge"), "bottom");
       assert.strictEqual(await secDock.getAttribute("data-dock-orientation"), "horizontal");
+      await assertDockGeometry({
+        name: "bottom-center",
+        corner: "none",
+        flushBottom: true,
+        radii: { tl: 14, tr: 14, br: 0, bl: 0 },
+      });
 
-      // Drag back -> Snap to RIGHT edge
-      hBox = await handle.boundingBox();
-      await page.mouse.move(hBox.x + hBox.width / 2, hBox.y + hBox.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(
-        studioBodyBox.x + studioBodyBox.width - 14,
-        studioBodyBox.y + studioBodyBox.height * 0.45,
-        { steps: 10 }
-      );
-      await page.mouse.up();
-      await page.waitForTimeout(320);
+      // 8. BOTTOM-RIGHT corner (flush bottom + flush right, TL=14, TR=14, BR=0, BL=14)
+      await dragDockTo(studioBodyBox.x + studioBodyBox.width - 12, studioBodyBox.y + studioBodyBox.height - 10);
+      await assertDockGeometry({
+        name: "bottom-right",
+        corner: "bottom-right",
+        flushBottom: true,
+        flushRight: true,
+        radii: { tl: 14, tr: 14, br: 0, bl: 14 },
+      });
+
+      // Drag back to RIGHT-CENTER edge -> Lock dock -> Verify persistence
+      await dragDockTo(studioBodyBox.x + studioBodyBox.width - 14, studioBodyBox.y + studioBodyBox.height * 0.45);
       assert.strictEqual(await secDock.getAttribute("data-dock-edge"), "right");
 
-      // Lock dock via handle click -> verify drag is blocked -> unlock via Alt+L
+      // Lock dock via handle click -> verify drag is blocked
       await handle.click();
       await page.waitForTimeout(60);
       assert.strictEqual(await secDock.getAttribute("data-dock-locked"), "true");
       const lockedBox = await secDock.boundingBox();
-      hBox = await handle.boundingBox();
-      await page.mouse.move(hBox.x + hBox.width / 2, hBox.y + hBox.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(hBox.x - 200, hBox.y + 80, { steps: 6 });
-      await page.mouse.up();
-      await page.waitForTimeout(120);
+      await dragDockTo(lockedBox.x - 200, lockedBox.y + 80);
       const afterLockedAttempt = await secDock.boundingBox();
       assert(Math.abs(afterLockedAttempt.x - lockedBox.x) <= 2, "Locked Secondary Dock must not move");
 
-      // Dock icon click still opens Unified Panel while locked, and closing restores right edge & locked state
-      await page.getByTestId("secondary-dock-btn-properties").click();
+      // Dock icon click opens Unified Panel with synchronized Add Elements selection while locked
+      await page.getByTestId("secondary-dock-btn-add-elements").click();
       await page.waitForSelector('[data-testid="secondary-unified-panel"]', { timeout: 3000 });
       await secDock.waitFor({ state: "detached", timeout: 2000 });
-      assert.strictEqual(await page.getByTestId("secondary-floating-dock").count(), 0);
-      assert.strictEqual(await page.getByTestId("properties-node-inspector").isVisible(), true);
+      assert.strictEqual(await page.getByTestId("unified-tab-add-elements").getAttribute("data-active"), "true");
+      assert.strictEqual(await page.getByTestId("unified-tab-layers").getAttribute("data-active"), "false");
+      if (await page.getByTestId("add-elements-modal-close").isVisible()) {
+        await page.getByTestId("add-elements-modal-close").click();
+      }
 
-      // Persist & reload test: close -> reload -> still right & locked
+      // Close panel -> restores right edge, locked state, AND synchronized Add Elements selection
       await page.getByTestId("unified-panel-close").click();
       await page.waitForSelector('[data-testid="secondary-floating-dock"]', { timeout: 3000 });
       assert.strictEqual(await secDock.getAttribute("data-dock-edge"), "right");
       assert.strictEqual(await secDock.getAttribute("data-dock-locked"), "true");
+      assert.strictEqual(await page.getByTestId("secondary-dock-btn-add-elements").getAttribute("data-active"), "true");
 
       await page.evaluate(() => sessionStorage.setItem("keep_sec_dock", "1"));
       await page.reload({ waitUntil: "networkidle" });
@@ -370,7 +465,7 @@ async function runTests() {
         const dockBox = await page.getByTestId("secondary-floating-dock").boundingBox();
         assert(
           dockBox.x + dockBox.width <= cfg.viewport.width + 1 &&
-            dockBox.y + dockBox.height <= cfg.viewport.height + 1,
+          dockBox.y + dockBox.height <= cfg.viewport.height + 1,
           `[${cfg.name}] Secondary dock out of viewport bounds`
         );
 

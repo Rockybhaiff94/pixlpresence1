@@ -22,6 +22,13 @@ import {
 import { StudioTab } from "@/types/studio";
 import { StudioView } from "./StudioTopBar";
 import { DockPortalTooltip, DockTooltipData } from "./DockPortalTooltip";
+import {
+  clampAlongEdge,
+  getAdaptiveDockBorderClasses,
+  getAdaptiveDockCornerRadii,
+  resolveDockPlacementInfo,
+  snapRatiosToCornerIfNear,
+} from "./dockGeometry";
 import { getDooryToolTitle } from "@/components/editor/DooryDrawerHost";
 import { getBuilderComponentIcon } from "@/components/profile-builder/AddElementPanel";
 import {
@@ -84,6 +91,7 @@ export interface StudioFloatingDockProps {
   dockViewState?: ComponentDockViewState;
   onDockViewStateChange?: (state: ComponentDockViewState) => void;
   onAddComponent?: (type: BuilderComponentType) => void;
+  selectedComponentType?: BuilderComponentType | null;
   savedRatio?: { x: number; y: number } | null;
   onRatioChange?: (ratio: { x: number; y: number }) => void;
 }
@@ -177,6 +185,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   dockViewState,
   onDockViewStateChange,
   onAddComponent,
+  selectedComponentType = null,
   savedRatio,
   onRatioChange,
 }) => {
@@ -687,17 +696,26 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
           // Floating preserves existing orientation!
         }
 
-        const maxAvailableX = Math.max(1, containerRect.width - dockRect.width);
-        const maxAvailableY = Math.max(1, containerRect.height - dockRect.height);
-
-        const ratioX = Math.max(
-          0,
-          Math.min(1, (dockRect.left - containerRect.left) / maxAvailableX)
-        );
-        const ratioY = Math.max(
-          0,
-          Math.min(1, (dockRect.top - containerRect.top) / maxAvailableY)
-        );
+        const curRelX = dockRect.left - containerRect.left;
+        const curRelY = dockRect.top - containerRect.top;
+        let ratioX = 0.5;
+        let ratioY = 0.5;
+        if (newEdge === "float") {
+          ratioX = Math.max(0, Math.min(1, curRelX / Math.max(1, containerRect.width - dockRect.width)));
+          ratioY = Math.max(0, Math.min(1, curRelY / Math.max(1, containerRect.height - dockRect.height)));
+        } else {
+          const snapped = snapRatiosToCornerIfNear(
+            curRelX,
+            curRelY,
+            dockRect.width,
+            dockRect.height,
+            containerRect.width,
+            containerRect.height,
+            newEdge
+          );
+          ratioX = snapped.ratioX;
+          ratioY = snapped.ratioY;
+        }
 
         const nextRatio = { x: ratioX, y: ratioY };
         setOrientation(nextOrientation);
@@ -917,43 +935,38 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
   const containerHeight = hostSize.height;
 
   // Preserved collapsed/expanded-tools bar dimensions (single source of truth)
-  const collapsedWidth = isVertical ? 44 : Math.min(containerWidth - 16, 264);
+  const collapsedWidth = isVertical ? 44 : Math.min(containerWidth, 264);
   const collapsedHeight = componentDockMode
-    ? Math.min(containerHeight - 16, 268)
+    ? Math.min(containerHeight, 268)
     : isVertical
-      ? Math.min(containerHeight - 16, 264)
+      ? Math.min(containerHeight, 264)
       : 44;
-  const expandedWidth = isVertical ? 44 : Math.min(containerWidth - 16, 352);
+  const expandedWidth = isVertical ? 44 : Math.min(containerWidth, 352);
   const expandedHeight = componentDockMode
     ? Math.min(Math.max(collapsedHeight, containerHeight - 16), 636)
     : isVertical
-      ? Math.min(containerHeight - 16, 352)
+      ? Math.min(containerHeight, 352)
       : 44;
 
   const barWidth = Math.min(containerWidth, isExpandedEffective ? expandedWidth : collapsedWidth);
   const barHeight = Math.min(containerHeight, isExpandedEffective ? expandedHeight : collapsedHeight);
 
-  const clampAlongAxis = (ratioVal: number, maxSpan: number, margin = 8) => {
-    if (maxSpan <= margin * 2) return Math.max(0, maxSpan / 2);
-    return Math.max(margin, Math.min(maxSpan - margin, ratioVal * maxSpan));
-  };
-
-  // Anchor from collapsed coordinates so the dock position remains stable across expand/collapse
+  // Anchor from collapsed coordinates cleanly (allowing 0 and maxSpan so corners sit flush with zero gaps)
   const collapsedMaxX = Math.max(0, containerWidth - collapsedWidth);
   const collapsedMaxY = Math.max(0, containerHeight - collapsedHeight);
-  const collapsedLeft = clampAlongAxis(ratio.x, collapsedMaxX, 8);
-  const collapsedTop = clampAlongAxis(ratio.y, collapsedMaxY, 8);
+  const collapsedLeft = clampAlongEdge(ratio.x, collapsedMaxX);
+  const collapsedTop = clampAlongEdge(ratio.y, collapsedMaxY);
 
   const barRatioLeft =
     isExpandedEffective && !isVertical
-      ? Math.max(8, collapsedLeft + collapsedWidth - barWidth)
+      ? Math.max(0, Math.min(Math.max(0, containerWidth - barWidth), collapsedLeft + collapsedWidth - barWidth))
       : collapsedLeft;
   const barRatioTop = componentDockMode
     ? isExpandedEffective
-      ? Math.max(8, Math.min(Math.max(8, containerHeight - barHeight - 8), collapsedTop))
+      ? Math.max(0, Math.min(Math.max(0, containerHeight - barHeight), collapsedTop))
       : collapsedTop
     : isExpandedEffective && isVertical
-      ? Math.max(8, collapsedTop + collapsedHeight - barHeight)
+      ? Math.max(0, Math.min(Math.max(0, containerHeight - barHeight), collapsedTop + collapsedHeight - barHeight))
       : collapsedTop;
 
   const getDockBarRect = () => {
@@ -1083,72 +1096,21 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
 
   const expandedPanelRect = getExpandedPanelRect();
 
+  const activePlacementRect = isPanelExpanded ? expandedPanelRect : dockBarRect;
+  const barPlacementInfo = resolveDockPlacementInfo(
+    activePlacementRect,
+    hostSize,
+    edge,
+    isDragging
+  );
+
   const getShellCornerRadii = (forPanel: boolean) => {
     const r = forPanel ? 18 : 16;
-    if (isDragging || edge === "float") {
-      return {
-        borderTopLeftRadius: r,
-        borderTopRightRadius: r,
-        borderBottomRightRadius: r,
-        borderBottomLeftRadius: r,
-      };
-    }
-    switch (edge) {
-      case "bottom":
-        return {
-          borderTopLeftRadius: r,
-          borderTopRightRadius: r,
-          borderBottomRightRadius: 0,
-          borderBottomLeftRadius: 0,
-        };
-      case "top":
-        return {
-          borderTopLeftRadius: 0,
-          borderTopRightRadius: 0,
-          borderBottomRightRadius: r,
-          borderBottomLeftRadius: r,
-        };
-      case "left":
-        return {
-          borderTopLeftRadius: 0,
-          borderTopRightRadius: r,
-          borderBottomRightRadius: r,
-          borderBottomLeftRadius: 0,
-        };
-      case "right":
-        return {
-          borderTopLeftRadius: r,
-          borderTopRightRadius: 0,
-          borderBottomRightRadius: 0,
-          borderBottomLeftRadius: r,
-        };
-      default:
-        return {
-          borderTopLeftRadius: r,
-          borderTopRightRadius: r,
-          borderBottomRightRadius: r,
-          borderBottomLeftRadius: r,
-        };
-    }
+    return getAdaptiveDockCornerRadii(barPlacementInfo, r);
   };
 
-  const getEdgeBorderClasses = () => {
-    if (isDragging || edge === "float") {
-      return "border border-white/15";
-    }
-    switch (edge) {
-      case "bottom":
-        return "border border-white/15 border-b-0";
-      case "top":
-        return "border border-white/15 border-t-0";
-      case "left":
-        return "border border-white/15 border-l-0";
-      case "right":
-        return "border border-white/15 border-r-0";
-      default:
-        return "border border-white/15";
-    }
-  };
+  const getEdgeBorderClasses = () =>
+    getAdaptiveDockBorderClasses(barPlacementInfo, isDragging);
 
   const getShadowClass = () => {
     if (isDragging) {
@@ -1253,6 +1215,10 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
         zIndex: isDragging ? 50 : showMorphPanelShell ? 45 : 40,
         touchAction: showMorphPanelShell ? "auto" : "none",
       }}
+      onPointerDownCapture={() => {
+        clearSuppressClickTimer();
+        suppressNextClickRef.current = false;
+      }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -1263,6 +1229,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
       data-testid="studio-floating-dock"
       data-dock-orientation={orientation}
       data-dock-edge={edge}
+      data-dock-corner={barPlacementInfo.corner}
       data-dock-expanded={isExpandedEffective}
       data-dock-view={componentDockMode ? activeDockViewState : isExpanded ? "expanded" : "normal"}
       data-dock-panel-open={isPanelExpanded}
@@ -1320,8 +1287,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
               {/* Expanded Tool Panel Header */}
               <div className="h-11 px-4 border-b border-[#1e1e24] flex items-center justify-between shrink-0 bg-[#0a0a0d]">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#d71920] shrink-0" aria-hidden="true" />
-                  <ActiveSectionIcon size={14} className="text-neutral-400 shrink-0" aria-hidden="true" />
+                  <ActiveSectionIcon size={14} className="text-white shrink-0" aria-hidden="true" />
                   <h3 className="text-xs font-mono font-bold text-white uppercase tracking-wider truncate">
                     {activeSectionTitle}
                   </h3>
@@ -1412,6 +1378,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                     >
                       {PRIMARY_COMPONENT_SHORTCUTS.map((shortcut) => {
                         const Icon = getBuilderComponentIcon(shortcut.type);
+                        const isSelected = selectedComponentType === shortcut.type;
                         return (
                           <button
                             key={shortcut.type}
@@ -1445,7 +1412,11 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                             }
                             onBlur={hideTooltip}
                             data-testid={`dock-component-${shortcut.type}`}
-                            className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-150 relative cursor-pointer shrink-0 text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                            data-active={isSelected}
+                            className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-150 relative cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${isSelected
+                              ? "bg-[#858585] text-[#FFFFFF] border border-[#FFFFFF]"
+                              : "bg-transparent text-[#FFFFFF] hover:bg-white/10 border border-transparent"
+                              }`}
                             aria-label={shortcut.label}
                           >
                             <Icon size={16} />
@@ -1469,6 +1440,7 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                           )}
                           {items.map((item) => {
                             const Icon = getBuilderComponentIcon(item.type);
+                            const isSelected = selectedComponentType === item.type;
                             return (
                               <button
                                 key={item.type}
@@ -1502,7 +1474,11 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                                 }
                                 onBlur={hideTooltip}
                                 data-testid={`dock-component-${item.type}`}
-                                className="w-8 h-7 rounded-xl flex items-center justify-center transition-colors duration-150 relative cursor-pointer shrink-0 text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                                data-active={isSelected}
+                                className={`w-8 h-7 rounded-xl flex items-center justify-center transition-colors duration-150 relative cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${isSelected
+                                  ? "bg-[#858585] text-[#FFFFFF] border border-[#FFFFFF]"
+                                  : "bg-transparent text-[#FFFFFF] hover:bg-white/10 border border-transparent"
+                                  }`}
                                 aria-label={item.label}
                               >
                                 <Icon size={15} />
@@ -1588,18 +1564,15 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                         onBlur={hideTooltip}
                         data-testid={`dock-tool-${tool.id}`}
                         data-active={active}
-                        className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-150 relative cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${active
-                          ? "bg-white/18 text-white border border-white/25 shadow-sm shadow-black/40"
-                          : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
+                        className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-150 relative cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${active
+                          ? "bg-[#858585] text-[#FFFFFF] border border-[#FFFFFF]"
+                          : "bg-transparent text-[#FFFFFF] hover:bg-white/10 border border-transparent"
                           }`}
                         aria-label={tool.label}
                         aria-expanded={active}
                         aria-controls="dock-morphed-tool-panel"
                       >
                         <Icon size={16} />
-                        {active && (
-                          <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#d71920]" />
-                        )}
                       </button>
                     );
                   })}
@@ -1655,18 +1628,15 @@ export const StudioFloatingDock: React.FC<StudioFloatingDockProps> = ({
                               onBlur={hideTooltip}
                               data-testid={`dock-tool-${tool.id}`}
                               data-active={active}
-                              className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-150 relative cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${active
-                                ? "bg-white/18 text-white border border-white/25 shadow-sm shadow-black/40"
-                                : "text-neutral-400 hover:text-white hover:bg-white/10 border border-transparent"
+                              className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-150 relative cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${active
+                                ? "bg-[#858585] text-[#FFFFFF] border border-[#FFFFFF]"
+                                : "bg-transparent text-[#FFFFFF] hover:bg-white/10 border border-transparent"
                                 }`}
                               aria-label={tool.label}
                               aria-expanded={active}
                               aria-controls="dock-morphed-tool-panel"
                             >
                               <Icon size={16} />
-                              {active && (
-                                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#d71920]" />
-                              )}
                             </button>
                           );
                         })}
