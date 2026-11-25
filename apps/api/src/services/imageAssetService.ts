@@ -3,6 +3,7 @@ import dns from 'dns';
 import sharp from 'sharp';
 import { prisma } from '@discord-rpc/database';
 import { getStorageProvider } from './storage';
+import { isAssetReferencedByProfileOrHistory } from './profileHistoryService';
 
 export interface CropParameters {
   cropX?: number;
@@ -911,15 +912,34 @@ export class ImageAssetService {
   }
 
   /**
-   * Delete an asset and clean up both storage and database records
+   * Delete an asset and clean up both storage and database records.
+   * Refuses deletion if still referenced by active profile or retained history snapshots.
    */
-  public static async deleteAsset(assetId: string, userId: string): Promise<boolean> {
+  public static async deleteAsset(
+    assetId: string,
+    userId: string
+  ): Promise<{ deleted: boolean; reason?: string; code?: 'not_found' | 'in_use' }> {
     const asset = await prisma.uploadedAsset.findUnique({
       where: { id: assetId },
     });
 
     if (!asset || asset.userId !== userId) {
-      return false;
+      return { deleted: false, code: 'not_found' };
+    }
+
+    const candidates = [asset.originalUrl, asset.processedUrl].filter(
+      (u): u is string => typeof u === 'string' && u.length > 0
+    );
+    const refCheck = await isAssetReferencedByProfileOrHistory(userId, candidates);
+    if (refCheck.referenced) {
+      return {
+        deleted: false,
+        code: 'in_use',
+        reason:
+          refCheck.source === 'active_profile'
+            ? 'Asset is referenced by your active profile and cannot be deleted.'
+            : 'Asset is referenced by a retained 7-day history snapshot and cannot be deleted.',
+      };
     }
 
     const storage = getStorageProvider();
@@ -931,7 +951,7 @@ export class ImageAssetService {
       where: { id: assetId },
     });
 
-    return true;
+    return { deleted: true };
   }
 
   /**

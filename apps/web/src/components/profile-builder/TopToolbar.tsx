@@ -22,6 +22,7 @@ import {
   Lock,
   Monitor,
   Redo2,
+  RotateCcw,
   Save,
   Settings,
   Smartphone,
@@ -48,6 +49,7 @@ interface TopToolbarProps {
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  onResetToDefault?: () => void;
   deviceMode: BuilderDeviceMode;
   onDeviceModeChange: (mode: BuilderDeviceMode) => void;
   onOpenSettings: () => void;
@@ -79,6 +81,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   canRedo,
   onUndo,
   onRedo,
+  onResetToDefault,
   deviceMode,
   onDeviceModeChange,
   onOpenSettings,
@@ -208,6 +211,19 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
               <Redo2 size={13} />
             </button>
           </div>
+
+          {onResetToDefault && (
+            <button
+              type="button"
+              onClick={onResetToDefault}
+              title="Reset profile design to default template"
+              className="px-2 py-1.5 rounded-lg bg-[#101015] hover:bg-[#191922] border border-[#22222b] text-neutral-300 hover:text-white text-[11px] flex items-center gap-1 cursor-pointer"
+              data-testid="builder-reset-btn"
+            >
+              <RotateCcw size={12} />
+              <span className="hidden lg:inline">Reset to Default</span>
+            </button>
+          )}
 
           <div className="flex items-center gap-0.5 bg-[#101015] border border-[#22222b] rounded-lg p-0.5">
             {(

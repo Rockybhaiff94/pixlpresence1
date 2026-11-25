@@ -1418,6 +1418,80 @@ export function validateProfileBuilderDocument(
   return { valid: errors.length === 0, errors };
 }
 
+export const DEFAULT_PLACEHOLDER_AVATAR =
+  "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&q=80";
+export const DEFAULT_PLACEHOLDER_BANNER =
+  "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1200&q=80";
+
+/**
+ * Replaces ONLY uncustomized placeholder identity fields (PIXEL USER, @pixeluser, sample Unsplash URLs)
+ * with the authenticated user's real backend identity, preserving all custom edits.
+ */
+export function hydrateDocumentIdentity(
+  doc: ProfileBuilderDocument,
+  seed: {
+    displayName?: string | null;
+    username?: string | null;
+    bio?: string | null;
+    avatarUrl?: string | null;
+    bannerUrl?: string | null;
+  }
+): ProfileBuilderDocument {
+  if (!seed.username && !seed.displayName && !seed.avatarUrl && !seed.bannerUrl && !seed.bio) {
+    return doc;
+  }
+
+  let changed = false;
+  const nextNodes = doc.nodes.map((node) => {
+    if (node.type === "name-text") {
+      const cur = (node.config.text || "").trim();
+      const target = (seed.displayName || seed.username || "").trim();
+      if (target && (!cur || cur === "PIXEL USER")) {
+        changed = true;
+        return { ...node, config: { ...node.config, text: target } };
+      }
+    }
+
+    if (node.type === "subtitle" && seed.username) {
+      const cur = (node.config.text || "").trim();
+      if (!cur || cur.startsWith("@pixeluser")) {
+        const suffix = cur.includes("·") ? ` · ${cur.split("·").slice(1).join("·").trim()}` : "";
+        changed = true;
+        return { ...node, config: { ...node.config, text: `@${seed.username}${suffix}` } };
+      }
+    }
+
+    if (node.type === "profile-image" && seed.avatarUrl) {
+      const cur = (node.config.src || "").trim();
+      if (!cur || cur === DEFAULT_PLACEHOLDER_AVATAR) {
+        changed = true;
+        return { ...node, config: { ...node.config, src: seed.avatarUrl } };
+      }
+    }
+
+    if (node.type === "banner-image" && seed.bannerUrl) {
+      const cur = (node.config.src || "").trim();
+      if (!cur || cur === DEFAULT_PLACEHOLDER_BANNER) {
+        changed = true;
+        return { ...node, config: { ...node.config, src: seed.bannerUrl } };
+      }
+    }
+
+    if (node.type === "description" && seed.bio) {
+      const cur = (node.config.text || "").trim();
+      if (!cur) {
+        changed = true;
+        return { ...node, config: { ...node.config, text: seed.bio } };
+      }
+    }
+
+    return node;
+  });
+
+  if (!changed) return doc;
+  return { ...doc, nodes: nextNodes };
+}
+
 export function collectDescendantsCount(parentId: string, nodes: BuilderNode[]): number {
   let count = 0;
   const direct = nodes.filter((n) => n.parentId === parentId);

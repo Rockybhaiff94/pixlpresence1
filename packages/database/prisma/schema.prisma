@@ -38,6 +38,7 @@ model User {
   appToken      String?   @unique
   rpcDevices    RpcDeviceAuthorization[]
   uploadedAssets UploadedAsset[]
+  profileHistory ProfileHistorySnapshot[]
 }
 
 model UserIdentity {
@@ -103,6 +104,7 @@ model Profile {
   viewRecords    ProfileView[]
   likesCount     Int           @default(0)
   likes          ProfileLike[]
+  history        ProfileHistorySnapshot[]
   createdAt      DateTime      @default(now())
   updatedAt      DateTime @updatedAt
 }
@@ -353,6 +355,27 @@ model RpcDeviceAuthorization {
 
   @@index([userId])
   @@index([status])
+  @@index([expiresAt])
+}
+
+model ProfileHistorySnapshot {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileId       String
+  profile         Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profileVersion  Int      @default(1)
+  schemaVersion   String   @default("2.0")
+  saveSource      String   @default("manual_save_draft")
+  snapshotJson    String
+  assetUrlsJson   String   @default("[]")
+  clientRequestId String?
+  createdAt       DateTime @default(now())
+  expiresAt       DateTime
+
+  @@unique([userId, clientRequestId])
+  @@index([userId, createdAt])
+  @@index([profileId, createdAt])
   @@index([expiresAt])
 }
 

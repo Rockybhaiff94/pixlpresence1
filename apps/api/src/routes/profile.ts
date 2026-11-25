@@ -8,6 +8,12 @@ import { viewRateLimiter } from '../rateLimiter';
 import { presenceManager } from '../services/presenceManager';
 import { getUserCapabilities, validateProfileCapabilities } from '../services/entitlements';
 import { parseDesignConfigObject } from '../services/profileSyncService';
+import { resolveDiscordAvatarUrl } from '../auth';
+import {
+  createHistorySnapshotTx,
+  getUserHistorySnapshot,
+  listUserHistory,
+} from '../services/profileHistoryService';
 
 export const profileRouter = Router();
 
@@ -198,8 +204,13 @@ profileRouter.get('/u/:username', async (req: any, res) => {
       });
     }
 
-    // Omit sensitive data
+    // Omit sensitive data & normalize avatar URLs
     const { email, passwordHash, appToken, ...safeUser } = user as any;
+    safeUser.avatar = resolveDiscordAvatarUrl(safeUser.discordId, safeUser.avatar);
+    responseProfile.avatarUrl = resolveDiscordAvatarUrl(
+      safeUser.discordId,
+      responseProfile.avatarUrl || safeUser.avatar
+    );
     const rawRpc = (user as any).richPresence || null;
     let safeRpc = rawRpc;
     if (rawRpc && rawRpc.showProfileRpc === false) {
@@ -681,14 +692,71 @@ profileRouter.get('/capabilities', requireAuth, async (req: any, res) => {
   }
 });
 
-// Update Profile (Save Draft / Autosave / Publish with version concurrency & syncPreferences preservation)
+function containsUnsafeAssetUrls(obj: any): string | null {
+  const inspectValue = (val: unknown, field: string): string | null => {
+    if (typeof val !== 'string') return null;
+    const trimmed = val.trim().toLowerCase();
+    if (!trimmed) return null;
+    if (trimmed.startsWith('blob:') || trimmed.startsWith('javascript:') || trimmed.startsWith('vbscript:')) {
+      return `Invalid non-persistent or unsafe URL in ${field}`;
+    }
+    return null;
+  };
+
+  if (!obj || typeof obj !== 'object') return null;
+  for (const key of ['avatarUrl', 'bannerUrl', 'musicUrl']) {
+    const err = inspectValue(obj[key], key);
+    if (err) return err;
+  }
+
+  const checkDoc = (doc: any) => {
+    if (!doc || typeof doc !== 'object') return null;
+    if (doc.canvas) {
+      const err1 = inspectValue(doc.canvas.backgroundImage, 'canvas.backgroundImage');
+      if (err1) return err1;
+      const err2 = inspectValue(doc.canvas.backgroundVideo, 'canvas.backgroundVideo');
+      if (err2) return err2;
+    }
+    if (Array.isArray(doc.nodes)) {
+      for (const node of doc.nodes) {
+        if (!node || typeof node !== 'object') continue;
+        for (const f of ['src', 'bgImageUrl', 'bgVideoUrl', 'artworkUrl', 'largeImage', 'appIcon']) {
+          const err = inspectValue(node.config?.[f], `${node.id}.${f}`);
+          if (err) return err;
+        }
+        const bgErr = inspectValue(node.style?.backgroundImage, `${node.id}.backgroundImage`);
+        if (bgErr) return bgErr;
+      }
+    }
+    return null;
+  };
+
+  let cfg = obj.designConfig;
+  if (typeof cfg === 'string') {
+    try {
+      cfg = JSON.parse(cfg);
+    } catch {
+      cfg = null;
+    }
+  }
+  if (cfg && typeof cfg === 'object') {
+    return checkDoc(cfg.draftProfileBuilder) || checkDoc(cfg.profileBuilder);
+  }
+  return null;
+}
+
+// Update Profile (Save Draft / Autosave / Publish with version concurrency, syncPreferences preservation & explicit Save Draft history)
 profileRouter.patch('/me', requireAuth, async (req: any, res) => {
   try {
     const data = { ...(req.body || {}) };
     const expectedVersion =
       typeof data.expectedVersion === 'number' ? data.expectedVersion : undefined;
+    const saveMode =
+      typeof data.saveMode === 'string' ? data.saveMode.trim() : undefined;
+    const clientRequestId =
+      typeof data.clientRequestId === 'string' ? data.clientRequestId.trim() : undefined;
 
-    // Remove protected or relation fields
+    // Remove protected, relation, or non-column fields
     delete data.id;
     delete data.userId;
     delete data.createdAt;
@@ -699,7 +767,13 @@ profileRouter.patch('/me', requireAuth, async (req: any, res) => {
     delete data.viewRecords;
     delete data.expectedVersion;
     delete data.saveMode;
+    delete data.clientRequestId;
     delete data.isPublished;
+
+    const unsafeUrlError = containsUnsafeAssetUrls(data);
+    if (unsafeUrlError) {
+      return res.status(400).json({ error: unsafeUrlError });
+    }
 
     const existingProfile = await prisma.profile.findUnique({
       where: { userId: req.user.id },
@@ -747,21 +821,52 @@ profileRouter.patch('/me', requireAuth, async (req: any, res) => {
       }
     }
 
-    const profile = await prisma.profile.upsert({
-      where: { userId: req.user.id },
-      update: {
-        ...data,
-        profileVersion: { increment: 1 },
-      },
-      create: {
-        userId: req.user.id,
-        displayName: data.displayName || req.user.globalName || req.user.username,
-        bio: data.bio || null,
-        avatarUrl: data.avatarUrl || req.user.avatar || '',
-        bannerUrl: data.bannerUrl || null,
-        designConfig: typeof data.designConfig === 'string' ? data.designConfig : null,
-      },
-      include: { links: true, buttons: true },
+    const { profile, historySnapshot } = await prisma.$transaction(async (tx) => {
+      const updatedProfile = await tx.profile.upsert({
+        where: { userId: req.user.id },
+        update: {
+          ...data,
+          profileVersion: { increment: 1 },
+        },
+        create: {
+          userId: req.user.id,
+          displayName: data.displayName || req.user.globalName || req.user.username,
+          bio: data.bio || null,
+          avatarUrl: data.avatarUrl || req.user.avatar || '',
+          bannerUrl: data.bannerUrl || null,
+          designConfig: typeof data.designConfig === 'string' ? data.designConfig : null,
+        },
+        include: { links: true, buttons: true },
+      });
+
+      let snapshotRecord: { id: string } | null = null;
+      // Strict Rule: ONLY explicit "Save Draft" creates a 7-day history snapshot.
+      // Autosave, Publish, Preview, Undo/Redo, Reset, and Restore do NOT create history entries.
+      if (saveMode === 'manual_save_draft') {
+        const parsedCfg = parseDesignConfigObject(updatedProfile.designConfig);
+        const builderDoc = parsedCfg.draftProfileBuilder || parsedCfg.profileBuilder || null;
+        snapshotRecord = await createHistorySnapshotTx(tx, {
+          userId: req.user.id,
+          profileId: updatedProfile.id,
+          profileVersion: updatedProfile.profileVersion,
+          schemaVersion: builderDoc?.version || '2.0',
+          saveSource: 'manual_save_draft',
+          clientRequestId,
+          snapshotObj: {
+            displayName: updatedProfile.displayName,
+            bio: updatedProfile.bio,
+            avatarUrl: updatedProfile.avatarUrl,
+            bannerUrl: updatedProfile.bannerUrl,
+            accentColor: updatedProfile.accentColor,
+            musicUrl: updatedProfile.musicUrl,
+            customCss: updatedProfile.customCss,
+            visibility: updatedProfile.visibility,
+            designConfig: parsedCfg,
+          },
+        });
+      }
+
+      return { profile: updatedProfile, historySnapshot: snapshotRecord };
     });
 
     await recordSyncEvent('profile.updated', req.user.id, data, profile.profileVersion);
@@ -776,10 +881,78 @@ profileRouter.patch('/me', requireAuth, async (req: any, res) => {
       });
     }
 
-    res.json(profile);
+    res.json({
+      ...profile,
+      historySnapshotId: historySnapshot?.id || null,
+    });
   } catch (err: any) {
     console.error('[Update Profile Error]:', err);
     res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+// List User Profile History (Non-expired 7-day snapshots, strictly scoped to authenticated owner)
+profileRouter.get('/me/history', requireAuth, async (req: any, res) => {
+  try {
+    const snapshots = await listUserHistory(req.user.id, 50);
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.json({
+      retentionDays: 7,
+      snapshots: snapshots.map((s) => {
+        let assetCount = 0;
+        try {
+          const parsed = JSON.parse(s.assetUrlsJson || '[]');
+          assetCount = Array.isArray(parsed) ? parsed.length : 0;
+        } catch {
+          assetCount = 0;
+        }
+        return {
+          id: s.id,
+          profileId: s.profileId,
+          profileVersion: s.profileVersion,
+          schemaVersion: s.schemaVersion,
+          saveSource: s.saveSource,
+          assetCount,
+          createdAt: s.createdAt,
+          expiresAt: s.expiresAt,
+        };
+      }),
+    });
+  } catch (err: any) {
+    console.error('[Profile History List Error]:', err);
+    res.status(500).json({ error: 'Failed to retrieve profile history' });
+  }
+});
+
+// Retrieve Single Complete Historical Snapshot (Strictly owned by authenticated caller)
+profileRouter.get('/me/history/:snapshotId', requireAuth, async (req: any, res) => {
+  try {
+    const snap = await getUserHistorySnapshot(req.user.id, req.params.snapshotId);
+    if (!snap) {
+      return res.status(404).json({ error: 'History snapshot not found or expired' });
+    }
+    let data: any = null;
+    try {
+      data = JSON.parse(snap.snapshotJson);
+    } catch {
+      return res.status(500).json({ error: 'Corrupted snapshot payload' });
+    }
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.json({
+      snapshot: {
+        id: snap.id,
+        profileId: snap.profileId,
+        profileVersion: snap.profileVersion,
+        schemaVersion: snap.schemaVersion,
+        saveSource: snap.saveSource,
+        createdAt: snap.createdAt,
+        expiresAt: snap.expiresAt,
+        data,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Profile History Detail Error]:', err);
+    res.status(500).json({ error: 'Failed to load profile snapshot' });
   }
 });
 

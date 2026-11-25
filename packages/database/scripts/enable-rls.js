@@ -13,7 +13,9 @@ async function main() {
     'AuditLog',
     'GuildConfiguration',
     'ProfileLayer',
-    'SynchronizationEvent'
+    'SynchronizationEvent',
+    'UploadedAsset',
+    'ProfileHistorySnapshot'
   ];
 
   for (const t of tables) {

@@ -1197,8 +1197,11 @@ rpcRouter.get('/assets', requireAuth, async (req: any, res) => {
  */
 rpcRouter.delete('/assets/:id', requireAuth, async (req: any, res) => {
   try {
-    const deleted = await ImageAssetService.deleteAsset(req.params.id, req.user.id);
-    if (!deleted) {
+    const result = await ImageAssetService.deleteAsset(req.params.id, req.user.id);
+    if (!result.deleted) {
+      if (result.code === 'in_use') {
+        return res.status(409).json({ error: result.reason });
+      }
       return res.status(404).json({ error: 'Asset not found or unauthorized' });
     }
     res.json({ success: true, message: 'Asset deleted successfully' });

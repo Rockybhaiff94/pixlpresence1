@@ -24,6 +24,7 @@ import { prisma } from '@discord-rpc/database';
 import { globalApiLimiter, authRateLimiter, uploadRateLimiter, viewRateLimiter } from './rateLimiter';
 export { globalApiLimiter, authRateLimiter, uploadRateLimiter, viewRateLimiter };
 import { presenceManager } from './services/presenceManager';
+import { startHistoryRetentionScheduler } from './services/profileHistoryService';
 import { authRouter } from './auth';
 import { profileRouter } from './routes/profile';
 import { rpcRouter } from './routes/rpc';
@@ -335,6 +336,9 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 
 server.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`[PixelGG Backend] Central API & Discord Bot listening on http://0.0.0.0:${PORT}`);
+
+  // Start automatic 7-day profile history retention cleanup
+  startHistoryRetentionScheduler();
 
   // Automatically start Discord Bot companion if DISCORD_BOT_TOKEN is present
   startBot().catch((err) => {

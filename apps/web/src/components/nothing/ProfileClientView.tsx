@@ -83,7 +83,21 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
 }) => {
   const router = useRouter();
   const [entered, setEntered] = useState(false);
+  const [viewportDevice, setViewportDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    const updateDevice = () => {
+      const w = window.innerWidth;
+      setViewportDevice(w < 640 ? "mobile" : w < 1024 ? "tablet" : "desktop");
+    };
+    const rafId = window.requestAnimationFrame(updateDevice);
+    window.addEventListener("resize", updateDevice);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      window.removeEventListener("resize", updateDevice);
+    };
+  }, []);
 
   // Database-backed Like state
   const [likes, setLikes] = useState<number>(likesCount);
@@ -303,6 +317,13 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
       if (parsed?.profileBuilder?.version === "2.0" && Array.isArray(parsed.profileBuilder.nodes)) {
         return parsed.profileBuilder as ProfileBuilderDocument;
       }
+      if (
+        parsed?.isPublished !== false &&
+        parsed?.draftProfileBuilder?.version === "2.0" &&
+        Array.isArray(parsed.draftProfileBuilder.nodes)
+      ) {
+        return parsed.draftProfileBuilder as ProfileBuilderDocument;
+      }
     } catch {
       // ignore invalid legacy config
     }
@@ -384,7 +405,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
             <div className="flex-1 w-full">
               <ProfileBuilderRenderer
                 document={parsedProfileBuilderDoc}
-                deviceMode="desktop"
+                deviceMode={viewportDevice}
                 isInteractive={false}
                 liveData={{
                   username,

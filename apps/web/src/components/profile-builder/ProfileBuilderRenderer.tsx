@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Activity,
   BadgeCheck,
@@ -159,6 +159,29 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
 }) => {
   const { canvas, nodes } = document;
   const bg = resolveEffectiveBackground(canvas, nodes);
+  const publicStageHostRef = useRef<HTMLDivElement>(null);
+  const [measuredHostWidth, setMeasuredHostWidth] = useState<number>(1280);
+
+  useEffect(() => {
+    if (isInteractive) return;
+    const el = publicStageHostRef.current;
+    if (!el) return;
+    const updateWidth = () => {
+      const next = el.clientWidth;
+      if (next > 0) setMeasuredHostWidth(next);
+    };
+    updateWidth();
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(updateWidth);
+      ro.observe(el);
+    }
+    window.addEventListener("resize", updateWidth);
+    return () => {
+      window.removeEventListener("resize", updateWidth);
+      ro?.disconnect();
+    };
+  }, [isInteractive, deviceMode]);
 
   const viewportWidth =
     deviceMode === "mobile"
@@ -401,7 +424,11 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
     switch (node.type) {
       case "banner-image":
       case "image": {
-        const src = node.config.src;
+        const isBannerPlaceholder =
+          node.type === "banner-image" &&
+          (!node.config.src ||
+            node.config.src === "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1200&q=80");
+        const src = (isBannerPlaceholder && liveData?.bannerUrl) ? liveData.bannerUrl : node.config.src;
         const radius = node.style.borderRadius ?? 10;
         return (
           <div
@@ -435,6 +462,11 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
       }
 
       case "profile-image": {
+        const isDefaultPlaceholderAvatar =
+          !node.config.src ||
+          node.config.src === "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&q=80";
+        const avatarSrc =
+          isDefaultPlaceholderAvatar && liveData?.avatarUrl ? liveData.avatarUrl : node.config.src;
         const shapeRadius =
           node.config.avatarShape === "circle"
             ? "9999px"
@@ -455,9 +487,9 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
                   : undefined,
               }}
             >
-              {node.config.src ? (
+              {avatarSrc ? (
                 <img
-                  src={node.config.src}
+                  src={avatarSrc}
                   alt={node.name}
                   draggable={false}
                   className="w-full h-full select-none pointer-events-none"
@@ -506,7 +538,11 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               lineHeight: node.config.lineHeight ?? 1.15,
             }}
           >
-            <span className="truncate">{node.config.text || "PIXEL USER"}</span>
+            <span className="truncate">
+              {node.config.text && node.config.text !== "PIXEL USER"
+                ? node.config.text
+                : liveData?.displayName || liveData?.username || node.config.text || "PIXEL USER"}
+            </span>
             {node.config.showVerifiedBadge && (
               <BadgeCheck size={Math.max(14, Math.round(fontSize * 0.72))} className="text-neutral-200 shrink-0" />
             )}
@@ -533,7 +569,17 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               textAlign: node.config.textAlign || "left",
             }}
           >
-            <span className="truncate flex-1">{node.config.text || "@pixeluser"}</span>
+            <span className="truncate flex-1">
+              {node.config.text && !node.config.text.startsWith("@pixeluser")
+                ? node.config.text
+                : liveData?.username
+                  ? `@${liveData.username}${
+                      node.config.text?.includes("·")
+                        ? ` · ${node.config.text.split("·").slice(1).join("·").trim()}`
+                        : ""
+                    }`
+                  : node.config.text || "@pixeluser"}
+            </span>
             {node.config.statusPillActive && node.config.statusPillText && (
               <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#121216] border border-[#26262f] text-[10px] font-mono text-neutral-300 shrink-0">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
@@ -566,7 +612,7 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               wordBreak: "break-word",
             }}
           >
-            {node.config.text || "Profile bio description."}
+            {node.config.text || liveData?.bio || "Profile bio description."}
           </div>
         );
       }
@@ -887,8 +933,49 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
     .filter((n) => !n.responsive?.hiddenOn?.includes(deviceMode))
     .sort((a, b) => a.zIndex - b.zIndex);
 
+  // Compute composition bounding box for faithful static/public/preview rendering
+  const compositionBounds = React.useMemo(() => {
+    if (topLevelNodes.length === 0) {
+      return { minX: 0, minY: 0, width: 720, height: 610 };
+    }
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const n of topLevelNodes) {
+      const x = Number.isFinite(n.x) ? n.x : 0;
+      const y = Number.isFinite(n.y) ? n.y : 0;
+      const w = Math.max(20, Number.isFinite(n.width) ? n.width : 320);
+      const h = Math.max(20, Number.isFinite(n.height) ? n.height : 120);
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x + w > maxX) maxX = x + w;
+      if (y + h > maxY) maxY = y + h;
+    }
+    return {
+      minX,
+      minY,
+      width: Math.max(240, maxX - minX),
+      height: Math.max(120, maxY - minY),
+    };
+  }, [topLevelNodes]);
+
+  const targetContainerWidth =
+    deviceMode === "mobile"
+      ? Math.min(390, measuredHostWidth)
+      : deviceMode === "tablet"
+        ? Math.min(768, measuredHostWidth)
+        : measuredHostWidth;
+
+  const horizontalPadding = deviceMode === "mobile" ? 24 : 48;
+  const availableStageWidth = Math.max(240, targetContainerWidth - horizontalPadding);
+  const publicScale = Math.min(1, availableStageWidth / compositionBounds.width);
+  const scaledStageWidth = Math.round(compositionBounds.width * publicScale);
+  const scaledStageHeight = Math.round(compositionBounds.height * publicScale);
+
   return (
     <div
+      ref={isInteractive ? undefined : publicStageHostRef}
       id={isInteractive ? "canvas-artboard" : "profile-builder-canvas-root"}
       onClick={(e) => {
         if (
@@ -957,7 +1044,7 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
       )}
 
       {/* Optional Grid Overlay (Interactive Editor Only) */}
-      {isInteractive && document.preferences.showGrid && (
+      {isInteractive && document.preferences?.showGrid && (
         <div
           className="absolute inset-0 pointer-events-none z-0 opacity-25"
           style={{
@@ -1001,21 +1088,48 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           );
         })
       ) : (
-        <div className="relative z-10 w-full min-h-screen flex flex-col items-center justify-center p-4 sm:p-8 gap-6">
-          {topLevelNodes.map((node) => (
+        <div
+          className="relative z-10 w-full min-h-screen flex flex-col items-center justify-center py-6 sm:py-10 px-3 sm:px-6"
+          data-testid="public-profile-composition"
+        >
+          {topLevelNodes.length > 0 && (
             <div
-              key={node.id}
+              className="relative shrink-0"
               style={{
-                width: "100%",
-                maxWidth: `${node.width}px`,
-                minHeight: `${node.height}px`,
-                opacity: node.style.opacity ?? 1,
+                width: `${scaledStageWidth}px`,
+                height: `${scaledStageHeight}px`,
               }}
-              className="relative"
             >
-              {renderNodeInner(node, 1, new Set())}
+              <div
+                className="relative"
+                style={{
+                  width: `${compositionBounds.width}px`,
+                  height: `${compositionBounds.height}px`,
+                  transform: publicScale < 1 ? `scale(${publicScale})` : undefined,
+                  transformOrigin: "top left",
+                }}
+              >
+                {topLevelNodes.map((node) => (
+                  <div
+                    key={node.id}
+                    data-testid={`public-node-${node.id}`}
+                    style={{
+                      position: "absolute",
+                      left: `${node.x - compositionBounds.minX}px`,
+                      top: `${node.y - compositionBounds.minY}px`,
+                      width: `${node.width}px`,
+                      height: `${node.height}px`,
+                      zIndex: node.zIndex,
+                      opacity: node.style.opacity ?? 1,
+                      transform: node.rotation ? `rotate(${node.rotation}deg)` : undefined,
+                    }}
+                  >
+                    {renderNodeInner(node, 1, new Set())}
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
+          )}
         </div>
       )}
     </div>

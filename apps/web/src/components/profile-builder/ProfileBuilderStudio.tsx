@@ -23,6 +23,7 @@ import {
   createNodeFromRegistry,
   deleteNodeSubtree,
   getNestingDepth,
+  hydrateDocumentIdentity,
   isContainerType,
   validateProfileBuilderDocument,
   wouldCreateCycle,
@@ -31,7 +32,13 @@ import { exportProfileBuilderJson, exportProfileBuilderPng } from "./profileBuil
 import { TopToolbar } from "./TopToolbar";
 import { AddElementPanel } from "./AddElementPanel";
 import { ProfileCanvasWorkspace } from "./ProfileCanvasWorkspace";
-import { BuilderSettingsModal, MediaUploadModal } from "./BuilderModals";
+import {
+  BuilderSettingsModal,
+  MediaUploadModal,
+  ProfileHistorySnapshotDetail,
+  ProfilePreviewModal,
+  ResetConfirmModal,
+} from "./BuilderModals";
 import { DockBridgePanel } from "./DockBridgePanel";
 import { ProfileLiveActivityData } from "./ProfileBuilderRenderer";
 import { clampNodeToParent, constrainDescendantsToParent } from "./boundaryConstraints";
@@ -49,7 +56,7 @@ interface ProfileBuilderStudioProps {
 }
 
 export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ children }) => {
-  const { user, profile, refreshUser } = useAuth();
+  const { user, profile, status: authStatus, refreshUser } = useAuth();
 
   // Deterministic SSR initial state; persisted/remote doc hydrated post-mount cleanly
   const [doc, setDoc] = useState<ProfileBuilderDocument>(() => createDefaultReferenceDocument());
@@ -62,6 +69,16 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+  const [hasHydrated, setHasHydrated] = useState(false);
+  const [isPublishedState, setIsPublishedState] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [previewModalState, setPreviewModalState] = useState<{
+    open: boolean;
+    mode: "draft" | "history";
+    snapshotDoc?: ProfileBuilderDocument;
+    historyMeta?: { id: string; createdAt: string; profileVersion: number } | null;
+    historyDetail?: ProfileHistorySnapshotDetail | null;
+  }>({ open: false, mode: "draft" });
 
   const [dockNavState, setDockNavState] = useState<ComponentDockViewState>("normal");
   const [preservedDockRatio, setPreservedDockRatio] = useState<{ x: number; y: number } | null>(
@@ -96,22 +113,39 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
   ]);
   const [historyIdx, setHistoryIdx] = useState(0);
   const isDirtyRef = useRef(false);
+  const hasHydratedRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveSeqRef = useRef(0);
   const knownProfileVersionRef = useRef<number | undefined>(undefined);
   const isPublishedRef = useRef(false);
+
+  const identitySeed = useMemo(
+    () => ({
+      displayName: profile?.displayName || user?.globalName || user?.username || null,
+      username: user?.username || null,
+      bio: profile?.bio || null,
+      avatarUrl: profile?.avatarUrl || user?.avatar || null,
+      bannerUrl: profile?.bannerUrl || user?.banner || null,
+    }),
+    [profile, user]
+  );
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3200);
   }, []);
 
-  // Hydrate saved draft or published profile designConfig post-mount without hydration mismatch
+  // Hydrate saved draft or published profile designConfig + authenticated identity post-mount
   useEffect(() => {
+    if (authStatus === "INITIALIZING") return;
+    if (isDirtyRef.current && hasHydratedRef.current) return;
+
     const raf = window.requestAnimationFrame(() => {
       try {
         const storageKey = user?.id ? `${DRAFT_STORAGE_KEY}_${user.id}` : DRAFT_STORAGE_KEY;
-        const localRaw = localStorage.getItem(storageKey) || (!user?.id ? localStorage.getItem(DRAFT_STORAGE_KEY) : null);
+        const localRaw =
+          localStorage.getItem(storageKey) ||
+          (!user?.id ? localStorage.getItem(DRAFT_STORAGE_KEY) : null);
         const localParsed = localRaw ? (JSON.parse(localRaw) as ProfileBuilderDocument) : null;
         const validLocal =
           localParsed && localParsed.version === "2.0" && Array.isArray(localParsed.nodes) && localParsed.canvas
@@ -132,12 +166,13 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           }
         }
 
-        const profileVersion = (profile as { profileVersion?: unknown }).profileVersion;
+        const profileVersion = (profile as { profileVersion?: unknown } | null)?.profileVersion;
         if (typeof profileVersion === "number") {
           knownProfileVersionRef.current = profileVersion;
         }
         if (remotePublished || remoteDoc?.metadata?.lastPublishedAt) {
           isPublishedRef.current = true;
+          setIsPublishedState(true);
         }
 
         // Choose whichever document is newer between local draft and remote profile
@@ -156,31 +191,37 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           chosen = remoteDoc || validLocal;
         }
 
-        if (chosen) {
-          const base = createDefaultReferenceDocument();
-          const normalized: ProfileBuilderDocument = {
-            ...base,
-            ...chosen,
-            canvas: { ...base.canvas, ...(chosen.canvas || {}) },
-            preferences: { ...base.preferences, ...(chosen.preferences || {}) },
-            metadata: { ...base.metadata, ...(chosen.metadata || {}) },
-          };
-          setDoc(normalized);
-          setHistory([
+        const base = createDefaultReferenceDocument(identitySeed);
+        const normalized: ProfileBuilderDocument = chosen
+          ? hydrateDocumentIdentity(
             {
-              canvas: JSON.parse(JSON.stringify(normalized.canvas)),
-              nodes: JSON.parse(JSON.stringify(normalized.nodes)),
-              selectedId: null,
+              ...base,
+              ...chosen,
+              canvas: { ...base.canvas, ...(chosen.canvas || {}) },
+              preferences: { ...base.preferences, ...(chosen.preferences || {}) },
+              metadata: { ...base.metadata, ...(chosen.metadata || {}) },
             },
-          ]);
-          setHistoryIdx(0);
-        }
+            identitySeed
+          )
+          : base;
+
+        hasHydratedRef.current = true;
+        setHasHydrated(true);
+        setDoc(normalized);
+        setHistory([
+          {
+            canvas: JSON.parse(JSON.stringify(normalized.canvas)),
+            nodes: JSON.parse(JSON.stringify(normalized.nodes)),
+            selectedId: "embed-profile-root",
+          },
+        ]);
+        setHistoryIdx(0);
       } catch {
         // Ignore corrupted draft and keep safe starter document
       }
     });
     return () => window.cancelAnimationFrame(raf);
-  }, [profile, user?.id]);
+  }, [authStatus, identitySeed, profile, user?.id]);
 
   // Fetch optional live Discord RPC status for preview without fabricating data
   useEffect(() => {
@@ -791,11 +832,17 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       try {
         const currentlyPublished = Boolean(isPublishedRef.current || doc.metadata?.lastPublishedAt);
         const profileFields = extractProfileFieldsFromDoc(doc);
+        const clientRequestId =
+          !silent && typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : undefined;
         const res = await apiFetch("/api/profile/me", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ...profileFields,
+            saveMode: silent ? "autosave" : "manual_save_draft",
+            ...(clientRequestId ? { clientRequestId } : {}),
             designConfig: buildDesignConfigPayload(doc, currentlyPublished),
             ...(knownProfileVersionRef.current !== undefined
               ? { expectedVersion: knownProfileVersionRef.current }
@@ -890,6 +937,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...profileFields,
+          saveMode: "publish",
           designConfig: buildDesignConfigPayload(publishedDoc, true),
         }),
       });
@@ -904,6 +952,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       }
 
       isPublishedRef.current = true;
+      setIsPublishedState(true);
       setDoc(publishedDoc);
       try {
         const storageKey = user?.id ? `${DRAFT_STORAGE_KEY}_${user.id}` : DRAFT_STORAGE_KEY;
@@ -927,17 +976,100 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     }
   };
 
-  const handlePreviewProfile = async () => {
-    if (!user?.username) {
-      setErrorBanner("Sign in to preview your Pixel.gg profile.");
-      return;
+  const extractDocFromHistorySnapshot = useCallback(
+    (snap: ProfileHistorySnapshotDetail): ProfileBuilderDocument => {
+      const snapCfg = (snap.data?.designConfig || {}) as Record<string, unknown>;
+      const rawCandidate =
+        (snapCfg.draftProfileBuilder as ProfileBuilderDocument | undefined) ||
+        (snapCfg.profileBuilder as ProfileBuilderDocument | undefined);
+      const snapSeed = {
+        displayName: snap.data?.displayName || identitySeed.displayName,
+        username: identitySeed.username,
+        bio: snap.data?.bio || identitySeed.bio,
+        avatarUrl: snap.data?.avatarUrl || identitySeed.avatarUrl,
+        bannerUrl: snap.data?.bannerUrl || identitySeed.bannerUrl,
+      };
+      const base = createDefaultReferenceDocument(snapSeed);
+      if (rawCandidate && rawCandidate.version === "2.0" && Array.isArray(rawCandidate.nodes)) {
+        return hydrateDocumentIdentity(
+          {
+            ...base,
+            ...rawCandidate,
+            canvas: { ...base.canvas, ...(rawCandidate.canvas || {}) },
+            preferences: { ...base.preferences, ...(rawCandidate.preferences || {}) },
+            metadata: { ...base.metadata, ...(rawCandidate.metadata || {}) },
+          },
+          snapSeed
+        );
+      }
+      return base;
+    },
+    [identitySeed]
+  );
+
+  // Live Preview directly renders current in-memory editor state without mutating DB or history
+  const handlePreviewProfile = () => {
+    setPreviewModalState({
+      open: true,
+      mode: "draft",
+      historyMeta: null,
+      historyDetail: null,
+    });
+  };
+
+  const handleConfirmResetToDefault = () => {
+    const resetDoc = createDefaultReferenceDocument({
+      displayName: user?.globalName || user?.username || identitySeed.displayName,
+      username: user?.username || identitySeed.username,
+      bio: null,
+      avatarUrl: user?.avatar || identitySeed.avatarUrl,
+      bannerUrl: user?.banner || identitySeed.bannerUrl,
+    });
+    // Preserve lastPublishedAt marker if the profile was previously published
+    if (doc.metadata?.lastPublishedAt) {
+      resetDoc.metadata.lastPublishedAt = doc.metadata.lastPublishedAt;
     }
-    if (isDirtyRef.current) {
-      await performSaveDraft(true);
+    setDoc(resetDoc);
+    setDockAddedIds([]);
+    setSelectedId("embed-profile-root");
+    commitSnapshot(resetDoc.canvas, resetDoc.nodes, "embed-profile-root");
+    setIsResetModalOpen(false);
+    showToast("Reset design to default. Click Save Draft when ready to save.");
+  };
+
+  const handlePreviewHistorySnapshot = (snap: ProfileHistorySnapshotDetail) => {
+    const snapshotDoc = extractDocFromHistorySnapshot(snap);
+    setPreviewModalState({
+      open: true,
+      mode: "history",
+      snapshotDoc,
+      historyMeta: {
+        id: snap.id,
+        createdAt: snap.createdAt,
+        profileVersion: snap.profileVersion,
+      },
+      historyDetail: snap,
+    });
+  };
+
+  const handleRestoreHistorySnapshot = (snap: ProfileHistorySnapshotDetail) => {
+    const restoredDoc = extractDocFromHistorySnapshot(snap);
+    // Preserve publication timestamp marker so Save Draft keeps live status intact
+    if (isPublishedRef.current && doc.metadata?.lastPublishedAt) {
+      restoredDoc.metadata = {
+        ...restoredDoc.metadata,
+        lastPublishedAt: doc.metadata.lastPublishedAt,
+      };
     }
-    const published = Boolean(isPublishedRef.current || doc.metadata?.lastPublishedAt);
-    const targetUrl = `/${encodeURIComponent(user.username)}${published ? "" : "?preview=1"}`;
-    window.open(targetUrl, "_blank", "noopener,noreferrer");
+    restoredDoc.metadata = {
+      ...restoredDoc.metadata,
+      updatedAt: new Date().toISOString(),
+    };
+    setDoc(restoredDoc);
+    setSelectedId("embed-profile-root");
+    commitSnapshot(restoredDoc.canvas, restoredDoc.nodes, "embed-profile-root");
+    setPreviewModalState({ open: false, mode: "draft" });
+    showToast(`Restored draft v${snap.profileVersion} into editor. Click Save Draft to persist.`);
   };
 
   const handleExport = async (kind: "png" | "design-json" | "template-json") => {
@@ -1043,6 +1175,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         canRedo={historyIdx < history.length - 1}
         onUndo={handleUndo}
         onRedo={handleRedo}
+        onResetToDefault={() => setIsResetModalOpen(true)}
         deviceMode={deviceMode}
         onDeviceModeChange={setDeviceMode}
         onOpenSettings={() => setIsSettingsOpen(true)}
@@ -1178,7 +1311,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         />
       </div>
 
-      {/* Settings & Media Upload Modals */}
+      {/* Settings, Reset, Live Preview & Media Upload Modals */}
       <BuilderSettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -1186,7 +1319,52 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         canvas={doc.canvas}
         onUpdatePreferences={handleUpdatePreferences}
         onUpdateCanvas={handleUpdateCanvas}
+        onPreviewHistorySnapshot={handlePreviewHistorySnapshot}
+        onRestoreHistorySnapshot={handleRestoreHistorySnapshot}
       />
+
+      <ResetConfirmModal
+        isOpen={isResetModalOpen}
+        onCancel={() => setIsResetModalOpen(false)}
+        onConfirm={handleConfirmResetToDefault}
+      />
+
+      <ProfilePreviewModal
+        isOpen={previewModalState.open}
+        onClose={() => setPreviewModalState((p) => ({ ...p, open: false }))}
+        document={
+          previewModalState.mode === "history" && previewModalState.snapshotDoc
+            ? previewModalState.snapshotDoc
+            : doc
+        }
+        deviceMode={deviceMode}
+        onDeviceModeChange={setDeviceMode}
+        liveData={liveData}
+        mode={previewModalState.mode}
+        historyMeta={previewModalState.historyMeta}
+        onRestoreHistory={
+          previewModalState.historyDetail
+            ? () => handleRestoreHistorySnapshot(previewModalState.historyDetail!)
+            : undefined
+        }
+        publicUrl={
+          user?.username
+            ? `/${encodeURIComponent(user.username)}${isPublishedState || doc.metadata?.lastPublishedAt ? "" : "?preview=1"
+            }`
+            : null
+        }
+        isPublished={Boolean(isPublishedState || doc.metadata?.lastPublishedAt)}
+      />
+
+      {authStatus === "INITIALIZING" && !hasHydrated && (
+        <div
+          className="fixed inset-0 z-40 bg-[#050507]/85 backdrop-blur-sm flex flex-col items-center justify-center gap-2 text-xs text-neutral-300"
+          data-testid="studio-auth-loading"
+        >
+          <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
+          <span>Loading your Pixel.gg Studio profile...</span>
+        </div>
+      )}
 
       {mediaModalState && (
         <MediaUploadModal
