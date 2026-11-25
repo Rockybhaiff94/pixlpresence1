@@ -153,10 +153,11 @@ async function runTests() {
       assert.strictEqual(await page.getByTestId("secondary-unified-panel").count(), 0);
       assert.strictEqual(await page.getByTestId("builder-bottom-bar").isVisible(), true);
 
-      // Open Secondary Unified Panel via Properties button (shows expandable Properties + Layers)
+      // Open Secondary Unified Panel via Properties button (exclusive Properties tab)
       await page.getByTestId("secondary-dock-btn-properties").click();
-      await page.waitForSelector('[data-testid="builder-layers-panel"]', { timeout: 3000 });
-      assert.strictEqual(await page.getByTestId("builder-layers-panel").isVisible(), true);
+      await page.waitForSelector('[data-testid="unified-section-properties"]', { timeout: 3000 });
+      assert.strictEqual(await page.getByTestId("unified-section-properties").isVisible(), true);
+      assert.strictEqual(await page.getByTestId("unified-section-layers").count(), 0);
 
       // Select Canvas (Level A)
       await page.getByTestId("subbar-select-canvas").click();

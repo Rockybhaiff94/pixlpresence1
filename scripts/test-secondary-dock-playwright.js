@@ -340,14 +340,14 @@ async function runTests() {
       console.log("   ✓ Suite 1 passed");
     }
 
-    // SUITE 2: Unified Panel Divider Resize, Add Elements Independent Components & Layer Visual Stacking
-    console.log("[4/5] Running Suite 2 (Resizable Divider, Independent Elements, Layer Stacking Sync)...");
+    // SUITE 2: Exclusive Tabs (No Accordions/Divider), Add Elements Independent Components & Layer Visual Stacking
+    console.log("[4/5] Running Suite 2 (Exclusive Tabs, Independent Elements, Layer Stacking & Parent-Child Boundaries)...");
     {
       const { context, page, pageErrors } = await setupContext(browser);
       await page.goto(`${BASE_URL}/customize`, { waitUntil: "networkidle" });
       await page.waitForSelector('[data-testid="secondary-floating-dock"]', { timeout: 15000 });
 
-      // Open Layers directly from compact dock
+      // Open Layers directly from compact dock -> only Layers is rendered, no accordions or divider
       await page.getByTestId("secondary-dock-btn-layers").click();
       await page.waitForSelector('[data-testid="secondary-unified-panel"]', { timeout: 3000 });
       assert.strictEqual(
@@ -355,29 +355,25 @@ async function runTests() {
         "layers"
       );
       assert.strictEqual(await page.getByTestId("builder-layers-panel").isVisible(), true);
-      assert.strictEqual(await page.getByTestId("unified-section-properties").isVisible(), true);
-
-      // Grab divider & resize upward then downward -> Properties & Layers heights change while respecting min sizes
-      const divider = page.getByTestId("secondary-panel-divider");
-      const propsBefore = await page.getByTestId("unified-section-properties").boundingBox();
-      const layersBefore = await page.getByTestId("unified-section-layers").boundingBox();
-      const divBox = await divider.boundingBox();
-      await page.mouse.move(divBox.x + divBox.width / 2, divBox.y + divBox.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(divBox.x + divBox.width / 2, divBox.y - 110, { steps: 8 });
-      await page.mouse.up();
-      await page.waitForTimeout(80);
-      const propsAfterUp = await page.getByTestId("unified-section-properties").boundingBox();
-      const layersAfterUp = await page.getByTestId("unified-section-layers").boundingBox();
-      assert(propsAfterUp.height < propsBefore.height - 40, "Moving divider up shrinks Properties");
-      assert(layersAfterUp.height > layersBefore.height + 40, "Moving divider up expands Layers");
-      assert(propsAfterUp.height >= 115, "Properties respects minimum height");
-
-      // Expand/collapse section headers without losing selection
-      await page.getByTestId("section-toggle-properties").click();
+      assert.strictEqual(await page.getByTestId("unified-section-layers").isVisible(), true);
       assert.strictEqual(await page.getByTestId("unified-section-properties").count(), 0);
-      await page.getByTestId("section-toggle-properties").click();
-      assert.strictEqual(await page.getByTestId("unified-section-properties").isVisible(), true);
+      assert.strictEqual(await page.getByTestId("section-toggle-properties").count(), 0);
+      assert.strictEqual(await page.getByTestId("section-toggle-layers").count(), 0);
+      assert.strictEqual(await page.getByTestId("secondary-panel-divider").count(), 0);
+      assert.strictEqual(await page.getByTestId("unified-split-body").count(), 0);
+
+      // Selecting a layer keeps the user on Layers tab and preserves selection when switching to Properties
+      await page.getByTestId("layer-row-embed-profile-root").click();
+      assert.strictEqual(
+        await page.getByTestId("secondary-unified-panel").getAttribute("data-active-section"),
+        "layers"
+      );
+      await page.getByTestId("unified-tab-properties").click();
+      await page.waitForSelector('[data-testid="unified-section-properties"]', { timeout: 3000 });
+      assert.strictEqual(await page.getByTestId("unified-section-layers").count(), 0);
+      const embedInitialW = Number(await page.getByTestId("prop-width-input").inputValue());
+      const embedInitialH = Number(await page.getByTestId("prop-height-input").inputValue());
+      assert(embedInitialW > 100 && embedInitialH > 100, "Selected embed dimensions should load in Properties");
 
       // Open Add Elements tab -> Central Modal -> Search -> Add 2 independent components outside Main Embed
       await page.getByTestId("unified-tab-add-elements").click();
@@ -409,7 +405,9 @@ async function runTests() {
       assert.strictEqual(await rootTexts.count(), 1, "Text must be outside Main Profile Embed");
       const txtNodeId = (await rootTexts.first().getAttribute("data-testid")).replace("canvas-node-", "");
 
-      // Verify live stacking synchronization: Image starts BEHIND Text (img zIndex < txt zIndex)
+      // Switch to Layers tab and verify live stacking synchronization
+      await page.getByTestId("unified-tab-layers").click();
+      await page.waitForSelector('[data-testid="unified-section-layers"]', { timeout: 3000 });
       const imgZBefore = Number(
         await page.getByTestId(`layer-row-${img1NodeId}`).getAttribute("data-z-index")
       );
@@ -445,6 +443,84 @@ async function runTests() {
         1,
         `Sending image to bottom must lower zIndex to 1, got ${canvasImgZAfterBottom}`
       );
+
+      // Parent-Child Boundary System: Child movement constrained by parent embed dimensions
+      const embedChild = page.locator('[data-parent-id="embed-profile-root"]').first();
+      const childTestId = await embedChild.getAttribute("data-testid");
+      const childNodeId = childTestId.replace("canvas-node-", "");
+      await page.getByTestId(`layer-row-${childNodeId}`).click();
+      await page.getByTestId("unified-tab-properties").click();
+      await page.waitForSelector('[data-testid="prop-width-input"]', { timeout: 3000 });
+      const childWBefore = Number(await page.getByTestId("prop-width-input").inputValue());
+      const childHBefore = Number(await page.getByTestId("prop-height-input").inputValue());
+
+      // Attempt to set child X/Y way beyond parent's right/bottom edges -> clamped inside [0..parentW-childW, 0..parentH-childH]
+      await page.getByTestId("prop-x-input").fill("9999");
+      await page.getByTestId("prop-x-input").press("Enter");
+      await page.getByTestId("prop-y-input").fill("9999");
+      await page.getByTestId("prop-y-input").press("Enter");
+      const clampedXSmall = Number(await page.getByTestId("prop-x-input").inputValue());
+      const clampedYSmall = Number(await page.getByTestId("prop-y-input").inputValue());
+      assert(
+        clampedXSmall <= embedInitialW - childWBefore + 1 && clampedXSmall >= 0,
+        `Child X (${clampedXSmall}) must stay inside parent width (${embedInitialW} - ${childWBefore})`
+      );
+      assert(
+        clampedYSmall <= embedInitialH - childHBefore + 1 && clampedYSmall >= 0,
+        `Child Y (${clampedYSmall}) must stay inside parent height (${embedInitialH} - ${childHBefore})`
+      );
+
+      // Expand parent embed -> child dimensions preserved, available movement area increases
+      await page.getByTestId("unified-tab-layers").click();
+      await page.getByTestId("layer-row-embed-profile-root").click();
+      await page.getByTestId("unified-tab-properties").click();
+      await page.getByTestId("prop-width-input").fill("900");
+      await page.getByTestId("prop-width-input").press("Enter");
+      await page.getByTestId("prop-height-input").fill("620");
+      await page.getByTestId("prop-height-input").press("Enter");
+
+      await page.getByTestId("unified-tab-layers").click();
+      await page.getByTestId(`layer-row-${childNodeId}`).click();
+      await page.getByTestId("unified-tab-properties").click();
+      assert.strictEqual(
+        Number(await page.getByTestId("prop-width-input").inputValue()),
+        childWBefore,
+        "Expanding parent must not stretch child width"
+      );
+      assert.strictEqual(
+        Number(await page.getByTestId("prop-height-input").inputValue()),
+        childHBefore,
+        "Expanding parent must not stretch child height"
+      );
+
+      // Move child into newly expanded area
+      const targetExpandedX = 900 - childWBefore;
+      const targetExpandedY = 620 - childHBefore;
+      await page.getByTestId("prop-x-input").fill(String(targetExpandedX));
+      await page.getByTestId("prop-x-input").press("Enter");
+      await page.getByTestId("prop-y-input").fill(String(targetExpandedY));
+      await page.getByTestId("prop-y-input").press("Enter");
+      assert.strictEqual(Number(await page.getByTestId("prop-x-input").inputValue()), targetExpandedX);
+      assert.strictEqual(Number(await page.getByTestId("prop-y-input").inputValue()), targetExpandedY);
+
+      // Shrink parent embed -> child is automatically constrained back inside smaller parent bounds
+      await page.getByTestId("unified-tab-layers").click();
+      await page.getByTestId("layer-row-embed-profile-root").click();
+      await page.getByTestId("unified-tab-properties").click();
+      await page.getByTestId("prop-width-input").fill("420");
+      await page.getByTestId("prop-width-input").press("Enter");
+      await page.getByTestId("prop-height-input").fill("280");
+      await page.getByTestId("prop-height-input").press("Enter");
+
+      await page.getByTestId("unified-tab-layers").click();
+      await page.getByTestId(`layer-row-${childNodeId}`).click();
+      await page.getByTestId("unified-tab-properties").click();
+      const xAfterShrink = Number(await page.getByTestId("prop-x-input").inputValue());
+      const yAfterShrink = Number(await page.getByTestId("prop-y-input").inputValue());
+      const wAfterShrink = Number(await page.getByTestId("prop-width-input").inputValue());
+      const hAfterShrink = Number(await page.getByTestId("prop-height-input").inputValue());
+      assert(xAfterShrink + wAfterShrink <= 420, `Child right (${xAfterShrink + wAfterShrink}) must fit 420`);
+      assert(yAfterShrink + hAfterShrink <= 280, `Child bottom (${yAfterShrink + hAfterShrink}) must fit 280`);
 
       assert.strictEqual(pageErrors.length, 0, `Suite 2 pageErrors: ${pageErrors.join("; ")}`);
       await context.close();

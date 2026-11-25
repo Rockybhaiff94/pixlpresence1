@@ -327,15 +327,26 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
           setGuideY(yg ? parentRect.y + yg.position : null);
         }
 
-        // Prevent elements from becoming completely inaccessible outside parent/canvas
-        finalX = Math.max(-initialNode.width + 24, Math.min(bounds.width - 24, finalX));
-        finalY = Math.max(-initialNode.height + 24, Math.min(bounds.height - 24, finalY));
+        if (parentNode) {
+          // Child nodes are strictly constrained within their parent's [0..width] x [0..height] bounds
+          const maxX = Math.max(0, bounds.width - initialNode.width);
+          const maxY = Math.max(0, bounds.height - initialNode.height);
+          finalX = Math.max(0, Math.min(maxX, finalX));
+          finalY = Math.max(0, Math.min(maxY, finalY));
+        } else {
+          // Root nodes can sit anywhere on canvas while remaining accessible
+          finalX = Math.max(-initialNode.width + 24, Math.min(bounds.width - 24, finalX));
+          finalY = Math.max(-initialNode.height + 24, Math.min(bounds.height - 24, finalY));
+        }
 
         if (finalX !== selectedNode.x || finalY !== selectedNode.y) {
           didMutateRef.current = true;
           onUpdateNode(selectedNode.id, { x: finalX, y: finalY }, { skipHistory: true });
         }
       } else if (activeHandle) {
+        const parentNode = initialNode.parentId
+          ? doc.nodes.find((n) => n.id === initialNode.parentId) || null
+          : null;
         const reg = PROFILE_BUILDER_REGISTRY[initialNode.type];
         const minW = reg?.minWidth ?? 24;
         const minH = reg?.minHeight ?? 16;
@@ -354,6 +365,19 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
           height = nh;
         }
 
+        if (parentNode) {
+          if (x < 0) {
+            width = Math.max(minW, initialNode.x + initialNode.width);
+            x = 0;
+          }
+          if (y < 0) {
+            height = Math.max(minH, initialNode.y + initialNode.height);
+            y = 0;
+          }
+          width = Math.min(width, Math.max(minW, parentNode.width - x));
+          height = Math.min(height, Math.max(minH, parentNode.height - y));
+        }
+
         const isCorner =
           activeHandle === "nw" ||
           activeHandle === "ne" ||
@@ -370,6 +394,12 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
             const nw = Math.max(minW, Math.round(height * aspect));
             if (activeHandle.includes("w")) x = initialNode.x + (initialNode.width - nw);
             width = nw;
+          }
+          if (parentNode) {
+            x = Math.max(0, x);
+            y = Math.max(0, y);
+            width = Math.min(width, Math.max(minW, parentNode.width - x));
+            height = Math.min(height, Math.max(minH, parentNode.height - y));
           }
         }
 

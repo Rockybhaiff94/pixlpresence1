@@ -34,6 +34,7 @@ import { ProfileCanvasWorkspace } from "./ProfileCanvasWorkspace";
 import { BuilderSettingsModal, MediaUploadModal } from "./BuilderModals";
 import { DockBridgePanel } from "./DockBridgePanel";
 import { ProfileLiveActivityData } from "./ProfileBuilderRenderer";
+import { clampNodeToParent, constrainDescendantsToParent } from "./boundaryConstraints";
 import { SecondaryDockPanelSystem } from "./SecondaryDockPanelSystem";
 import { AddElementsModal } from "./AddElementsModal";
 import {
@@ -275,7 +276,26 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
   const handleUpdateNode = useCallback(
     (id: string, updates: Partial<BuilderNode>, options?: { skipHistory?: boolean }) => {
       setDoc((prev) => {
-        const nextNodes = prev.nodes.map((n) => (n.id === id ? { ...n, ...updates } : n));
+        const target = prev.nodes.find((n) => n.id === id);
+        if (!target) return prev;
+
+        let merged: BuilderNode = { ...target, ...updates };
+        if (merged.parentId) {
+          const parent = prev.nodes.find((n) => n.id === merged.parentId);
+          if (parent) {
+            const clamped = clampNodeToParent(merged, parent);
+            merged = { ...merged, ...clamped };
+          }
+        }
+
+        let nextNodes = prev.nodes.map((n) => (n.id === id ? merged : n));
+        if (
+          isContainerType(merged.type) &&
+          (updates.width !== undefined || updates.height !== undefined)
+        ) {
+          nextNodes = constrainDescendantsToParent(id, nextNodes);
+        }
+
         if (!options?.skipHistory) {
           commitSnapshot(prev.canvas, nextNodes, selectedId);
         }

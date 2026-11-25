@@ -3,8 +3,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
-  ChevronDown,
-  ChevronRight,
   GripHorizontal,
   GripVertical,
   Layers,
@@ -31,10 +29,7 @@ import { LayersPanel } from "./LayersPanel";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { AddElementsLibraryContent } from "./AddElementsModal";
 import {
-  DEFAULT_EDITOR_PANEL_STATE,
-  EditorPanelState,
   SECONDARY_DOCK_STORAGE_KEY,
-  SECONDARY_PANEL_STORAGE_KEY,
   SecondaryDockEdge,
   SecondaryDockSection,
   SecondaryDockState,
@@ -77,7 +72,6 @@ interface SecondaryDockPanelSystemProps {
 
 const COMPACT_SHORT_AXIS = 44;
 const COMPACT_LONG_AXIS = 166;
-const MIN_SECTION_PX = 120;
 
 const DOCK_ACTIONS: ReadonlyArray<{
   id: SecondaryDockSection;
@@ -133,7 +127,6 @@ export const SecondaryDockPanelSystem: React.FC<SecondaryDockPanelSystemProps> =
 }) => {
   const prefersReducedMotion = useReducedMotion();
 
-  const [panelState, setPanelState] = useState<EditorPanelState>(DEFAULT_EDITOR_PANEL_STATE);
   const [hostSize, setHostSize] = useState<{ width: number; height: number }>({
     width: 1200,
     height: 760,
@@ -141,7 +134,6 @@ export const SecondaryDockPanelSystem: React.FC<SecondaryDockPanelSystemProps> =
   const [tooltip, setTooltip] = useState<DockTooltipData | null>(null);
 
   const compactDockRef = useRef<HTMLDivElement>(null);
-  const panelBodyRef = useRef<HTMLDivElement>(null);
   const propsScrollRef = useRef<HTMLDivElement>(null);
   const layersScrollRef = useRef<HTMLDivElement>(null);
   const propsScrollTopRef = useRef<number>(0);
@@ -160,9 +152,6 @@ export const SecondaryDockPanelSystem: React.FC<SecondaryDockPanelSystemProps> =
   const hasMovedPastThresholdRef = useRef(false);
   const suppressNextClickRef = useRef(false);
   const suppressTimerRef = useRef<number | null>(null);
-
-  // Divider dragging state
-  const [isDraggingDivider, setIsDraggingDivider] = useState(false);
 
   const hideTooltip = useCallback(() => setTooltip(null), []);
 
@@ -243,26 +232,6 @@ export const SecondaryDockPanelSystem: React.FC<SecondaryDockPanelSystemProps> =
             isPanelOpen: false,
           }));
         }
-
-        const rawPanel = localStorage.getItem(SECONDARY_PANEL_STORAGE_KEY);
-        if (rawPanel) {
-          const parsedPanel = JSON.parse(rawPanel) as Partial<EditorPanelState>;
-          setPanelState((prev) => ({
-            ...prev,
-            propertiesExpanded:
-              typeof parsedPanel.propertiesExpanded === "boolean"
-                ? parsedPanel.propertiesExpanded
-                : prev.propertiesExpanded,
-            layersExpanded:
-              typeof parsedPanel.layersExpanded === "boolean"
-                ? parsedPanel.layersExpanded
-                : prev.layersExpanded,
-            dividerRatio:
-              typeof parsedPanel.dividerRatio === "number"
-                ? Math.max(0.2, Math.min(0.8, parsedPanel.dividerRatio))
-                : prev.dividerRatio,
-          }));
-        }
       } catch {
         // Ignore corrupted preference storage safely
       } finally {
@@ -293,21 +262,7 @@ export const SecondaryDockPanelSystem: React.FC<SecondaryDockPanelSystemProps> =
     dockState.activeSection,
   ]);
 
-  useEffect(() => {
-    if (!hasHydratedPrefsRef.current) return;
-    try {
-      localStorage.setItem(
-        SECONDARY_PANEL_STORAGE_KEY,
-        JSON.stringify({
-          propertiesExpanded: panelState.propertiesExpanded,
-          layersExpanded: panelState.layersExpanded,
-          dividerRatio: panelState.dividerRatio,
-        })
-      );
-    } catch { }
-  }, [panelState.propertiesExpanded, panelState.layersExpanded, panelState.dividerRatio]);
-
-  // Preserve independent scroll offsets across re-renders / section toggles
+  // Preserve independent scroll offsets across tab switches
   useLayoutEffect(() => {
     const propsInner = propsScrollRef.current?.firstElementChild as HTMLElement | null;
     if (propsInner && propsScrollTopRef.current > 0) {
@@ -319,13 +274,7 @@ export const SecondaryDockPanelSystem: React.FC<SecondaryDockPanelSystemProps> =
     if (layersInner && layersScrollTopRef.current > 0) {
       layersInner.scrollTop = layersScrollTopRef.current;
     }
-  }, [
-    dockState.isPanelOpen,
-    dockState.activeSection,
-    panelState.propertiesExpanded,
-    panelState.layersExpanded,
-    selectedId,
-  ]);
+  }, [dockState.isPanelOpen, dockState.activeSection, selectedId]);
 
   // Alt+L keyboard lock toggle (isolated from Main Dock's CapsLock shortcut)
   useEffect(() => {
@@ -545,37 +494,6 @@ const handleDockPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
   isPointerDownRef.current = true;
 };
 
-// Draggable Divider pointer handling (Properties vs Layers)
-useEffect(() => {
-  if (!isDraggingDivider) return;
-
-  const handleMove = (e: PointerEvent) => {
-    if (!panelBodyRef.current) return;
-    const bodyRect = panelBodyRef.current.getBoundingClientRect();
-    // Account for ~64px total across two collapsed section headers + 8px divider
-    const usableHeight = Math.max(MIN_SECTION_PX * 2, bodyRect.height - 72);
-    const rawOffset = e.clientY - bodyRect.top - 32;
-    const minBound = Math.min(MIN_SECTION_PX, usableHeight * 0.35);
-    const maxBound = usableHeight - minBound;
-    const clamped = Math.max(minBound, Math.min(maxBound, rawOffset));
-    const nextRatio = Math.max(0.18, Math.min(0.82, clamped / usableHeight));
-    setPanelState((prev) => ({ ...prev, dividerRatio: nextRatio }));
-  };
-
-  const handleUp = () => {
-    setIsDraggingDivider(false);
-  };
-
-  window.addEventListener("pointermove", handleMove);
-  window.addEventListener("pointerup", handleUp);
-  window.addEventListener("pointercancel", handleUp);
-  return () => {
-    window.removeEventListener("pointermove", handleMove);
-    window.removeEventListener("pointerup", handleUp);
-    window.removeEventListener("pointercancel", handleUp);
-  };
-}, [isDraggingDivider]);
-
 const handleOpenSectionFromDock = (section: SecondaryDockSection) => {
   hideTooltip();
   onDockStateChange((prev) => ({
@@ -583,22 +501,14 @@ const handleOpenSectionFromDock = (section: SecondaryDockSection) => {
     isPanelOpen: true,
     activeSection: section,
   }));
-  if (section === "properties") {
-    setPanelState((prev) => ({ ...prev, propertiesExpanded: true }));
-  } else if (section === "layers") {
-    setPanelState((prev) => ({ ...prev, layersExpanded: true }));
-  } else if (section === "add-elements") {
+  if (section === "add-elements") {
     onOpenAddElementsModal();
   }
 };
 
 const handleSelectTabInPanel = (section: SecondaryDockSection) => {
   onDockStateChange((prev) => ({ ...prev, activeSection: section }));
-  if (section === "properties") {
-    setPanelState((prev) => ({ ...prev, propertiesExpanded: true }));
-  } else if (section === "layers") {
-    setPanelState((prev) => ({ ...prev, layersExpanded: true }));
-  } else if (section === "add-elements") {
+  if (section === "add-elements") {
     onOpenAddElementsModal();
   }
 };
@@ -684,9 +594,6 @@ const dockTargetGeometry =
 const selectedLabel = selectedNode
   ? selectedNode.type.toUpperCase()
   : "CANVAS";
-
-const splitBothOpen = panelState.propertiesExpanded && panelState.layersExpanded;
-const propsPercent = Math.round(panelState.dividerRatio * 1000) / 10;
 
 return (
   <>
@@ -843,9 +750,7 @@ return (
                 : { duration: 0.28, ease: [0.22, 1, 0.36, 1] },
             }}
             exit={panelMotionExit}
-            className={`${panelPositionClasses} bg-[#09090d] flex flex-col overflow-hidden font-mono shadow-2xl ${
-              isDraggingDivider ? "select-none" : ""
-            }`}
+            className={`${panelPositionClasses} bg-[#09090d] flex flex-col overflow-hidden font-mono shadow-2xl`}
             aria-label="Secondary Editor Panel"
             data-testid="secondary-unified-panel"
             data-panel-edge={dockState.attachedEdge}
@@ -933,158 +838,7 @@ return (
         itemTestIdPrefix="panel-add"
       />
     </div>
-  ) : (
-    <div
-      ref={panelBodyRef}
-      className="flex-1 min-h-0 flex flex-col overflow-hidden"
-      data-testid="unified-split-body"
-    >
-      {/* Section 1: Expandable Properties */}
-      <div
-        className={`flex flex-col min-h-0 ${panelState.propertiesExpanded
-          ? splitBothOpen
-            ? ""
-            : "flex-1"
-          : "shrink-0"
-          }`}
-        style={
-          panelState.propertiesExpanded && splitBothOpen
-            ? { flex: `0 0 ${propsPercent}%`, minHeight: `${MIN_SECTION_PX}px` }
-            : undefined
-        }
-      >
-        <button
-          type="button"
-          onClick={() =>
-            setPanelState((prev) => ({
-              ...prev,
-              propertiesExpanded: !prev.propertiesExpanded,
-            }))
-          }
-          className={`w-full px-3 py-1.5 border-b border-[#181820] flex items-center justify-between text-[11px] font-bold shrink-0 cursor-pointer transition-colors ${dockState.activeSection === "properties"
-            ? "bg-[#111117] text-white"
-            : "bg-[#0c0c11] text-neutral-300 hover:text-white"
-            }`}
-          aria-expanded={panelState.propertiesExpanded}
-          data-testid="section-toggle-properties"
-        >
-          <span className="flex items-center gap-1.5">
-            {panelState.propertiesExpanded ? (
-              <ChevronDown size={12} className="text-neutral-400" />
-            ) : (
-              <ChevronRight size={12} className="text-neutral-400" />
-            )}
-            <SlidersHorizontal size={12} className="text-white" />
-            <span>Properties</span>
-          </span>
-          <span className="text-[9px] text-neutral-500 uppercase">{selectedLabel}</span>
-        </button>
-
-        {panelState.propertiesExpanded && (
-          <div
-            ref={propsScrollRef}
-            onScrollCapture={(e) => {
-              const target = e.target as HTMLElement | null;
-              if (target) propsScrollTopRef.current = target.scrollTop;
-            }}
-            className="flex-1 min-h-0 overflow-hidden"
-            data-testid="unified-section-properties"
-          >
-            <PropertiesPanel
-              canvas={canvas}
-              selectedNode={selectedNode}
-              deviceMode={deviceMode}
-              onUpdateCanvas={onUpdateCanvas}
-              onUpdateNode={onUpdateNode}
-              onOpenMediaPicker={onOpenMediaPicker}
-              onAddGalleryImage={onAddGalleryImage}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Draggable Horizontal Divider between Properties and Layers */}
-      {splitBothOpen && (
-        <div
-          role="separator"
-          aria-orientation="horizontal"
-          aria-label="Resize Properties and Layers sections"
-          aria-valuenow={Math.round(panelState.dividerRatio * 100)}
-          tabIndex={0}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setIsDraggingDivider(true);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowUp") {
-              e.preventDefault();
-              setPanelState((prev) => ({
-                ...prev,
-                dividerRatio: Math.max(0.2, prev.dividerRatio - 0.05),
-              }));
-            } else if (e.key === "ArrowDown") {
-              e.preventDefault();
-              setPanelState((prev) => ({
-                ...prev,
-                dividerRatio: Math.min(0.8, prev.dividerRatio + 0.05),
-              }));
-            }
-          }}
-          className={`h-2 shrink-0 border-y border-[#1e1e28] flex items-center justify-center cursor-row-resize group transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/70 ${
-            isDraggingDivider ? "bg-[#1a1a24]" : "bg-[#0d0d13] hover:bg-[#16161f]"
-          }`}
-          data-testid="secondary-panel-divider"
-        >
-          <div
-            className={`w-9 h-0.5 rounded-full transition-colors ${
-              isDraggingDivider
-                ? "bg-white"
-                : "bg-white/25 group-hover:bg-white/80"
-            }`}
-          />
-    </div>
-  )
-}
-
-{/* Section 2: Expandable Layers */ }
-<div
-  className={`flex flex-col min-h-0 ${panelState.layersExpanded ? "flex-1" : "shrink-0"
-    }`}
-  style={
-    panelState.layersExpanded && splitBothOpen
-      ? { minHeight: `${MIN_SECTION_PX}px` }
-      : undefined
-  }
->
-  <button
-    type="button"
-    onClick={() =>
-      setPanelState((prev) => ({
-        ...prev,
-        layersExpanded: !prev.layersExpanded,
-      }))
-    }
-    className={`w-full px-3 py-1.5 border-b border-[#181820] flex items-center justify-between text-[11px] font-bold shrink-0 cursor-pointer transition-colors ${dockState.activeSection === "layers"
-      ? "bg-[#111117] text-white"
-      : "bg-[#0c0c11] text-neutral-300 hover:text-white"
-      }`}
-    aria-expanded={panelState.layersExpanded}
-    data-testid="section-toggle-layers"
-  >
-    <span className="flex items-center gap-1.5">
-      {panelState.layersExpanded ? (
-        <ChevronDown size={12} className="text-neutral-400" />
-      ) : (
-        <ChevronRight size={12} className="text-neutral-400" />
-      )}
-      <Layers size={12} className="text-white" />
-      <span>Layers</span>
-    </span>
-    <span className="text-[9px] text-neutral-500">{nodes.length}</span>
-  </button>
-
-  {panelState.layersExpanded && (
+  ) : dockState.activeSection === "layers" ? (
     <div
       ref={layersScrollRef}
       onScrollCapture={(e) => {
@@ -1098,14 +852,7 @@ return (
         canvas={canvas}
         nodes={nodes}
         selectedId={selectedId}
-        onSelect={(id) => {
-          onSelect(id);
-          onDockStateChange((prev) => ({
-            ...prev,
-            activeSection: "properties",
-          }));
-          setPanelState((prev) => ({ ...prev, propertiesExpanded: true }));
-        }}
+        onSelect={onSelect}
         onRenameNode={onRenameNode}
         onToggleVisibility={onToggleVisibility}
         onToggleLock={onToggleLock}
@@ -1117,10 +864,27 @@ return (
         onInvalidDrop={onInvalidDrop}
       />
     </div>
+  ) : (
+    <div
+      ref={propsScrollRef}
+      onScrollCapture={(e) => {
+        const target = e.target as HTMLElement | null;
+        if (target) propsScrollTopRef.current = target.scrollTop;
+      }}
+      className="flex-1 min-h-0 overflow-hidden"
+      data-testid="unified-section-properties"
+    >
+      <PropertiesPanel
+        canvas={canvas}
+        selectedNode={selectedNode}
+        deviceMode={deviceMode}
+        onUpdateCanvas={onUpdateCanvas}
+        onUpdateNode={onUpdateNode}
+        onOpenMediaPicker={onOpenMediaPicker}
+        onAddGalleryImage={onAddGalleryImage}
+      />
+    </div>
   )}
-</div>
-              </div >
-            )}
           </motion.aside >
         )}
       </AnimatePresence >
