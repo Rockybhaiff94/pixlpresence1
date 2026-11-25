@@ -12,6 +12,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ProfileDesignConfig, DEFAULT_DESIGN_CONFIG } from "@/types/studio";
 import { StudioProfilePreview } from "@/components/studio/StudioProfilePreview";
 import { computeBaseBackgroundStyle } from "@/components/studio/cssUtils";
+import { ProfileBuilderRenderer } from "@/components/profile-builder/ProfileBuilderRenderer";
+import { ProfileBuilderDocument } from "@/components/profile-builder/profileBuilderTypes";
 
 interface ProfileButton {
   id: string;
@@ -287,10 +289,24 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
     }
   };
 
+  const parsedProfileBuilderDoc: ProfileBuilderDocument | null = React.useMemo(() => {
+    if (!designConfig) return null;
+    try {
+      const parsed = typeof designConfig === "string" ? JSON.parse(designConfig) : designConfig;
+      if (parsed?.profileBuilder?.version === "2.0" && Array.isArray(parsed.profileBuilder.nodes)) {
+        return parsed.profileBuilder as ProfileBuilderDocument;
+      }
+    } catch {
+      // ignore invalid legacy config
+    }
+    return null;
+  }, [designConfig]);
+
   const hasActiveEmbeds = Boolean(
-    activeConfig.canvas &&
-    Array.isArray(activeConfig.canvas.embeds) &&
-    activeConfig.canvas.embeds.length > 0
+    parsedProfileBuilderDoc ||
+    (activeConfig.canvas &&
+      Array.isArray(activeConfig.canvas.embeds) &&
+      activeConfig.canvas.embeds.length > 0)
   );
 
   return (
@@ -354,9 +370,57 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Main Profile Layout — Rendered via Studio Engine when customized, or Clean Blank Slate when reset */}
+      {/* Main Profile Layout — Rendered via Profile Builder V2, Legacy Studio Engine, or Clean Blank Slate */}
       <div className="w-full min-h-screen flex-1 flex flex-col items-center justify-between relative z-10">
-        {hasActiveEmbeds ? (
+        {parsedProfileBuilderDoc ? (
+          <div className="w-full min-h-screen flex flex-col">
+            <div className="flex-1 w-full">
+              <ProfileBuilderRenderer
+                document={parsedProfileBuilderDoc}
+                deviceMode="desktop"
+                isInteractive={false}
+                liveData={{
+                  username,
+                  displayName,
+                  bio,
+                  avatarUrl,
+                  bannerUrl,
+                  musicUrl,
+                  musicTitle,
+                  musicArtist,
+                  discordPresence: livePresence,
+                }}
+              />
+            </div>
+            <div className="w-full max-w-5xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] font-mono pointer-events-auto relative z-20">
+              <button
+                onClick={handleToggleLike}
+                disabled={isLiking}
+                className={`group flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md transition-all cursor-pointer shadow-sm ${
+                  hasLiked
+                    ? "bg-rose-500/20 border border-rose-500/40 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.25)]"
+                    : "bg-black/30 hover:bg-black/50 border border-white/10 hover:border-white/25 text-white/80 hover:text-white"
+                }`}
+                title={hasLiked ? "Unlike profile" : "Like profile"}
+              >
+                <Heart
+                  size={12}
+                  className={`transition-transform group-hover:scale-110 ${
+                    hasLiked ? "fill-rose-500 text-rose-500" : "text-white/70 group-hover:text-white"
+                  }`}
+                />
+                <span className="font-semibold tracking-tight">{likes.toLocaleString()}</span>
+              </button>
+
+              <Link
+                href="/register"
+                className="text-white/60 hover:text-white px-2.5 py-1 rounded-md backdrop-blur-sm bg-black/20 hover:bg-black/40 border border-white/5 hover:border-white/20 transition-all text-[11px] tracking-wide"
+              >
+                CLAIM YOUR OWN PROFILE ↗
+              </Link>
+            </div>
+          </div>
+        ) : hasActiveEmbeds ? (
           <StudioProfilePreview
             config={activeConfig}
             data={{

@@ -1,4 +1,22 @@
-export type ElementType = "shape" | "text" | "image" | "sticker" | "container" | "social" | "rpc";
+export type ElementType =
+  | "shape"
+  | "text"
+  | "image"
+  | "sticker"
+  | "container"
+  | "social"
+  | "rpc"
+  | "music";
+
+export type EmbedComponentKind =
+  | "profile-image"
+  | "name"
+  | "subtitle"
+  | "description"
+  | "rpc"
+  | "music"
+  | "social"
+  | "custom-text";
 
 export type ShapeKind =
   | "rectangle"
@@ -16,6 +34,8 @@ export interface BaseElement {
   id: string;
   name: string;
   type: ElementType;
+  parentId?: string | null; // Optional parent Embed container ID; x/y are local to parent when set
+  embedRole?: EmbedComponentKind;
   x: number;
   y: number;
   width: number;
@@ -85,7 +105,9 @@ export interface StickerElement extends BaseElement {
 
 export interface ContainerElement extends BaseElement {
   type: "container";
+  isProfileEmbed?: boolean;
   backgroundColor: string;
+  backgroundOpacity?: number; // 0 to 1
   borderColor?: string;
   borderWidth?: number;
   borderRadius?: number;
@@ -96,6 +118,16 @@ export interface ContainerElement extends BaseElement {
 
 export interface SocialElement extends BaseElement {
   type: "social";
+  platformId?: string;
+  platformName?: string;
+  handle?: string;
+  url?: string;
+  showHandle?: boolean;
+  showPlatformName?: boolean;
+  iconSize?: number;
+  textColor?: string;
+  backgroundColor?: string;
+  borderRadius?: number;
   variant?: "default" | "pill" | "minimal" | "circle";
   iconColorMode?: "original" | "custom" | "monochrome";
   iconColor?: string;
@@ -105,6 +137,38 @@ export interface RpcElement extends BaseElement {
   type: "rpc";
   cardStyle?: "card" | "glass" | "minimal" | "compact" | "neon";
   accentColor?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  borderRadius?: number;
+  activityType?: "playing" | "streaming" | "listening" | "watching" | "competing";
+  appName?: string;
+  details?: string;
+  state?: string;
+  largeImage?: string;
+  smallImage?: string;
+  useLiveRpc?: boolean;
+  showLargeImage?: boolean;
+  showSmallImage?: boolean;
+  showDetails?: boolean;
+  showState?: boolean;
+}
+
+export interface MusicElement extends BaseElement {
+  type: "music";
+  title: string;
+  artist: string;
+  albumArt?: string;
+  statusText?: string;
+  isPlaying?: boolean;
+  progressPercent?: number;
+  elapsedText?: string;
+  durationText?: string;
+  accentColor?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  borderRadius?: number;
+  showProgress?: boolean;
+  showArtwork?: boolean;
 }
 
 export type EditorElement =
@@ -114,7 +178,8 @@ export type EditorElement =
   | StickerElement
   | ContainerElement
   | SocialElement
-  | RpcElement;
+  | RpcElement
+  | MusicElement;
 
 export interface CanvasDimensions {
   width: number;

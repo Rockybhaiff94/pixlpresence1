@@ -4,9 +4,7 @@ import {
   EditorElement,
   CanvasBackground,
   TextElement,
-  ShapeElement,
-  ImageElement,
-  StickerElement,
+  ContainerElement,
 } from "./editorTypes";
 
 export interface AutoFixIssue {
@@ -70,12 +68,18 @@ export function inspectCanvasIssues(
       });
     }
 
-    // Out-of-bounds Audit
+    const scopeParent = el.parentId
+      ? (elements.find((p) => p.id === el.parentId) as ContainerElement | undefined)
+      : undefined;
+    const scopeWidth = scopeParent ? scopeParent.width : canvas.width;
+    const scopeHeight = scopeParent ? scopeParent.height : canvas.height;
+
+    // Out-of-bounds Audit (scoped to parent container if nested, else canvas)
     const isOutOfBounds =
       el.x + el.width < 10 ||
       el.y + el.height < 10 ||
-      el.x > canvas.width - 10 ||
-      el.y > canvas.height - 10;
+      el.x > scopeWidth - 10 ||
+      el.y > scopeHeight - 10;
 
     if (isOutOfBounds) {
       issues.push({
@@ -84,8 +88,8 @@ export function inspectCanvasIssues(
         elementName: name,
         category: "bounds",
         severity: "warning",
-        description: `Element "${name}" is located outside the active canvas boundary (x: ${Math.round(el.x)}, y: ${Math.round(el.y)}).`,
-        appliedFix: "Snap and reposition element safely within canvas artboard.",
+        description: `Element "${name}" is located outside the active ${scopeParent ? "embed container" : "canvas"} boundary (x: ${Math.round(el.x)}, y: ${Math.round(el.y)}).`,
+        appliedFix: `Snap and reposition element safely within ${scopeParent ? "parent embed" : "canvas artboard"}.`,
       });
     }
 
@@ -153,9 +157,15 @@ export function inspectCanvasIssues(
       }
     }
 
-    // Identical Overlapping Position Check (Collision detection)
+    // Identical Overlapping Position Check (Collision detection within same scope)
     elements.forEach((otherEl, otherIdx) => {
-      if (otherIdx > index && el.x === otherEl.x && el.y === otherEl.y && el.width === otherEl.width) {
+      if (
+        otherIdx > index &&
+        (el.parentId || null) === (otherEl.parentId || null) &&
+        el.x === otherEl.x &&
+        el.y === otherEl.y &&
+        el.width === otherEl.width
+      ) {
         issues.push({
           id: `overlap-${el.id}-${otherEl.id}`,
           elementId: otherEl.id,
@@ -213,20 +223,25 @@ export function executeAutoFix(
     if (isNaN(el.width) || el.width <= 0) el.width = 32;
     if (isNaN(el.height) || el.height <= 0) el.height = 32;
 
-    // 2. Repair out-of-bounds positioning (clamp into canvas viewport)
+    // 2. Repair out-of-bounds positioning (clamp into parent embed or canvas viewport)
+    const scopeParent = el.parentId
+      ? (fixedElements.find((p) => p.id === el.parentId) as ContainerElement | undefined)
+      : undefined;
+    const scopeWidth = scopeParent ? scopeParent.width : canvas.width;
+    const scopeHeight = scopeParent ? scopeParent.height : canvas.height;
     const margin = 12;
-    const maxX = Math.max(margin, canvas.width - el.width - margin);
-    const maxY = Math.max(margin, canvas.height - el.height - margin);
+    const maxX = Math.max(margin, scopeWidth - el.width - margin);
+    const maxY = Math.max(margin, scopeHeight - el.height - margin);
 
     if (el.x + el.width < margin) {
       el.x = margin;
-    } else if (el.x > canvas.width - margin) {
+    } else if (el.x > scopeWidth - margin) {
       el.x = maxX;
     }
 
     if (el.y + el.height < margin) {
       el.y = margin;
-    } else if (el.y > canvas.height - margin) {
+    } else if (el.y > scopeHeight - margin) {
       el.y = maxY;
     }
 
@@ -253,12 +268,17 @@ export function executeAutoFix(
       }
     }
 
-    // 6. Stagger exact duplicates
+    // 6. Stagger exact duplicates within the same coordinate scope
     for (let j = 0; j < index; j++) {
       const prev = fixedElements[j];
-      if (prev.x === el.x && prev.y === el.y && prev.width === el.width) {
-        el.x = Math.min(canvas.width - el.width, el.x + 16);
-        el.y = Math.min(canvas.height - el.height, el.y + 16);
+      if (
+        (prev.parentId || null) === (el.parentId || null) &&
+        prev.x === el.x &&
+        prev.y === el.y &&
+        prev.width === el.width
+      ) {
+        el.x = Math.min(Math.max(0, scopeWidth - el.width), el.x + 16);
+        el.y = Math.min(Math.max(0, scopeHeight - el.height), el.y + 16);
       }
     }
   });

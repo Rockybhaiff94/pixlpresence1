@@ -11,9 +11,11 @@ import {
   ContainerElement,
   SocialElement,
   RpcElement,
+  MusicElement,
   BackgroundPattern,
 } from "./editorTypes";
 import { AVAILABLE_FONTS } from "./editorPresets";
+import { PLATFORMS } from "@/components/links/PlatformIcons";
 import {
   AlignLeft,
   AlignCenter,
@@ -25,7 +27,6 @@ import {
   ChevronDown,
   Sparkles,
   X,
-  Layers,
   Settings2,
 } from "lucide-react";
 
@@ -378,6 +379,11 @@ export const EditorPropertiesPanel: React.FC<EditorPropertiesPanelProps> = ({
         <RpcProperties rpc={el as RpcElement} onUpdate={(u) => onUpdateElement(el.id, u)} />
       )}
 
+      {/* MUSIC SPECIFIC PROPERTIES */}
+      {el.type === "music" && (
+        <MusicProperties music={el as MusicElement} onUpdate={(u) => onUpdateElement(el.id, u)} />
+      )}
+
       {/* Opacity */}
       <div className="space-y-1">
         <div className="flex justify-between text-[11px] font-mono text-neutral-400">
@@ -667,6 +673,34 @@ const TextProperties: React.FC<{
           Right
         </button>
       </div>
+
+      {/* Tracking & Line Height */}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <span className="text-[10px] font-mono text-neutral-500 block mb-0.5">LETTER SPACING</span>
+          <input
+            type="number"
+            step={0.5}
+            min={-4}
+            max={20}
+            value={textEl.letterSpacing ?? 0}
+            onChange={(e) => onUpdate({ letterSpacing: Number(e.target.value) })}
+            className="w-full bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
+          />
+        </div>
+        <div>
+          <span className="text-[10px] font-mono text-neutral-500 block mb-0.5">LINE HEIGHT</span>
+          <input
+            type="number"
+            step={0.1}
+            min={0.8}
+            max={3}
+            value={textEl.lineHeight ?? 1.2}
+            onChange={(e) => onUpdate({ lineHeight: Number(e.target.value) })}
+            className="w-full bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
+          />
+        </div>
+      </div>
     </div>
   );
 };
@@ -874,33 +908,97 @@ const ContainerProperties: React.FC<{
         <div className="flex items-center gap-2">
           <input
             type="color"
-            value={container.backgroundColor?.startsWith("#") ? container.backgroundColor : "#0c0c0e"}
+            value={container.backgroundColor?.startsWith("#") ? container.backgroundColor : "#0e0e13"}
             onChange={(e) => onUpdate({ backgroundColor: e.target.value })}
             className="w-7 h-7 rounded border border-[#333333] cursor-pointer bg-transparent"
           />
           <input
             type="text"
-            value={container.backgroundColor || "#0c0c0e"}
+            value={container.backgroundColor || "#0e0e13"}
             onChange={(e) => onUpdate({ backgroundColor: e.target.value })}
             className="flex-1 bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
           />
         </div>
       </div>
 
-      {/* Border Radius */}
+      {/* Background Opacity */}
       <div className="space-y-1">
         <div className="flex justify-between text-[10px] font-mono text-neutral-500">
-          <span>CORNER RADIUS</span>
-          <span>{container.borderRadius ?? 24}px</span>
+          <span>SURFACE OPACITY</span>
+          <span>{Math.round((container.backgroundOpacity ?? 0.96) * 100)}%</span>
         </div>
         <input
           type="range"
           min={0}
-          max={48}
-          value={container.borderRadius ?? 24}
-          onChange={(e) => onUpdate({ borderRadius: Number(e.target.value) })}
+          max={100}
+          value={Math.round((container.backgroundOpacity ?? 0.96) * 100)}
+          onChange={(e) => onUpdate({ backgroundOpacity: Number(e.target.value) / 100 })}
           className="w-full accent-white"
         />
+      </div>
+
+      {/* Border Color & Width */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <span className="text-[10px] font-mono text-neutral-500 block">BORDER COLOR</span>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="color"
+              value={container.borderColor?.startsWith("#") ? container.borderColor : "#282834"}
+              onChange={(e) => onUpdate({ borderColor: e.target.value })}
+              className="w-6 h-6 rounded border border-[#333333] cursor-pointer bg-transparent"
+            />
+            <input
+              type="text"
+              value={container.borderColor || "#282834"}
+              onChange={(e) => onUpdate({ borderColor: e.target.value })}
+              className="w-full bg-[#121212] border border-[#222222] text-[11px] font-mono text-white p-1 rounded outline-none"
+            />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <span className="text-[10px] font-mono text-neutral-500 block">BORDER WIDTH</span>
+          <input
+            type="number"
+            min={0}
+            max={12}
+            value={container.borderWidth ?? 1}
+            onChange={(e) => onUpdate({ borderWidth: Math.max(0, Number(e.target.value) || 0) })}
+            className="w-full bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1 rounded outline-none"
+          />
+        </div>
+      </div>
+
+      {/* Border Radius & Padding */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <div className="flex justify-between text-[10px] font-mono text-neutral-500">
+            <span>RADIUS</span>
+            <span>{container.borderRadius ?? 20}px</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={48}
+            value={container.borderRadius ?? 20}
+            onChange={(e) => onUpdate({ borderRadius: Number(e.target.value) })}
+            className="w-full accent-white"
+          />
+        </div>
+        <div className="space-y-1">
+          <div className="flex justify-between text-[10px] font-mono text-neutral-500">
+            <span>PADDING</span>
+            <span>{container.padding ?? 20}px</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={48}
+            value={container.padding ?? 20}
+            onChange={(e) => onUpdate({ padding: Number(e.target.value) })}
+            className="w-full accent-white"
+          />
+        </div>
       </div>
 
       {/* Glassmorphism */}
@@ -928,6 +1026,48 @@ const SocialProperties: React.FC<{
   return (
     <div className="space-y-3 pt-2 border-t border-[#1f1f1f]">
       <div className="space-y-1">
+        <span className="text-[10px] font-mono text-neutral-500 block">PLATFORM</span>
+        <select
+          value={social.platformId || "discord"}
+          onChange={(e) => {
+            const p = PLATFORMS.find((item) => item.id === e.target.value);
+            onUpdate({
+              platformId: e.target.value,
+              platformName: p?.name || e.target.value,
+            });
+          }}
+          className="w-full bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
+        >
+          {PLATFORMS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono text-neutral-500 block">HANDLE / LABEL</span>
+        <input
+          type="text"
+          value={social.handle || ""}
+          onChange={(e) => onUpdate({ handle: e.target.value })}
+          className="w-full bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
+        />
+      </div>
+
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono text-neutral-500 block">PROFILE URL</span>
+        <input
+          type="text"
+          value={social.url || ""}
+          onChange={(e) => onUpdate({ url: e.target.value })}
+          placeholder="https://..."
+          className="w-full bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
+        />
+      </div>
+
+      <div className="space-y-1">
         <span className="text-[10px] font-mono text-neutral-500 block">ICON VARIANT</span>
         <div className="grid grid-cols-2 gap-2">
           {(["default", "pill", "minimal", "circle"] as const).map((variant) => (
@@ -943,6 +1083,29 @@ const SocialProperties: React.FC<{
               {variant}
             </button>
           ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <span className="text-[10px] font-mono text-neutral-500 block mb-0.5">ICON SIZE</span>
+          <input
+            type="number"
+            min={12}
+            max={40}
+            value={social.iconSize ?? 16}
+            onChange={(e) => onUpdate({ iconSize: Number(e.target.value) || 16 })}
+            className="w-full bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
+          />
+        </div>
+        <div>
+          <span className="text-[10px] font-mono text-neutral-500 block mb-0.5">TEXT COLOR</span>
+          <input
+            type="color"
+            value={social.textColor?.startsWith("#") ? social.textColor : "#f4f4f5"}
+            onChange={(e) => onUpdate({ textColor: e.target.value })}
+            className="w-full h-8 rounded border border-[#333333] cursor-pointer bg-transparent"
+          />
         </div>
       </div>
     </div>
@@ -971,6 +1134,116 @@ const RpcProperties: React.FC<{
               {style}
             </button>
           ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <span className="text-[10px] font-mono text-neutral-500 block mb-0.5">ACTIVITY</span>
+          <select
+            value={rpc.activityType || "playing"}
+            onChange={(e) =>
+              onUpdate({
+                activityType: e.target.value as RpcElement["activityType"],
+              })
+            }
+            className="w-full bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
+          >
+            <option value="playing">Playing</option>
+            <option value="listening">Listening</option>
+            <option value="watching">Watching</option>
+            <option value="streaming">Streaming</option>
+            <option value="competing">Competing</option>
+          </select>
+        </div>
+        <div>
+          <span className="text-[10px] font-mono text-neutral-500 block mb-0.5">ACCENT</span>
+          <input
+            type="color"
+            value={rpc.accentColor?.startsWith("#") ? rpc.accentColor : "#d71920"}
+            onChange={(e) => onUpdate({ accentColor: e.target.value })}
+            className="w-full h-8 rounded border border-[#333333] cursor-pointer bg-transparent"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono text-neutral-500 block">APPLICATION NAME</span>
+        <input
+          type="text"
+          value={rpc.appName || ""}
+          onChange={(e) => onUpdate({ appName: e.target.value })}
+          className="w-full bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
+        />
+      </div>
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono text-neutral-500 block">DETAILS</span>
+        <input
+          type="text"
+          value={rpc.details || ""}
+          onChange={(e) => onUpdate({ details: e.target.value })}
+          className="w-full bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
+        />
+      </div>
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono text-neutral-500 block">STATE</span>
+        <input
+          type="text"
+          value={rpc.state || ""}
+          onChange={(e) => onUpdate({ state: e.target.value })}
+          className="w-full bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
+        />
+      </div>
+    </div>
+  );
+};
+
+const MusicProperties: React.FC<{
+  music: MusicElement;
+  onUpdate: (u: Partial<MusicElement>) => void;
+}> = ({ music, onUpdate }) => {
+  return (
+    <div className="space-y-3 pt-2 border-t border-[#1f1f1f]">
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono text-neutral-500 block">SONG TITLE</span>
+        <input
+          type="text"
+          value={music.title || ""}
+          onChange={(e) => onUpdate({ title: e.target.value })}
+          className="w-full bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
+        />
+      </div>
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono text-neutral-500 block">ARTIST</span>
+        <input
+          type="text"
+          value={music.artist || ""}
+          onChange={(e) => onUpdate({ artist: e.target.value })}
+          className="w-full bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <span className="text-[10px] font-mono text-neutral-500 block mb-0.5">STATUS</span>
+          <input
+            type="text"
+            value={music.statusText || "NOW PLAYING"}
+            onChange={(e) => onUpdate({ statusText: e.target.value })}
+            className="w-full bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
+          />
+        </div>
+        <div>
+          <span className="text-[10px] font-mono text-neutral-500 block mb-0.5">PROGRESS %</span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={music.progressPercent ?? 45}
+            onChange={(e) =>
+              onUpdate({ progressPercent: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })
+            }
+            className="w-full bg-[#121212] border border-[#222222] text-xs font-mono text-white p-1.5 rounded-lg outline-none"
+          />
         </div>
       </div>
     </div>

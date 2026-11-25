@@ -591,10 +591,10 @@ async function runTests() {
         assert(panelBox.y >= 0 && panelBox.y + panelBox.height <= vp.height + 1, "Panel within viewport Y");
         assert(
           closeBox &&
-            closeBox.x >= 0 &&
-            closeBox.y >= 0 &&
-            closeBox.x + closeBox.width <= vp.width &&
-            closeBox.y + closeBox.height <= vp.height,
+          closeBox.x >= 0 &&
+          closeBox.y >= 0 &&
+          closeBox.x + closeBox.width <= vp.width &&
+          closeBox.y + closeBox.height <= vp.height,
           "Close button clipped outside viewport"
         );
         await vpPage.locator('[data-testid="doory-drawer-close"]').click();
@@ -629,7 +629,7 @@ async function runTests() {
       } else {
         nextProc.kill();
       }
-    } catch {}
+    } catch { }
   }
 }
 

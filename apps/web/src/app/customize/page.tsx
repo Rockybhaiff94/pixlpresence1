@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { AccountSidebar } from "@/components/account/AccountSidebar";
 import { StudioFloatingDock, DockPosition } from "@/components/studio/StudioFloatingDock";
-import { DooryEditor } from "@/components/editor/DooryEditor";
+import { ProfileBuilderStudio } from "@/components/profile-builder/ProfileBuilderStudio";
 
 export default function CustomizePage() {
   const { user } = useAuth();
@@ -55,15 +55,15 @@ export default function CustomizePage() {
         ref={workspaceContainerRef}
         className="flex-1 lg:ml-64 flex flex-col min-w-0 h-screen overflow-hidden bg-[#070709] relative"
       >
-        {/* Doory-Recreated Studio Editor with Zero Layout Shift & Preserved Floating Dock */}
-        <DooryEditor>
-          {/* 3. Floating Dock (Preserved with drag, edge-snapping, hover, and expansion foundation) */}
+        {/* Advanced Profile Builder (Isolated from Protected Floating Dock) */}
+        <ProfileBuilderStudio>
+          {/* Existing Protected Floating Dock (Untouched) */}
           <StudioFloatingDock
             position={dockPosition}
             onPositionChange={setDockPosition}
             containerRef={workspaceContainerRef}
           />
-        </DooryEditor>
+        </ProfileBuilderStudio>
       </main>
     </div>
   );

@@ -6,6 +6,10 @@ import {
   ShapeElement,
   TextElement,
   ImageElement,
+  ContainerElement,
+  RpcElement,
+  MusicElement,
+  SocialElement,
   CanvasBackground,
 } from "./editorTypes";
 import { AVAILABLE_FONTS } from "./editorPresets";
@@ -16,22 +20,14 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
-  AlignJustify,
   Lock,
   Unlock,
   Copy,
   Trash2,
   ChevronDown,
-  ArrowUpToLine,
-  ArrowDownToLine,
-  ChevronUp,
-  FlipHorizontal,
-  FlipVertical,
   Minus,
   Plus,
-  PaintBucket,
   Maximize2,
-  Sliders,
 } from "lucide-react";
 
 interface DooryContextualToolbarProps {
@@ -421,6 +417,63 @@ export const DooryContextualToolbar: React.FC<DooryContextualToolbarProps> = ({
                 data-testid="image-border-radius"
               />
             </div>
+          </div>
+        )}
+
+        {/* ================= 5. EMBED CONTAINER CONTROLS ================= */}
+        {selectedElement && selectedElement.type === "container" && (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-neutral-400 uppercase">Embed:</span>
+            <input
+              type="color"
+              value={(selectedElement as ContainerElement).backgroundColor || "#0e0e13"}
+              onChange={(e) =>
+                onUpdateElement(selectedElement.id, { backgroundColor: e.target.value })
+              }
+              className="w-5 h-5 rounded border border-[#2c2c38] bg-transparent cursor-pointer"
+              title="Embed Background"
+            />
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-neutral-400">Radius:</span>
+              <input
+                type="number"
+                min="0"
+                max="48"
+                value={(selectedElement as ContainerElement).borderRadius ?? 20}
+                onChange={(e) =>
+                  onUpdateElement(selectedElement.id, {
+                    borderRadius: Math.max(0, parseInt(e.target.value) || 0),
+                  })
+                }
+                className="w-10 bg-[#141418] border border-[#262632] rounded px-1 py-0.5 text-center text-xs text-white outline-none"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ================= 6. RPC / MUSIC / SOCIAL COMPACT CONTROLS ================= */}
+        {selectedElement && selectedElement.type === "rpc" && (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-neutral-400 uppercase">RPC:</span>
+            <span className="px-2 py-0.5 rounded bg-[#141418] border border-[#262632] text-[10px] text-neutral-200 max-w-[140px] truncate">
+              {(selectedElement as RpcElement).appName || "Activity"}
+            </span>
+          </div>
+        )}
+        {selectedElement && selectedElement.type === "music" && (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-neutral-400 uppercase">Music:</span>
+            <span className="px-2 py-0.5 rounded bg-[#141418] border border-[#262632] text-[10px] text-neutral-200 max-w-[140px] truncate">
+              {(selectedElement as MusicElement).title || "Track"}
+            </span>
+          </div>
+        )}
+        {selectedElement && selectedElement.type === "social" && (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-neutral-400 uppercase">Social:</span>
+            <span className="px-2 py-0.5 rounded bg-[#141418] border border-[#262632] text-[10px] text-neutral-200 max-w-[140px] truncate">
+              {(selectedElement as SocialElement).handle || (selectedElement as SocialElement).platformName || "Link"}
+            </span>
           </div>
         )}
       </div>

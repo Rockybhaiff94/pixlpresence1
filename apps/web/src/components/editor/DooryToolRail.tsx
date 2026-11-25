@@ -9,6 +9,7 @@ import {
   UploadCloud,
   PaintBucket,
   Layers,
+  CreditCard,
 } from "lucide-react";
 
 export type DooryRailTool =
@@ -18,6 +19,7 @@ export type DooryRailTool =
   | "elements"
   | "images"
   | "media"
+  | "embed"
   | "background"
   | "canvas"
   | "layers";
@@ -38,6 +40,7 @@ const RAIL_TOOLS: {
   { id: "shapes", label: "Shapes", icon: Shapes, shortcut: "R" },
   { id: "elements", label: "Elements", icon: Smile },
   { id: "images", label: "Images", icon: UploadCloud, shortcut: "I" },
+  { id: "embed", label: "Embed", icon: CreditCard, shortcut: "E" },
   { id: "background", label: "Canvas", icon: PaintBucket },
   { id: "layers", label: "Layers", icon: Layers, shortcut: "L" },
 ];

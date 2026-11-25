@@ -1,4 +1,35 @@
-import { EditorElement, CanvasBackground, ShapeElement, TextElement, ImageElement, StickerElement } from "./editorTypes";
+import {
+  EditorElement,
+  CanvasBackground,
+  ShapeElement,
+  TextElement,
+  ImageElement,
+  StickerElement,
+  ContainerElement,
+  SocialElement,
+  RpcElement,
+  MusicElement,
+} from "./editorTypes";
+import { getElementAbsoluteRect, hexToRgba } from "./embedBuilderUtils";
+
+function buildRenderOrder(elements: EditorElement[]): EditorElement[] {
+  const visible = elements.filter((e) => e.visible);
+  const roots = visible
+    .filter((e) => !e.parentId)
+    .sort((a, b) => a.zIndex - b.zIndex);
+  const result: EditorElement[] = [];
+
+  for (const root of roots) {
+    result.push(root);
+    if (root.type === "container") {
+      const children = visible
+        .filter((e) => e.parentId === root.id)
+        .sort((a, b) => a.zIndex - b.zIndex);
+      result.push(...children);
+    }
+  }
+  return result;
+}
 
 export interface CanvasExportOptions {
   width: number;
@@ -70,17 +101,20 @@ export async function exportToPng(options: CanvasExportOptions): Promise<string>
     ctx.restore();
   }
 
-  // 3. Sort Elements by zIndex
-  const sorted = [...elements].filter((e) => e.visible).sort((a, b) => a.zIndex - b.zIndex);
+  // 3. Order root elements and nested children cleanly
+  const sorted = buildRenderOrder(elements);
 
   // 4. Draw Elements
   for (const el of sorted) {
+    const absRect = getElementAbsoluteRect(el, elements);
+    const resolvedEl = { ...el, x: absRect.x, y: absRect.y } as EditorElement;
+
     ctx.save();
 
     // Transform
     ctx.globalAlpha = el.opacity;
-    const centerX = el.x + el.width / 2;
-    const centerY = el.y + el.height / 2;
+    const centerX = absRect.x + absRect.width / 2;
+    const centerY = absRect.y + absRect.height / 2;
     ctx.translate(centerX, centerY);
     if (el.rotation) {
       ctx.rotate((el.rotation * Math.PI) / 180);
@@ -98,14 +132,22 @@ export async function exportToPng(options: CanvasExportOptions): Promise<string>
       ctx.shadowOffsetY = el.shadow.offsetY;
     }
 
-    if (el.type === "shape") {
-      drawShape(ctx, el as ShapeElement);
-    } else if (el.type === "text") {
-      drawText(ctx, el as TextElement);
-    } else if (el.type === "image") {
-      await drawImage(ctx, el as ImageElement);
-    } else if (el.type === "sticker") {
-      drawSticker(ctx, el as StickerElement);
+    if (resolvedEl.type === "shape") {
+      drawShape(ctx, resolvedEl as ShapeElement);
+    } else if (resolvedEl.type === "text") {
+      drawText(ctx, resolvedEl as TextElement);
+    } else if (resolvedEl.type === "image") {
+      await drawImage(ctx, resolvedEl as ImageElement);
+    } else if (resolvedEl.type === "sticker") {
+      drawSticker(ctx, resolvedEl as StickerElement);
+    } else if (resolvedEl.type === "container") {
+      drawContainer(ctx, resolvedEl as ContainerElement);
+    } else if (resolvedEl.type === "rpc") {
+      drawRpc(ctx, resolvedEl as RpcElement);
+    } else if (resolvedEl.type === "music") {
+      drawMusic(ctx, resolvedEl as MusicElement);
+    } else if (resolvedEl.type === "social") {
+      drawSocial(ctx, resolvedEl as SocialElement);
     }
 
     ctx.restore();
@@ -253,18 +295,119 @@ function drawSticker(ctx: CanvasRenderingContext2D, el: StickerElement) {
   ctx.fillText(key.toUpperCase().slice(0, 3), x + width / 2, y + height / 2);
 }
 
+function drawContainer(ctx: CanvasRenderingContext2D, el: ContainerElement) {
+  const { x, y, width, height } = el;
+  const radius = Math.min(el.borderRadius ?? 20, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.roundRect(x, y, width, height, radius);
+  ctx.fillStyle = hexToRgba(el.backgroundColor || "#0e0e13", el.backgroundOpacity ?? 0.96);
+  ctx.fill();
+
+  const bw = el.borderWidth ?? 1;
+  if (bw > 0) {
+    ctx.strokeStyle = el.borderColor || "#282834";
+    ctx.lineWidth = bw;
+    ctx.stroke();
+  }
+}
+
+function drawRpc(ctx: CanvasRenderingContext2D, el: RpcElement) {
+  const { x, y, width, height } = el;
+  const radius = Math.min(el.borderRadius ?? 12, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.roundRect(x, y, width, height, radius);
+  ctx.fillStyle = el.backgroundColor || "#13131a";
+  ctx.fill();
+  ctx.strokeStyle = el.cardStyle === "neon" ? (el.accentColor || "#d71920") : "#242430";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  const textColor = el.textColor || "#f4f4f5";
+  const accent = el.accentColor || "#d71920";
+  ctx.fillStyle = accent;
+  ctx.font = "bold 9px monospace";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(`${(el.activityType || "playing").toUpperCase()}`, x + 12, y + 10);
+
+  ctx.fillStyle = textColor;
+  ctx.font = "bold 12px sans-serif";
+  ctx.fillText(el.appName || "Pixel.gg Studio", x + 12, y + 24);
+
+  if (el.details) {
+    ctx.fillStyle = "#a1a1aa";
+    ctx.font = "11px monospace";
+    ctx.fillText(el.details, x + 12, y + 42);
+  }
+  if (el.state) {
+    ctx.fillStyle = "#71717a";
+    ctx.font = "10px monospace";
+    ctx.fillText(el.state, x + 12, y + 58);
+  }
+}
+
+function drawMusic(ctx: CanvasRenderingContext2D, el: MusicElement) {
+  const { x, y, width, height } = el;
+  const radius = Math.min(el.borderRadius ?? 12, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.roundRect(x, y, width, height, radius);
+  ctx.fillStyle = el.backgroundColor || "#111117";
+  ctx.fill();
+  ctx.strokeStyle = "#242430";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  const accent = el.accentColor || "#1db954";
+  ctx.fillStyle = accent;
+  ctx.font = "bold 9px monospace";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(el.statusText || "NOW PLAYING", x + 12, y + 10);
+
+  ctx.fillStyle = el.textColor || "#ffffff";
+  ctx.font = "bold 12px sans-serif";
+  ctx.fillText(el.title || "Track", x + 12, y + 24);
+
+  ctx.fillStyle = "#a1a1aa";
+  ctx.font = "10px monospace";
+  ctx.fillText(el.artist || "Artist", x + 12, y + 40);
+}
+
+function drawSocial(ctx: CanvasRenderingContext2D, el: SocialElement) {
+  const { x, y, width, height } = el;
+  const radius = Math.min(el.borderRadius ?? 10, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.roundRect(x, y, width, height, radius);
+  ctx.fillStyle = el.backgroundColor || "#16161e";
+  ctx.fill();
+  ctx.strokeStyle = "#272734";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.fillStyle = el.textColor || "#f4f4f5";
+  ctx.font = "11px monospace";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(el.handle || el.platformName || el.platformId || "social", x + 12, y + height / 2);
+}
+
 export function exportToSvg(options: CanvasExportOptions): string {
   const { width, height, background, elements, filename = "pixel-design.svg" } = options;
-  const sorted = [...elements].filter((e) => e.visible).sort((a, b) => a.zIndex - b.zIndex);
+  const sorted = buildRenderOrder(elements);
 
   let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">\n`;
   svgContent += `  <rect width="100%" height="100%" fill="${background.color || "#050505"}" />\n`;
 
   for (const el of sorted) {
-    const transform = `transform="translate(${el.x}, ${el.y}) rotate(${el.rotation || 0} ${el.width / 2} ${el.height / 2})"`;
+    const absRect = getElementAbsoluteRect(el, elements);
+    const transform = `transform="translate(${absRect.x}, ${absRect.y}) rotate(${el.rotation || 0} ${absRect.width / 2} ${absRect.height / 2})"`;
     const opacity = `opacity="${el.opacity}"`;
 
-    if (el.type === "shape") {
+    if (el.type === "container") {
+      const c = el as ContainerElement;
+      const fill = hexToRgba(c.backgroundColor || "#0e0e13", c.backgroundOpacity ?? 0.96);
+      svgContent += `  <rect x="0" y="0" width="${c.width}" height="${c.height}" rx="${c.borderRadius ?? 20}" fill="${fill}" stroke="${c.borderColor || "#282834"}" stroke-width="${c.borderWidth ?? 1}" ${transform} ${opacity} />\n`;
+    } else if (el.type === "shape") {
       const shape = el as ShapeElement;
       if (shape.shapeKind === "rectangle") {
         svgContent += `  <rect x="0" y="0" width="${shape.width}" height="${shape.height}" fill="${shape.fill}" stroke="${shape.stroke}" stroke-width="${shape.strokeWidth}" ${transform} ${opacity} />\n`;
@@ -276,6 +419,18 @@ export function exportToSvg(options: CanvasExportOptions): string {
     } else if (el.type === "text") {
       const text = el as TextElement;
       svgContent += `  <text x="${text.textAlign === "center" ? text.width / 2 : text.textAlign === "right" ? text.width : 0}" y="${text.fontSize}" fill="${text.color}" font-family="${text.fontFamily}" font-size="${text.fontSize}" font-weight="${text.fontWeight}" text-anchor="${text.textAlign === "center" ? "middle" : text.textAlign === "right" ? "end" : "start"}" ${transform} ${opacity}>${escapeXml(text.text)}</text>\n`;
+    } else if (el.type === "rpc") {
+      const rpc = el as RpcElement;
+      svgContent += `  <rect x="0" y="0" width="${rpc.width}" height="${rpc.height}" rx="${rpc.borderRadius ?? 12}" fill="${rpc.backgroundColor || "#13131a"}" stroke="#242430" stroke-width="1" ${transform} ${opacity} />\n`;
+      svgContent += `  <text x="12" y="26" fill="${rpc.textColor || "#f4f4f5"}" font-family="sans-serif" font-size="12" font-weight="700" ${transform} ${opacity}>${escapeXml(rpc.appName || "RPC")}</text>\n`;
+    } else if (el.type === "music") {
+      const m = el as MusicElement;
+      svgContent += `  <rect x="0" y="0" width="${m.width}" height="${m.height}" rx="${m.borderRadius ?? 12}" fill="${m.backgroundColor || "#111117"}" stroke="#242430" stroke-width="1" ${transform} ${opacity} />\n`;
+      svgContent += `  <text x="12" y="26" fill="${m.textColor || "#ffffff"}" font-family="sans-serif" font-size="12" font-weight="700" ${transform} ${opacity}>${escapeXml(m.title || "Track")}</text>\n`;
+    } else if (el.type === "social") {
+      const s = el as SocialElement;
+      svgContent += `  <rect x="0" y="0" width="${s.width}" height="${s.height}" rx="${s.borderRadius ?? 10}" fill="${s.backgroundColor || "#16161e"}" stroke="#272734" stroke-width="1" ${transform} ${opacity} />\n`;
+      svgContent += `  <text x="12" y="${Math.round(s.height / 2 + 4)}" fill="${s.textColor || "#f4f4f5"}" font-family="monospace" font-size="11" ${transform} ${opacity}>${escapeXml(s.handle || s.platformName || "social")}</text>\n`;
     }
   }
 

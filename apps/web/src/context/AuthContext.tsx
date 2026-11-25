@@ -29,6 +29,7 @@ export interface UserProfile {
   themeId: string | null;
   accentColor: string | null;
   musicUrl: string | null;
+  designConfig?: string | null;
   views: number;
   status: string;
   customStatus: string | null;

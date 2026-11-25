@@ -11,6 +11,8 @@ import {
   TextElement,
   ImageElement,
   StickerElement,
+  EmbedComponentKind,
+  ContainerElement,
 } from "./editorTypes";
 import { DooryRailTool } from "./DooryToolRail";
 import { DooryDrawerHost } from "./DooryDrawerHost";
@@ -27,6 +29,15 @@ import {
   AutoSaveSettingsModal,
   AutoSaveSettings,
 } from "./AutoSaveSettingsModal";
+import {
+  EmbedLiveSeed,
+  createProfileEmbedElement,
+  createEmbedChildElement,
+  cloneElementOrEmbedHierarchy,
+  deleteElementAndChildren,
+} from "./embedBuilderUtils";
+import { useAuth } from "@/context/AuthContext";
+import { apiFetch } from "@/lib/api";
 
 interface DooryEditorProps {
   initialElements?: EditorElement[];
@@ -39,6 +50,47 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
   onElementsChange,
   children,
 }) => {
+  const { user, profile } = useAuth();
+  const [liveRpcSeed, setLiveRpcSeed] = useState<EmbedLiveSeed["rpc"]>(null);
+
+  // Gracefully hydrate optional live RPC data for Profile Embed defaults
+  useEffect(() => {
+    let active = true;
+    if (!user) return;
+    apiFetch("/api/rpc/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!active || !data) return;
+        const cfg = data.rpc || data;
+        if (cfg && (cfg.appName || cfg.details || cfg.state || cfg.largeImage)) {
+          setLiveRpcSeed({
+            appName: cfg.appName || null,
+            details: cfg.details || null,
+            state: cfg.state || null,
+            largeImage: cfg.largeImage || null,
+            smallImage: cfg.smallImage || null,
+            activityType: cfg.activityType || null,
+          });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  const embedSeed: EmbedLiveSeed = useMemo(
+    () => ({
+      displayName: profile?.displayName || user?.globalName || user?.username || null,
+      username: user?.username || null,
+      bio: profile?.bio || null,
+      avatarUrl: profile?.avatarUrl || user?.avatar || null,
+      musicUrl: profile?.musicUrl || null,
+      rpc: liveRpcSeed,
+    }),
+    [profile, user, liveRpcSeed]
+  );
+
   // Title & Device Mode
   const [title, setTitle] = useState("Discord Profile Concept");
   const [deviceMode, setDeviceMode] = useState<DeviceMode>("desktop");
@@ -77,19 +129,8 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
     }
   }, []);
 
-  // Elements State
-  const [elements, setElements] = useState<EditorElement[]>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("pixel_studio_elements_draft");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        }
-      } catch {}
-    }
-    return initialElements;
-  });
+  // Elements State (SSR-safe deterministic initial state; local draft hydrated post-mount)
+  const [elements, setElements] = useState<EditorElement[]>(initialElements);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [zoom, setZoom] = useState<number>(1.0);
@@ -98,7 +139,7 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
   // History Stack for Undo/Redo
   const [history, setHistory] = useState<EditorHistoryState[]>(() => [
     {
-      elements: JSON.parse(JSON.stringify(elements)),
+      elements: JSON.parse(JSON.stringify(initialElements)),
       selectedId: null,
       canvas: JSON.parse(JSON.stringify(canvas)),
     },
@@ -112,23 +153,54 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
 
-  // Auto Save & Auto Fix Preferences
-  const [autoSaveSettings, setAutoSaveSettings] = useState<AutoSaveSettings>(() => {
-    if (typeof window !== "undefined") {
+  // Auto Save & Auto Fix Preferences (SSR-safe default; hydrated post-mount)
+  const [autoSaveSettings, setAutoSaveSettings] = useState<AutoSaveSettings>({
+    autoSaveEnabled: true,
+    saveDelaySec: 2,
+    recoveryProtectionEnabled: true,
+    autoFixOnSave: false,
+  });
+
+  // Hydrate saved drafts & autosave preferences cleanly post-mount to prevent React hydration mismatch
+  useEffect(() => {
+    const rafId = window.requestAnimationFrame(() => {
       try {
-        const stored = localStorage.getItem("pixel_studio_autosave_settings");
-        if (stored) {
-          return JSON.parse(stored);
+        let nextCanvas = canvas;
+        const savedCanvas = localStorage.getItem("pixel_studio_canvas_draft");
+        if (savedCanvas) {
+          const parsedCanvas = JSON.parse(savedCanvas);
+          if (parsedCanvas && parsedCanvas.width && parsedCanvas.height) {
+            nextCanvas = parsedCanvas;
+            setCanvas(parsedCanvas);
+          }
+        }
+
+        const savedElements = localStorage.getItem("pixel_studio_elements_draft");
+        if (savedElements) {
+          const parsedElements = JSON.parse(savedElements);
+          if (Array.isArray(parsedElements) && parsedElements.length > 0) {
+            setElements(parsedElements);
+            setHistory([
+              {
+                elements: JSON.parse(JSON.stringify(parsedElements)),
+                selectedId: null,
+                canvas: JSON.parse(JSON.stringify(nextCanvas)),
+              },
+            ]);
+            setHistoryIndex(0);
+          }
+        }
+
+        const storedSettings = localStorage.getItem("pixel_studio_autosave_settings");
+        if (storedSettings) {
+          setAutoSaveSettings(JSON.parse(storedSettings));
         }
       } catch {}
-    }
-    return {
-      autoSaveEnabled: true,
-      saveDelaySec: 2,
-      recoveryProtectionEnabled: true,
-      autoFixOnSave: false,
-    };
-  });
+    });
+    return () => window.cancelAnimationFrame(rafId);
+    // Intentionally run once on mount to hydrate persisted client draft
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
@@ -379,74 +451,131 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
     showToast(`Applied "${tmpl.name}" template`);
   };
 
-  // Update Element
-  const handleUpdateElement = (id: string, updates: Partial<EditorElement>) => {
-    const nextElements = elements.map((el) => {
-      if (el.id === id) {
-        return { ...el, ...updates } as EditorElement;
+  // Create Profile Embed Container
+  const handleCreateEmbed = () => {
+    const existingCount = elements.filter((e) => e.type === "container").length;
+    const newEmbed = createProfileEmbedElement(canvas, existingCount);
+    const maxZ = elements.filter((e) => !e.parentId).reduce((m, e) => Math.max(m, e.zIndex), 0);
+    newEmbed.zIndex = maxZ + 1;
+    const nextElements = [...elements, newEmbed];
+    setElements(nextElements);
+    setSelectedId(newEmbed.id);
+    pushHistory(nextElements, canvas);
+    showToast("Created Profile Embed");
+  };
+
+  // Add Independent Child Component inside a Parent Embed
+  const handleAddEmbedChild = (parentId: string, kind: EmbedComponentKind) => {
+    let workingElements = elements;
+    let parentEmbed = elements.find(
+      (e): e is ContainerElement => e.id === parentId && e.type === "container"
+    );
+
+    if (!parentEmbed) {
+      const firstExisting = elements.find(
+        (e): e is ContainerElement => e.type === "container" && !e.parentId
+      );
+      if (firstExisting) {
+        parentEmbed = firstExisting;
+      } else {
+        parentEmbed = createProfileEmbedElement(canvas, 0);
+        workingElements = [...workingElements, parentEmbed];
       }
-      return el;
+    }
+
+    const siblings = workingElements.filter((e) => e.parentId === parentEmbed!.id);
+    const newChild = createEmbedChildElement(kind, parentEmbed, siblings, embedSeed);
+    const nextElements = [...workingElements, newChild];
+    setElements(nextElements);
+    setSelectedId(newChild.id);
+    pushHistory(nextElements, canvas);
+  };
+
+  // Update Element (supports skipHistory for 60fps pointer drags, committed on pointerup)
+  const handleUpdateElement = (
+    id: string,
+    updates: Partial<EditorElement>,
+    options?: { skipHistory?: boolean }
+  ) => {
+    setElements((prev) => {
+      const nextElements = prev.map((el) => {
+        if (el.id === id) {
+          return { ...el, ...updates } as EditorElement;
+        }
+        return el;
+      });
+      if (!options?.skipHistory) {
+        pushHistory(nextElements, canvas);
+      } else {
+        setIsDirty(true);
+        onElementsChange?.(nextElements);
+      }
+      return nextElements;
     });
-    setElements(nextElements);
-    pushHistory(nextElements, canvas);
   };
 
-  // Delete Element
+  const handleCommitHistory = useCallback(() => {
+    pushHistory(elements, canvas);
+  }, [elements, canvas, pushHistory]);
+
+  // Delete Element (parent embeds cascade-delete their child components atomically)
   const handleDeleteElement = (id: string) => {
-    const nextElements = elements.filter((el) => el.id !== id);
+    const nextElements = deleteElementAndChildren(id, elements);
     setElements(nextElements);
-    if (selectedId === id) setSelectedId(null);
+    if (selectedId && !nextElements.some((el) => el.id === selectedId)) {
+      setSelectedId(null);
+    }
     pushHistory(nextElements, canvas);
   };
 
-  // Duplicate Element
+  // Duplicate Element (parent embeds duplicate with all children preserving relative positions)
   const handleDuplicateElement = (id: string) => {
-    const orig = elements.find((el) => el.id === id);
-    if (!orig) return;
-
-    const copyId = `${orig.type}-${Date.now()}`;
-    const copy: EditorElement = {
-      ...JSON.parse(JSON.stringify(orig)),
-      id: copyId,
-      name: `${orig.name} (Copy)`,
-      x: orig.x + 20,
-      y: orig.y + 20,
-      zIndex: elements.length + 1,
-    };
-
-    const nextElements = [...elements, copy];
+    const { nextElements, clonedRootId } = cloneElementOrEmbedHierarchy(id, elements);
+    if (!clonedRootId) return;
     setElements(nextElements);
-    setSelectedId(copyId);
+    setSelectedId(clonedRootId);
     pushHistory(nextElements, canvas);
   };
 
-  // Reorder Element (Z-Order)
+  // Reorder Element (Z-Order scoped strictly within sibling group so parent-child stays intact)
   const handleReorderElement = (
     id: string,
     direction: "up" | "down" | "top" | "bottom"
   ) => {
-    const index = elements.findIndex((el) => el.id === id);
-    if (index === -1) return;
+    const targetElem = elements.find((el) => el.id === id);
+    if (!targetElem) return;
 
-    const newElems = [...elements];
-    const [target] = newElems.splice(index, 1);
+    const targetParent = targetElem.parentId || null;
+    const siblings = elements
+      .filter((el) => (el.parentId || null) === targetParent)
+      .sort((a, b) => a.zIndex - b.zIndex);
 
+    const sibIndex = siblings.findIndex((el) => el.id === id);
+    if (sibIndex === -1) return;
+
+    const reorderedSibs = [...siblings];
+    const [moved] = reorderedSibs.splice(sibIndex, 1);
     if (direction === "top") {
-      newElems.push(target);
+      reorderedSibs.push(moved);
     } else if (direction === "bottom") {
-      newElems.unshift(target);
+      reorderedSibs.unshift(moved);
     } else if (direction === "up") {
-      newElems.splice(Math.min(newElems.length, index + 1), 0, target);
+      reorderedSibs.splice(Math.min(reorderedSibs.length, sibIndex + 1), 0, moved);
     } else if (direction === "down") {
-      newElems.splice(Math.max(0, index - 1), 0, target);
+      reorderedSibs.splice(Math.max(0, sibIndex - 1), 0, moved);
     }
 
-    const reindexed = newElems.map((el, i) => ({ ...el, zIndex: i + 1 }));
-    setElements(reindexed);
-    pushHistory(reindexed, canvas);
+    const zMap = new Map<string, number>();
+    reorderedSibs.forEach((el, idx) => zMap.set(el.id, idx + 1));
+
+    const nextElements = elements.map((el) =>
+      zMap.has(el.id) ? ({ ...el, zIndex: zMap.get(el.id)! } as EditorElement) : el
+    );
+    setElements(nextElements);
+    pushHistory(nextElements, canvas);
   };
 
-  // Align Element
+  // Align Element (scoped to parent container if nested, else canvas)
   const handleAlignElement = (
     id: string,
     alignment: "left" | "center-h" | "right" | "top" | "center-v" | "bottom"
@@ -454,15 +583,19 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
     const elem = elements.find((el) => el.id === id);
     if (!elem) return;
 
+    const parent = elem.parentId ? elements.find((el) => el.id === elem.parentId) : null;
+    const scopeWidth = parent ? parent.width : canvas.width;
+    const scopeHeight = parent ? parent.height : canvas.height;
+
     let newX = elem.x;
     let newY = elem.y;
 
     if (alignment === "left") newX = 0;
-    if (alignment === "center-h") newX = Math.round((canvas.width - elem.width) / 2);
-    if (alignment === "right") newX = canvas.width - elem.width;
+    if (alignment === "center-h") newX = Math.round((scopeWidth - elem.width) / 2);
+    if (alignment === "right") newX = scopeWidth - elem.width;
     if (alignment === "top") newY = 0;
-    if (alignment === "center-v") newY = Math.round((canvas.height - elem.height) / 2);
-    if (alignment === "bottom") newY = canvas.height - elem.height;
+    if (alignment === "center-v") newY = Math.round((scopeHeight - elem.height) / 2);
+    if (alignment === "bottom") newY = scopeHeight - elem.height;
 
     handleUpdateElement(id, { x: newX, y: newY });
   };
@@ -527,7 +660,7 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
   };
 
   // Save Draft Implementation (Immediate or Debounced)
-  const performSave = async (options?: { isBackgroundAutoSave?: boolean }) => {
+  const performSave = async (_options?: { isBackgroundAutoSave?: boolean }) => {
     if (isSavingRef.current) {
       // If already saving, the incremented revisionRef ensures another save will trigger once ready
       return;
@@ -690,6 +823,8 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
       onAddSticker={handleAddSticker}
       onAddImage={handleAddImage}
       onApplyTemplate={handleApplyTemplate}
+      onCreateEmbed={handleCreateEmbed}
+      onAddEmbedChild={handleAddEmbedChild}
       onUpdateElement={handleUpdateElement}
       onDeleteElement={handleDeleteElement}
       onDuplicateElement={handleDuplicateElement}
@@ -741,6 +876,8 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
             onAddSticker={handleAddSticker}
             onAddImage={handleAddImage}
             onApplyTemplate={handleApplyTemplate}
+            onCreateEmbed={handleCreateEmbed}
+            onAddEmbedChild={handleAddEmbedChild}
             onUpdateElement={handleUpdateElement}
             onDeleteElement={handleDeleteElement}
             onDuplicateElement={handleDuplicateElement}
@@ -773,8 +910,10 @@ export const DooryEditor: React.FC<DooryEditorProps> = ({
               selectedId={selectedId}
               onSelect={setSelectedId}
               onUpdateElement={handleUpdateElement}
+              onCommitHistory={handleCommitHistory}
               onDeleteElement={handleDeleteElement}
               onDuplicateElement={handleDuplicateElement}
+              onAddEmbedChild={handleAddEmbedChild}
               zoom={zoom}
               onZoomChange={setZoom}
               onFitScreen={handleFitScreen}
