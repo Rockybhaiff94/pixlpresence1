@@ -33,6 +33,7 @@ import {
   ProfileBuilderRenderer,
   ProfileLiveActivityData,
 } from "./ProfileBuilderRenderer";
+import { applyProportionalContainerCornerScale } from "./boundaryConstraints";
 import { getBuilderComponentIcon } from "./AddElementPanel";
 
 type HandleId = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
@@ -48,6 +49,10 @@ interface ProfileCanvasWorkspaceProps {
   onUpdateNode: (
     id: string,
     updates: Partial<BuilderNode>,
+    options?: { skipHistory?: boolean }
+  ) => void;
+  onReplaceNodes?: (
+    nextNodes: BuilderNode[],
     options?: { skipHistory?: boolean }
   ) => void;
   onCommitHistory: () => void;
@@ -72,6 +77,7 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
   onZoomChange,
   onSelect,
   onUpdateNode,
+  onReplaceNodes,
   onCommitHistory,
   onDuplicateNode,
   onDeleteNode,
@@ -93,7 +99,9 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [initialNode, setInitialNode] = useState<BuilderNode | null>(null);
+  const [initialNodes, setInitialNodes] = useState<BuilderNode[] | null>(null);
   const didMutateRef = useRef(false);
+  const suppressNextDeselectRef = useRef(false);
 
   const [guideX, setGuideX] = useState<number | null>(null);
   const [guideY, setGuideY] = useState<number | null>(null);
@@ -350,70 +358,123 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
         const reg = PROFILE_BUILDER_REGISTRY[initialNode.type];
         const minW = reg?.minWidth ?? 24;
         const minH = reg?.minHeight ?? 16;
-        let { x, y, width, height } = initialNode;
-
-        if (activeHandle.includes("e")) width = Math.max(minW, initialNode.width + deltaX);
-        if (activeHandle.includes("s")) height = Math.max(minH, initialNode.height + deltaY);
-        if (activeHandle.includes("w")) {
-          const nw = Math.max(minW, initialNode.width - deltaX);
-          x = initialNode.x + (initialNode.width - nw);
-          width = nw;
-        }
-        if (activeHandle.includes("n")) {
-          const nh = Math.max(minH, initialNode.height - deltaY);
-          y = initialNode.y + (initialNode.height - nh);
-          height = nh;
-        }
-
-        if (parentNode) {
-          if (x < 0) {
-            width = Math.max(minW, initialNode.x + initialNode.width);
-            x = 0;
-          }
-          if (y < 0) {
-            height = Math.max(minH, initialNode.y + initialNode.height);
-            y = 0;
-          }
-          width = Math.min(width, Math.max(minW, parentNode.width - x));
-          height = Math.min(height, Math.max(minH, parentNode.height - y));
-        }
 
         const isCorner =
           activeHandle === "nw" ||
           activeHandle === "ne" ||
           activeHandle === "se" ||
           activeHandle === "sw";
+        const isContainer = isContainerType(initialNode.type);
 
-        if (isCorner && (e.shiftKey || initialNode.aspectRatioLocked) && initialNode.height > 0) {
-          const aspect = initialNode.width / initialNode.height;
-          if (Math.abs(width - initialNode.width) >= Math.abs(height - initialNode.height)) {
-            const nh = Math.max(minH, Math.round(width / aspect));
-            if (activeHandle.includes("n")) y = initialNode.y + (initialNode.height - nh);
-            height = nh;
+        if (
+          isCorner &&
+          (isContainer || e.shiftKey || initialNode.aspectRatioLocked) &&
+          initialNode.width > 0 &&
+          initialNode.height > 0
+        ) {
+          const rawW = activeHandle.includes("e")
+            ? initialNode.width + deltaX
+            : initialNode.width - deltaX;
+          const rawH = activeHandle.includes("s")
+            ? initialNode.height + deltaY
+            : initialNode.height - deltaY;
+
+          const anchorRight = initialNode.x + initialNode.width;
+          const anchorBottom = initialNode.y + initialNode.height;
+
+          const minScale = Math.max(minW / initialNode.width, minH / initialNode.height);
+          let maxScale = 12;
+          if (parentNode) {
+            const availW = activeHandle.includes("w")
+              ? anchorRight
+              : Math.max(minW, parentNode.width - initialNode.x);
+            const availH = activeHandle.includes("n")
+              ? anchorBottom
+              : Math.max(minH, parentNode.height - initialNode.y);
+            maxScale = Math.max(
+              minScale,
+              Math.min(availW / initialNode.width, availH / initialNode.height)
+            );
+          }
+
+          const ratioW = rawW / initialNode.width;
+          const ratioH = rawH / initialNode.height;
+          const desiredScale =
+            Math.abs(ratioW - 1) >= Math.abs(ratioH - 1) ? ratioW : ratioH;
+          const clampedScale = Math.max(minScale, Math.min(maxScale, desiredScale));
+
+          const newW = Math.max(minW, Math.round(initialNode.width * clampedScale));
+          const newH = Math.max(minH, Math.round(initialNode.height * clampedScale));
+          const newX = activeHandle.includes("w") ? anchorRight - newW : initialNode.x;
+          const newY = activeHandle.includes("n") ? anchorBottom - newH : initialNode.y;
+
+          didMutateRef.current = true;
+          if (isContainer && initialNodes && onReplaceNodes) {
+            const scaledNodes = applyProportionalContainerCornerScale(
+              initialNodes,
+              initialNode.id,
+              {
+                x: Math.round(newX),
+                y: Math.round(newY),
+                width: Math.round(newW),
+                height: Math.round(newH),
+              }
+            );
+            onReplaceNodes(scaledNodes, { skipHistory: true });
           } else {
-            const nw = Math.max(minW, Math.round(height * aspect));
-            if (activeHandle.includes("w")) x = initialNode.x + (initialNode.width - nw);
+            onUpdateNode(
+              selectedNode.id,
+              {
+                x: Math.round(newX),
+                y: Math.round(newY),
+                width: Math.round(newW),
+                height: Math.round(newH),
+              },
+              { skipHistory: true }
+            );
+          }
+        } else {
+          // Edge handles (n, e, s, w) and unlocked leaf corners keep existing non-scaling resize behavior
+          let { x, y, width, height } = initialNode;
+
+          if (activeHandle.includes("e")) width = Math.max(minW, initialNode.width + deltaX);
+          if (activeHandle.includes("s")) height = Math.max(minH, initialNode.height + deltaY);
+          if (activeHandle.includes("w")) {
+            const nw = Math.max(minW, initialNode.width - deltaX);
+            x = initialNode.x + (initialNode.width - nw);
             width = nw;
           }
+          if (activeHandle.includes("n")) {
+            const nh = Math.max(minH, initialNode.height - deltaY);
+            y = initialNode.y + (initialNode.height - nh);
+            height = nh;
+          }
+
           if (parentNode) {
-            x = Math.max(0, x);
-            y = Math.max(0, y);
+            if (x < 0) {
+              width = Math.max(minW, initialNode.x + initialNode.width);
+              x = 0;
+            }
+            if (y < 0) {
+              height = Math.max(minH, initialNode.y + initialNode.height);
+              y = 0;
+            }
             width = Math.min(width, Math.max(minW, parentNode.width - x));
             height = Math.min(height, Math.max(minH, parentNode.height - y));
           }
-        }
 
-        didMutateRef.current = true;
-        onUpdateNode(
-          selectedNode.id,
-          {
-            x: Math.round(x),
-            y: Math.round(y),
-            width: Math.round(width),
-            height: Math.round(height),
-          },
-          { skipHistory: true }
-        );
+          didMutateRef.current = true;
+          onUpdateNode(
+            selectedNode.id,
+            {
+              x: Math.round(x),
+              y: Math.round(y),
+              width: Math.round(width),
+              height: Math.round(height),
+            },
+            { skipHistory: true }
+          );
+        }
       }
     },
     [
@@ -431,9 +492,11 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
       effectiveCanvasHeight,
       effectiveCanvasWidth,
       initialNode,
+      initialNodes,
       isAncestorLocked,
       isDragging,
       isPanning,
+      onReplaceNodes,
       onUpdateNode,
       panStart.x,
       panStart.y,
@@ -445,12 +508,17 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
   const handlePointerEnd = useCallback(() => {
     if (didMutateRef.current) {
       didMutateRef.current = false;
+      suppressNextDeselectRef.current = true;
+      setTimeout(() => {
+        suppressNextDeselectRef.current = false;
+      }, 150);
       onCommitHistory();
     }
     setIsDragging(false);
     setIsPanning(false);
     setActiveHandle(null);
     setInitialNode(null);
+    setInitialNodes(null);
     setGuideX(null);
     setGuideY(null);
   }, [onCommitHistory]);
@@ -471,9 +539,9 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
   const handleToggleFullscreen = () => {
     if (typeof window === "undefined") return;
     if (!window.document.fullscreenElement) {
-      workspaceRef.current?.requestFullscreen?.().then(() => setIsFullscreen(true)).catch(() => {});
+      workspaceRef.current?.requestFullscreen?.().then(() => setIsFullscreen(true)).catch(() => { });
     } else {
-      window.document.exitFullscreen?.().then(() => setIsFullscreen(false)).catch(() => {});
+      window.document.exitFullscreen?.().then(() => setIsFullscreen(false)).catch(() => { });
     }
   };
 
@@ -570,27 +638,27 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
         onDragOver={
           isContainer
             ? (e) => {
-                if (e.dataTransfer.types.includes("application/x-pixel-builder-type")) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }
+              if (e.dataTransfer.types.includes("application/x-pixel-builder-type")) {
+                e.preventDefault();
+                e.stopPropagation();
               }
+            }
             : undefined
         }
         onDrop={
           isContainer
             ? (e) => {
-                const droppedType = e.dataTransfer.getData(
-                  "application/x-pixel-builder-type"
-                ) as BuilderComponentType;
-                if (!droppedType) return;
-                e.preventDefault();
-                e.stopPropagation();
-                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                const localX = Math.max(8, Math.round((e.clientX - rect.left) / zoom - 60));
-                const localY = Math.max(8, Math.round((e.clientY - rect.top) / zoom - 20));
-                onDropComponent(droppedType, node.id, localX, localY);
-              }
+              const droppedType = e.dataTransfer.getData(
+                "application/x-pixel-builder-type"
+              ) as BuilderComponentType;
+              if (!droppedType) return;
+              e.preventDefault();
+              e.stopPropagation();
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              const localX = Math.max(8, Math.round((e.clientX - rect.left) / zoom - 60));
+              const localY = Math.max(8, Math.round((e.clientY - rect.top) / zoom - 20));
+              onDropComponent(droppedType, node.id, localX, localY);
+            }
             : undefined
         }
         style={{
@@ -604,11 +672,10 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
           transform: node.rotation ? `rotate(${node.rotation}deg)` : undefined,
           cursor: isPanMode || spacePressed ? "grab" : locked ? "default" : "move",
         }}
-        className={`group/node ${
-          doc.preferences.showComponentOutlines && !isSelected
-            ? "hover:outline hover:outline-1 hover:outline-white/25"
-            : ""
-        }`}
+        className={`group/node ${doc.preferences.showComponentOutlines && !isSelected
+          ? "hover:outline hover:outline-1 hover:outline-white/25"
+          : ""
+          }`}
         data-testid={`canvas-node-${node.id}`}
         data-node-type={node.type}
         data-parent-id={node.parentId || ""}
@@ -624,9 +691,8 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
 
         {isSelected && !locked && (
           <div
-            className={`absolute -inset-0.5 border pointer-events-none z-50 ${
-              isContainer ? "border-[#d71920]" : "border-white"
-            }`}
+            className={`absolute -inset-0.5 border pointer-events-none z-50 ${isContainer ? "border-[#d71920]" : "border-white"
+              }`}
             data-testid={isContainer ? "builder-container-outline" : "builder-child-outline"}
           >
             {(["nw", "n", "ne", "e", "se", "s", "sw", "w"] as HandleId[]).map((handle) => {
@@ -645,12 +711,14 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
               return (
                 <div
                   key={handle}
+                  onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => {
                     e.stopPropagation();
                     didMutateRef.current = false;
                     setActiveHandle(handle);
                     setDragStart({ x: e.clientX, y: e.clientY });
                     setInitialNode({ ...node });
+                    setInitialNodes(JSON.parse(JSON.stringify(doc.nodes)));
                   }}
                   style={{ transform: `scale(${handleScale})` }}
                   className={`absolute w-3 h-3 rounded-[2px] bg-white border border-black shadow pointer-events-auto ${posClass[handle]}`}
@@ -680,6 +748,10 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
             setDragStart({ x: e.clientX, y: e.clientY });
             setPanStart({ x: pan.x, y: pan.y });
           } else if (e.target === workspaceRef.current || e.target === stageWrapperRef.current) {
+            if (suppressNextDeselectRef.current) {
+              suppressNextDeselectRef.current = false;
+              return;
+            }
             onSelect(null);
             setIsAddPopoverOpen(false);
           }
@@ -697,9 +769,8 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
           e.preventDefault();
           onDropComponent(droppedType, primaryEmbed ? primaryEmbed.id : null);
         }}
-        className={`flex-1 relative overflow-hidden flex items-center justify-center ${
-          isPanMode || spacePressed ? "cursor-grab" : ""
-        }`}
+        className={`flex-1 relative overflow-hidden flex items-center justify-center ${isPanMode || spacePressed ? "cursor-grab" : ""
+          }`}
         data-testid="builder-workspace-viewport"
       >
         {/* Subtle dot grid behind canvas */}
@@ -721,6 +792,10 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
             liveData={liveData}
             selectedId={selectedId}
             onSelectNode={(id) => {
+              if (id === null && suppressNextDeselectRef.current) {
+                suppressNextDeselectRef.current = false;
+                return;
+              }
               onSelect(id);
               setIsAddPopoverOpen(false);
             }}
@@ -779,11 +854,10 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
               onClick={() =>
                 onUpdateNode(selectedNode.id, { locked: !selectedNode.locked })
               }
-              className={`px-2 py-1 rounded-lg flex items-center gap-1 cursor-pointer ${
-                selectedNode.locked
-                  ? "text-amber-300 bg-amber-500/15"
-                  : "text-neutral-200 hover:text-white hover:bg-white/10"
-              }`}
+              className={`px-2 py-1 rounded-lg flex items-center gap-1 cursor-pointer ${selectedNode.locked
+                ? "text-amber-300 bg-amber-500/15"
+                : "text-neutral-200 hover:text-white hover:bg-white/10"
+                }`}
               data-testid="ft-lock"
             >
               {selectedNode.locked ? <Lock size={11} /> : <Unlock size={11} />}
@@ -794,11 +868,10 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
               <button
                 type="button"
                 onClick={() => setIsAddPopoverOpen((p) => !p)}
-                className={`px-2 py-1 rounded-lg flex items-center gap-1 font-bold cursor-pointer ${
-                  isAddPopoverOpen
-                    ? "bg-white text-black"
-                    : "bg-[#1a1a22] hover:bg-[#24242f] border border-white/15 text-white"
-                }`}
+                className={`px-2 py-1 rounded-lg flex items-center gap-1 font-bold cursor-pointer ${isAddPopoverOpen
+                  ? "bg-white text-black"
+                  : "bg-[#1a1a22] hover:bg-[#24242f] border border-white/15 text-white"
+                  }`}
                 data-testid="ft-add-element"
               >
                 <Plus size={11} />
@@ -895,11 +968,10 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
             type="button"
             onClick={() => setIsPanMode((p) => !p)}
             title="Pan canvas (or hold Space)"
-            className={`p-1 rounded border cursor-pointer ${
-              isPanMode
-                ? "bg-white text-black border-white"
-                : "bg-[#111116] border-[#23232c] text-neutral-300 hover:text-white"
-            }`}
+            className={`p-1 rounded border cursor-pointer ${isPanMode
+              ? "bg-white text-black border-white"
+              : "bg-[#111116] border-[#23232c] text-neutral-300 hover:text-white"
+              }`}
             data-testid="zoom-pan-toggle"
           >
             <Hand size={12} />

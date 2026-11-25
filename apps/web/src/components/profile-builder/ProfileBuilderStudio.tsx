@@ -41,7 +41,10 @@ import {
 } from "./BuilderModals";
 import { DockBridgePanel } from "./DockBridgePanel";
 import { ProfileLiveActivityData } from "./ProfileBuilderRenderer";
-import { clampNodeToParent, constrainDescendantsToParent } from "./boundaryConstraints";
+import {
+  clampNodeToParent,
+  constrainDescendantsToParent,
+} from "./boundaryConstraints";
 import { SecondaryDockPanelSystem } from "./SecondaryDockPanelSystem";
 import { AddElementsModal } from "./AddElementsModal";
 import {
@@ -428,6 +431,22 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
   const handleCommitHistory = useCallback(() => {
     commitSnapshot(doc.canvas, doc.nodes, selectedId);
   }, [commitSnapshot, doc.canvas, doc.nodes, selectedId]);
+
+  const handleReplaceNodes = useCallback(
+    (nextNodes: BuilderNode[], options?: { skipHistory?: boolean }) => {
+      setDoc((prev) => {
+        if (!options?.skipHistory) {
+          commitSnapshot(prev.canvas, nextNodes, selectedId);
+        }
+        return {
+          ...prev,
+          nodes: nextNodes,
+          metadata: { ...prev.metadata, updatedAt: new Date().toISOString() },
+        };
+      });
+    },
+    [commitSnapshot, selectedId]
+  );
 
   const resolveInsertParent = useCallback(
     (type: BuilderComponentType, explicitParentId?: string | null): { parentId: string | null; error?: string } => {
@@ -1239,6 +1258,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
             onZoomChange={setZoom}
             onSelect={setSelectedId}
             onUpdateNode={handleUpdateNode}
+            onReplaceNodes={handleReplaceNodes}
             onCommitHistory={handleCommitHistory}
             onDuplicateNode={handleDuplicateNode}
             onDeleteNode={handleDeleteNode}

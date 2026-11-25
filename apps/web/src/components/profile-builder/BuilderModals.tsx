@@ -622,9 +622,9 @@ export const ProfilePreviewModal: React.FC<ProfilePreviewModalProps> = ({
       </div>
 
       {/* Shared ProfileBuilderRenderer Viewport */}
-      <div className="flex-1 overflow-auto p-3 sm:p-6 flex justify-center bg-[#060608]">
+      <div className="flex-1 overflow-hidden p-3 sm:p-6 flex justify-center bg-[#060608]">
         <div
-          className={`w-full overflow-hidden ${
+          className={`w-full h-full flex flex-col overflow-hidden ${
             deviceMode !== "desktop"
               ? "border border-[#2b2b36] rounded-2xl shadow-2xl"
               : "rounded-xl"

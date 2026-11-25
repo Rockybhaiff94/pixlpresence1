@@ -62,6 +62,7 @@ interface ProfileBuilderRendererProps {
   selectedId?: string | null;
   onSelectNode?: (nodeId: string | null) => void;
   onQuickAddGalleryImage?: (galleryId: string) => void;
+  canvasOverlaySlot?: React.ReactNode;
   renderInteractiveChrome?: (
     node: BuilderNode,
     childrenRendered: React.ReactNode
@@ -154,31 +155,40 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
   liveData,
   onSelectNode,
   onQuickAddGalleryImage,
+  canvasOverlaySlot,
   renderInteractiveChrome,
   children,
 }) => {
   const { canvas, nodes } = document;
   const bg = resolveEffectiveBackground(canvas, nodes);
   const publicStageHostRef = useRef<HTMLDivElement>(null);
-  const [measuredHostWidth, setMeasuredHostWidth] = useState<number>(1280);
+  const [measuredHostSize, setMeasuredHostSize] = useState<{ width: number; height: number }>({
+    width: 1280,
+    height: 720,
+  });
 
   useEffect(() => {
     if (isInteractive) return;
     const el = publicStageHostRef.current;
     if (!el) return;
-    const updateWidth = () => {
-      const next = el.clientWidth;
-      if (next > 0) setMeasuredHostWidth(next);
+    const updateSize = () => {
+      const nextW = el.clientWidth || window.innerWidth;
+      const nextH = el.clientHeight > 0 ? el.clientHeight : window.innerHeight;
+      if (nextW > 0 && nextH > 0) {
+        setMeasuredHostSize((prev) =>
+          prev.width === nextW && prev.height === nextH ? prev : { width: nextW, height: nextH }
+        );
+      }
     };
-    updateWidth();
+    updateSize();
     let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined") {
-      ro = new ResizeObserver(updateWidth);
+      ro = new ResizeObserver(updateSize);
       ro.observe(el);
     }
-    window.addEventListener("resize", updateWidth);
+    window.addEventListener("resize", updateSize);
     return () => {
-      window.removeEventListener("resize", updateWidth);
+      window.removeEventListener("resize", updateSize);
       ro?.disconnect();
     };
   }, [isInteractive, deviceMode]);
@@ -933,50 +943,145 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
     .filter((n) => !n.responsive?.hiddenOn?.includes(deviceMode))
     .sort((a, b) => a.zIndex - b.zIndex);
 
-  // Compute composition bounding box for faithful static/public/preview rendering
-  const compositionBounds = React.useMemo(() => {
-    if (topLevelNodes.length === 0) {
-      return { minX: 0, minY: 0, width: 720, height: 610 };
-    }
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const n of topLevelNodes) {
-      const x = Number.isFinite(n.x) ? n.x : 0;
-      const y = Number.isFinite(n.y) ? n.y : 0;
-      const w = Math.max(20, Number.isFinite(n.width) ? n.width : 320);
-      const h = Math.max(20, Number.isFinite(n.height) ? n.height : 120);
-      if (x < minX) minX = x;
-      if (y < minY) minY = y;
-      if (x + w > maxX) maxX = x + w;
-      if (y + h > maxY) maxY = y + h;
-    }
-    return {
-      minX,
-      minY,
-      width: Math.max(240, maxX - minX),
-      height: Math.max(120, maxY - minY),
-    };
-  }, [topLevelNodes]);
+  // Full saved canvas dimensions (single source of truth shared between editor & public profile)
+  const canvasW = Math.max(240, Number.isFinite(canvas.width) ? canvas.width : 1920);
+  const canvasH = Math.max(240, Number.isFinite(canvas.height) ? canvas.height : 1080);
 
-  const targetContainerWidth =
-    deviceMode === "mobile"
-      ? Math.min(390, measuredHostWidth)
-      : deviceMode === "tablet"
-        ? Math.min(768, measuredHostWidth)
-        : measuredHostWidth;
+  const renderBackgroundLayer = () =>
+    bg.visible ? (
+      <div
+        data-canvas-bg="true"
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          opacity: bg.opacity,
+          filter: bg.blur > 0 ? `blur(${bg.blur}px)` : undefined,
+          background:
+            bg.type === "gradient"
+              ? `linear-gradient(${bg.gradientAngle}deg, ${bg.color}, ${bg.gradientTo})`
+              : bg.color,
+        }}
+      >
+        {bg.type === "image" && bg.imageUrl && (
+          <img
+            src={bg.imageUrl}
+            alt="Canvas Background"
+            draggable={false}
+            className="w-full h-full"
+            style={{
+              objectFit: bg.size === "contain" ? "contain" : bg.size === "auto" ? "none" : "cover",
+              objectPosition: bg.position,
+            }}
+          />
+        )}
+        {bg.type === "video" && bg.videoUrl && (
+          <video
+            src={bg.videoUrl}
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="w-full h-full object-cover"
+            style={{ objectPosition: bg.position }}
+          />
+        )}
+        {bg.overlayOpacity > 0 && (
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundColor: bg.overlayColor || "#000000",
+              opacity: bg.overlayOpacity,
+            }}
+          />
+        )}
+      </div>
+    ) : null;
 
-  const horizontalPadding = deviceMode === "mobile" ? 24 : 48;
-  const availableStageWidth = Math.max(240, targetContainerWidth - horizontalPadding);
-  const publicScale = Math.min(1, availableStageWidth / compositionBounds.width);
-  const scaledStageWidth = Math.round(compositionBounds.width * publicScale);
-  const scaledStageHeight = Math.round(compositionBounds.height * publicScale);
+  if (!isInteractive) {
+    const availW = Math.max(240, measuredHostSize.width);
+    const availH = Math.max(180, measuredHostSize.height);
+    const publicScale = Math.min(availW / canvasW, availH / canvasH);
+    const renderedWidth = Math.round(canvasW * publicScale * 100) / 100;
+    const renderedHeight = Math.round(canvasH * publicScale * 100) / 100;
+
+    return (
+      <div
+        ref={publicStageHostRef}
+        className="w-full h-full min-h-full flex-1 flex items-center justify-center overflow-hidden select-none"
+        style={{ backgroundColor: bg.color || "#060608" }}
+        data-testid="public-profile-viewport"
+      >
+        <div
+          className="relative shrink-0 overflow-hidden"
+          style={{
+            width: `${renderedWidth}px`,
+            height: `${renderedHeight}px`,
+          }}
+          data-testid="public-profile-canvas-frame"
+          data-scale={publicScale.toFixed(4)}
+        >
+          <div
+            id="profile-builder-canvas-root"
+            data-testid="builder-canvas-surface"
+            data-canvas-width={canvasW}
+            data-canvas-height={canvasH}
+            style={{
+              width: `${canvasW}px`,
+              height: `${canvasH}px`,
+              transform: `scale(${publicScale})`,
+              transformOrigin: "top left",
+              backgroundColor: bg.color || "#060608",
+              position: "relative",
+              overflow: "hidden",
+            }}
+          >
+            {renderBackgroundLayer()}
+
+            <div
+              className="absolute inset-0 z-10"
+              data-testid="public-profile-composition"
+            >
+              {topLevelNodes.map((node) => (
+                <div
+                  key={node.id}
+                  data-testid={`public-node-${node.id}`}
+                  style={{
+                    position: "absolute",
+                    left: `${node.x}px`,
+                    top: `${node.y}px`,
+                    width: `${node.width}px`,
+                    height: `${node.height}px`,
+                    zIndex: node.zIndex,
+                    opacity: node.style.opacity ?? 1,
+                    transform: node.rotation ? `rotate(${node.rotation}deg)` : undefined,
+                  }}
+                >
+                  {renderNodeInner(node, 1, new Set())}
+                </div>
+              ))}
+            </div>
+
+            {canvasOverlaySlot && (
+              <div
+                className="absolute left-0 right-0 bottom-6 z-[999] pointer-events-none px-6 flex justify-center"
+                data-testid="canvas-embedded-controls"
+              >
+                <div
+                  className="w-full flex items-center justify-between gap-4"
+                  style={{ maxWidth: `${Math.min(Math.max(320, canvasW - 64), 1080)}px` }}
+                >
+                  {canvasOverlaySlot}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
-      ref={isInteractive ? undefined : publicStageHostRef}
-      id={isInteractive ? "canvas-artboard" : "profile-builder-canvas-root"}
+      id="canvas-artboard"
       onClick={(e) => {
         if (
           e.target === e.currentTarget ||
@@ -986,65 +1091,18 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
         }
       }}
       style={{
-        width: isInteractive ? `${viewportWidth}px` : "100%",
-        height: isInteractive ? `${viewportHeight}px` : undefined,
-        minHeight: isInteractive ? undefined : "100vh",
+        width: `${viewportWidth}px`,
+        height: `${viewportHeight}px`,
         backgroundColor: bg.color || "#060608",
       }}
       className="relative overflow-hidden select-none"
       data-testid="builder-canvas-surface"
     >
       {/* Level A: Full-Canvas Background Layer */}
-      {bg.visible && (
-        <div
-          data-canvas-bg="true"
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            opacity: bg.opacity,
-            filter: bg.blur > 0 ? `blur(${bg.blur}px)` : undefined,
-            background:
-              bg.type === "gradient"
-                ? `linear-gradient(${bg.gradientAngle}deg, ${bg.color}, ${bg.gradientTo})`
-                : bg.color,
-          }}
-        >
-          {bg.type === "image" && bg.imageUrl && (
-            <img
-              src={bg.imageUrl}
-              alt="Canvas Background"
-              draggable={false}
-              className="w-full h-full"
-              style={{
-                objectFit: bg.size === "contain" ? "contain" : bg.size === "auto" ? "none" : "cover",
-                objectPosition: bg.position,
-              }}
-            />
-          )}
-          {bg.type === "video" && bg.videoUrl && (
-            <video
-              src={bg.videoUrl}
-              autoPlay
-              loop
-              muted
-              playsInline
-              className="w-full h-full object-cover"
-              style={{ objectPosition: bg.position }}
-            />
-          )}
-          {bg.overlayOpacity > 0 && (
-            <div
-              className="absolute inset-0"
-              style={{
-                backgroundColor: bg.overlayColor || "#000000",
-                opacity: bg.overlayOpacity,
-              }}
-            />
-          )}
-        </div>
-      )}
+      {renderBackgroundLayer()}
 
       {/* Optional Grid Overlay (Interactive Editor Only) */}
-      {isInteractive && document.preferences?.showGrid && (
+      {document.preferences?.showGrid && (
         <div
           className="absolute inset-0 pointer-events-none z-0 opacity-25"
           style={{
@@ -1060,78 +1118,32 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
       {children}
 
       {/* Top-Level Embed Containers & Root Nodes */}
-      {isInteractive ? (
-        topLevelNodes.map((node) => {
-          const inner = renderNodeInner(node, 1, new Set());
-          if (renderInteractiveChrome) {
-            return (
-              <React.Fragment key={node.id}>
-                {renderInteractiveChrome(node, inner)}
-              </React.Fragment>
-            );
-          }
+      {topLevelNodes.map((node) => {
+        const inner = renderNodeInner(node, 1, new Set());
+        if (renderInteractiveChrome) {
           return (
-            <div
-              key={node.id}
-              style={{
-                position: "absolute",
-                left: `${node.x}px`,
-                top: `${node.y}px`,
-                width: `${node.width}px`,
-                height: `${node.height}px`,
-                zIndex: node.zIndex,
-                opacity: node.style.opacity ?? 1,
-              }}
-            >
-              {inner}
-            </div>
+            <React.Fragment key={node.id}>
+              {renderInteractiveChrome(node, inner)}
+            </React.Fragment>
           );
-        })
-      ) : (
-        <div
-          className="relative z-10 w-full min-h-screen flex flex-col items-center justify-center py-6 sm:py-10 px-3 sm:px-6"
-          data-testid="public-profile-composition"
-        >
-          {topLevelNodes.length > 0 && (
-            <div
-              className="relative shrink-0"
-              style={{
-                width: `${scaledStageWidth}px`,
-                height: `${scaledStageHeight}px`,
-              }}
-            >
-              <div
-                className="relative"
-                style={{
-                  width: `${compositionBounds.width}px`,
-                  height: `${compositionBounds.height}px`,
-                  transform: publicScale < 1 ? `scale(${publicScale})` : undefined,
-                  transformOrigin: "top left",
-                }}
-              >
-                {topLevelNodes.map((node) => (
-                  <div
-                    key={node.id}
-                    data-testid={`public-node-${node.id}`}
-                    style={{
-                      position: "absolute",
-                      left: `${node.x - compositionBounds.minX}px`,
-                      top: `${node.y - compositionBounds.minY}px`,
-                      width: `${node.width}px`,
-                      height: `${node.height}px`,
-                      zIndex: node.zIndex,
-                      opacity: node.style.opacity ?? 1,
-                      transform: node.rotation ? `rotate(${node.rotation}deg)` : undefined,
-                    }}
-                  >
-                    {renderNodeInner(node, 1, new Set())}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+        }
+        return (
+          <div
+            key={node.id}
+            style={{
+              position: "absolute",
+              left: `${node.x}px`,
+              top: `${node.y}px`,
+              width: `${node.width}px`,
+              height: `${node.height}px`,
+              zIndex: node.zIndex,
+              opacity: node.style.opacity ?? 1,
+            }}
+          >
+            {inner}
+          </div>
+        );
+      })}
     </div>
   );
 };

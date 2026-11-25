@@ -291,12 +291,21 @@ async function run() {
     assert.ok(histPreviewText.includes(v1Name), "Historical preview must render V1 snapshot content");
     await page.getByTestId("preview-device-mobile").click();
     await page.waitForTimeout(150);
+    const histMobileCanvas = await page
+      .locator('[data-testid="builder-preview-modal"] [data-testid="public-profile-canvas-frame"]')
+      .boundingBox();
     const histMobileEmbed = await page
       .locator('[data-testid="builder-preview-modal"] [data-testid="public-node-embed-profile-root"]')
       .boundingBox();
     assert.ok(
-      histMobileEmbed && histMobileEmbed.width <= 390 && histMobileEmbed.height > 150,
-      `Mobile preview embed must scale cleanly inside 390px: ${JSON.stringify(histMobileEmbed)}`
+      histMobileCanvas &&
+        histMobileCanvas.width <= 390 &&
+        Math.abs(histMobileCanvas.width / histMobileCanvas.height - 1920 / 1080) < 0.05,
+      `Mobile preview full canvas must scale uniformly inside 390px preserving 16:9! Got: ${JSON.stringify(histMobileCanvas)}`
+    );
+    assert.ok(
+      histMobileEmbed && histMobileEmbed.width <= 390 && histMobileEmbed.height > 80,
+      `Mobile preview embed must remain proportionally visible inside canvas: ${JSON.stringify(histMobileEmbed)}`
     );
     await page.getByTestId("preview-device-desktop").click();
     await page.getByTestId("preview-modal-close").click();
@@ -368,16 +377,75 @@ async function run() {
     const snapshotsAfterPublish = await prisma.profileHistorySnapshot.count({ where: { userId: userA.id } });
     assert.strictEqual(snapshotsAfterPublish, snapshotsBeforePublish, "Publish must NOT create a history snapshot");
 
-    // Anonymous visitor views public profile
+    // Anonymous visitor views public profile (Desktop 1280x900)
     const anonContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const anonPage = await anonContext.newPage();
     await anonPage.goto(`${WEB_URL}/${usernameA}`, { waitUntil: "networkidle" });
-    await anonPage.waitForSelector('[data-testid="public-profile-composition"]', { timeout: 15000 });
+    await anonPage.waitForSelector('[data-testid="public-profile-canvas-frame"]', { timeout: 15000 });
+    const canvasFrameBox = await anonPage.getByTestId("public-profile-canvas-frame").boundingBox();
+    assert.ok(
+      canvasFrameBox &&
+        Math.abs(canvasFrameBox.width - 1280) < 4 &&
+        Math.abs(canvasFrameBox.height - 720) < 4,
+      `Desktop 1280x900 must fit 1920x1080 canvas uniformly to 1280x720! Got: ${JSON.stringify(canvasFrameBox)}`
+    );
+
     const pubBox = await anonPage.getByTestId("public-node-embed-profile-root").boundingBox();
     assert.ok(
-      pubBox && pubBox.height >= 500 && pubBox.width >= 600,
-      `Public embed composition must render at full dimensions (never collapse to 0px)! Got: ${JSON.stringify(pubBox)}`
+      pubBox &&
+        pubBox.width > 400 &&
+        pubBox.height > 340 &&
+        Math.abs(pubBox.width / pubBox.height - 720 / 610) < 0.05,
+      `Public embed must match 720:610 aspect inside scaled canvas! Got: ${JSON.stringify(pubBox)}`
     );
+
+    // Heart & CLAIM YOUR OWN PROFILE controls must sit INSIDE the scaled canvas frame (not outside footer!)
+    const likeBtnBox = await anonPage.getByTestId("public-profile-like-btn").boundingBox();
+    const claimLinkBox = await anonPage.getByTestId("public-profile-claim-link").boundingBox();
+    assert.ok(
+      likeBtnBox &&
+        likeBtnBox.x >= canvasFrameBox.x - 1 &&
+        likeBtnBox.y >= canvasFrameBox.y - 1 &&
+        likeBtnBox.x + likeBtnBox.width <= canvasFrameBox.x + canvasFrameBox.width + 1 &&
+        likeBtnBox.y + likeBtnBox.height <= canvasFrameBox.y + canvasFrameBox.height + 1,
+      `Heart button must lie inside canvas frame: like=${JSON.stringify(likeBtnBox)}, canvas=${JSON.stringify(canvasFrameBox)}`
+    );
+    assert.ok(
+      claimLinkBox &&
+        claimLinkBox.x >= canvasFrameBox.x - 1 &&
+        claimLinkBox.y >= canvasFrameBox.y - 1 &&
+        claimLinkBox.x + claimLinkBox.width <= canvasFrameBox.x + canvasFrameBox.width + 1 &&
+        claimLinkBox.y + claimLinkBox.height <= canvasFrameBox.y + canvasFrameBox.height + 1,
+      `Claim link must lie inside canvas frame: claim=${JSON.stringify(claimLinkBox)}, canvas=${JSON.stringify(canvasFrameBox)}`
+    );
+
+    // Check Tablet (768x1024) & Mobile (390x844) full-canvas fit with zero horizontal overflow
+    for (const vp of [
+      { name: "tablet", width: 768, height: 1024 },
+      { name: "mobile", width: 390, height: 844 },
+    ]) {
+      await anonPage.setViewportSize({ width: vp.width, height: vp.height });
+      await anonPage.waitForTimeout(150);
+      const vpFrame = await anonPage.getByTestId("public-profile-canvas-frame").boundingBox();
+      const scrollCheck = await anonPage.evaluate(() => ({
+        scrollW: document.documentElement.scrollWidth,
+        innerW: window.innerWidth,
+      }));
+      assert.ok(
+        vpFrame &&
+          vpFrame.width <= vp.width + 1 &&
+          vpFrame.height <= vp.height + 1 &&
+          Math.abs(vpFrame.width / vpFrame.height - 1920 / 1080) < 0.05,
+        `${vp.name} viewport must uniformly scale full 1920x1080 canvas: ${JSON.stringify(vpFrame)}`
+      );
+      assert.ok(
+        scrollCheck.scrollW <= scrollCheck.innerW,
+        `${vp.name} viewport must have zero horizontal overflow: ${JSON.stringify(scrollCheck)}`
+      );
+    }
+    await anonPage.setViewportSize({ width: 1280, height: 900 });
+    await anonPage.waitForTimeout(100);
+
     const pubText = await anonPage.getByTestId("public-profile-composition").innerText();
     assert.ok(pubText.includes(v1Name), "Public page must render published composition text");
 
@@ -413,6 +481,85 @@ async function run() {
     await page.waitForSelector('[data-testid="public-profile-composition"]', { timeout: 15000 });
     await page.goto(`${WEB_URL}/customize`, { waitUntil: "networkidle" });
     await page.waitForSelector('[data-testid="canvas-node-node-name-1"]', { timeout: 15000 });
+
+    // =========================================================================
+    // TEST CORNER & EDGE RESIZING ON PARENT CONTAINER (ALL 4 CORNERS + EDGE)
+    // =========================================================================
+    console.log("[3b/5] Testing proportional corner resizing (nw, ne, se, sw) & non-scaling edge resize...");
+    const rootEmbed = page.getByTestId("canvas-node-embed-profile-root");
+    const nameChild = page.getByTestId("canvas-node-node-name-1");
+    await rootEmbed.click({ position: { x: 10, y: 10 } });
+
+    const verifyCornerResize = async (handleId, dx, dy, anchorCheck) => {
+      const pBefore = await rootEmbed.boundingBox();
+      const cBefore = await nameChild.boundingBox();
+      const handleBox = await page.getByTestId(`builder-handle-${handleId}`).boundingBox();
+      await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(handleBox.x + handleBox.width / 2 + dx, handleBox.y + handleBox.height / 2 + dy, {
+        steps: 6,
+      });
+      await page.mouse.up();
+      await page.waitForTimeout(120);
+      const pAfter = await rootEmbed.boundingBox();
+      const cAfter = await nameChild.boundingBox();
+      assert.ok(
+        Math.abs(pAfter.width / pAfter.height - pBefore.width / pBefore.height) < 0.04,
+        `Handle ${handleId} must preserve parent aspect ratio`
+      );
+      const parentScale = pAfter.width / pBefore.width;
+      const childWidthScale = cAfter.width / cBefore.width;
+      assert.ok(
+        Math.abs(childWidthScale - parentScale) < 0.08,
+        `Handle ${handleId} must scale children proportionally (parentScale=${parentScale.toFixed(3)}, childScale=${childWidthScale.toFixed(3)})`
+      );
+      anchorCheck(pBefore, pAfter);
+      // Undo back to clean state before next corner check
+      await page.getByTestId("builder-undo-btn").click();
+      await page.waitForTimeout(100);
+    };
+
+    await verifyCornerResize("se", 60, 50, (b, a) => {
+      assert.ok(Math.abs(a.x - b.x) < 3 && Math.abs(a.y - b.y) < 3, "SE drag anchors top-left corner");
+      assert.ok(a.width > b.width + 20, "SE expands towards pointer");
+    });
+    await verifyCornerResize("nw", -50, -40, (b, a) => {
+      assert.ok(
+        Math.abs(a.x + a.width - (b.x + b.width)) < 4 &&
+          Math.abs(a.y + a.height - (b.y + b.height)) < 4,
+        "NW drag anchors bottom-right corner"
+      );
+    });
+    await verifyCornerResize("ne", 50, -40, (b, a) => {
+      assert.ok(
+        Math.abs(a.x - b.x) < 4 && Math.abs(a.y + a.height - (b.y + b.height)) < 4,
+        "NE drag anchors bottom-left corner"
+      );
+    });
+    await verifyCornerResize("sw", -50, 40, (b, a) => {
+      assert.ok(
+        Math.abs(a.x + a.width - (b.x + b.width)) < 4 && Math.abs(a.y - b.y) < 4,
+        "SW drag anchors top-right corner"
+      );
+    });
+
+    // Edge handle (e) should NOT proportionally scale child dimensions!
+    const edgePreParent = await rootEmbed.boundingBox();
+    const edgePreChild = await nameChild.boundingBox();
+    const eHandle = await page.getByTestId("builder-handle-e").boundingBox();
+    await page.mouse.move(eHandle.x + eHandle.width / 2, eHandle.y + eHandle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(eHandle.x + eHandle.width / 2 + 50, eHandle.y + eHandle.height / 2, { steps: 5 });
+    await page.mouse.up();
+    await page.waitForTimeout(120);
+    const edgePostParent = await rootEmbed.boundingBox();
+    const edgePostChild = await nameChild.boundingBox();
+    assert.ok(edgePostParent.width > edgePreParent.width + 20, "East edge handle widens parent");
+    assert.ok(Math.abs(edgePostParent.height - edgePreParent.height) < 3, "East edge handle keeps height fixed");
+    assert.ok(Math.abs(edgePostChild.width - edgePreChild.width) < 3, "Edge handle must NOT scale children");
+    await page.getByTestId("builder-undo-btn").click();
+    await page.waitForTimeout(100);
+    console.log("   ✓ All 4 proportional corners & non-scaling edge resize passed");
 
     // =========================================================================
     // TEST G: Reset to Default (Cancel, Confirm, Preserve Real Identity, Undo/Redo)
