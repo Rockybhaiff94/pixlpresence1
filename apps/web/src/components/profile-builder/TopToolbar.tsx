@@ -14,7 +14,7 @@ import {
   CloudOff,
   Copy,
   Download,
-  Eye,
+  ExternalLink,
   FileCode2,
   FileImage,
   FileJson,
@@ -54,7 +54,7 @@ interface TopToolbarProps {
   onDeviceModeChange: (mode: BuilderDeviceMode) => void;
   onOpenSettings: () => void;
   onExport: (kind: "png" | "design-json" | "template-json") => void;
-  onPreviewProfile?: () => void;
+  onViewPublicProfile?: () => void;
   onSaveDraft: () => void;
   onPublish: () => void;
   canvas: BuilderCanvasSettings;
@@ -86,7 +86,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   onDeviceModeChange,
   onOpenSettings,
   onExport,
-  onPreviewProfile,
+  onViewPublicProfile,
   onSaveDraft,
   onPublish,
   canvas,
@@ -210,20 +210,19 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
             >
               <Redo2 size={13} />
             </button>
+            {onResetToDefault && (
+              <button
+                type="button"
+                onClick={onResetToDefault}
+                title="Reset to Default"
+                aria-label="Reset to Default"
+                className="p-1.5 rounded-md text-neutral-300 hover:text-white hover:bg-white/10 cursor-pointer"
+                data-testid="builder-reset-btn"
+              >
+                <RotateCcw size={13} />
+              </button>
+            )}
           </div>
-
-          {onResetToDefault && (
-            <button
-              type="button"
-              onClick={onResetToDefault}
-              title="Reset profile design to default template"
-              className="px-2 py-1.5 rounded-lg bg-[#101015] hover:bg-[#191922] border border-[#22222b] text-neutral-300 hover:text-white text-[11px] flex items-center gap-1 cursor-pointer"
-              data-testid="builder-reset-btn"
-            >
-              <RotateCcw size={12} />
-              <span className="hidden lg:inline">Reset to Default</span>
-            </button>
-          )}
 
           <div className="flex items-center gap-0.5 bg-[#101015] border border-[#22222b] rounded-lg p-0.5">
             {(
@@ -328,16 +327,16 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
             )}
           </div>
 
-          {onPreviewProfile && (
+          {onViewPublicProfile && (
             <button
               type="button"
-              onClick={onPreviewProfile}
+              onClick={onViewPublicProfile}
               className="px-2.5 py-1.5 rounded-lg bg-[#111116] hover:bg-[#191921] border border-[#24242d] text-neutral-200 hover:text-white text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer"
-              data-testid="builder-preview-btn"
-              title="Preview Profile"
+              data-testid="builder-view-public-btn"
+              title="View Live Public Page"
             >
-              <Eye size={12} />
-              <span className="hidden sm:inline">Preview Profile</span>
+              <ExternalLink size={12} />
+              <span className="hidden sm:inline">View Public Page</span>
             </button>
           )}
 

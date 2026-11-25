@@ -221,35 +221,8 @@ async function run() {
     let countBeforeSave = await prisma.profileHistorySnapshot.count({ where: { userId: userA.id } });
     assert.strictEqual(countBeforeSave, 0, "Normal editing must NOT create history snapshots");
 
-    // Click Preview Profile BEFORE saving -> must render unsaved edit accurately in Desktop/Tablet/Mobile!
-    await page.getByTestId("builder-preview-btn").click();
-    await page.waitForSelector('[data-testid="builder-preview-modal"]', { timeout: 5000 });
-    const previewContentDesktop = await page.getByTestId("preview-viewport-frame").innerText();
-    assert.ok(previewContentDesktop.includes(v1Name), "Live Preview must show unsaved edits immediately");
-
-    const previewEmbedBoxDesktop = await page
-      .locator('[data-testid="builder-preview-modal"] [data-testid="public-node-embed-profile-root"]')
-      .boundingBox();
-    assert.ok(
-      previewEmbedBoxDesktop && previewEmbedBoxDesktop.height >= 500,
-      `Preview embed height must not collapse! Got: ${JSON.stringify(previewEmbedBoxDesktop)}`
-    );
-
-    // Switch Preview to Mobile -> fits inside <= 390px and preserves non-collapsed composition
-    await page.getByTestId("preview-device-mobile").click();
-    await page.waitForTimeout(150);
-    const mobileFrameBox = await page.getByTestId("preview-viewport-frame").boundingBox();
-    const previewEmbedBoxMobile = await page
-      .locator('[data-testid="builder-preview-modal"] [data-testid="public-node-embed-profile-root"]')
-      .boundingBox();
-    assert.ok(mobileFrameBox && mobileFrameBox.width <= 395, "Mobile preview frame width <= 390px");
-    assert.ok(
-      previewEmbedBoxMobile && previewEmbedBoxMobile.width <= 390 && previewEmbedBoxMobile.height > 150,
-      `Mobile embed must scale cleanly inside 390px: ${JSON.stringify(previewEmbedBoxMobile)}`
-    );
-
-    await page.getByTestId("preview-device-desktop").click();
-    await page.getByTestId("preview-modal-close").click();
+    // Verify top-right View Public Page button is visible in toolbar (without creating any history snapshot)
+    assert.strictEqual(await page.getByTestId("builder-view-public-btn").isVisible(), true);
 
     // Wait for debounced Autosave to complete -> must persist draft, but create ZERO history snapshots!
     await page.waitForTimeout(3500);
@@ -308,7 +281,7 @@ async function run() {
     assert.ok(snapshots.length >= 2);
     const oldestV1Snap = snapshots[snapshots.length - 1];
 
-    // Preview oldest V1
+    // Preview oldest V1 in Desktop + Mobile responsive frames
     await Promise.all([
       page.waitForResponse((r) => r.url().includes(`/api/profile/me/history/${oldestV1Snap.id}`) && r.status() === 200),
       page.getByTestId(`history-preview-${oldestV1Snap.id}`).click(),
@@ -316,6 +289,16 @@ async function run() {
     await page.waitForSelector('[data-testid="builder-preview-modal"]', { timeout: 5000 });
     const histPreviewText = await page.getByTestId("preview-viewport-frame").innerText();
     assert.ok(histPreviewText.includes(v1Name), "Historical preview must render V1 snapshot content");
+    await page.getByTestId("preview-device-mobile").click();
+    await page.waitForTimeout(150);
+    const histMobileEmbed = await page
+      .locator('[data-testid="builder-preview-modal"] [data-testid="public-node-embed-profile-root"]')
+      .boundingBox();
+    assert.ok(
+      histMobileEmbed && histMobileEmbed.width <= 390 && histMobileEmbed.height > 150,
+      `Mobile preview embed must scale cleanly inside 390px: ${JSON.stringify(histMobileEmbed)}`
+    );
+    await page.getByTestId("preview-device-desktop").click();
     await page.getByTestId("preview-modal-close").click();
 
     // Restore oldest V1 -> confirmation -> updates editor WITHOUT deleting newer snapshots or adding a snapshot
@@ -423,6 +406,13 @@ async function run() {
     );
     await anonContext.close();
     console.log("   ✓ Test D passed");
+
+    // Clicking View Public Page redirects directly to the user's live public profile page!
+    await page.getByTestId("builder-view-public-btn").click();
+    await page.waitForURL(new RegExp(`/${usernameA}$`), { timeout: 15000 });
+    await page.waitForSelector('[data-testid="public-profile-composition"]', { timeout: 15000 });
+    await page.goto(`${WEB_URL}/customize`, { waitUntil: "networkidle" });
+    await page.waitForSelector('[data-testid="canvas-node-node-name-1"]', { timeout: 15000 });
 
     // =========================================================================
     // TEST G: Reset to Default (Cancel, Confirm, Preserve Real Identity, Undo/Redo)

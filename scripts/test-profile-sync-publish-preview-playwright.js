@@ -343,11 +343,11 @@ async function run() {
     const previewBody = await page.textContent("body");
     assert.ok(previewBody && previewBody.includes(customBio1), "Owner ?preview=1 page must render draft bio");
 
-    // 5c. Editor TopToolbar Preview Profile button + Publish + Autosave auto-publish
+    // 5c. Editor TopToolbar View Public Page button + Publish + Autosave auto-publish
     await page.goto(`${WEB_URL}/customize`, { waitUntil: "networkidle" });
     await page.waitForSelector('[data-testid="profile-builder-studio"]', { timeout: 15000 });
-    const previewBtn = page.locator('[data-testid="builder-preview-btn"]');
-    await previewBtn.waitFor({ state: "visible", timeout: 15000 });
+    const viewPublicBtn = page.locator('[data-testid="builder-view-public-btn"]');
+    await viewPublicBtn.waitFor({ state: "visible", timeout: 15000 });
 
     // Click Publish button
     const publishBtn = page.locator('button:has-text("Publish")').first();

@@ -1007,14 +1007,15 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     [identitySeed]
   );
 
-  // Live Preview directly renders current in-memory editor state without mutating DB or history
-  const handlePreviewProfile = () => {
-    setPreviewModalState({
-      open: true,
-      mode: "draft",
-      historyMeta: null,
-      historyDetail: null,
-    });
+  // Redirect directly to the live public profile page (or owner preview query when not yet published)
+  const handleViewPublicProfile = () => {
+    if (!user?.username) {
+      setErrorBanner("Sign in to view your Pixel.gg public page.");
+      return;
+    }
+    const published = Boolean(isPublishedRef.current || doc.metadata?.lastPublishedAt);
+    const targetUrl = `/${encodeURIComponent(user.username)}${published ? "" : "?preview=1"}`;
+    window.location.assign(targetUrl);
   };
 
   const handleConfirmResetToDefault = () => {
@@ -1180,7 +1181,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         onDeviceModeChange={setDeviceMode}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onExport={handleExport}
-        onPreviewProfile={handlePreviewProfile}
+        onViewPublicProfile={handleViewPublicProfile}
         onSaveDraft={() => performSaveDraft(false)}
         onPublish={handlePublish}
         canvas={doc.canvas}
