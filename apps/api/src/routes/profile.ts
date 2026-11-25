@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { prisma } from '@discord-rpc/database';
+import { io } from '../index';
 import { recordSyncEvent } from '../utils/sync';
 import { resolveTelemetry } from '../utils/geo';
 import { viewRateLimiter } from '../rateLimiter';
 import { presenceManager } from '../services/presenceManager';
 import { getUserCapabilities, validateProfileCapabilities } from '../services/entitlements';
+import { parseDesignConfigObject } from '../services/profileSyncService';
 
 export const profileRouter = Router();
 
@@ -114,22 +116,86 @@ export async function findUserByIdentifier(rawIdentifier: string) {
     });
   }
 
+  // 4. Previous username / alias resolution via SynchronizationEvent (safe across schema variants)
+  if (!user) {
+    try {
+      const recentRename = await prisma.synchronizationEvent.findFirst({
+        where: {
+          eventType: 'user.username.updated',
+          payload: { contains: clean.toLowerCase() },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (recentRename?.entityId) {
+        const parsedPayload = (() => {
+          try {
+            return JSON.parse(recentRename.payload);
+          } catch {
+            return null;
+          }
+        })();
+        if (parsedPayload?.previousUsername?.toLowerCase() === clean.toLowerCase()) {
+          user = await prisma.user.findUnique({
+            where: { id: recentRename.entityId },
+            include: {
+              profile: {
+                include: { links: true, buttons: true },
+              },
+              richPresence: true,
+            },
+          });
+        }
+      }
+    } catch {
+      // Ignore if sync event table query fails
+    }
+  }
+
   return user;
 }
 
-// Public Profile Endpoint
+// Public Profile Endpoint (Strict no-store to prevent stale profile versions)
 profileRouter.get('/u/:username', async (req: any, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
   try {
+    const viewer = await resolveOptionalViewer(req);
     const user = await findUserByIdentifier(req.params.username);
 
     if (!user || !user.profile) {
       return res.status(404).json({ error: 'Profile not found' });
     }
 
-    // Check visibility permissions
-    const isOwner = req.user && req.user.id === user.id;
+    // Check visibility & draft publication permissions
+    const isOwner = Boolean(viewer && viewer.id === user.id);
+    const isPreviewMode = req.query.preview === '1' || req.query.preview === 'true';
+
     if (user.profile.visibility === 'PRIVATE' && !isOwner) {
       return res.status(403).json({ error: 'This profile is private' });
+    }
+
+    const cfgObj = parseDesignConfigObject(user.profile.designConfig);
+    const hasPublishedDoc = cfgObj.isPublished !== false;
+    const isUnpublishedDraftOnly = cfgObj.isPublished === false && !cfgObj.profileBuilder;
+
+    if (isUnpublishedDraftOnly && !(isOwner && isPreviewMode)) {
+      return res.status(404).json({ error: 'Profile has not been published yet' });
+    }
+
+    // Prepare profile payload; for owner preview, swap in latest draftProfileBuilder if available
+    const responseProfile: any = { ...user.profile };
+    if (isOwner && isPreviewMode && cfgObj.draftProfileBuilder) {
+      responseProfile.designConfig = JSON.stringify({
+        ...cfgObj,
+        profileBuilder: cfgObj.draftProfileBuilder,
+      });
+    } else if (!hasPublishedDoc && isOwner && isPreviewMode && cfgObj.draftProfileBuilder) {
+      responseProfile.designConfig = JSON.stringify({
+        ...cfgObj,
+        profileBuilder: cfgObj.draftProfileBuilder,
+      });
     }
 
     // Omit sensitive data
@@ -157,9 +223,10 @@ profileRouter.get('/u/:username', async (req: any, res) => {
 
     res.json({
       user: safeUser,
-      profile: user.profile,
+      profile: responseProfile,
       richPresence: safeRpc,
       livePresence,
+      isOwnerPreview: Boolean(isOwner && isPreviewMode),
     });
   } catch (err) {
     console.error('[Public Profile Error]:', err);
@@ -614,10 +681,13 @@ profileRouter.get('/capabilities', requireAuth, async (req: any, res) => {
   }
 });
 
-// Update Profile
+// Update Profile (Save Draft / Autosave / Publish with version concurrency & syncPreferences preservation)
 profileRouter.patch('/me', requireAuth, async (req: any, res) => {
   try {
-    const data = { ...req.body };
+    const data = { ...(req.body || {}) };
+    const expectedVersion =
+      typeof data.expectedVersion === 'number' ? data.expectedVersion : undefined;
+
     // Remove protected or relation fields
     delete data.id;
     delete data.userId;
@@ -627,13 +697,33 @@ profileRouter.patch('/me', requireAuth, async (req: any, res) => {
     delete data.links;
     delete data.buttons;
     delete data.viewRecords;
+    delete data.expectedVersion;
+    delete data.saveMode;
+    delete data.isPublished;
+
+    const existingProfile = await prisma.profile.findUnique({
+      where: { userId: req.user.id },
+      select: { profileVersion: true, designConfig: true, visibility: true },
+    });
+
+    if (
+      expectedVersion !== undefined &&
+      existingProfile &&
+      expectedVersion < existingProfile.profileVersion
+    ) {
+      return res.status(409).json({
+        error: 'A newer profile version was already saved.',
+        currentVersion: existingProfile.profileVersion,
+      });
+    }
 
     if (data.customCss !== undefined) {
       data.customCss = sanitizeCustomCss(data.customCss);
     }
 
-    // Validate capabilities / entitlements
+    // Validate capabilities / entitlements & preserve existing syncPreferences
     const caps = getUserCapabilities(req.user);
+    let parsedIncomingCfg: Record<string, any> | null = null;
     if (data.designConfig !== undefined) {
       let parsedCfg = data.designConfig;
       if (typeof parsedCfg === 'string') {
@@ -647,22 +737,45 @@ profileRouter.patch('/me', requireAuth, async (req: any, res) => {
       if (!capValidation.valid) {
         return res.status(403).json({ error: capValidation.error });
       }
+      if (parsedCfg && typeof parsedCfg === 'object') {
+        const existingCfg = parseDesignConfigObject(existingProfile?.designConfig);
+        if (existingCfg.syncPreferences && !parsedCfg.syncPreferences) {
+          parsedCfg.syncPreferences = existingCfg.syncPreferences;
+        }
+        parsedIncomingCfg = parsedCfg;
+        data.designConfig = JSON.stringify(parsedCfg);
+      }
     }
 
-    if (data.designConfig !== undefined && typeof data.designConfig === 'object') {
-      data.designConfig = JSON.stringify(data.designConfig);
-    }
-
-    const profile = await prisma.profile.update({
+    const profile = await prisma.profile.upsert({
       where: { userId: req.user.id },
-      data: {
+      update: {
         ...data,
-        profileVersion: { increment: 1 }
+        profileVersion: { increment: 1 },
+      },
+      create: {
+        userId: req.user.id,
+        displayName: data.displayName || req.user.globalName || req.user.username,
+        bio: data.bio || null,
+        avatarUrl: data.avatarUrl || req.user.avatar || '',
+        bannerUrl: data.bannerUrl || null,
+        designConfig: typeof data.designConfig === 'string' ? data.designConfig : null,
       },
       include: { links: true, buttons: true },
     });
 
     await recordSyncEvent('profile.updated', req.user.id, data, profile.profileVersion);
+
+    // Notify active public profile viewers via existing Socket.IO room when published
+    const isPublished = parsedIncomingCfg ? parsedIncomingCfg.isPublished !== false : true;
+    if (isPublished && req.user.username) {
+      io.to(`profile:${req.user.username.toLowerCase()}`).emit('profile_updated', {
+        username: req.user.username,
+        profileVersion: profile.profileVersion,
+        updatedAt: profile.updatedAt,
+      });
+    }
+
     res.json(profile);
   } catch (err: any) {
     console.error('[Update Profile Error]:', err);

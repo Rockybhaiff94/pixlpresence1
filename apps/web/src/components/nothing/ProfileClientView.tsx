@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Disc,
   Heart,
@@ -80,6 +81,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
   designConfig,
   isPremium = false,
 }) => {
+  const router = useRouter();
   const [entered, setEntered] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -180,6 +182,11 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
 
     socket.on("presence_sync", handlePresenceUpdate);
     socket.on("presence_update", handlePresenceUpdate);
+    socket.on("profile_updated", () => {
+      if (isMounted) {
+        router.refresh();
+      }
+    });
 
     // Fallback polling every 6 seconds when socket is not connected
     const pollInterval = setInterval(async () => {
@@ -204,7 +211,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
       socket.emit("unsubscribe_profile", { username, discordId });
       socket.disconnect();
     };
-  }, [username, discordId]);
+  }, [username, discordId, router]);
 
   // Compute Active Studio Configuration with Full Legacy Backward Compatibility
   const activeConfig: ProfileDesignConfig = React.useMemo(() => {

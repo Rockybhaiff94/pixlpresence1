@@ -14,6 +14,7 @@ import {
   CloudOff,
   Copy,
   Download,
+  Eye,
   FileCode2,
   FileImage,
   FileJson,
@@ -51,6 +52,7 @@ interface TopToolbarProps {
   onDeviceModeChange: (mode: BuilderDeviceMode) => void;
   onOpenSettings: () => void;
   onExport: (kind: "png" | "design-json" | "template-json") => void;
+  onPreviewProfile?: () => void;
   onSaveDraft: () => void;
   onPublish: () => void;
   canvas: BuilderCanvasSettings;
@@ -81,6 +83,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   onDeviceModeChange,
   onOpenSettings,
   onExport,
+  onPreviewProfile,
   onSaveDraft,
   onPublish,
   canvas,
@@ -308,6 +311,19 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
               </div>
             )}
           </div>
+
+          {onPreviewProfile && (
+            <button
+              type="button"
+              onClick={onPreviewProfile}
+              className="px-2.5 py-1.5 rounded-lg bg-[#111116] hover:bg-[#191921] border border-[#24242d] text-neutral-200 hover:text-white text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer"
+              data-testid="builder-preview-btn"
+              title="Preview Profile"
+            >
+              <Eye size={12} />
+              <span className="hidden sm:inline">Preview Profile</span>
+            </button>
+          )}
 
           <button
             type="button"

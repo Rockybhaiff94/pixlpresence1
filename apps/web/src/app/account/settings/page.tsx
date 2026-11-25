@@ -25,6 +25,14 @@ interface ConnectionsState {
   email: { connected: boolean; email: string | null; hasPassword: boolean };
 }
 
+interface SyncPreferencesState {
+  syncDiscordProfile: boolean;
+  syncUsername: boolean;
+  syncDisplayName: boolean;
+  syncAvatar: boolean;
+  lastSyncedAt: string | null;
+}
+
 export default function AccountSettingsPage() {
   const { user, refreshUser, logout } = useAuth();
   const [connections, setConnections] = useState<ConnectionsState>({
@@ -32,6 +40,14 @@ export default function AccountSettingsPage() {
     google: { connected: false, id: null, displayName: null },
     email: { connected: false, email: null, hasPassword: false },
   });
+  const [syncPrefs, setSyncPrefs] = useState<SyncPreferencesState>({
+    syncDiscordProfile: true,
+    syncUsername: false,
+    syncDisplayName: true,
+    syncAvatar: true,
+    lastSyncedAt: null,
+  });
+  const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [msg, setMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
@@ -44,15 +60,93 @@ export default function AccountSettingsPage() {
   const fetchConnections = async () => {
     try {
       setLoading(true);
-      const res = await apiFetch("/api/auth/connections");
-      if (res.ok) {
-        const data = await res.json();
+      const [connRes, syncRes] = await Promise.all([
+        apiFetch("/api/auth/connections"),
+        apiFetch("/api/account/sync-preferences"),
+      ]);
+      if (connRes.ok) {
+        const data = await connRes.json();
         setConnections(data);
+      }
+      if (syncRes.ok) {
+        const syncData = await syncRes.json();
+        if (syncData?.preferences) {
+          setSyncPrefs(syncData.preferences);
+        }
       }
     } catch {
       // Ignore
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleToggleSyncPref = async (
+    key: "syncDiscordProfile" | "syncUsername" | "syncDisplayName" | "syncAvatar",
+  ) => {
+    const nextValue = !syncPrefs[key];
+    const optimistic = { ...syncPrefs, [key]: nextValue };
+    setSyncPrefs(optimistic);
+    setMsg(null);
+    try {
+      const res = await apiFetch("/api/account/sync-preferences", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: nextValue }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update sync preference");
+      }
+      if (data?.preferences) {
+        setSyncPrefs(data.preferences);
+      }
+    } catch (err: unknown) {
+      setSyncPrefs(syncPrefs);
+      setMsg({
+        text: err instanceof Error ? err.message : "Failed to update sync preference",
+        type: "error",
+      });
+    }
+  };
+
+  const handleSyncNow = async () => {
+    try {
+      setSyncing(true);
+      setMsg(null);
+      const res = await apiFetch("/api/account/sync-discord", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to synchronize Discord profile");
+      }
+      if (data?.preferences) {
+        setSyncPrefs(data.preferences);
+      }
+      try {
+        if (user?.id) {
+          localStorage.removeItem(`pixel_profile_builder_draft_v2_${user.id}`);
+        }
+        localStorage.removeItem("pixel_profile_builder_draft_v2");
+      } catch {
+        // Ignore storage errors
+      }
+      await refreshUser();
+      setMsg({
+        text: data?.updated
+          ? "Discord profile synchronized successfully."
+          : "Sync complete. No enabled fields needed changes.",
+        type: "success",
+      });
+    } catch (err: unknown) {
+      setMsg({
+        text: err instanceof Error ? err.message : "Failed to synchronize Discord profile",
+        type: "error",
+      });
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -188,6 +282,94 @@ export default function AccountSettingsPage() {
               <span className="text-[10px] text-neutral-500 uppercase tracking-wider">Account Role</span>
               <p className="text-white font-bold">{user?.role || "USER"}</p>
             </div>
+          </div>
+        </div>
+
+        {/* Profile Synchronization */}
+        <div
+          className="p-6 rounded-2xl bg-[#0b0b0b] border border-[#202020] space-y-4 nt-crosshair"
+          data-testid="profile-sync-section"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#181818]">
+            <div className="space-y-0.5">
+              <h2 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <RefreshCw size={14} className="text-neutral-400" />
+                PROFILE SYNCHRONIZATION
+              </h2>
+              <p className="text-[11px] text-neutral-500">
+                Control how Discord profile fields sync to your Pixel.gg account and published profile
+              </p>
+            </div>
+            <Button
+              type="button"
+              onClick={handleSyncNow}
+              disabled={syncing || loading || !connections?.discord?.connected}
+              className="text-xs px-3 py-1.5"
+              data-testid="sync-now-btn"
+            >
+              <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
+              <span>{syncing ? "Syncing..." : "Sync Now"}</span>
+            </Button>
+          </div>
+
+          <div className="space-y-2.5">
+            {(
+              [
+                {
+                  key: "syncDiscordProfile",
+                  label: "Sync Discord Profile",
+                  desc: "Master toggle for syncing enabled Discord fields on login or manual sync",
+                },
+                {
+                  key: "syncUsername",
+                  label: "Sync Username",
+                  desc: "Update your Pixel.gg handle when your Discord username changes",
+                },
+                {
+                  key: "syncDisplayName",
+                  label: "Sync Display Name",
+                  desc: "Update your Pixel.gg display name from your Discord global name",
+                },
+                {
+                  key: "syncAvatar",
+                  label: "Sync Avatar",
+                  desc: "Update your Pixel.gg avatar URL from your Discord profile avatar",
+                },
+              ] as const
+            ).map((item) => {
+              const checked = syncPrefs[item.key];
+              const disabled = item.key !== "syncDiscordProfile" && !syncPrefs.syncDiscordProfile;
+              return (
+                <label
+                  key={item.key}
+                  className={`p-3.5 rounded-xl bg-[#121212] border border-[#222222] flex items-center justify-between gap-4 cursor-pointer ${
+                    disabled ? "opacity-50" : ""
+                  }`}
+                >
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-bold text-white">{item.label}</p>
+                    <p className="text-[11px] text-neutral-500">{item.desc}</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={disabled}
+                    onChange={() => handleToggleSyncPref(item.key)}
+                    data-testid={`sync-toggle-${item.key}`}
+                    className="h-4 w-4 accent-white cursor-pointer"
+                  />
+                </label>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-neutral-500">
+            <span>Last Successful Synchronization:</span>
+            <span className="text-neutral-300 font-semibold" data-testid="sync-last-synced-at">
+              {syncPrefs.lastSyncedAt
+                ? new Date(syncPrefs.lastSyncedAt).toLocaleString()
+                : "Never"}
+            </span>
           </div>
         </div>
 

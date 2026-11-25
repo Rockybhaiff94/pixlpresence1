@@ -97,6 +97,9 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
   const [historyIdx, setHistoryIdx] = useState(0);
   const isDirtyRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveSeqRef = useRef(0);
+  const knownProfileVersionRef = useRef<number | undefined>(undefined);
+  const isPublishedRef = useRef(false);
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
@@ -107,46 +110,77 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
   useEffect(() => {
     const raf = window.requestAnimationFrame(() => {
       try {
-        const localRaw = localStorage.getItem(DRAFT_STORAGE_KEY);
-        if (localRaw) {
-          const parsed = JSON.parse(localRaw) as ProfileBuilderDocument;
-          if (parsed && parsed.version === "2.0" && Array.isArray(parsed.nodes) && parsed.canvas) {
-            setDoc(parsed);
-            setHistory([
-              {
-                canvas: JSON.parse(JSON.stringify(parsed.canvas)),
-                nodes: JSON.parse(JSON.stringify(parsed.nodes)),
-                selectedId: null,
-              },
-            ]);
-            setHistoryIdx(0);
-            return;
-          }
-        }
+        const storageKey = user?.id ? `${DRAFT_STORAGE_KEY}_${user.id}` : DRAFT_STORAGE_KEY;
+        const localRaw = localStorage.getItem(storageKey) || (!user?.id ? localStorage.getItem(DRAFT_STORAGE_KEY) : null);
+        const localParsed = localRaw ? (JSON.parse(localRaw) as ProfileBuilderDocument) : null;
+        const validLocal =
+          localParsed && localParsed.version === "2.0" && Array.isArray(localParsed.nodes) && localParsed.canvas
+            ? localParsed
+            : null;
+
+        let remoteDoc: ProfileBuilderDocument | null = null;
+        let remotePublished = false;
         if (profile?.designConfig) {
           const rawCfg =
             typeof profile.designConfig === "string"
               ? JSON.parse(profile.designConfig)
               : profile.designConfig;
-          if (rawCfg?.profileBuilder?.version === "2.0") {
-            const loaded = rawCfg.profileBuilder as ProfileBuilderDocument;
-            setDoc(loaded);
-            setHistory([
-              {
-                canvas: JSON.parse(JSON.stringify(loaded.canvas)),
-                nodes: JSON.parse(JSON.stringify(loaded.nodes)),
-                selectedId: null,
-              },
-            ]);
-            setHistoryIdx(0);
+          remotePublished = rawCfg?.isPublished !== false && Boolean(rawCfg?.profileBuilder);
+          const candidate = rawCfg?.draftProfileBuilder || rawCfg?.profileBuilder;
+          if (candidate?.version === "2.0" && Array.isArray(candidate.nodes) && candidate.canvas) {
+            remoteDoc = candidate as ProfileBuilderDocument;
           }
+        }
+
+        const profileVersion = (profile as { profileVersion?: unknown }).profileVersion;
+        if (typeof profileVersion === "number") {
+          knownProfileVersionRef.current = profileVersion;
+        }
+        if (remotePublished || remoteDoc?.metadata?.lastPublishedAt) {
+          isPublishedRef.current = true;
+        }
+
+        // Choose whichever document is newer between local draft and remote profile
+        let chosen: ProfileBuilderDocument | null = null;
+        if (validLocal && remoteDoc) {
+          const localTime = Date.parse(validLocal.metadata?.updatedAt || "") || 0;
+          const remoteTime = Date.parse(remoteDoc.metadata?.updatedAt || "") || 0;
+          chosen = remoteTime >= localTime ? remoteDoc : validLocal;
+          if (remoteDoc.metadata?.lastPublishedAt && !chosen.metadata?.lastPublishedAt) {
+            chosen = {
+              ...chosen,
+              metadata: { ...chosen.metadata, lastPublishedAt: remoteDoc.metadata.lastPublishedAt },
+            };
+          }
+        } else {
+          chosen = remoteDoc || validLocal;
+        }
+
+        if (chosen) {
+          const base = createDefaultReferenceDocument();
+          const normalized: ProfileBuilderDocument = {
+            ...base,
+            ...chosen,
+            canvas: { ...base.canvas, ...(chosen.canvas || {}) },
+            preferences: { ...base.preferences, ...(chosen.preferences || {}) },
+            metadata: { ...base.metadata, ...(chosen.metadata || {}) },
+          };
+          setDoc(normalized);
+          setHistory([
+            {
+              canvas: JSON.parse(JSON.stringify(normalized.canvas)),
+              nodes: JSON.parse(JSON.stringify(normalized.nodes)),
+              selectedId: null,
+            },
+          ]);
+          setHistoryIdx(0);
         }
       } catch {
         // Ignore corrupted draft and keep safe starter document
       }
     });
     return () => window.cancelAnimationFrame(raf);
-  }, [profile]);
+  }, [profile, user?.id]);
 
   // Fetch optional live Discord RPC status for preview without fabricating data
   useEffect(() => {
@@ -159,7 +193,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           setLiveRpc(json.presence);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
     return () => {
       active = false;
     };
@@ -271,28 +305,28 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
 
         const nextNodes = hasBgUpdate
           ? prev.nodes.map((n) => {
-              if (n.type !== "background") return n;
-              return {
-                ...n,
-                config: {
-                  ...n.config,
-                  ...(updates.backgroundType !== undefined ? { bgType: updates.backgroundType } : {}),
-                  ...(updates.backgroundColor !== undefined ? { bgColor: updates.backgroundColor } : {}),
-                  ...(updates.backgroundGradientTo !== undefined ? { bgGradientTo: updates.backgroundGradientTo } : {}),
-                  ...(updates.backgroundGradientAngle !== undefined ? { bgGradientAngle: updates.backgroundGradientAngle } : {}),
-                  ...(updates.backgroundImage !== undefined ? { bgImageUrl: updates.backgroundImage } : {}),
-                  ...(updates.backgroundVideo !== undefined ? { bgVideoUrl: updates.backgroundVideo } : {}),
-                  ...(updates.backgroundPosition !== undefined ? { bgPosition: updates.backgroundPosition } : {}),
-                  ...(updates.backgroundSize !== undefined ? { bgSize: updates.backgroundSize } : {}),
-                  ...(updates.overlayOpacity !== undefined ? { bgOverlayOpacity: updates.overlayOpacity } : {}),
-                },
-                style: {
-                  ...n.style,
-                  ...(updates.backgroundOpacity !== undefined ? { opacity: updates.backgroundOpacity } : {}),
-                  ...(updates.backgroundBlur !== undefined ? { blur: updates.backgroundBlur } : {}),
-                },
-              };
-            })
+            if (n.type !== "background") return n;
+            return {
+              ...n,
+              config: {
+                ...n.config,
+                ...(updates.backgroundType !== undefined ? { bgType: updates.backgroundType } : {}),
+                ...(updates.backgroundColor !== undefined ? { bgColor: updates.backgroundColor } : {}),
+                ...(updates.backgroundGradientTo !== undefined ? { bgGradientTo: updates.backgroundGradientTo } : {}),
+                ...(updates.backgroundGradientAngle !== undefined ? { bgGradientAngle: updates.backgroundGradientAngle } : {}),
+                ...(updates.backgroundImage !== undefined ? { bgImageUrl: updates.backgroundImage } : {}),
+                ...(updates.backgroundVideo !== undefined ? { bgVideoUrl: updates.backgroundVideo } : {}),
+                ...(updates.backgroundPosition !== undefined ? { bgPosition: updates.backgroundPosition } : {}),
+                ...(updates.backgroundSize !== undefined ? { bgSize: updates.backgroundSize } : {}),
+                ...(updates.overlayOpacity !== undefined ? { bgOverlayOpacity: updates.overlayOpacity } : {}),
+              },
+              style: {
+                ...n.style,
+                ...(updates.backgroundOpacity !== undefined ? { opacity: updates.backgroundOpacity } : {}),
+                ...(updates.backgroundBlur !== undefined ? { blur: updates.backgroundBlur } : {}),
+              },
+            };
+          })
           : prev.nodes;
 
         commitSnapshot(nextCanvas, nextNodes, selectedId);
@@ -584,11 +618,11 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       const parentChanged = (dragged.parentId || null) !== newParentId;
       const updatedDragged: BuilderNode = parentChanged
         ? {
-            ...dragged,
-            parentId: newParentId,
-            x: newParentId ? 20 : 120,
-            y: newParentId ? 20 : 120,
-          }
+          ...dragged,
+          parentId: newParentId,
+          x: newParentId ? 20 : 120,
+          y: newParentId ? 20 : 120,
+        }
         : dragged;
 
       // Sort destination non-background siblings frontmost-first (descending zIndex) matching Layers tree UI
@@ -672,12 +706,12 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       const nextNodes = doc.nodes.map((n) =>
         n.id === nodeId
           ? {
-              ...n,
-              parentId: newParentId,
-              x: newParentId ? 20 : 120,
-              y: newParentId ? 20 : 120,
-              zIndex: nextSibs + 1,
-            }
+            ...n,
+            parentId: newParentId,
+            x: newParentId ? 20 : 120,
+            y: newParentId ? 20 : 120,
+            zIndex: nextSibs + 1,
+          }
           : n
       );
       setDoc((prev) => ({ ...prev, nodes: nextNodes }));
@@ -688,7 +722,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
   );
 
   // Build backend-compatible designConfig payload wrapping V2 Profile Builder Document
-  const buildDesignConfigPayload = (currentDoc: ProfileBuilderDocument) => {
+  const buildDesignConfigPayload = (currentDoc: ProfileBuilderDocument, isPublished: boolean) => {
     const embeds = currentDoc.nodes
       .filter((n) => n.type === "embed" || n.type === "nested-embed")
       .map((em) => ({
@@ -706,6 +740,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       }));
 
     return {
+      isPublished,
       layout: {
         maxWidth: embeds[0]?.transform.width || 720,
         padding: 24,
@@ -720,29 +755,69 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         embeds,
         elements: [],
       },
-      profileBuilder: currentDoc,
+      draftProfileBuilder: currentDoc,
+      ...(isPublished ? { profileBuilder: currentDoc } : {}),
     };
   };
 
-  // Real Save Draft (local draft + remote /api/profile/me persistence)
+  // Extract authoritative Profile fields from Builder document so Profile table & public renderer stay in sync
+  const extractProfileFieldsFromDoc = (currentDoc: ProfileBuilderDocument) => {
+    const nameNode = currentDoc.nodes.find((n) => n.type === "name-text");
+    const bioNode = currentDoc.nodes.find((n) => n.type === "description");
+    const avatarNode = currentDoc.nodes.find((n) => n.type === "profile-image");
+    const bannerNode = currentDoc.nodes.find((n) => n.type === "banner-image");
+
+    const fields: Record<string, string> = {};
+    if (nameNode?.config?.text !== undefined) fields.displayName = String(nameNode.config.text).slice(0, 64);
+    if (bioNode?.config?.text !== undefined) fields.bio = String(bioNode.config.text).slice(0, 500);
+    if (avatarNode?.config?.src !== undefined) fields.avatarUrl = String(avatarNode.config.src);
+    if (bannerNode?.config?.src !== undefined) fields.bannerUrl = String(bannerNode.config.src);
+    return fields;
+  };
+
+  // Real Save Draft & Auto-Publish-When-Published (local draft + remote /api/profile/me persistence)
   const performSaveDraft = useCallback(
     async (silent = false) => {
+      const seq = ++saveSeqRef.current;
       setSaveStatus("saving");
       setErrorBanner(null);
 
       try {
+        const storageKey = user?.id ? `${DRAFT_STORAGE_KEY}_${user.id}` : DRAFT_STORAGE_KEY;
+        localStorage.setItem(storageKey, JSON.stringify(doc));
         localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(doc));
-      } catch {}
+      } catch { }
 
       try {
+        const currentlyPublished = Boolean(isPublishedRef.current || doc.metadata?.lastPublishedAt);
+        const profileFields = extractProfileFieldsFromDoc(doc);
         const res = await apiFetch("/api/profile/me", {
           method: "PATCH",
-          body: JSON.stringify({ designConfig: buildDesignConfigPayload(doc) }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...profileFields,
+            designConfig: buildDesignConfigPayload(doc, currentlyPublished),
+            ...(knownProfileVersionRef.current !== undefined
+              ? { expectedVersion: knownProfileVersionRef.current }
+              : {}),
+          }),
         });
 
+        const payload = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const payload = await res.json().catch(() => ({}));
+          if (res.status === 409 && typeof payload?.currentVersion === "number") {
+            knownProfileVersionRef.current = payload.currentVersion;
+          }
           throw new Error(payload?.error || `Save failed (${res.status})`);
+        }
+
+        if (typeof payload?.profileVersion === "number") {
+          knownProfileVersionRef.current = payload.profileVersion;
+        }
+
+        // Do not overwrite newer unsaved edits if user kept typing while request was in flight
+        if (seq !== saveSeqRef.current) {
+          return;
         }
 
         const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -750,11 +825,14 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         setIsDirty(false);
         isDirtyRef.current = false;
         setSaveStatus("saved");
-        if (!silent) showToast("Draft saved");
+        if (!silent) {
+          showToast(currentlyPublished ? "Saved & updated live public profile" : "Draft saved");
+        }
         setTimeout(() => {
           setSaveStatus((s) => (s === "saved" ? "ready" : s));
         }, 2200);
       } catch (err: unknown) {
+        if (seq !== saveSeqRef.current) return;
         const offline = typeof window !== "undefined" && !navigator.onLine;
         setSaveStatus(offline ? "offline" : "error");
         if (!silent) {
@@ -768,7 +846,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         }
       }
     },
-    [doc, showToast]
+    [doc, showToast, user?.id]
   );
 
   // Debounced auto-save
@@ -792,21 +870,28 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       return;
     }
 
+    const seq = ++saveSeqRef.current;
     setSaveStatus("publishing");
     setErrorBanner(null);
 
     try {
+      const nowIso = new Date().toISOString();
       const publishedDoc: ProfileBuilderDocument = {
         ...doc,
         metadata: {
           ...doc.metadata,
-          updatedAt: new Date().toISOString(),
-          lastPublishedAt: new Date().toISOString(),
+          updatedAt: nowIso,
+          lastPublishedAt: nowIso,
         },
       };
+      const profileFields = extractProfileFieldsFromDoc(publishedDoc);
       const res = await apiFetch("/api/profile/me", {
         method: "PATCH",
-        body: JSON.stringify({ designConfig: buildDesignConfigPayload(publishedDoc) }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...profileFields,
+          designConfig: buildDesignConfigPayload(publishedDoc, true),
+        }),
       });
 
       const payload = await res.json().catch(() => ({}));
@@ -814,14 +899,24 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         throw new Error(payload?.error || `Server rejected publish (${res.status}).`);
       }
 
+      if (typeof payload?.profileVersion === "number") {
+        knownProfileVersionRef.current = payload.profileVersion;
+      }
+
+      isPublishedRef.current = true;
       setDoc(publishedDoc);
       try {
+        const storageKey = user?.id ? `${DRAFT_STORAGE_KEY}_${user.id}` : DRAFT_STORAGE_KEY;
+        localStorage.setItem(storageKey, JSON.stringify(publishedDoc));
         localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(publishedDoc));
-      } catch {}
-      setIsDirty(false);
-      isDirtyRef.current = false;
-      setSaveStatus("saved");
-      setLastSavedTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+      } catch { }
+
+      if (seq === saveSeqRef.current) {
+        setIsDirty(false);
+        isDirtyRef.current = false;
+        setSaveStatus("saved");
+        setLastSavedTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+      }
       await refreshUser?.();
       showToast("Published live to your public Pixel.gg profile!");
     } catch (err: unknown) {
@@ -830,6 +925,19 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         err instanceof Error ? err.message : "Publish failed. Your local changes are preserved."
       );
     }
+  };
+
+  const handlePreviewProfile = async () => {
+    if (!user?.username) {
+      setErrorBanner("Sign in to preview your Pixel.gg profile.");
+      return;
+    }
+    if (isDirtyRef.current) {
+      await performSaveDraft(true);
+    }
+    const published = Boolean(isPublishedRef.current || doc.metadata?.lastPublishedAt);
+    const targetUrl = `/${encodeURIComponent(user.username)}${published ? "" : "?preview=1"}`;
+    window.open(targetUrl, "_blank", "noopener,noreferrer");
   };
 
   const handleExport = async (kind: "png" | "design-json" | "template-json") => {
@@ -939,6 +1047,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         onDeviceModeChange={setDeviceMode}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onExport={handleExport}
+        onPreviewProfile={handlePreviewProfile}
         onSaveDraft={() => performSaveDraft(false)}
         onPublish={handlePublish}
         canvas={doc.canvas}

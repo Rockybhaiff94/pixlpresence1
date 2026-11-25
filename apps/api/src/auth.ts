@@ -5,6 +5,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { authRateLimiter } from './rateLimiter';
+import { applyDiscordSyncToUser } from './services/profileSyncService';
 
 function cleanEnv(val: string | undefined, fallback: string): string {
   if (!val) return fallback;
@@ -81,112 +82,71 @@ if (DISCORD_CLIENT_ID && DISCORD_CLIENT_SECRET) {
         const banner = profile.banner || null;
         const nitroStatus = Number(profile.premium_type) || 0;
 
-        let user;
-        try {
-          user = await prisma.user.upsert({
-            where: { discordId: profile.id },
-            update: {
-              username: profile.username,
-              globalName,
-              avatar,
-              banner,
-              email,
-              nitroStatus,
-            },
-            create: {
-              discordId: profile.id,
-              username: profile.username,
-              globalName,
-              avatar,
-              banner,
-              email,
-              nitroStatus,
-              role: isAdmin ? 'ADMIN' : 'USER',
-              appToken: crypto.randomBytes(32).toString('hex'),
-            },
-          });
-        } catch (dbErr: any) {
-          // If a unique constraint failed (e.g. username collision), safely resolve
-          if (dbErr?.code === 'P2002') {
-            console.warn('[Discord OAuth] Unique constraint collision encountered, resolving with unique username fallback');
-            user = await prisma.user.upsert({
-              where: { discordId: profile.id },
-              update: {
-                globalName,
-                avatar,
-                banner,
-                nitroStatus,
-              },
-              create: {
+        let user = await prisma.user.findUnique({
+          where: { discordId: profile.id },
+        });
+
+        if (!user) {
+          try {
+            user = await prisma.user.create({
+              data: {
                 discordId: profile.id,
-                username: `${profile.username}_${profile.id.slice(-4)}`,
+                username: profile.username,
                 globalName,
                 avatar,
                 banner,
-                email: null,
+                email,
                 nitroStatus,
                 role: isAdmin ? 'ADMIN' : 'USER',
                 appToken: crypto.randomBytes(32).toString('hex'),
               },
             });
-          } else {
-            throw dbErr;
+          } catch (dbErr: any) {
+            if (dbErr?.code === 'P2002') {
+              console.warn('[Discord OAuth] Unique constraint collision encountered, resolving with unique username fallback');
+              user = await prisma.user.create({
+                data: {
+                  discordId: profile.id,
+                  username: `${profile.username}_${profile.id.slice(-4)}`,
+                  globalName,
+                  avatar,
+                  banner,
+                  email: null,
+                  nitroStatus,
+                  role: isAdmin ? 'ADMIN' : 'USER',
+                  appToken: crypto.randomBytes(32).toString('hex'),
+                },
+              });
+            } else {
+              throw dbErr;
+            }
           }
-        }
-
-        // Ensure user has a persistent appToken for cross-domain Bearer auth
-        if (!user.appToken) {
-          const generatedToken = crypto.randomBytes(32).toString('hex');
+        } else if (!user.appToken) {
           user = await prisma.user.update({
             where: { id: user.id },
-            data: { appToken: generatedToken },
+            data: { appToken: crypto.randomBytes(32).toString('hex') },
           });
           console.log(`[Discord OAuth] Generated new appToken for user: ${user.username}`);
         }
 
-        // Ensure user profile exists and syncs latest avatar / display name
-        await prisma.profile.upsert({
-          where: { userId: user.id },
-          update: {
-            displayName: globalName || profile.username,
-            avatarUrl: avatar,
-          },
-          create: {
-            userId: user.id,
-            displayName: globalName || profile.username,
-            avatarUrl: avatar,
-          },
+        // Sync User, Profile & UserIdentity while respecting ProfileSyncPreferences
+        const synced = await applyDiscordSyncToUser(user.id, {
+          discordId: profile.id,
+          username: profile.username,
+          globalName,
+          avatarHash: rawAvatar,
+          avatarUrl: avatar,
+          banner,
+          email,
+          nitroStatus,
         });
+        user = synced.user;
 
-        // Record or sync canonical Discord identity
-        try {
-          await prisma.userIdentity.upsert({
-            where: {
-              provider_providerUserId: {
-                provider: 'discord',
-                providerUserId: profile.id,
-              },
-            },
-            update: {
-              email,
-              displayName: globalName || profile.username,
-              avatarUrl: avatar,
-            },
-            create: {
-              userId: user.id,
-              provider: 'discord',
-              providerUserId: profile.id,
-              email,
-              displayName: globalName || profile.username,
-              avatarUrl: avatar,
-            },
-          });
-        } catch (identErr) {
-          console.warn('[Discord Identity Sync Warning]:', identErr);
-        }
+        // Attach temporary OAuth accessToken strictly for server session storage (never serialized to client)
+        (user as any)._discordAccessToken = accessToken || null;
 
-        console.log(`[Discord OAuth] Successfully authenticated: ${user.username} (${user.id})`);
-        return done(null, user);
+        console.log(`[Discord OAuth] Successfully authenticated: ${user!.username} (${user!.id})`);
+        return done(null, user ?? undefined);
       } catch (err) {
         console.error('[Discord OAuth Verify Error]:', err);
         return done(err as Error, undefined);
@@ -331,8 +291,11 @@ authRouter.get('/discord/callback', (req, res, next) => {
       }
       console.log(`[Discord OAuth] User ${user.username} logged in successfully.`);
       
-      // Explicitly set userId in session object
+      // Explicitly set userId & server-only Discord access token in session object
       (req.session as any).userId = user.id;
+      if ((user as any)._discordAccessToken) {
+        (req.session as any).discordAccessToken = (user as any)._discordAccessToken;
+      }
 
       // CRITICAL: Wait for session persistence to complete before issuing 302 redirect
       req.session.save(async (saveErr) => {

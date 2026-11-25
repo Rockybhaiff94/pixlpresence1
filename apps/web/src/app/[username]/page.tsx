@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { ViewTracker } from "@/components/effects/ViewTracker";
 import { ProfileClientView } from "@/components/nothing/ProfileClientView";
@@ -148,7 +149,7 @@ type ProfileResult =
   | { kind: "not_found" }
   | { kind: "warming" };
 
-async function getProfile(rawUsername: string): Promise<ProfileResult> {
+async function getProfile(rawUsername: string, isPreview = false): Promise<ProfileResult> {
   const clean = decodeURIComponent(rawUsername).trim().replace(/^@+/, "");
   if (!clean) return { kind: "not_found" };
 
@@ -159,8 +160,30 @@ async function getProfile(rawUsername: string): Promise<ProfileResult> {
 
   try {
     const apiUrl = getApiUrl();
-    const res = await fetch(`${apiUrl}/api/profile/u/${encodeURIComponent(clean)}`, {
+    const headers: Record<string, string> = {};
+    if (isPreview) {
+      try {
+        const cookieStore = await cookies();
+        const appToken = cookieStore.get("pixel_app_token")?.value;
+        const sid = cookieStore.get("connect.sid")?.value;
+        if (appToken) {
+          headers["Authorization"] = `Bearer ${decodeURIComponent(appToken)}`;
+        }
+        const cookieParts: string[] = [];
+        if (appToken) cookieParts.push(`pixel_app_token=${appToken}`);
+        if (sid) cookieParts.push(`connect.sid=${sid}`);
+        if (cookieParts.length > 0) {
+          headers["Cookie"] = cookieParts.join("; ");
+        }
+      } catch {
+        // Ignore cookie read errors outside request context
+      }
+    }
+
+    const query = isPreview ? "?preview=1" : "";
+    const res = await fetch(`${apiUrl}/api/profile/u/${encodeURIComponent(clean)}${query}`, {
       cache: "no-store",
+      headers,
       signal: AbortSignal.timeout(8000),
     });
 
@@ -169,7 +192,7 @@ async function getProfile(rawUsername: string): Promise<ProfileResult> {
       if (data && data.profile) return { kind: "ok", data };
     }
 
-    if (res.status === 404) {
+    if (res.status === 404 || res.status === 403) {
       return { kind: "not_found" };
     }
 
@@ -183,10 +206,14 @@ async function getProfile(rawUsername: string): Promise<ProfileResult> {
 
 export default async function ProfilePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ username: string }>;
+  searchParams?: Promise<{ preview?: string }>;
 }) {
   const { username } = await params;
+  const resolvedSearch = searchParams ? await searchParams : {};
+  const isPreview = resolvedSearch?.preview === "1" || resolvedSearch?.preview === "true";
   const clean = decodeURIComponent(username).trim().replace(/^@+/, "");
 
   // Intercept reserved keywords if accessed via root path
@@ -197,7 +224,7 @@ export default async function ProfilePage({
     redirect("/account/rpc");
   }
 
-  const result = await getProfile(clean);
+  const result = await getProfile(clean, isPreview);
 
   if (result.kind === "warming") {
     return <ServiceWarmingView username={clean} />;
@@ -231,7 +258,10 @@ export default async function ProfilePage({
         discordPresence={richPresence || null}
         customCss={profile?.customCss || null}
         designConfig={profile?.designConfig || null}
-        isPremium={Boolean((user as any)?.premiumStatus || (user as any)?.role === "ADMIN")}
+        isPremium={Boolean(
+          (user as { premiumStatus?: unknown; role?: unknown } | null)?.premiumStatus ||
+          (user as { premiumStatus?: unknown; role?: unknown } | null)?.role === "ADMIN"
+        )}
       />
     </>
   );

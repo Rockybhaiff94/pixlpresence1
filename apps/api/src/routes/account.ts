@@ -4,6 +4,12 @@ import { recordSyncEvent } from '../utils/sync';
 import bcrypt from 'bcryptjs';
 import { resolveDiscordAvatarUrl } from '../auth';
 import {
+  applyDiscordSyncToUser,
+  extractSyncPreferences,
+  fetchFreshDiscordIdentity,
+  mergeSyncPreferencesIntoDesignConfig,
+} from '../services/profileSyncService';
+import {
   COUNTRY_NAMES,
   INDIA_STATE_NAMES,
   CITY_COORDINATES,
@@ -342,15 +348,34 @@ accountRouter.patch('/username', requireAuth, async (req: any, res) => {
       return res.status(409).json({ error: 'Username is already claimed by another account.' });
     }
 
+    const previousUsername = req.user.username;
+    let aliases: string[] = [];
+    try {
+      if ((req.user as any).aliases) aliases = JSON.parse((req.user as any).aliases);
+    } catch {
+      aliases = [];
+    }
+    // Preserve previous handle in aliases if room remains so existing profile links keep working
+    const nextAliases = aliases.filter((a) => a !== clean);
+    if (previousUsername && previousUsername !== clean && !nextAliases.includes(previousUsername)) {
+      const maxAliases = req.user.premiumStatus ? 5 : 1;
+      if (nextAliases.length < maxAliases) {
+        nextAliases.push(previousUsername);
+      }
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: req.user.id },
-      data: { username: clean },
+      data: {
+        username: clean,
+        aliases: JSON.stringify(nextAliases),
+      } as any,
     });
 
     req.user.username = clean;
-    await recordSyncEvent('user.username.updated', req.user.id, { username: clean }, 1);
+    await recordSyncEvent('user.username.updated', req.user.id, { username: clean, previousUsername }, 1);
 
-    res.json({ success: true, username: updatedUser.username });
+    res.json({ success: true, username: updatedUser.username, aliases: nextAliases });
   } catch (err: any) {
     console.error('[Update Username Error]:', err);
     res.status(500).json({ error: 'Failed to update username' });
@@ -957,5 +982,139 @@ accountRouter.patch('/password', requireAuth, async (req: any, res) => {
     res.json({ success: true, message: 'Password updated successfully' });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to update password' });
+  }
+});
+
+// 9. Profile Synchronization Preferences & Manual Sync Now
+accountRouter.get('/sync-preferences', requireAuth, async (req: any, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: {
+        profile: { select: { designConfig: true, displayName: true, avatarUrl: true, updatedAt: true } },
+        identities: { where: { provider: 'discord' } },
+      },
+    });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const preferences = extractSyncPreferences(user.profile?.designConfig);
+    const discordIdentity = user.identities[0] || null;
+
+    res.json({
+      preferences,
+      discordConnected: Boolean(user.discordId),
+      discordId: user.discordId || null,
+      discordIdentity: discordIdentity
+        ? {
+            displayName: discordIdentity.displayName,
+            avatarUrl: discordIdentity.avatarUrl,
+            updatedAt: discordIdentity.updatedAt,
+          }
+        : null,
+    });
+  } catch (err: any) {
+    console.error('[Get Sync Preferences Error]:', err);
+    res.status(500).json({ error: 'Failed to load profile synchronization settings' });
+  }
+});
+
+accountRouter.patch('/sync-preferences', requireAuth, async (req: any, res) => {
+  try {
+    const existingProfile = await prisma.profile.findUnique({
+      where: { userId: req.user.id },
+      select: { designConfig: true, displayName: true },
+    });
+
+    const current = extractSyncPreferences(existingProfile?.designConfig);
+    const body = req.body || {};
+
+    const nextPrefs = {
+      syncDiscordProfile:
+        body.syncDiscordProfile !== undefined ? Boolean(body.syncDiscordProfile) : current.syncDiscordProfile,
+      syncUsername:
+        body.syncUsername !== undefined ? Boolean(body.syncUsername) : current.syncUsername,
+      syncDisplayName:
+        body.syncDisplayName !== undefined ? Boolean(body.syncDisplayName) : current.syncDisplayName,
+      syncAvatar:
+        body.syncAvatar !== undefined ? Boolean(body.syncAvatar) : current.syncAvatar,
+      lastSyncedAt: current.lastSyncedAt,
+    };
+
+    const nextDesignConfig = mergeSyncPreferencesIntoDesignConfig(
+      existingProfile?.designConfig,
+      nextPrefs
+    );
+
+    await prisma.profile.upsert({
+      where: { userId: req.user.id },
+      update: { designConfig: nextDesignConfig },
+      create: {
+        userId: req.user.id,
+        displayName: req.user.globalName || req.user.username,
+        avatarUrl: req.user.avatar || '',
+        designConfig: nextDesignConfig,
+      },
+    });
+
+    res.json({ success: true, preferences: nextPrefs });
+  } catch (err: any) {
+    console.error('[Update Sync Preferences Error]:', err);
+    res.status(500).json({ error: 'Failed to save synchronization preferences' });
+  }
+});
+
+accountRouter.post('/sync-discord', requireAuth, async (req: any, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: {
+        profile: true,
+        identities: { where: { provider: 'discord' } },
+      },
+    });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user.discordId) {
+      return res.status(400).json({
+        error: 'No Discord account is connected to this Pixel.gg profile.',
+      });
+    }
+
+    const prefs = extractSyncPreferences(user.profile?.designConfig);
+    if (!prefs.syncDiscordProfile) {
+      return res.status(400).json({
+        error: 'Discord profile synchronization is disabled in your Preferences. Enable it first to sync.',
+      });
+    }
+
+    const sessionToken = (req.session as any)?.discordAccessToken || null;
+    let snapshot = await fetchFreshDiscordIdentity(user.discordId, sessionToken);
+
+    // Fallback to latest UserIdentity / User record if Discord API token/bot is unavailable in offline test env
+    if (!snapshot) {
+      const ident = user.identities[0];
+      snapshot = {
+        discordId: user.discordId,
+        username: user.username,
+        globalName: ident?.displayName || user.globalName || user.username,
+        avatarHash: null,
+        avatarUrl: resolveDiscordAvatarUrl(user.discordId, ident?.avatarUrl || user.avatar),
+        banner: user.banner || null,
+        email: ident?.email || user.email || undefined,
+      };
+    }
+
+    const synced = await applyDiscordSyncToUser(user.id, snapshot, { force: true });
+    const { passwordHash, appToken, ...safeUser } = synced.user as any;
+
+    res.json({
+      success: true,
+      user: safeUser,
+      profile: synced.profile,
+      preferences: synced.preferences,
+      syncedAt: synced.syncedAt,
+    });
+  } catch (err: any) {
+    console.error('[Manual Discord Sync Error]:', err);
+    res.status(500).json({ error: 'Failed to synchronize Discord profile' });
   }
 });
