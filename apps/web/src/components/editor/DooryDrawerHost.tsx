@@ -56,6 +56,7 @@ import {
 import { STARTER_TEMPLATES, AVAILABLE_FONTS } from "./editorPresets";
 import { EMBED_COMPONENT_CATALOG } from "./embedBuilderUtils";
 import { PLATFORMS } from "@/components/links/PlatformIcons";
+import { uploadMediaAsset } from "@/lib/uploadAsset";
 
 interface DooryDrawerHostProps {
   activeTool: DooryRailTool | null;
@@ -158,41 +159,55 @@ export const DooryDrawerHost: React.FC<DooryDrawerHostProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const embedAvatarFileRef = useRef<HTMLInputElement>(null);
   const [imageUrlInput, setImageUrlInput] = useState("");
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [editingLayerNameId, setEditingLayerNameId] = useState<string | null>(null);
   const [editingNameDraft, setEditingNameDraft] = useState("");
   const [collapsedEmbedLayers, setCollapsedEmbedLayers] = useState<Record<string, boolean>>({});
 
   if (!activeTool) return null;
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        onAddImage(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (!file || uploadingImage) return;
+    setUploadError(null);
+    setUploadingImage(true);
+    try {
+      const uploaded = await uploadMediaAsset({
+        file,
+        kind: "image",
+        targetSlot: "image",
+      });
+      onAddImage(uploaded.url);
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : "Failed to upload image.");
+    } finally {
+      setUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
-  const handleEmbedAvatarUpload = (
+  const handleEmbedAvatarUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
     targetElementId: string
   ) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        onUpdateElement(targetElementId, { src: reader.result });
-      }
-    };
-    reader.readAsDataURL(file);
-    if (embedAvatarFileRef.current) embedAvatarFileRef.current.value = "";
+    if (!file || uploadingImage) return;
+    setUploadError(null);
+    setUploadingImage(true);
+    try {
+      const uploaded = await uploadMediaAsset({
+        file,
+        kind: "image",
+        targetSlot: "avatar",
+      });
+      onUpdateElement(targetElementId, { src: uploaded.url });
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : "Failed to upload image.");
+    } finally {
+      setUploadingImage(false);
+      if (embedAvatarFileRef.current) embedAvatarFileRef.current.value = "";
+    }
   };
 
   const handleAddImageUrl = (e: React.FormEvent) => {
@@ -641,18 +656,23 @@ export const DooryDrawerHost: React.FC<DooryDrawerHostProps> = ({
                 type="file"
                 ref={embedAvatarFileRef}
                 onChange={(e) => handleEmbedAvatarUpload(e, selectedElement.id)}
-                accept="image/*"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                disabled={uploadingImage}
                 className="hidden"
               />
               <button
                 type="button"
                 onClick={() => embedAvatarFileRef.current?.click()}
-                className="w-full py-2 px-3 rounded-xl bg-[#141418] border border-[#262632] hover:border-white text-xs font-mono text-white flex items-center justify-center gap-2 cursor-pointer"
+                disabled={uploadingImage}
+                className="w-full py-2 px-3 rounded-xl bg-[#141418] border border-[#262632] hover:border-white text-xs font-mono text-white flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
                 data-testid="embed-image-upload"
               >
                 <UploadCloud size={14} />
-                <span>Upload Image File</span>
+                <span>{uploadingImage ? "Uploading..." : "Upload Image File"}</span>
               </button>
+              {uploadError && (
+                <p className="text-[11px] font-mono text-red-400">{uploadError}</p>
+              )}
               <div>
                 <span className="text-[9px] font-mono text-neutral-500 block mb-1">IMAGE URL</span>
                 <input
@@ -1235,25 +1255,30 @@ export const DooryDrawerHost: React.FC<DooryDrawerHostProps> = ({
               type="file"
               ref={fileInputRef}
               onChange={handleFileUpload}
-              accept="image/*"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              disabled={uploadingImage}
               className="hidden"
               data-testid="image-file-input"
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="w-full py-4 border-2 border-dashed border-[#262632] hover:border-neutral-400 rounded-xl bg-[#141418] flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors group"
+              disabled={uploadingImage}
+              className="w-full py-4 border-2 border-dashed border-[#262632] hover:border-neutral-400 rounded-xl bg-[#141418] flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors group disabled:opacity-60"
               data-testid="image-upload-button"
             >
               <UploadCloud size={24} className="text-neutral-400 group-hover:text-white transition-colors" />
               <div className="text-center">
                 <span className="text-xs font-mono font-bold text-white block">
-                  Choose Image File
+                  {uploadingImage ? "Uploading to Pixel.gg Storage..." : "Choose Image File"}
                 </span>
                 <span className="text-[10px] font-mono text-neutral-500">
-                  PNG, JPG, WebP or SVG up to 10MB
+                  PNG, JPG, WebP or GIF up to 10MB
                 </span>
               </div>
             </button>
+            {uploadError && (
+              <p className="mt-2 text-[11px] font-mono text-red-400">{uploadError}</p>
+            )}
           </div>
 
           <div>

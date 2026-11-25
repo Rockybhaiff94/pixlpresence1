@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { AlertCircle, Check, Image as ImageIcon, Loader2, UploadCloud, X } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { AlertCircle, Check, Image as ImageIcon, Loader2, RefreshCw, Trash2, UploadCloud, X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { uploadMediaAsset } from "@/lib/uploadAsset";
 import { BuilderCanvasSettings, BuilderPreferences } from "./profileBuilderTypes";
 import { sanitizeExternalUrl } from "./componentRegistry";
 
@@ -189,106 +190,138 @@ interface MediaUploadModalProps {
   onClose: () => void;
   title?: string;
   initialUrl?: string;
+  targetSlot?: string;
   onSelectMedia: (url: string) => void;
 }
-
-const ACCEPTED_MIME = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-]);
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 export const MediaUploadModal: React.FC<MediaUploadModalProps> = ({
   isOpen,
   onClose,
   title = "Select or Upload Media",
   initialUrl = "",
+  targetSlot = "studio_asset",
   onSelectMedia,
 }) => {
   const [urlInput, setUrlInput] = useState(initialUrl);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStage, setUploadStage] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [recentAssets, setRecentAssets] = useState<Array<{ id: string; url: string; fileName: string }>>([]);
+  const [lastSelectedFile, setLastSelectedFile] = useState<File | null>(null);
+  const [assetsError, setAssetsError] = useState<string | null>(null);
+  const [recentAssets, setRecentAssets] = useState<Array<{ id: string; url: string; fileName: string; isAnimated?: boolean }>>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+      return;
+    }
     let active = true;
-    const rafId = window.requestAnimationFrame(() => {
-      if (active) {
-        setUrlInput(initialUrl);
-        setError(null);
-      }
-    });
     apiFetch("/api/rpc/assets")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { assets?: Array<{ id?: string; url?: string; fileName?: string }> } | Array<{ id?: string; url?: string; fileName?: string }> | null) => {
+      .then(async (res) => {
+        if (!res.ok) {
+          if (res.status !== 401 && active) {
+            setAssetsError("Saved asset library is temporarily unavailable.");
+          }
+          return null;
+        }
+        return res.json();
+      })
+      .then((data: { assets?: Array<{ id?: string; url?: string; processedUrl?: string; originalUrl?: string; fileName?: string; isAnimated?: boolean }> } | Array<{ id?: string; url?: string; processedUrl?: string; originalUrl?: string; fileName?: string; isAnimated?: boolean }> | null) => {
         if (!active || !data) return;
         const list = Array.isArray(data) ? data : Array.isArray(data.assets) ? data.assets : [];
         setRecentAssets(
           list
-            .filter((a): a is { id?: string; url: string; fileName?: string } => Boolean(a && typeof a.url === "string"))
-            .slice(0, 8)
             .map((a) => ({
-              id: a.id || a.url,
-              url: a.url,
-              fileName: a.fileName || "Uploaded asset",
+              id: a?.id || a?.url || a?.processedUrl || a?.originalUrl || "",
+              url: a?.url || a?.processedUrl || a?.originalUrl || "",
+              fileName: a?.fileName || "Uploaded asset",
+              isAnimated: Boolean(a?.isAnimated),
             }))
+            .filter((a) => Boolean(a.url))
+            .slice(0, 12)
         );
       })
       .catch(() => {});
     return () => {
       active = false;
-      window.cancelAnimationFrame(rafId);
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
     };
-  }, [isOpen, initialUrl]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const processUploadFile = async (file: File) => {
+    if (uploading) return;
     setError(null);
-
-    if (!ACCEPTED_MIME.has(file.type)) {
-      setError("Unsupported file format. Please upload PNG, JPG, WEBP, or GIF.");
-      return;
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setError("File exceeds 10 MB upload limit.");
-      return;
-    }
-
+    setLastSelectedFile(file);
     setUploading(true);
+    setUploadProgress(10);
+    setUploadStage("Validating file...");
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
-      const base64DataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(new Error("Failed to read file."));
-        reader.readAsDataURL(file);
+      const uploaded = await uploadMediaAsset({
+        file,
+        targetSlot,
+        kind: "image",
+        signal: controller.signal,
+        onProgress: (pct, stage) => {
+          setUploadProgress(pct);
+          setUploadStage(stage);
+        },
       });
 
-      const res = await apiFetch("/api/rpc/upload", {
-        method: "POST",
-        body: JSON.stringify({
-          file: base64DataUrl,
-          fileName: file.name,
-          targetSlot: "largeImage",
-        }),
-      });
-
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok || !payload?.url) {
-        throw new Error(payload?.error || `Upload failed (${res.status}). Sign in to upload assets.`);
-      }
-
-      onSelectMedia(payload.url);
+      setLastSelectedFile(null);
+      onSelectMedia(uploaded.url);
       onClose();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Upload failed. Check connection or image size.");
+      if (err instanceof Error && err.message === "Upload cancelled.") {
+        setError(null);
+      } else {
+        setError(err instanceof Error ? err.message : "Upload failed. Check connection or image size.");
+      }
     } finally {
+      abortControllerRef.current = null;
       setUploading(false);
+      setUploadProgress(0);
+      setUploadStage("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    void processUploadFile(file);
+  };
+
+  const handleDropFile = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    if (uploading) return;
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      void processUploadFile(file);
+    }
+  };
+
+  const handleDeleteAsset = async (assetId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await apiFetch(`/api/rpc/assets/${encodeURIComponent(assetId)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setRecentAssets((prev) => prev.filter((a) => a.id !== assetId));
+      }
+    } catch {
+      // Ignore transient delete errors
     }
   };
 
@@ -313,7 +346,10 @@ export const MediaUploadModal: React.FC<MediaUploadModalProps> = ({
           <h3 className="text-xs font-bold text-white uppercase tracking-wider">{title}</h3>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              abortControllerRef.current?.abort();
+              onClose();
+            }}
             className="p-1 rounded text-neutral-400 hover:text-white cursor-pointer"
           >
             <X size={15} />
@@ -322,8 +358,17 @@ export const MediaUploadModal: React.FC<MediaUploadModalProps> = ({
 
         <div className="p-4 space-y-4 text-xs">
           {/* Upload via Pixel.gg Image Host */}
-          <label className="flex flex-col items-center justify-center p-5 rounded-xl border border-dashed border-[#30303b] hover:border-white/40 bg-[#121217] cursor-pointer transition-colors">
+          <label
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleDropFile}
+            className={`flex flex-col items-center justify-center p-5 rounded-xl border border-dashed bg-[#121217] transition-colors ${
+              uploading
+                ? "border-white/30 cursor-wait opacity-90"
+                : "border-[#30303b] hover:border-white/40 cursor-pointer"
+            }`}
+          >
             <input
+              ref={fileInputRef}
               type="file"
               accept="image/png,image/jpeg,image/webp,image/gif"
               onChange={handleFileChange}
@@ -332,10 +377,26 @@ export const MediaUploadModal: React.FC<MediaUploadModalProps> = ({
               data-testid="media-file-input"
             />
             {uploading ? (
-              <>
-                <Loader2 size={20} className="animate-spin text-white mb-2" />
-                <span className="text-neutral-300">Uploading to Pixel.gg Storage...</span>
-              </>
+              <div className="w-full flex flex-col items-center space-y-2">
+                <Loader2 size={20} className="animate-spin text-white" />
+                <span className="text-neutral-300">{uploadStage || "Uploading to Pixel.gg Storage..."}</span>
+                <div className="w-full max-w-xs h-1 bg-[#1e1e26] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-white transition-all duration-200"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    abortControllerRef.current?.abort();
+                  }}
+                  className="text-[10px] text-neutral-400 hover:text-white underline cursor-pointer pt-0.5"
+                >
+                  Cancel upload
+                </button>
+              </div>
             ) : (
               <>
                 <UploadCloud size={20} className="text-neutral-300 mb-2" />
@@ -348,9 +409,25 @@ export const MediaUploadModal: React.FC<MediaUploadModalProps> = ({
           </label>
 
           {error && (
-            <div className="p-2.5 rounded-lg bg-red-950/50 border border-red-800/60 text-red-200 text-[11px] flex items-center gap-2">
-              <AlertCircle size={13} className="shrink-0 text-red-400" />
-              <span>{error}</span>
+            <div
+              className="p-2.5 rounded-lg bg-red-950/50 border border-red-800/60 text-red-200 text-[11px] flex items-center justify-between gap-2"
+              data-testid="media-upload-error"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertCircle size={13} className="shrink-0 text-red-400" />
+                <span>{error}</span>
+              </div>
+              {lastSelectedFile && !uploading && (
+                <button
+                  type="button"
+                  onClick={() => void processUploadFile(lastSelectedFile)}
+                  className="shrink-0 px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
+                  data-testid="media-upload-retry"
+                >
+                  <RefreshCw size={10} />
+                  <span>Retry</span>
+                </button>
+              )}
             </div>
           )}
 
@@ -385,18 +462,32 @@ export const MediaUploadModal: React.FC<MediaUploadModalProps> = ({
               </span>
               <div className="grid grid-cols-4 gap-2 max-h-36 overflow-y-auto custom-scrollbar">
                 {recentAssets.map((asset) => (
-                  <button
+                  <div
                     key={asset.id}
-                    type="button"
-                    onClick={() => {
-                      onSelectMedia(asset.url);
-                      onClose();
-                    }}
-                    className="aspect-square rounded-lg overflow-hidden border border-[#282832] hover:border-white bg-[#14141a] cursor-pointer"
-                    title={asset.fileName}
+                    className="relative group aspect-square rounded-lg overflow-hidden border border-[#282832] hover:border-white bg-[#14141a]"
                   >
-                    <img src={asset.url} alt={asset.fileName} className="w-full h-full object-cover" />
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSelectMedia(asset.url);
+                        onClose();
+                      }}
+                      className="w-full h-full cursor-pointer"
+                      title={asset.fileName}
+                    >
+                      <img src={asset.url} alt={asset.fileName} className="w-full h-full object-cover" />
+                    </button>
+                    {asset.id && asset.id !== asset.url && (
+                      <button
+                        type="button"
+                        onClick={(e) => void handleDeleteAsset(asset.id, e)}
+                        className="absolute top-1 right-1 p-0.5 rounded bg-black/75 text-neutral-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                        title="Delete asset"
+                      >
+                        <Trash2 size={10} />
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
@@ -405,7 +496,7 @@ export const MediaUploadModal: React.FC<MediaUploadModalProps> = ({
           {recentAssets.length === 0 && (
             <div className="flex items-center gap-2 text-[10px] text-neutral-500 pt-1">
               <ImageIcon size={12} />
-              <span>Uploaded assets appear here for reuse across embeds.</span>
+              <span>{assetsError || "Uploaded assets appear here for reuse across embeds."}</span>
             </div>
           )}
         </div>

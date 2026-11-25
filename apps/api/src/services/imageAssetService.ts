@@ -43,11 +43,40 @@ export interface GifBinaryInspection {
   hasTransparency: boolean;
 }
 
+export type UploadErrorCategory =
+  | 'validation'
+  | 'size_limit'
+  | 'unsupported_format'
+  | 'processing'
+  | 'storage'
+  | 'database';
+
+export class UploadServiceError extends Error {
+  public readonly statusCode: number;
+  public readonly category: UploadErrorCategory;
+
+  constructor(message: string, statusCode = 400, category: UploadErrorCategory = 'validation') {
+    super(message);
+    this.name = 'UploadServiceError';
+    this.statusCode = statusCode;
+    this.category = category;
+  }
+}
+
+export interface MediaValidationResult {
+  valid: boolean;
+  kind: 'image' | 'video' | 'audio' | '';
+  mimeType: string;
+  ext: string;
+  isAnimated: boolean;
+  error?: string;
+}
+
 export interface AssetUploadOptions {
   userId: string;
   fileBuffer: Buffer;
   fileName?: string;
-  targetSlot: 'largeImage' | 'smallImage';
+  targetSlot: string;
   cropData?: CropParameters | null;
 }
 
@@ -67,10 +96,90 @@ export interface ImageAssetRecord {
 }
 
 export class ImageAssetService {
-  public static readonly MAX_STATIC_BYTES = 10 * 1024 * 1024; // 10 MB
-  public static readonly MAX_GIF_BYTES = 10 * 1024 * 1024;    // 10 MB
-  public static readonly MAX_DIMENSION = 4096;                // 4096px safety limit
-  public static readonly TARGET_DIMENSION = 512;              // Standard 512x512 avatar/icon output
+  public static readonly MAX_STATIC_BYTES = 10 * 1024 * 1024;  // 10 MB
+  public static readonly MAX_GIF_BYTES = 10 * 1024 * 1024;     // 10 MB
+  public static readonly MAX_MEDIA_BYTES = 25 * 1024 * 1024;   // 25 MB (video/audio backgrounds)
+  public static readonly MAX_DIMENSION = 4096;                 // 4096px safety limit
+  public static readonly MAX_STUDIO_DIMENSION = 2560;          // Max aspect-preserving studio image dimension
+  public static readonly TARGET_DIMENSION = 512;               // Standard 512x512 RPC icon output
+
+  public static isRpcIconSlot(targetSlot?: string | null): boolean {
+    return targetSlot === 'largeImage' || targetSlot === 'smallImage';
+  }
+
+  /**
+   * Validate media buffer using magic bytes for image, video (MP4/WebM), and audio (MP3/WAV/OGG).
+   */
+  public static validateMediaMagicBytes(buffer: Buffer): MediaValidationResult {
+    const img = this.validateMagicBytes(buffer);
+    if (img.valid) {
+      return {
+        valid: true,
+        kind: 'image',
+        mimeType: img.mimeType,
+        ext: img.ext,
+        isAnimated: img.isAnimated,
+      };
+    }
+
+    if (!buffer || buffer.length < 8) {
+      return {
+        valid: false,
+        kind: '',
+        mimeType: '',
+        ext: '',
+        isAnimated: false,
+        error: 'File is empty or too small to be a valid media file.',
+      };
+    }
+
+    // MP4: buffer[4..7] === 'ftyp'
+    if (buffer.length >= 12 && buffer.slice(4, 8).toString('ascii') === 'ftyp') {
+      return { valid: true, kind: 'video', mimeType: 'video/mp4', ext: 'mp4', isAnimated: true };
+    }
+
+    // WebM: 1A 45 DF A3
+    if (buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3) {
+      return { valid: true, kind: 'video', mimeType: 'video/webm', ext: 'webm', isAnimated: true };
+    }
+
+    // MP3: ID3 header (49 44 33) or MPEG sync word (FF Ex / FF Fx)
+    if (
+      (buffer[0] === 0x49 && buffer[1] === 0x44 && buffer[2] === 0x33) ||
+      (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0)
+    ) {
+      return { valid: true, kind: 'audio', mimeType: 'audio/mpeg', ext: 'mp3', isAnimated: false };
+    }
+
+    // WAV: RIFF....WAVE
+    if (
+      buffer.length >= 12 &&
+      buffer[0] === 0x52 &&
+      buffer[1] === 0x49 &&
+      buffer[2] === 0x46 &&
+      buffer[3] === 0x46 &&
+      buffer[8] === 0x57 &&
+      buffer[9] === 0x41 &&
+      buffer[10] === 0x56 &&
+      buffer[11] === 0x45
+    ) {
+      return { valid: true, kind: 'audio', mimeType: 'audio/wav', ext: 'wav', isAnimated: false };
+    }
+
+    // OGG: OggS
+    if (buffer[0] === 0x4f && buffer[1] === 0x67 && buffer[2] === 0x67 && buffer[3] === 0x53) {
+      return { valid: true, kind: 'audio', mimeType: 'audio/ogg', ext: 'ogg', isAnimated: false };
+    }
+
+    return {
+      valid: false,
+      kind: '',
+      mimeType: '',
+      ext: '',
+      isAnimated: false,
+      error: 'Unsupported media format. Accepted: PNG, JPG, WEBP, GIF, MP4, WebM, MP3, WAV, or OGG.',
+    };
+  }
 
   /**
    * Validate image buffer using magic bytes (file signature)
@@ -133,8 +242,8 @@ export class ImageAssetService {
       buffer[10] === 0x42 &&
       buffer[11] === 0x50
     ) {
-      // Check for animated WEBP (ANIM chunk)
-      const bufferString = buffer.toString('binary', 12, Math.min(buffer.length, 64));
+      // Check for animated WEBP (ANIM chunk anywhere in header region)
+      const bufferString = buffer.toString('binary', 12, Math.min(buffer.length, 4096));
       const isAnimated = bufferString.includes('ANIM');
       return { valid: true, mimeType: 'image/webp', ext: 'webp', isAnimated };
     }
@@ -144,16 +253,18 @@ export class ImageAssetService {
       mimeType: '',
       ext: '',
       isAnimated: false,
-      error: 'Unsupported or corrupted file format. Only PNG, JPEG, WEBP, and GIF images are accepted for Rich Presence.',
+      error: 'Unsupported or corrupted image format. Only PNG, JPEG, WEBP, and GIF images are accepted.',
     };
   }
 
   /**
-   * Process a static image with user-specified crop and zoom while preserving quality & transparency
+   * Process a static image with optional crop/zoom while preserving quality & transparency.
+   * When preserveAspectRatio is true (Canvas Background, Banners, Studio Images), keeps natural aspect ratio.
    */
   public static async processStaticImage(
     buffer: Buffer,
-    crop?: CropParameters | null
+    crop?: CropParameters | null,
+    preserveAspectRatio = false
   ): Promise<ProcessedImageResult> {
     const pipeline = sharp(buffer, { failOnError: true });
     const metadata = await pipeline.metadata();
@@ -162,21 +273,34 @@ export class ImageAssetService {
     const origHeight = metadata.height || this.TARGET_DIMENSION;
 
     if (origWidth > this.MAX_DIMENSION || origHeight > this.MAX_DIMENSION) {
-      throw new Error(`Image dimensions exceed maximum allowed limit of ${this.MAX_DIMENSION}x${this.MAX_DIMENSION} pixels.`);
+      throw new UploadServiceError(
+        `Image dimensions exceed maximum allowed limit of ${this.MAX_DIMENSION}x${this.MAX_DIMENSION} pixels.`,
+        413,
+        'size_limit'
+      );
     }
 
     const zoom = Math.max(0.5, Math.min(3, crop?.zoom || 1));
     const offsetX = crop?.offsetX || 0;
     const offsetY = crop?.offsetY || 0;
+    const hasCustomCrop = zoom !== 1 || offsetX !== 0 || offsetY !== 0;
 
     let processedBuffer: Buffer;
-    const isPng = metadata.format === 'png' || metadata.hasAlpha;
+    const isWebp = metadata.format === 'webp';
+    const isPng = metadata.format === 'png' || (metadata.hasAlpha && !isWebp);
 
     // Apply auto-orient for camera/mobile photos
     pipeline.rotate();
 
-    if (zoom === 1 && offsetX === 0 && offsetY === 0) {
-      // Standard centered cover resize to standard dimension
+    if (preserveAspectRatio && !hasCustomCrop) {
+      if (origWidth > this.MAX_STUDIO_DIMENSION || origHeight > this.MAX_STUDIO_DIMENSION) {
+        pipeline.resize(this.MAX_STUDIO_DIMENSION, this.MAX_STUDIO_DIMENSION, {
+          fit: 'inside',
+          withoutEnlargement: true,
+        });
+      }
+    } else if (!hasCustomCrop) {
+      // Standard centered cover resize to standard RPC icon dimension
       pipeline.resize(this.TARGET_DIMENSION, this.TARGET_DIMENSION, {
         fit: 'cover',
         position: 'center',
@@ -202,20 +326,24 @@ export class ImageAssetService {
         .resize(this.TARGET_DIMENSION, this.TARGET_DIMENSION, { fit: 'cover' });
     }
 
-    if (isPng) {
+    if (isWebp && preserveAspectRatio) {
+      processedBuffer = await pipeline.webp({ quality: 90 }).toBuffer();
+    } else if (isPng) {
       processedBuffer = await pipeline.png({ quality: 90, compressionLevel: 8 }).toBuffer();
     } else {
       processedBuffer = await pipeline.jpeg({ quality: 90, mozjpeg: true }).toBuffer();
     }
 
     const finalMeta = await sharp(processedBuffer).metadata();
+    const outExt: 'png' | 'jpg' | 'webp' = isWebp && preserveAspectRatio ? 'webp' : isPng ? 'png' : 'jpg';
+    const outMime = outExt === 'webp' ? 'image/webp' : outExt === 'png' ? 'image/png' : 'image/jpeg';
 
     return {
       buffer: processedBuffer,
-      mimeType: isPng ? 'image/png' : 'image/jpeg',
-      ext: isPng ? 'png' : 'jpg',
-      width: finalMeta.width || this.TARGET_DIMENSION,
-      height: finalMeta.height || this.TARGET_DIMENSION,
+      mimeType: outMime,
+      ext: outExt,
+      width: finalMeta.width || (preserveAspectRatio ? origWidth : this.TARGET_DIMENSION),
+      height: finalMeta.height || (preserveAspectRatio ? origHeight : this.TARGET_DIMENSION),
       fileSize: processedBuffer.length,
       isAnimated: false,
     };
@@ -331,7 +459,8 @@ export class ImageAssetService {
    */
   public static async processAnimatedGif(
     buffer: Buffer,
-    crop?: CropParameters | null
+    crop?: CropParameters | null,
+    preserveAspectRatio = false
   ): Promise<ProcessedImageResult> {
     const inputInspection = this.inspectGifBinary(buffer);
     const pipeline = sharp(buffer, { animated: true, failOnError: true });
@@ -343,7 +472,11 @@ export class ImageAssetService {
     const isActuallyAnimated = origFrames > 1;
 
     if (origWidth > this.MAX_DIMENSION || pageHeight > this.MAX_DIMENSION) {
-      throw new Error(`GIF dimensions exceed maximum allowed limit of ${this.MAX_DIMENSION}x${this.MAX_DIMENSION} pixels.`);
+      throw new UploadServiceError(
+        `GIF dimensions exceed maximum allowed limit of ${this.MAX_DIMENSION}x${this.MAX_DIMENSION} pixels.`,
+        413,
+        'size_limit'
+      );
     }
 
     if (process.env.NODE_ENV !== 'production') {
@@ -354,6 +487,7 @@ export class ImageAssetService {
         pages: origFrames,
         loop: metadata.loop ?? inputInspection.loopCount,
         bytes: buffer.length,
+        preserveAspectRatio,
       });
     }
 
@@ -364,8 +498,22 @@ export class ImageAssetService {
         (crop.offsetY && crop.offsetY !== 0))
     );
 
-    // If no custom zoom/offset is applied, and the input GIF is already well-sized (<= 512px and <= 8MB),
-    // preserve the original buffer directly to avoid Sharp GIF palette bloat and frame modification.
+    // For Studio / Profile backgrounds & image elements, preserve original aspect ratio & frames directly if <= 10MB and <= 1920px.
+    if (preserveAspectRatio && !hasCustomCrop && origWidth <= 1920 && pageHeight <= 1920 && buffer.length <= this.MAX_GIF_BYTES) {
+      return {
+        buffer,
+        mimeType: 'image/gif',
+        ext: 'gif',
+        width: origWidth,
+        height: pageHeight,
+        fileSize: buffer.length,
+        isAnimated: isActuallyAnimated,
+        frameCount: origFrames,
+        loopCount: metadata.loop ?? inputInspection.loopCount ?? 0,
+      };
+    }
+
+    // For RPC icon slots, preserve original buffer untouched when <= 512px and <= 8MB.
     if (!hasCustomCrop && origWidth <= 512 && pageHeight <= 512 && buffer.length <= 8 * 1024 * 1024) {
       return {
         buffer,
@@ -380,9 +528,10 @@ export class ImageAssetService {
       };
     }
 
-    // Resize animated GIF safely: Discord Rich Presence icons are 64x64 or 128x128 retina.
-    // 320x320 provides pixel-perfect crispness while preventing multi-megabyte frame explosion.
-    const targetSize = Math.min(320, Math.max(origWidth, pageHeight));
+    const maxBytesLimit = preserveAspectRatio ? this.MAX_GIF_BYTES : 8 * 1024 * 1024;
+    const targetSize = preserveAspectRatio
+      ? Math.min(1280, Math.max(origWidth, pageHeight))
+      : Math.min(320, Math.max(origWidth, pageHeight));
 
     const buildAnimatedPipeline = (size: number, colours: number) => {
       const p = sharp(buffer, { animated: true, failOnError: true });
@@ -399,17 +548,22 @@ export class ImageAssetService {
         const width = Math.min(scaledSize, origWidth - left);
         const height = Math.min(scaledSize, pageHeight - top);
 
-        // Extract applies to the first frame height cleanly when crop is uniform across frames;
-        // fallback cleanly to centered cover resize if animated multi-page extract is unsupported by libvips build.
         if (origFrames === 1) {
           p.extract({ left, top, width, height });
         }
       }
-      return p
-        .resize(size, size, {
+      if (preserveAspectRatio && !hasCustomCrop) {
+        p.resize(size, size, {
+          fit: 'inside',
+          withoutEnlargement: true,
+        });
+      } else {
+        p.resize(size, size, {
           fit: 'cover',
           position: 'center',
-        })
+        });
+      }
+      return p
         .gif({
           effort: 7,
           reuse: true,
@@ -427,10 +581,9 @@ export class ImageAssetService {
       processedBuffer = buffer;
     }
 
-    // Safety guard: if processed animated GIF still exceeds 8MB Discord proxy limit, downscale to 256
-    if (processedBuffer.length > 8 * 1024 * 1024) {
+    if (processedBuffer.length > maxBytesLimit) {
       try {
-        processedBuffer = await buildAnimatedPipeline(256, 96);
+        processedBuffer = await buildAnimatedPipeline(preserveAspectRatio ? 720 : 256, 96);
       } catch (_) {}
     }
 
@@ -444,8 +597,8 @@ export class ImageAssetService {
     }));
 
     const finalFrames = Math.max(finalMeta.pages || 0, finalInspection.frameCount || 0) || 1;
-    // Never silently return a 1-frame flattened GIF when multi-frame input <= 8MB existed
-    if (origFrames > 1 && finalFrames <= 1 && buffer.length <= 8 * 1024 * 1024) {
+    // Never silently return a 1-frame flattened GIF when multi-frame input <= limit existed
+    if (origFrames > 1 && finalFrames <= 1 && buffer.length <= maxBytesLimit) {
       processedBuffer = buffer;
     }
 
@@ -467,8 +620,8 @@ export class ImageAssetService {
       buffer: processedBuffer,
       mimeType: 'image/gif',
       ext: 'gif',
-      width: finalMeta.width || targetSize,
-      height: finalMeta.pageHeight || finalMeta.height || targetSize,
+      width: finalMeta.width || (preserveAspectRatio ? origWidth : targetSize),
+      height: finalMeta.pageHeight || finalMeta.height || (preserveAspectRatio ? pageHeight : targetSize),
       fileSize: processedBuffer.length,
       isAnimated: verifiedFrames > 1,
       frameCount: verifiedFrames,
@@ -477,11 +630,12 @@ export class ImageAssetService {
   }
 
   /**
-   * Process an animated WebP: preserves animation frames and stays within 8MB limit.
+   * Process an animated WebP: preserves animation frames and aspect ratio when requested.
    */
   public static async processAnimatedWebp(
     buffer: Buffer,
-    crop?: CropParameters | null
+    crop?: CropParameters | null,
+    preserveAspectRatio = false
   ): Promise<ProcessedImageResult> {
     const pipeline = sharp(buffer, { animated: true, failOnError: true });
     const metadata = await pipeline.metadata();
@@ -490,13 +644,29 @@ export class ImageAssetService {
     const pageHeight = metadata.pageHeight || metadata.height || this.TARGET_DIMENSION;
 
     if (origWidth > this.MAX_DIMENSION || pageHeight > this.MAX_DIMENSION) {
-      throw new Error(`WebP dimensions exceed maximum allowed limit of ${this.MAX_DIMENSION}x${this.MAX_DIMENSION} pixels.`);
+      throw new UploadServiceError(
+        `WebP dimensions exceed maximum allowed limit of ${this.MAX_DIMENSION}x${this.MAX_DIMENSION} pixels.`,
+        413,
+        'size_limit'
+      );
     }
 
     const hasCustomCrop = Boolean(
       crop &&
       (crop.zoom !== 1 || (crop.offsetX && crop.offsetX !== 0) || (crop.offsetY && crop.offsetY !== 0))
     );
+
+    if (preserveAspectRatio && !hasCustomCrop && origWidth <= 1920 && pageHeight <= 1920 && buffer.length <= this.MAX_STATIC_BYTES) {
+      return {
+        buffer,
+        mimeType: 'image/webp',
+        ext: 'webp',
+        width: origWidth,
+        height: pageHeight,
+        fileSize: buffer.length,
+        isAnimated: true,
+      };
+    }
 
     if (!hasCustomCrop && origWidth <= 512 && pageHeight <= 512 && buffer.length <= 8 * 1024 * 1024) {
       return {
@@ -510,9 +680,17 @@ export class ImageAssetService {
       };
     }
 
-    const targetSize = Math.min(320, Math.max(origWidth, pageHeight));
+    const targetSize = preserveAspectRatio
+      ? Math.min(1280, Math.max(origWidth, pageHeight))
+      : Math.min(320, Math.max(origWidth, pageHeight));
     const processedBuffer = await pipeline
-      .resize(targetSize, targetSize, { fit: 'cover', position: 'center' })
+      .resize(
+        targetSize,
+        targetSize,
+        preserveAspectRatio && !hasCustomCrop
+          ? { fit: 'inside', withoutEnlargement: true }
+          : { fit: 'cover', position: 'center' }
+      )
       .webp({ quality: 82, effort: 4 })
       .toBuffer();
 
@@ -537,55 +715,113 @@ export class ImageAssetService {
    * Complete end-to-end processing and storage pipeline for a user-uploaded asset
    */
   public static async processAndSaveAsset(options: AssetUploadOptions): Promise<ImageAssetRecord> {
-    const { userId, fileBuffer, fileName, targetSlot, cropData } = options;
+    const { userId, fileBuffer, fileName, cropData } = options;
+    const rawSlot = (options.targetSlot || 'studio_asset').trim() || 'studio_asset';
+    const isRpcSlot = this.isRpcIconSlot(rawSlot);
+    const isVideoOrAudioSlot = rawSlot === 'background_video' || rawSlot === 'background_audio';
 
-    // 1. Content validation via magic bytes
-    const validation = this.validateMagicBytes(fileBuffer);
-    if (!validation.valid) {
-      throw new Error(validation.error || 'Invalid file format.');
+    if (!fileBuffer || fileBuffer.length === 0) {
+      throw new UploadServiceError('Uploaded file is empty.', 400, 'validation');
     }
 
-    // 2. Size limit checks
-    if (validation.ext === 'gif' && fileBuffer.length > this.MAX_GIF_BYTES) {
-      throw new Error(
-        `Animated GIF exceeds maximum limit of 10 MB (size: ${(fileBuffer.length / (1024 * 1024)).toFixed(2)} MB).`
-      );
-    }
-    if (validation.ext !== 'gif' && fileBuffer.length > this.MAX_STATIC_BYTES) {
-      throw new Error(
-        `Image file exceeds maximum limit of 10 MB (size: ${(fileBuffer.length / (1024 * 1024)).toFixed(2)} MB).`
-      );
-    }
+    let outBuffer: Buffer;
+    let outMimeType: string;
+    let outExt: string;
+    let outWidth: number | null = null;
+    let outHeight: number | null = null;
+    let outIsAnimated = false;
+    let outFrameCount = 1;
+    let outLoopCount: number | null = null;
 
-    // 3. Image processing
-    let processed: ProcessedImageResult;
-    try {
-      if (validation.ext === 'gif') {
-        // Always route GIFs through animated GIF pipeline — never convert GIF to static PNG/JPEG
-        processed = await this.processAnimatedGif(fileBuffer, cropData);
-      } else if (validation.ext === 'webp' && validation.isAnimated) {
-        // Preserve animated WebP frames without flattening to static PNG
-        processed = await this.processAnimatedWebp(fileBuffer, cropData);
-      } else {
-        processed = await this.processStaticImage(fileBuffer, cropData);
+    if (isVideoOrAudioSlot) {
+      const mediaCheck = this.validateMediaMagicBytes(fileBuffer);
+      if (!mediaCheck.valid) {
+        throw new UploadServiceError(mediaCheck.error || 'Unsupported media file format.', 415, 'unsupported_format');
       }
-    } catch (err: any) {
-      console.error('[ImageAssetService] Image processing error:', err);
-      throw new Error(`Failed to process image: ${err.message}`);
+      if (rawSlot === 'background_video' && mediaCheck.kind !== 'video') {
+        throw new UploadServiceError('Invalid video format. Please upload an MP4 or WebM file.', 415, 'unsupported_format');
+      }
+      if (rawSlot === 'background_audio' && mediaCheck.kind !== 'audio') {
+        throw new UploadServiceError('Invalid audio format. Please upload an MP3, WAV, or OGG file.', 415, 'unsupported_format');
+      }
+      if (fileBuffer.length > this.MAX_MEDIA_BYTES) {
+        throw new UploadServiceError(
+          `Media file exceeds maximum limit of 25 MB (size: ${(fileBuffer.length / (1024 * 1024)).toFixed(2)} MB).`,
+          413,
+          'size_limit'
+        );
+      }
+      outBuffer = fileBuffer;
+      outMimeType = mediaCheck.mimeType;
+      outExt = mediaCheck.ext;
+      outIsAnimated = mediaCheck.kind === 'video';
+    } else {
+      // 1. Content validation via magic bytes
+      const validation = this.validateMagicBytes(fileBuffer);
+      if (!validation.valid) {
+        throw new UploadServiceError(validation.error || 'Unsupported image file format.', 415, 'unsupported_format');
+      }
+
+      // 2. Size limit checks
+      if (validation.ext === 'gif' && fileBuffer.length > this.MAX_GIF_BYTES) {
+        throw new UploadServiceError(
+          `Animated GIF exceeds maximum limit of 10 MB (size: ${(fileBuffer.length / (1024 * 1024)).toFixed(2)} MB).`,
+          413,
+          'size_limit'
+        );
+      }
+      if (validation.ext !== 'gif' && fileBuffer.length > this.MAX_STATIC_BYTES) {
+        throw new UploadServiceError(
+          `Image file exceeds maximum limit of 10 MB (size: ${(fileBuffer.length / (1024 * 1024)).toFixed(2)} MB).`,
+          413,
+          'size_limit'
+        );
+      }
+
+      // 3. Image processing (RPC icons normalize to 512x512; Studio/Profile images preserve aspect ratio)
+      const preserveAspectRatio = !isRpcSlot;
+      let processed: ProcessedImageResult;
+      try {
+        if (validation.ext === 'gif') {
+          processed = await this.processAnimatedGif(fileBuffer, cropData, preserveAspectRatio);
+        } else if (validation.ext === 'webp' && validation.isAnimated) {
+          processed = await this.processAnimatedWebp(fileBuffer, cropData, preserveAspectRatio);
+        } else {
+          processed = await this.processStaticImage(fileBuffer, cropData, preserveAspectRatio);
+        }
+      } catch (err: any) {
+        if (err instanceof UploadServiceError) throw err;
+        console.error('[ImageAssetService] Image processing error:', err);
+        throw new UploadServiceError(`Failed to process image: ${err.message}`, 400, 'processing');
+      }
+
+      outBuffer = processed.buffer;
+      outMimeType = processed.mimeType;
+      outExt = processed.ext;
+      outWidth = processed.width;
+      outHeight = processed.height;
+      outIsAnimated = processed.isAnimated;
+      outFrameCount = processed.frameCount ?? 1;
+      outLoopCount = processed.loopCount ?? null;
     }
 
     // 4. Generate persistent canonical storage key
+    const safeSlotSlug = rawSlot.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40) || 'asset';
     const uniqueId = crypto.randomBytes(8).toString('hex');
-    const storageKey = `rpc/${userId}/${targetSlot}_${Date.now()}_${uniqueId}.${processed.ext}`;
+    const storageKey = `rpc/${userId}/${safeSlotSlug}_${Date.now()}_${uniqueId}.${outExt}`;
 
-    // 5. Upload to storage provider (Cloudflare R2, S3, or Local fallback)
+    // 5. Upload to storage provider (Cloudflare R2, S3, or Local + DB backup)
     const storage = getStorageProvider();
     let uploadResult;
     try {
-      uploadResult = await storage.upload(storageKey, processed.buffer, processed.mimeType);
+      uploadResult = await storage.upload(storageKey, outBuffer, outMimeType);
     } catch (err: any) {
       console.error('[ImageAssetService] Storage upload error:', err);
-      throw new Error(`Failed to store processed image: ${err.message}`);
+      throw new UploadServiceError(
+        `Storage service unavailable while saving asset: ${err.message}`,
+        503,
+        'storage'
+      );
     }
 
     const canonicalUrl = uploadResult.url;
@@ -593,31 +829,34 @@ export class ImageAssetService {
     // 6. Record asset in database with transaction safety
     const cropX = cropData?.cropX || 0;
     const cropY = cropData?.cropY || 0;
-    const cropWidth = cropData?.cropWidth || processed.width;
-    const cropHeight = cropData?.cropHeight || processed.height;
+    const cropWidth = cropData?.cropWidth || outWidth || 0;
+    const cropHeight = cropData?.cropHeight || outHeight || 0;
     const zoom = cropData?.zoom || 1;
     const offsetX = cropData?.offsetX || 0;
     const offsetY = cropData?.offsetY || 0;
 
     let asset;
     try {
-      // Find existing asset for this slot to clean up later
-      const previousAsset = await prisma.uploadedAsset.findFirst({
-        where: { userId, targetSlot },
-        orderBy: { createdAt: 'desc' },
-      });
+      // Only RPC singleton slots (largeImage / smallImage) auto-clean previous slot assets;
+      // Studio / Profile / Image Host uploads stay in the reusable asset library.
+      const previousAsset = isRpcSlot
+        ? await prisma.uploadedAsset.findFirst({
+            where: { userId, targetSlot: rawSlot },
+            orderBy: { createdAt: 'desc' },
+          })
+        : null;
 
       asset = await prisma.uploadedAsset.create({
         data: {
           userId,
           originalUrl: canonicalUrl,
           processedUrl: canonicalUrl,
-          fileName: (fileName || `${targetSlot}.${processed.ext}`).slice(0, 120),
-          fileSize: processed.fileSize,
-          mimeType: processed.mimeType,
-          width: processed.width,
-          height: processed.height,
-          isAnimated: processed.isAnimated,
+          fileName: (fileName || `${safeSlotSlug}.${outExt}`).slice(0, 120),
+          fileSize: outBuffer.length,
+          mimeType: outMimeType,
+          width: outWidth,
+          height: outHeight,
+          isAnimated: outIsAnimated,
           cropX,
           cropY,
           cropWidth,
@@ -625,13 +864,12 @@ export class ImageAssetService {
           zoom,
           offsetX,
           offsetY,
-          targetSlot,
+          targetSlot: rawSlot,
           storageKey,
-          data: processed.buffer,
+          data: outBuffer,
         },
       });
 
-      // Safely delete previous replaced object from storage if it had a storageKey
       if (previousAsset && (previousAsset as any).storageKey && (previousAsset as any).storageKey !== storageKey) {
         storage.delete((previousAsset as any).storageKey).catch((delErr) => {
           console.warn('[ImageAssetService] Previous asset cleanup notice:', delErr.message);
@@ -641,7 +879,11 @@ export class ImageAssetService {
       // Rollback storage upload if database persistence fails
       console.error('[ImageAssetService] Database write failed. Rolling back storage object:', dbErr);
       await storage.delete(storageKey).catch(() => {});
-      throw new Error(`Failed to record asset in database: ${dbErr.message}`);
+      throw new UploadServiceError(
+        `Database service unavailable while saving asset metadata.`,
+        503,
+        'database'
+      );
     }
 
     return {
@@ -653,8 +895,8 @@ export class ImageAssetService {
       width: asset.width,
       height: asset.height,
       isAnimated: asset.isAnimated,
-      frameCount: processed.frameCount ?? 1,
-      loopCount: processed.loopCount ?? null,
+      frameCount: outFrameCount,
+      loopCount: outLoopCount,
       targetSlot: asset.targetSlot,
       cropData: {
         cropX,

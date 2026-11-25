@@ -49,7 +49,7 @@ interface SecondaryDockPanelSystemProps {
     updates: Partial<BuilderNode>,
     options?: { skipHistory?: boolean }
   ) => void;
-  onOpenMediaPicker: (callback: (url: string) => void, title: string, initialUrl?: string) => void;
+  onOpenMediaPicker: (callback: (url: string) => void, title: string, initialUrl?: string, targetSlot?: string) => void;
   onAddGalleryImage: (galleryId: string, url?: string) => void;
   onRenameNode: (id: string, name: string) => void;
   onToggleVisibility: (id: string) => void;

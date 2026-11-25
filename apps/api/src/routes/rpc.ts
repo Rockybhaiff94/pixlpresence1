@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, raw as expressRaw } from 'express';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -8,7 +8,9 @@ import { uploadRateLimiter } from '../rateLimiter'; // Import upload rate limite
 import { resolveDiscordAvatarUrl } from '../auth';
 import { presenceManager, LiveActivity } from '../services/presenceManager';
 import { rpcSyncHub } from '../services/rpcSyncHub';
-import { ImageAssetService } from '../services/imageAssetService';
+import { ImageAssetService, UploadServiceError } from '../services/imageAssetService';
+import { isPersistentStorageConfigured } from '../services/storage';
+import { parseMultipartFormData } from '../utils/multipartParser';
 import { formatRichPresenceField } from '../utils/rpcFormat';
 
 export const rpcRouter = Router();
@@ -90,57 +92,74 @@ export const requireAuth = async (req: any, res: any, next: any) => {
     } catch (_) { }
   }
 
-  // 3. Extract token from Authorization header, Cookie, custom headers, body, or Query parameter
-  let token: string | null = null;
+  // 3. Collect candidate tokens from headers, cookies, body, or query without skipping fallbacks
+  const candidateTokens: string[] = [];
+  const pushToken = (val: unknown) => {
+    if (typeof val !== 'string') return;
+    const clean = val.trim();
+    if (clean && clean !== 'null' && clean !== 'undefined' && !candidateTokens.includes(clean)) {
+      candidateTokens.push(clean);
+    }
+  };
+
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.split(' ')[1]?.trim() || null;
-  } else if (req.headers['x-app-token']) {
-    token = String(req.headers['x-app-token']).trim() || null;
-  } else if (req.headers['x-api-token']) {
-    token = String(req.headers['x-api-token']).trim() || null;
-  } else if (req.body && typeof req.body === 'object' && req.body.token) {
-    token = String(req.body.token).trim() || null;
-  } else if (req.body && typeof req.body === 'object' && req.body.appToken) {
-    token = String(req.body.appToken).trim() || null;
-  } else if (req.headers.cookie) {
+    pushToken(authHeader.slice(7));
+  }
+  pushToken(req.headers['x-app-token']);
+  pushToken(req.headers['x-api-token']);
+  if (req.body && typeof req.body === 'object') {
+    pushToken(req.body.token);
+    pushToken(req.body.appToken);
+  }
+  if (req.headers.cookie) {
     const match = req.headers.cookie.match(/(?:^|;\s*)pixel_app_token=([^;]+)/);
     if (match && match[1]) {
-      token = decodeURIComponent(match[1]).trim();
+      try {
+        pushToken(decodeURIComponent(match[1]));
+      } catch {
+        pushToken(match[1]);
+      }
     }
-  } else if (req.cookies && req.cookies.pixel_app_token) {
-    token = String(req.cookies.pixel_app_token).trim();
-  } else if (req.query && req.query.token) {
-    token = String(req.query.token).trim();
+  }
+  if (req.cookies?.pixel_app_token) {
+    pushToken(String(req.cookies.pixel_app_token));
+  }
+  if (req.query?.token) {
+    pushToken(String(req.query.token));
   }
 
-  if (token) {
-    // 1. Try finding by user appToken
-    const user = await prisma.user.findFirst({ where: { appToken: token } });
-    if (user) {
-      req.user = user;
-      return next();
-    }
+  for (const token of candidateTokens) {
+    try {
+      // 1. Try finding by user appToken
+      const user = await prisma.user.findFirst({ where: { appToken: token } });
+      if (user) {
+        req.user = user;
+        return next();
+      }
 
-    // 2. Try finding by active deviceToken
-    const deviceAuth = await prisma.rpcDeviceAuthorization.findUnique({
-      where: { deviceToken: token },
-      include: { user: true },
-    });
+      // 2. Try finding by active deviceToken
+      const deviceAuth = await prisma.rpcDeviceAuthorization.findUnique({
+        where: { deviceToken: token },
+        include: { user: true },
+      });
 
-    if (deviceAuth && deviceAuth.status === 'CONSUMED' && deviceAuth.user) {
-      req.user = deviceAuth.user;
-      req.deviceAuth = deviceAuth;
+      if (deviceAuth && deviceAuth.status === 'CONSUMED' && deviceAuth.user) {
+        req.user = deviceAuth.user;
+        req.deviceAuth = deviceAuth;
 
-      // Async update lastUsedAt without blocking request
-      prisma.rpcDeviceAuthorization
-        .update({
-          where: { id: deviceAuth.id },
-          data: { lastUsedAt: new Date() },
-        })
-        .catch(() => { });
+        prisma.rpcDeviceAuthorization
+          .update({
+            where: { id: deviceAuth.id },
+            data: { lastUsedAt: new Date() },
+          })
+          .catch(() => { });
 
-      return next();
+        return next();
+      }
+    } catch (authErr: any) {
+      console.error('[Auth Lookup Error]:', authErr?.message || 'Database error during token check');
+      return res.status(503).json({ error: 'Authentication verification service temporarily unavailable. Please try again shortly.' });
     }
   }
 
@@ -986,38 +1005,102 @@ export function validateImageBuffer(buffer: Buffer): {
   };
 }
 
+const parseUploadMultipart = expressRaw({
+  type: ['multipart/form-data', 'text/plain'],
+  limit: '36mb',
+});
+
 /**
  * POST /api/rpc/upload
- * Handles custom image and animated GIF uploads for Large Activity Image & Small Icon slots.
- * Features:
- * - Content-based magic-byte validation (PNG, JPEG, GIF, WEBP)
- * - Strict 5 MB limit for animated GIFs
- * - 10 MB limit for static images
- * - Image transformation coordinate & zoom persistence
- * - Discord CDN / public URL generation
+ * Handles image, animated GIF, and background media uploads across Studio, Profile, Image Host, and Rich Presence.
+ * Supports both multipart/form-data binary uploads and application/json base64/data-URL uploads.
  */
-rpcRouter.post('/upload', requireAuth, uploadRateLimiter, async (req: any, res) => {
+rpcRouter.post('/upload', requireAuth, uploadRateLimiter, parseUploadMultipart, async (req: any, res) => {
+  const requestId =
+    (typeof req.headers['x-request-id'] === 'string' && req.headers['x-request-id']) ||
+    `upl_${crypto.randomBytes(6).toString('hex')}`;
+  let slot = 'studio_asset';
+
   try {
-    const { file, fileName, targetSlot, cropData } = req.body || {};
+    let buffer: Buffer | null = null;
+    let fileName: string | undefined;
+    let rawTargetSlot: string | undefined;
+    let cropData: any;
 
-    if (!file || typeof file !== 'string') {
-      return res.status(400).json({ error: 'No image data provided. Please provide a base64 encoded image or data URL.' });
+    const contentType = String(req.headers['content-type'] || '').toLowerCase();
+
+    if (Buffer.isBuffer(req.body) && contentType.includes('multipart/form-data')) {
+      const parsed = parseMultipartFormData(req.body, String(req.headers['content-type'] || ''));
+      if (!parsed.file || !parsed.file.buffer) {
+        return res.status(400).json({
+          error: 'No file found in multipart upload payload.',
+          category: 'validation',
+          requestId,
+        });
+      }
+      buffer = parsed.file.buffer;
+      fileName = parsed.fields.fileName || parsed.file.fileName;
+      rawTargetSlot = parsed.fields.targetSlot;
+      if (parsed.fields.cropData) {
+        try {
+          cropData = JSON.parse(parsed.fields.cropData);
+        } catch {
+          return res.status(400).json({
+            error: 'Invalid cropData JSON in multipart payload.',
+            category: 'validation',
+            requestId,
+          });
+        }
+      }
+    } else {
+      let bodyObj = req.body;
+      // Fallback: handle callers that sent JSON string without explicit Content-Type: application/json
+      if (Buffer.isBuffer(bodyObj)) {
+        try {
+          bodyObj = JSON.parse(bodyObj.toString('utf8'));
+        } catch {
+          bodyObj = {};
+        }
+      }
+
+      const { file, fileName: bodyFileName, targetSlot, cropData: bodyCropData } = bodyObj || {};
+      if (!file || typeof file !== 'string') {
+        return res.status(400).json({
+          error: 'No image data provided. Please select a valid file or provide base64 image data.',
+          category: 'validation',
+          requestId,
+        });
+      }
+
+      let rawBase64 = file;
+      if (file.includes(';base64,')) {
+        rawBase64 = file.split(';base64,')[1];
+      }
+
+      try {
+        buffer = Buffer.from(rawBase64, 'base64');
+      } catch {
+        return res.status(400).json({
+          error: 'Invalid base64 image data encoding.',
+          category: 'validation',
+          requestId,
+        });
+      }
+
+      fileName = bodyFileName;
+      rawTargetSlot = targetSlot;
+      cropData = bodyCropData;
     }
 
-    // Extract raw base64 buffer
-    let rawBase64 = file;
-    if (file.includes(';base64,')) {
-      rawBase64 = file.split(';base64,')[1];
+    if (!buffer || buffer.length === 0) {
+      return res.status(400).json({
+        error: 'Uploaded file is empty.',
+        category: 'validation',
+        requestId,
+      });
     }
 
-    let buffer: Buffer;
-    try {
-      buffer = Buffer.from(rawBase64, 'base64');
-    } catch {
-      return res.status(400).json({ error: 'Invalid base64 image data encoding.' });
-    }
-
-    const slot: 'largeImage' | 'smallImage' = targetSlot === 'smallImage' ? 'smallImage' : 'largeImage';
+    slot = typeof rawTargetSlot === 'string' && rawTargetSlot.trim() ? rawTargetSlot.trim() : 'studio_asset';
 
     // Process and save through ImageAssetService (Sharp pipeline, animated GIF preservation, persistent storage upload)
     const savedAsset = await ImageAssetService.processAndSaveAsset({
@@ -1030,6 +1113,7 @@ rpcRouter.post('/upload', requireAuth, uploadRateLimiter, async (req: any, res) 
 
     res.json({
       success: true,
+      requestId,
       assetId: savedAsset.id,
       url: savedAsset.url,
       fileName: savedAsset.fileName,
@@ -1041,17 +1125,35 @@ rpcRouter.post('/upload', requireAuth, uploadRateLimiter, async (req: any, res) 
       frameCount: savedAsset.frameCount ?? (savedAsset.isAnimated ? 2 : 1),
       loopCount: savedAsset.loopCount ?? null,
       cropData: savedAsset.cropData,
-      message: `${savedAsset.isAnimated ? 'Animated GIF' : 'Image'} uploaded and processed successfully!`,
+      message: `${savedAsset.isAnimated ? 'Animated GIF' : 'Asset'} uploaded and processed successfully!`,
     });
   } catch (err: any) {
-    console.error('[RPC Upload Error]:', err);
-    res.status(400).json({ error: err.message || 'Failed to process image upload' });
+    const isKnown = err instanceof UploadServiceError;
+    const statusCode = isKnown ? err.statusCode : 500;
+    const category = isKnown ? err.category : 'processing';
+
+    console.error('[RPC Upload Error]', {
+      requestId,
+      endpoint: 'POST /api/rpc/upload',
+      userId: req.user?.id || 'unknown',
+      targetSlot: slot,
+      statusCode,
+      category,
+      persistentStorage: isPersistentStorageConfigured(),
+      message: err?.message || 'Unknown upload failure',
+    });
+
+    res.status(statusCode).json({
+      error: err?.message || 'Failed to process upload',
+      category,
+      requestId,
+    });
   }
 });
 
 /**
  * GET /api/rpc/assets
- * Lists all custom uploaded assets for the authenticated user.
+ * Lists custom uploaded assets metadata (explicitly omitting binary data column to prevent memory spikes).
  */
 rpcRouter.get('/assets', requireAuth, async (req: any, res) => {
   try {
@@ -1059,11 +1161,33 @@ rpcRouter.get('/assets', requireAuth, async (req: any, res) => {
       where: { userId: req.user.id },
       orderBy: { createdAt: 'desc' },
       take: 50,
+      select: {
+        id: true,
+        originalUrl: true,
+        processedUrl: true,
+        fileName: true,
+        fileSize: true,
+        mimeType: true,
+        width: true,
+        height: true,
+        isAnimated: true,
+        targetSlot: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
-    res.json(assets);
-  } catch (err) {
-    console.error('[RPC Assets Error]:', err);
-    res.status(500).json({ error: 'Failed to retrieve uploaded assets' });
+    res.json(
+      assets.map((a) => ({
+        ...a,
+        url: a.processedUrl || a.originalUrl,
+      }))
+    );
+  } catch (err: any) {
+    console.error('[RPC Assets Error]:', {
+      userId: req.user?.id,
+      message: err?.message || 'Database query error',
+    });
+    res.status(503).json({ error: 'Asset library temporarily unavailable. Please try again shortly.' });
   }
 });
 

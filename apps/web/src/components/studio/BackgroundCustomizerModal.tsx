@@ -26,7 +26,7 @@ import {
   Pause,
 } from "lucide-react";
 import { Button } from "@/components/nothing/Button";
-import { apiFetch } from "@/lib/api";
+import { uploadMediaAsset } from "@/lib/uploadAsset";
 import {
   BackgroundAspectRatio,
   BackgroundFitMode,
@@ -190,71 +190,42 @@ export function BackgroundCustomizerModal({
 
   if (!isOpen) return null;
 
-  // Handle media file uploads (Image, GIF, Video, Audio)
+  // Handle media file uploads (Image, GIF, Video, Audio) via centralized uploadMediaAsset
   const handleMediaUpload = async (file: File, kind: "image" | "video" | "audio") => {
+    if (uploading) return;
     setErrorMessage(null);
-
-    const MAX_IMG_BYTES = 10 * 1024 * 1024; // 10 MB
-    const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // 25 MB
-
-    if (kind === "image" && file.size > MAX_IMG_BYTES) {
-      setErrorMessage(`Image exceeds 10 MB maximum size limit (${(file.size / (1024 * 1024)).toFixed(2)} MB).`);
-      return;
-    }
-    if ((kind === "video" || kind === "audio") && file.size > MAX_MEDIA_BYTES) {
-      setErrorMessage(`Media file exceeds 25 MB maximum size limit (${(file.size / (1024 * 1024)).toFixed(2)} MB).`);
-      return;
-    }
 
     try {
       setUploading(true);
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64Data = reader.result as string;
-        const res = await apiFetch("/api/rpc/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            file: base64Data,
-            fileName: file.name,
-            targetSlot: `background_${kind}`,
-          }),
-        });
+      const uploaded = await uploadMediaAsset({
+        file,
+        kind,
+        targetSlot: `background_${kind}`,
+      });
 
-        const data = await res.json();
-        if (res.ok && data.url) {
-          if (kind === "image") {
-            setImageUrl(data.url);
-            setIsAnimatedGif(Boolean(data.isAnimated));
-            setOffsetX(0);
-            setOffsetY(0);
-            setZoom(100);
-            setRotation(0);
-            setFocalPoint({ x: 50, y: 50 });
-          } else if (kind === "video") {
-            setVideoUrl(data.url);
-            if (audioSourceMode === "none") {
-              setAudioSourceMode("video");
-            }
-          } else if (kind === "audio") {
-            setAudioUrl(data.url);
-            setAudioFileName(file.name);
-            if (audioSourceMode === "none") {
-              setAudioSourceMode("music");
-            }
-          }
-        } else {
-          setErrorMessage(data.error || `Failed to upload ${kind} file.`);
+      if (kind === "image") {
+        setImageUrl(uploaded.url);
+        setIsAnimatedGif(Boolean(uploaded.isAnimated));
+        setOffsetX(0);
+        setOffsetY(0);
+        setZoom(100);
+        setRotation(0);
+        setFocalPoint({ x: 50, y: 50 });
+      } else if (kind === "video") {
+        setVideoUrl(uploaded.url);
+        if (audioSourceMode === "none") {
+          setAudioSourceMode("video");
         }
-        setUploading(false);
-      };
-      reader.onerror = () => {
-        setErrorMessage("Failed to read file.");
-        setUploading(false);
-      };
-      reader.readAsDataURL(file);
-    } catch (err: any) {
-      setErrorMessage(err.message || "Failed to upload media.");
+      } else if (kind === "audio") {
+        setAudioUrl(uploaded.url);
+        setAudioFileName(file.name);
+        if (audioSourceMode === "none") {
+          setAudioSourceMode("music");
+        }
+      }
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : "Failed to upload media.");
+    } finally {
       setUploading(false);
     }
   };

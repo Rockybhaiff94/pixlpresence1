@@ -77,6 +77,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     open: boolean;
     title: string;
     initialUrl: string;
+    targetSlot?: string;
     onApply: (url: string) => void;
   } | null>(null);
 
@@ -255,10 +256,50 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     (updates: Partial<BuilderCanvasSettings>) => {
       setDoc((prev) => {
         const nextCanvas = { ...prev.canvas, ...updates };
-        commitSnapshot(nextCanvas, prev.nodes, selectedId);
+        const hasBgUpdate =
+          updates.backgroundType !== undefined ||
+          updates.backgroundColor !== undefined ||
+          updates.backgroundGradientTo !== undefined ||
+          updates.backgroundGradientAngle !== undefined ||
+          updates.backgroundImage !== undefined ||
+          updates.backgroundVideo !== undefined ||
+          updates.backgroundPosition !== undefined ||
+          updates.backgroundSize !== undefined ||
+          updates.backgroundOpacity !== undefined ||
+          updates.backgroundBlur !== undefined ||
+          updates.overlayOpacity !== undefined;
+
+        const nextNodes = hasBgUpdate
+          ? prev.nodes.map((n) => {
+              if (n.type !== "background") return n;
+              return {
+                ...n,
+                config: {
+                  ...n.config,
+                  ...(updates.backgroundType !== undefined ? { bgType: updates.backgroundType } : {}),
+                  ...(updates.backgroundColor !== undefined ? { bgColor: updates.backgroundColor } : {}),
+                  ...(updates.backgroundGradientTo !== undefined ? { bgGradientTo: updates.backgroundGradientTo } : {}),
+                  ...(updates.backgroundGradientAngle !== undefined ? { bgGradientAngle: updates.backgroundGradientAngle } : {}),
+                  ...(updates.backgroundImage !== undefined ? { bgImageUrl: updates.backgroundImage } : {}),
+                  ...(updates.backgroundVideo !== undefined ? { bgVideoUrl: updates.backgroundVideo } : {}),
+                  ...(updates.backgroundPosition !== undefined ? { bgPosition: updates.backgroundPosition } : {}),
+                  ...(updates.backgroundSize !== undefined ? { bgSize: updates.backgroundSize } : {}),
+                  ...(updates.overlayOpacity !== undefined ? { bgOverlayOpacity: updates.overlayOpacity } : {}),
+                },
+                style: {
+                  ...n.style,
+                  ...(updates.backgroundOpacity !== undefined ? { opacity: updates.backgroundOpacity } : {}),
+                  ...(updates.backgroundBlur !== undefined ? { blur: updates.backgroundBlur } : {}),
+                },
+              };
+            })
+          : prev.nodes;
+
+        commitSnapshot(nextCanvas, nextNodes, selectedId);
         return {
           ...prev,
           canvas: nextCanvas,
+          nodes: nextNodes,
           metadata: { ...prev.metadata, updatedAt: new Date().toISOString() },
         };
       });
@@ -967,6 +1008,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
                 open: true,
                 title: "Add Image to Gallery",
                 initialUrl: "",
+                targetSlot: "gallery",
                 onApply: (url) =>
                   insertComponent("image", galleryId, undefined, undefined, {
                     config: { src: url, fit: "cover" },
@@ -987,11 +1029,12 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           onSelect={setSelectedId}
           onUpdateCanvas={handleUpdateCanvas}
           onUpdateNode={handleUpdateNode}
-          onOpenMediaPicker={(cb, title, init) =>
+          onOpenMediaPicker={(cb, title, init, targetSlot) =>
             setMediaModalState({
               open: true,
               title,
               initialUrl: init || "",
+              targetSlot,
               onApply: cb,
             })
           }
@@ -1042,6 +1085,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           onClose={() => setMediaModalState(null)}
           title={mediaModalState.title}
           initialUrl={mediaModalState.initialUrl}
+          targetSlot={mediaModalState.targetSlot}
           onSelectMedia={mediaModalState.onApply}
         />
       )}

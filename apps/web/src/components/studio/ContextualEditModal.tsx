@@ -19,7 +19,7 @@ import {
   EyeOff,
   Sparkles,
 } from "lucide-react";
-import { apiFetch } from "@/lib/api";
+import { uploadMediaAsset } from "@/lib/uploadAsset";
 
 export type ContextualModalTarget =
   | { type: "info"; title: string; data: { displayName?: string | null; username?: string | null; avatarUrl?: string | null; accentColor?: string } }
@@ -117,38 +117,33 @@ function RpcModalContent({
   );
   const [uploadingLarge, setUploadingLarge] = useState<boolean>(false);
   const [uploadingSmall, setUploadingSmall] = useState<boolean>(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const largeFileInputRef = useRef<HTMLInputElement>(null);
   const smallFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUploadImage = async (file: File, slot: "large" | "small") => {
+    setUploadError(null);
     try {
       if (slot === "large") setUploadingLarge(true);
       else setUploadingSmall(true);
 
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("targetSlot", slot === "large" ? "largeImage" : "smallImage");
-
-      const res = await apiFetch("/api/rpc/upload", {
-        method: "POST",
-        body: formData,
+      // Uses POST /api/rpc/upload via shared authenticated uploadMediaAsset helper
+      const uploaded = await uploadMediaAsset({
+        file,
+        kind: "image",
+        targetSlot: slot === "large" ? "largeImage" : "smallImage",
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        const url = data.url || data.path;
-        if (slot === "large") setLargeImage(url);
-        else setSmallImage(url);
-      }
-    } catch {
-      // Fallback object URL if upload fails in sandbox
-      const localUrl = URL.createObjectURL(file);
-      if (slot === "large") setLargeImage(localUrl);
-      else setSmallImage(localUrl);
+      if (slot === "large") setLargeImage(uploaded.url);
+      else setSmallImage(uploaded.url);
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : "Failed to upload RPC image. Please try again.");
     } finally {
       if (slot === "large") setUploadingLarge(false);
       else setUploadingSmall(false);
+      if (slot === "large" && largeFileInputRef.current) largeFileInputRef.current.value = "";
+      if (slot === "small" && smallFileInputRef.current) smallFileInputRef.current.value = "";
     }
   };
 
@@ -308,6 +303,11 @@ function RpcModalContent({
               </div>
             </div>
           </div>
+          {uploadError && (
+            <div className="p-2 rounded-lg bg-red-950/50 border border-red-800/60 text-red-200 text-[11px]">
+              {uploadError}
+            </div>
+          )}
         </div>
 
         {/* Text Fields */}
@@ -642,22 +642,25 @@ function ImageModalContent({
   const initialUrl = target.type === "banner" ? (target.data as any).bannerUrl || "" : (target.data as any).url || "";
   const [url, setUrl] = useState(initialUrl);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUpload = async (file: File) => {
+    if (uploading) return;
+    setUploadError(null);
     try {
       setUploading(true);
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await apiFetch("/api/rpc/upload", { method: "POST", body: formData });
-      if (res.ok) {
-        const d = await res.json();
-        setUrl(d.url || d.path);
-      }
-    } catch {
-      setUrl(URL.createObjectURL(file));
+      const uploaded = await uploadMediaAsset({
+        file,
+        kind: "image",
+        targetSlot: target.type === "banner" ? "banner" : "image",
+      });
+      setUrl(uploaded.url);
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : "Failed to upload image.");
     } finally {
       setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -706,6 +709,11 @@ function ImageModalContent({
           >
             <Upload size={12} /> {uploading ? "Uploading..." : "Upload from Device"}
           </button>
+          {uploadError && (
+            <div className="mt-2 p-2 rounded-lg bg-red-950/50 border border-red-800/60 text-red-200 text-[11px]">
+              {uploadError}
+            </div>
+          )}
         </div>
       </div>
 

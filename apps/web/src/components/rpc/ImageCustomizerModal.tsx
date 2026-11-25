@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/nothing/Button";
 import { apiFetch } from "@/lib/api";
+import { mapUploadHttpError, uploadMediaAsset } from "@/lib/uploadAsset";
 
 function countGifFramesFromBytes(bytes: Uint8Array): number {
   if (!bytes || bytes.length < 14) return 0;
@@ -124,6 +125,7 @@ export function ImageCustomizerModal({
   const [verificationAttempt, setVerificationAttempt] = useState<number>(1);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const selectedFileRef = useRef<File | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const requestSeqRef = useRef<number>(0);
   const isOpenRef = useRef<boolean>(isOpen);
@@ -149,6 +151,7 @@ export function ImageCustomizerModal({
       setErrorMessage(null);
       setVerificationState("idle");
       setVerificationAttempt(1);
+      selectedFileRef.current = null;
 
       if (currentUrl?.toLowerCase().includes(".gif")) {
         setIsAnimated(true);
@@ -198,6 +201,7 @@ export function ImageCustomizerModal({
     setFileSize(file.size);
     setIsAnimated(isGif);
     setInputFrameCount(1);
+    selectedFileRef.current = file;
 
     if (isGif) {
       file.arrayBuffer().then((buf) => {
@@ -462,32 +466,47 @@ export function ImageCustomizerModal({
       return;
     }
 
-    // New uploaded file (data URL)
+    // New uploaded file (binary multipart via uploadMediaAsset when available, JSON fallback otherwise)
     setVerificationState("uploading");
 
     let canonicalUrl: string | null = null;
     try {
-      const payload = {
-        file: imageSrc,
-        fileName: fileName || `custom_${targetSlot}.png`,
-        targetSlot,
-        cropData,
+      let data: {
+        url?: string;
+        mimeType?: string;
+        frameCount?: number;
       };
 
-      const res = await apiFetch("/api/rpc/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      if (selectedFileRef.current) {
+        data = await uploadMediaAsset({
+          file: selectedFileRef.current,
+          targetSlot,
+          kind: "image",
+          cropData,
+        });
+      } else {
+        const payload = {
+          file: imageSrc,
+          fileName: fileName || `custom_${targetSlot}.png`,
+          targetSlot,
+          cropData,
+        };
 
-      if (seq !== requestSeqRef.current || !isOpenRef.current) return;
+        const res = await apiFetch("/api/rpc/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
 
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || `Upload failed (HTTP ${res.status})`);
+        if (seq !== requestSeqRef.current || !isOpenRef.current) return;
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(mapUploadHttpError(res.status, errorData?.error));
+        }
+        data = await res.json();
       }
 
-      const data = await res.json();
       if (seq !== requestSeqRef.current || !isOpenRef.current) return;
       if (!data?.url) {
         throw new Error("Server succeeded but did not return a valid asset URL.");
@@ -506,7 +525,7 @@ export function ImageCustomizerModal({
       if (seq !== requestSeqRef.current || !isOpenRef.current) return;
       console.error("[ImageCustomizer] Upload error:", err);
       setVerificationState("failed");
-      setErrorMessage(err.message || "Failed to upload image. Please try again.");
+      setErrorMessage(err?.message || "Failed to upload image. Please try again.");
       return;
     }
 

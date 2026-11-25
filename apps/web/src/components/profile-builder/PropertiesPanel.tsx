@@ -37,7 +37,7 @@ interface PropertiesPanelProps {
     updates: Partial<BuilderNode>,
     options?: { skipHistory?: boolean }
   ) => void;
-  onOpenMediaPicker: (callback: (url: string) => void, title: string, initialUrl?: string) => void;
+  onOpenMediaPicker: (callback: (url: string) => void, title: string, initialUrl?: string, targetSlot?: string) => void;
   onAddGalleryImage?: (galleryId: string, url?: string) => void;
 }
 
@@ -248,7 +248,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                     onOpenMediaPicker(
                       (url) => patchBg({ backgroundImage: url }, { bgImageUrl: url }),
                       "Replace Canvas Background Image",
-                      bgImageUrl
+                      bgImageUrl,
+                      "canvas_background"
                     )
                   }
                   className="px-2.5 py-1.5 rounded bg-[#14141b] hover:bg-[#1e1e28] border border-[#2a2a34] text-white cursor-pointer"
@@ -603,7 +604,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               onClick={() =>
                 onOpenMediaPicker(
                   (url) => onAddGalleryImage(selectedNode.id, url),
-                  "Add Image to Gallery"
+                  "Add Image to Gallery",
+                  "",
+                  "gallery"
                 )
               }
               className="w-full py-1.5 rounded-lg bg-[#15151d] hover:bg-[#1e1e29] border border-[#2b2b36] text-white font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
@@ -637,7 +640,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 onOpenMediaPicker(
                   (url) => patchConfig({ src: url }),
                   `Upload / Replace ${selectedNode.name}`,
-                  selectedNode.config.src
+                  selectedNode.config.src,
+                  selectedNode.type === "profile-image"
+                    ? "avatar"
+                    : selectedNode.type === "banner-image"
+                    ? "banner"
+                    : "image"
                 )
               }
               className="px-2.5 py-1.5 rounded bg-[#14141b] hover:bg-[#1e1e28] border border-[#2a2a34] text-white cursor-pointer"

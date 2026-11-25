@@ -24,6 +24,8 @@ export class LocalStorageProvider implements IStorageProvider {
       this.publicBaseUrl = publicBaseUrl.replace(/\/+$/, '');
     } else if (envUrl) {
       this.publicBaseUrl = envUrl;
+    } else if (process.env.NODE_ENV !== 'production') {
+      this.publicBaseUrl = `http://localhost:${process.env.PORT || 3001}`;
     } else {
       this.publicBaseUrl = 'https://pixelgg-api.onrender.com';
     }

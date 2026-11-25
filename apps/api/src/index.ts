@@ -258,8 +258,8 @@ app.use('/uploads/rpc/:fileName', async (req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: '25mb' }));
-app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+app.use(express.json({ limit: '36mb' }));
+app.use(express.urlencoded({ extended: true, limit: '36mb' }));
 app.use('/api', globalApiLimiter);
 
 // Setup Session Store with Prisma
@@ -321,8 +321,14 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
     return res.redirect(`${frontend}/?error=${encodeURIComponent(err.message || 'Authentication error')}`);
   }
 
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal Server Error',
+  const statusCode = err.type === 'entity.too.large' ? 413 : (err.status || err.statusCode || 500);
+  const errorMessage =
+    statusCode === 413
+      ? 'Uploaded payload exceeds the maximum server limit.'
+      : err.message || 'Internal Server Error';
+
+  res.status(statusCode).json({
+    error: errorMessage,
     ...(process.env.NODE_ENV !== 'production' ? { stack: err.stack } : {})
   });
 });

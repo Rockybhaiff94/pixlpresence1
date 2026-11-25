@@ -30,6 +30,7 @@ import {
   EditorTemplate,
 } from "./editorTypes";
 import { STARTER_TEMPLATES } from "./editorPresets";
+import { uploadMediaAsset } from "@/lib/uploadAsset";
 
 export type SidebarTab = "templates" | "elements" | "text" | "stickers" | "uploads" | "layers";
 
@@ -63,6 +64,8 @@ export const EditorSidebar: React.FC<EditorSidebarProps> = ({
   onReorderElement,
 }) => {
   const [activeTab, setActiveTab] = useState<SidebarTab>("elements");
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const tabs: { id: SidebarTab; label: string; icon: React.FC<{ size?: number }> }[] = [
@@ -74,18 +77,24 @@ export const EditorSidebar: React.FC<EditorSidebarProps> = ({
     { id: "layers", label: "Layers", icon: Layers },
   ];
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        onAddImage(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (!file || uploadingImage) return;
+    setUploadError(null);
+    setUploadingImage(true);
+    try {
+      const uploaded = await uploadMediaAsset({
+        file,
+        kind: "image",
+        targetSlot: "image",
+      });
+      onAddImage(uploaded.url);
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : "Failed to upload image.");
+    } finally {
+      setUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   return (
@@ -304,18 +313,25 @@ export const EditorSidebar: React.FC<EditorSidebarProps> = ({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              disabled={uploadingImage}
               onChange={handleFileUpload}
               className="hidden"
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="w-full py-8 border-2 border-dashed border-[#333333] hover:border-white rounded-2xl flex flex-col items-center justify-center gap-2 text-neutral-400 hover:text-white transition-colors bg-[#0e0e0e]"
+              disabled={uploadingImage}
+              className="w-full py-8 border-2 border-dashed border-[#333333] hover:border-white rounded-2xl flex flex-col items-center justify-center gap-2 text-neutral-400 hover:text-white transition-colors bg-[#0e0e0e] disabled:opacity-60 cursor-pointer"
             >
               <UploadCloud size={28} />
-              <span className="text-xs font-mono font-bold">CLICK TO UPLOAD IMAGE</span>
-              <span className="text-[10px] font-mono text-neutral-500">PNG, JPG, SVG, GIF up to 10MB</span>
+              <span className="text-xs font-mono font-bold">
+                {uploadingImage ? "UPLOADING TO PIXEL.GG STORAGE..." : "CLICK TO UPLOAD IMAGE"}
+              </span>
+              <span className="text-[10px] font-mono text-neutral-500">PNG, JPG, WEBP, GIF up to 10MB</span>
             </button>
+            {uploadError && (
+              <p className="text-[11px] font-mono text-red-400">{uploadError}</p>
+            )}
           </div>
         )}
 
