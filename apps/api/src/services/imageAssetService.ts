@@ -855,9 +855,10 @@ export class ImageAssetService {
           })
         : null;
 
-      // Persist binary backup in PostgreSQL for assets <= 16 MB; larger videos stay on disk/object storage
-      // to avoid exceeding Prisma query-engine / container memory limits on 512 MB hosts.
-      const dbDataBuffer = outBuffer.length <= 16 * 1024 * 1024 ? outBuffer : null;
+      // Persist binary backup in PostgreSQL. For assets > 16 MB, append in 4 MB chunks via $executeRaw
+      // so Prisma's query engine never OOMs on 512 MB hosts while keeping full cross-deploy persistence.
+      const DIRECT_DB_LIMIT = 16 * 1024 * 1024;
+      const useChunkedDb = outBuffer.length > DIRECT_DB_LIMIT;
 
       asset = await prisma.uploadedAsset.create({
         data: {
@@ -879,9 +880,17 @@ export class ImageAssetService {
           offsetY,
           targetSlot: rawSlot,
           storageKey,
-          data: dbDataBuffer,
+          data: useChunkedDb ? null : outBuffer,
         },
       });
+
+      if (useChunkedDb) {
+        const CHUNK_SIZE = 4 * 1024 * 1024;
+        for (let offset = 0; offset < outBuffer.length; offset += CHUNK_SIZE) {
+          const chunk = outBuffer.subarray(offset, Math.min(offset + CHUNK_SIZE, outBuffer.length));
+          await prisma.$executeRaw`UPDATE "UploadedAsset" SET "data" = COALESCE("data", ''::bytea) || ${chunk} WHERE "id" = ${asset.id}`;
+        }
+      }
 
       if (previousAsset && (previousAsset as any).storageKey && (previousAsset as any).storageKey !== storageKey) {
         storage.delete((previousAsset as any).storageKey).catch((delErr) => {

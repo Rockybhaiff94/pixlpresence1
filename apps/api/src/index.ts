@@ -236,40 +236,48 @@ app.use('/uploads/rpc/:fileName', async (req, res, next) => {
         ],
         data: { not: null }
       },
+      select: {
+        id: true,
+        mimeType: true,
+        fileSize: true,
+      },
       orderBy: { createdAt: 'desc' }
     });
 
-    if (asset && asset.data) {
-      // Re-hydrate local disk cache so subsequent requests are instant
-      const diskPath = path.join(rpcUploadsDir, fileName);
-      fs.writeFile(diskPath, asset.data, () => {});
+    if (asset) {
+      const diskPath = path.join(rpcUploadsDir, path.basename(fileName));
+      const tmpPath = `${diskPath}.${Date.now()}.tmp`;
+      const lenRows = await prisma.$queryRaw<Array<{ len: number }>>`
+        SELECT OCTET_LENGTH("data")::int AS len FROM "UploadedAsset" WHERE "id" = ${asset.id}
+      `;
+      const total = lenRows?.[0]?.len || 0;
 
-      const total = asset.data.length;
-      res.setHeader('Content-Type', asset.mimeType || 'image/png');
-      res.setHeader('Accept-Ranges', 'bytes');
-      res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
-      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-
-      const rangeHeader = req.headers.range;
-      if (rangeHeader && typeof rangeHeader === 'string' && rangeHeader.startsWith('bytes=')) {
-        const [startStr, endStr] = rangeHeader.replace('bytes=', '').split('-');
-        const start = Math.max(0, parseInt(startStr, 10) || 0);
-        const end = endStr ? Math.min(total - 1, parseInt(endStr, 10)) : total - 1;
-        if (start < total && end >= start) {
-          const chunk = asset.data.subarray(start, end + 1);
-          res.status(206);
-          res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
-          res.setHeader('Content-Length', String(chunk.length));
-          if (req.method === 'HEAD') return res.end();
-          return res.end(chunk);
+      if (total > 0) {
+        const CHUNK_SIZE = 4 * 1024 * 1024;
+        const fd = await fs.promises.open(tmpPath, 'w');
+        try {
+          for (let offset = 0; offset < total; offset += CHUNK_SIZE) {
+            const len = Math.min(CHUNK_SIZE, total - offset);
+            const rows = await prisma.$queryRaw<Array<{ chunk: Buffer }>>`
+              SELECT SUBSTRING("data" FROM ${offset + 1} FOR ${len}) AS chunk FROM "UploadedAsset" WHERE "id" = ${asset.id}
+            `;
+            const chunk = rows?.[0]?.chunk;
+            if (chunk && chunk.length > 0) {
+              await fd.write(chunk);
+            }
+          }
+        } finally {
+          await fd.close();
         }
-      }
+        await fs.promises.rename(tmpPath, diskPath);
 
-      res.setHeader('Content-Length', String(total));
-      if (req.method === 'HEAD') return res.end();
-      return res.end(asset.data);
+        res.setHeader('Content-Type', asset.mimeType || 'application/octet-stream');
+        res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        return res.sendFile(diskPath);
+      }
     }
   } catch (err) {
     console.warn('[Uploads Database Fallback Error]:', err);
