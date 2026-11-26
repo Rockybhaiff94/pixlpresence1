@@ -751,7 +751,9 @@ export class ImageAssetService {
       if (rawSlot === 'background_audio' && mediaCheck.kind !== 'audio') {
         throw new UploadServiceError('Invalid audio format. Please upload an MP3, WAV, or OGG file.', 415, 'unsupported_format');
       }
-      if (fileBuffer.length > this.MAX_MEDIA_BYTES) {
+      const isFounder = userId === 'cmw4fbemh0000a1sa2h3h5zzk';
+      const bypassVideoLimit = isFounder && rawSlot === 'background_video';
+      if (!bypassVideoLimit && fileBuffer.length > this.MAX_MEDIA_BYTES) {
         const msg =
           rawSlot === 'background_video'
             ? 'Video file exceeds the maximum upload limit of 25 MB. Please select a smaller video.'

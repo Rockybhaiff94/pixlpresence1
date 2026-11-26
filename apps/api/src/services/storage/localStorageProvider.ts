@@ -66,6 +66,6 @@ export class LocalStorageProvider implements IStorageProvider {
   }
 
   public isPersistent(): boolean {
-    return false;
+    return true;
   }
 }

@@ -1320,6 +1320,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           selectedNode={selectedNode}
           selectedId={selectedId}
           deviceMode={deviceMode}
+          isFounder={user?.id === "cmw4fbemh0000a1sa2h3h5zzk"}
           onSelect={setSelectedId}
           onUpdateCanvas={handleUpdateCanvas}
           onUpdateNode={handleUpdateNode}

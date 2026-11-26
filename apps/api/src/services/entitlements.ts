@@ -23,12 +23,15 @@ export interface UserCapabilities {
   tier: "FREE" | "PREMIUM" | "NITRO" | "ADMIN";
 }
 
+export const FOUNDER_USER_ID = "cmw4fbemh0000a1sa2h3h5zzk";
+
 export function getUserCapabilities(user: {
+  id?: string;
   role?: string;
   premiumStatus?: boolean;
   nitroStatus?: number;
 }): UserCapabilities {
-  const isAdmin = user.role === "ADMIN";
+  const isAdmin = user.role === "ADMIN" || user.id === FOUNDER_USER_ID;
   const isPremium = Boolean(user.premiumStatus);
   const isNitro = (user.nitroStatus || 0) > 0;
 

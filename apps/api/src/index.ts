@@ -244,12 +244,30 @@ app.use('/uploads/rpc/:fileName', async (req, res, next) => {
       const diskPath = path.join(rpcUploadsDir, fileName);
       fs.writeFile(diskPath, asset.data, () => {});
 
+      const total = asset.data.length;
       res.setHeader('Content-Type', asset.mimeType || 'image/png');
-      res.setHeader('Content-Length', String(asset.data.length));
+      res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('X-Content-Type-Options', 'nosniff');
+
+      const rangeHeader = req.headers.range;
+      if (rangeHeader && typeof rangeHeader === 'string' && rangeHeader.startsWith('bytes=')) {
+        const [startStr, endStr] = rangeHeader.replace('bytes=', '').split('-');
+        const start = Math.max(0, parseInt(startStr, 10) || 0);
+        const end = endStr ? Math.min(total - 1, parseInt(endStr, 10)) : total - 1;
+        if (start < total && end >= start) {
+          const chunk = asset.data.subarray(start, end + 1);
+          res.status(206);
+          res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
+          res.setHeader('Content-Length', String(chunk.length));
+          if (req.method === 'HEAD') return res.end();
+          return res.end(chunk);
+        }
+      }
+
+      res.setHeader('Content-Length', String(total));
       if (req.method === 'HEAD') return res.end();
       return res.end(asset.data);
     }

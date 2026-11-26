@@ -42,6 +42,7 @@ interface SecondaryDockPanelSystemProps {
   selectedNode: BuilderNode | null;
   selectedId: string | null;
   deviceMode: BuilderDeviceMode;
+  isFounder?: boolean;
   onSelect: (id: string | null) => void;
   onUpdateCanvas: (updates: Partial<BuilderCanvasSettings>) => void;
   onUpdateNode: (
@@ -106,6 +107,7 @@ export const SecondaryDockPanelSystem: React.FC<SecondaryDockPanelSystemProps> =
   selectedNode,
   selectedId,
   deviceMode,
+  isFounder = false,
   onSelect,
   onUpdateCanvas,
   onUpdateNode,
@@ -897,6 +899,7 @@ return (
         canvas={canvas}
         selectedNode={selectedNode}
         deviceMode={deviceMode}
+        isFounder={isFounder}
         onUpdateCanvas={onUpdateCanvas}
         onUpdateNode={onUpdateNode}
         onOpenMediaPicker={onOpenMediaPicker}

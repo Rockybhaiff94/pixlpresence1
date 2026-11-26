@@ -26,10 +26,13 @@ export interface UploadAssetResult {
   requestId?: string;
 }
 
+export const FOUNDER_USER_ID = "cmw4fbemh0000a1sa2h3h5zzk";
+
 export interface UploadAssetOptions {
   file: File;
   targetSlot?: string;
   kind?: UploadMediaKind;
+  unlimitedSize?: boolean;
   cropData?: UploadCropParameters | null;
   signal?: AbortSignal;
   onProgress?: (percent: number, stage: string) => void;
@@ -80,7 +83,8 @@ export function getFileExtension(fileName: string): string {
 
 export function validateUploadFile(
   file: File,
-  kind: UploadMediaKind = "image"
+  kind: UploadMediaKind = "image",
+  options?: { unlimitedSize?: boolean }
 ): string | null {
   if (!file || file.size <= 0) {
     return "Selected file is empty. Please choose a valid file.";
@@ -107,7 +111,7 @@ export function validateUploadFile(
     if (!validMime && !validExt) {
       return "Unsupported video format. Please upload MP4 or WebM.";
     }
-    if (file.size > MAX_MEDIA_UPLOAD_BYTES) {
+    if (!options?.unlimitedSize && file.size > MAX_MEDIA_UPLOAD_BYTES) {
       return "Video file exceeds the maximum upload limit of 25 MB. Please select a smaller video.";
     }
     return null;
@@ -186,12 +190,13 @@ export async function uploadMediaAsset(options: UploadAssetOptions): Promise<Upl
     file,
     targetSlot = "studio_asset",
     kind = "image",
+    unlimitedSize = false,
     cropData,
     signal,
     onProgress,
   } = options;
 
-  const validationError = validateUploadFile(file, kind);
+  const validationError = validateUploadFile(file, kind, { unlimitedSize });
   if (validationError) {
     throw new ClientUploadError(validationError, 400, "validation");
   }

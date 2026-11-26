@@ -37,6 +37,7 @@ interface PropertiesPanelProps {
   canvas: BuilderCanvasSettings;
   selectedNode: BuilderNode | null;
   deviceMode: BuilderDeviceMode;
+  isFounder?: boolean;
   onUpdateCanvas: (updates: Partial<BuilderCanvasSettings>) => void;
   onUpdateNode: (
     id: string,
@@ -77,6 +78,7 @@ function safeNum(val: string, fallback: number, min = 0, max = 9999): number {
 export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   canvas,
   selectedNode,
+  isFounder = false,
   onUpdateCanvas,
   onUpdateNode,
   onOpenMediaPicker,
@@ -347,7 +349,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   setVideoSuccess(null);
                   setVideoFileMeta({ name: file.name, sizeBytes: file.size });
 
-                  const validationErr = validateUploadFile(file, "video");
+                  const validationErr = validateUploadFile(file, "video", {
+                    unlimitedSize: isFounder,
+                  });
                   if (validationErr) {
                     setVideoError(validationErr);
                     if (videoFileInputRef.current) videoFileInputRef.current.value = "";
@@ -362,6 +366,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                       file,
                       targetSlot: "background_video",
                       kind: "video",
+                      unlimitedSize: isFounder,
                       onProgress: (pct, stage) => {
                         setVideoProgress(pct);
                         setVideoStage(stage);
@@ -403,7 +408,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                       ? "Uploading..."
                       : bgVideoUrl
                         ? "Replace Video"
-                        : "Upload Video (25MB)"}
+                        : isFounder
+                          ? "Upload Video (Unlimited)"
+                          : "Upload Video (25MB)"}
                   </span>
                 </button>
                 {bgVideoUrl && (

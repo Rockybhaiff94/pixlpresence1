@@ -39,10 +39,10 @@ export function getStorageProvider(): IStorageProvider {
     return activeProvider;
   }
 
-  // Development/Fallback Local Storage Provider
+  // Development/Fallback Local Storage Provider (persisted in PostgreSQL UploadedAsset table)
   if (process.env.NODE_ENV === 'production') {
-    console.warn(
-      '[Storage WARNING] No persistent S3/R2 object storage configured in production! Assets will be saved to local disk, which may be ephemeral across deploys. Please configure R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, and R2_PUBLIC_URL.'
+    console.info(
+      '[Storage] Using local disk cache backed by PostgreSQL UploadedAsset persistence (R2/S3 not configured).'
     );
   }
 

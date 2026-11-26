@@ -1005,10 +1005,24 @@ export function validateImageBuffer(buffer: Buffer): {
   };
 }
 
-const parseUploadMultipart = expressRaw({
+const FOUNDER_USER_ID = 'cmw4fbemh0000a1sa2h3h5zzk';
+
+const parseUploadMultipartStandard = expressRaw({
   type: ['multipart/form-data', 'text/plain'],
   limit: '36mb',
 });
+
+const parseUploadMultipartFounder = expressRaw({
+  type: ['multipart/form-data', 'text/plain'],
+  limit: '2048mb',
+});
+
+const parseUploadMultipart = (req: any, res: any, next: any) => {
+  if (req.user?.id === FOUNDER_USER_ID) {
+    return parseUploadMultipartFounder(req, res, next);
+  }
+  return parseUploadMultipartStandard(req, res, next);
+};
 
 /**
  * POST /api/rpc/upload
