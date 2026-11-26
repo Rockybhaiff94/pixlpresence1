@@ -412,11 +412,24 @@ async function runPlaywrightTests() {
       const pubPage = await pubContext.newPage();
       await pubPage.goto(`${BASE_URL}/heart_tester`, { waitUntil: "networkidle" });
 
-      // Entry screen must be visible first with Like & Claim controls
+      // Entry screen must be visible first, preserve text, have NO Like/Claim buttons, and keep video paused
       await pubPage.waitForSelector('[data-testid="public-entry-screen"]', { timeout: 10000 });
-      await pubPage.waitForSelector('[data-testid="public-entry-like-btn"]', { timeout: 5000 });
-      const entryClaimHref = await pubPage.getByTestId("public-entry-claim-link").getAttribute("href");
-      assert(entryClaimHref && !entryClaimHref.includes("pixels.in"), `Claim href must not point to pixels.in, got ${entryClaimHref}`);
+      const entryText = await pubPage.getByTestId("public-entry-screen").innerText();
+      assert(entryText.includes("INITIALIZE DIGITAL IDENTITY"), "Opening screen must preserve identity header text");
+      assert(entryText.includes("@heart_tester"), "Opening screen must preserve @username");
+      assert(entryText.includes("PIXLS.IN STUDIO"), "Opening screen must preserve footer branding");
+      assert.strictEqual(await pubPage.getByTestId("public-entry-like-btn").count(), 0, "Like button must NOT be on opening screen");
+      assert.strictEqual(await pubPage.getByTestId("public-entry-claim-link").count(), 0, "Claim button must NOT be on opening screen");
+
+      const vidPausedBefore = await pubPage.getByTestId("public-bg-video").first().evaluate((v) => ({
+        paused: v.paused,
+        autoplay: v.autoplay,
+        loop: v.loop,
+      }));
+      assert.strictEqual(vidPausedBefore.paused, true, "Background video must remain paused before entry");
+      assert.strictEqual(vidPausedBefore.autoplay, false, "Background video autoPlay must be false before entry");
+      assert.strictEqual(vidPausedBefore.loop, true, "Background video loop must be true");
+
       await pubPage.getByTestId("public-enter-profile-btn").click();
       await pubPage.waitForTimeout(550);
       assert.strictEqual(await pubPage.getByTestId("public-entry-screen").count(), 0, "Entry screen should dismiss");

@@ -305,6 +305,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
   }, [activeConfig.background, activeConfig.identity?.titleColor, activeConfig.effects?.glowColor]);
 
   const handleEnterScreen = () => {
+    if (entered) return;
     setEntered(true);
     if (musicUrl && audioRef.current) {
       audioRef.current.volume = 0.8;
@@ -313,6 +314,17 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
         .catch(() => {
           // Browser audio autoplay policy
         });
+    }
+    // Start background video directly inside the user click gesture for reliable unmuted playback
+    const bgVid = globalThis.document?.querySelector<HTMLVideoElement>(
+      '[data-testid="public-bg-video"]'
+    );
+    if (bgVid) {
+      bgVid.muted = false;
+      bgVid.play().catch(() => {
+        bgVid.muted = true;
+        bgVid.play().catch(() => {});
+      });
     }
   };
 
@@ -360,12 +372,6 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
     (musicUrl
       ? "[ CLICK ANYWHERE TO INITIALIZE AUDIO & PROFILE ]"
       : "[ CLICK ANYWHERE TO ENTER PROFILE ]");
-  const configuredSiteUrl =
-    typeof process.env.NEXT_PUBLIC_SITE_URL === "string" && process.env.NEXT_PUBLIC_SITE_URL.trim()
-      ? process.env.NEXT_PUBLIC_SITE_URL.trim().replace(/\/+$/, "")
-      : "";
-  const claimHomeHref =
-    configuredSiteUrl || (typeof window !== "undefined" ? window.location.origin : "/");
 
   return (
     <div
@@ -392,23 +398,32 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
             transition={{ duration: 0.45, ease: "easeOut" }}
             onClick={handleEnterScreen}
             data-testid="public-entry-screen"
-            className="fixed inset-0 z-50 bg-[#050505] flex flex-col items-center justify-center cursor-pointer nt-dot-grid p-6 text-center select-none"
+            className="fixed inset-0 z-50 bg-[#050505] flex flex-col items-center justify-center cursor-pointer nt-dot-grid p-6 text-center select-none overflow-hidden"
           >
+            {/* Subtle Pixel.gg radial ambient vignette */}
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background:
+                  "radial-gradient(circle at center, rgba(255,255,255,0.045) 0%, rgba(5,5,5,0) 62%)",
+              }}
+            />
+
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
+              initial={{ scale: 0.94, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              transition={{ duration: 0.5, ease: "easeOut" }}
-              className="space-y-4 max-w-sm"
+              transition={{ duration: 0.45, ease: "easeOut" }}
+              className="relative z-10 space-y-5 max-w-md w-full px-4"
             >
-              <div className="w-12 h-12 rounded-full border border-neutral-700 bg-[#101010] flex items-center justify-center mx-auto text-white shadow-lg">
-                <Disc size={20} className="animate-spin" />
+              <div className="w-14 h-14 rounded-full border border-white/15 bg-[#0d0d11]/90 flex items-center justify-center mx-auto text-white shadow-[0_0_30px_rgba(255,255,255,0.06)] ring-1 ring-white/5">
+                <Disc size={22} className="animate-spin text-neutral-200" />
               </div>
 
-              <div className="space-y-1">
-                <span className="text-[10px] text-neutral-500 uppercase tracking-widest block">
+              <div className="space-y-1.5">
+                <span className="text-[10px] text-neutral-500 uppercase tracking-[0.22em] block">
                   [ INITIALIZE DIGITAL IDENTITY ]
                 </span>
-                <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
+                <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white drop-shadow-[0_2px_12px_rgba(255,255,255,0.08)]">
                   @{username}
                 </h2>
               </div>
@@ -419,47 +434,15 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
                   e.stopPropagation();
                   handleEnterScreen();
                 }}
-                animate={{ opacity: [0.65, 1, 0.65] }}
-                transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+                animate={{ opacity: [0.7, 1, 0.7] }}
+                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
                 data-testid="public-enter-profile-btn"
-                className="text-xs text-neutral-300 hover:text-white font-sans tracking-wide cursor-pointer px-4 py-2 rounded-full border border-white/15 bg-white/[0.04] hover:bg-white/[0.09] transition-colors"
+                className="text-xs text-neutral-200 hover:text-white font-mono tracking-wider cursor-pointer px-5 py-2.5 rounded-full border border-white/15 hover:border-white/30 bg-white/[0.04] hover:bg-white/[0.09] backdrop-blur-md transition-all shadow-lg"
               >
                 {entryPromptText}
               </motion.button>
 
-              <div className="pt-4 flex flex-wrap items-center justify-center gap-3">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void handleToggleLike();
-                  }}
-                  disabled={isLiking}
-                  data-testid="public-entry-like-btn"
-                  className={`group flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md transition-all cursor-pointer text-xs font-mono ${
-                    hasLiked
-                      ? "bg-rose-500/20 border border-rose-500/40 text-rose-300"
-                      : "bg-white/[0.04] hover:bg-white/[0.09] border border-white/15 text-white/85 hover:text-white"
-                  }`}
-                >
-                  <Heart
-                    size={13}
-                    className={hasLiked ? "fill-rose-500 text-rose-500" : "text-white/75"}
-                  />
-                  <span className="font-semibold tabular-nums">{likes.toLocaleString()}</span>
-                </button>
-
-                <a
-                  href={claimHomeHref}
-                  onClick={(e) => e.stopPropagation()}
-                  data-testid="public-entry-claim-link"
-                  className="text-white/75 hover:text-white px-3 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/15 transition-all text-[11px] tracking-wide font-mono"
-                >
-                  CLAIM YOUR OWN PROFILE ↗
-                </a>
-              </div>
-
-              <div className="pt-2 text-[10px] text-neutral-600">
+              <div className="pt-3 text-[10px] tracking-[0.16em] text-neutral-600 uppercase">
                 PIXLS.IN STUDIO &bull; PROFILE ENGINE
               </div>
             </motion.div>
@@ -476,6 +459,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
               deviceMode={viewportDevice}
               isInteractive={false}
               initialVideoMuted={hasEntryScreen && !entered}
+              videoPlaybackEnabled={!hasEntryScreen || entered}
               likeState={{
                 count: likes,
                 liked: hasLiked,

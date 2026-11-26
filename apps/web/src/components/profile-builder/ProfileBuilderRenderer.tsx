@@ -71,6 +71,7 @@ interface ProfileBuilderRendererProps {
     onToggle?: () => void;
   };
   initialVideoMuted?: boolean;
+  videoPlaybackEnabled?: boolean;
   selectedId?: string | null;
   onSelectNode?: (nodeId: string | null) => void;
   onQuickAddGalleryImage?: (galleryId: string) => void;
@@ -175,6 +176,7 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
   liveData,
   likeState,
   initialVideoMuted = false,
+  videoPlaybackEnabled = true,
   onSelectNode,
   onQuickAddGalleryImage,
   canvasOverlaySlot,
@@ -197,7 +199,16 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
     if (!v || isInteractive) return;
 
     v.muted = initialVideoMuted;
-    if (initialVideoMuted) return;
+
+    if (!videoPlaybackEnabled) {
+      if (!v.paused) v.pause();
+      return;
+    }
+
+    if (initialVideoMuted) {
+      v.play().catch(() => {});
+      return;
+    }
 
     let unlockListener: (() => void) | null = null;
     v.play().catch(() => {
@@ -227,7 +238,7 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
         window.removeEventListener("keydown", unlockListener);
       }
     };
-  }, [initialVideoMuted, isInteractive]);
+  }, [initialVideoMuted, isInteractive, videoPlaybackEnabled]);
 
   useEffect(() => {
     if (isInteractive) return;
@@ -1156,10 +1167,12 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           <video
             ref={!isInteractive ? bgVideoRef : undefined}
             src={bg.videoUrl}
-            autoPlay
+            autoPlay={isInteractive ? true : videoPlaybackEnabled}
             loop
+            preload={isInteractive || videoPlaybackEnabled ? "auto" : "metadata"}
             muted={isInteractive ? true : videoMuted}
             playsInline
+            data-testid={!isInteractive ? "public-bg-video" : undefined}
             onError={(e) => {
               const mediaErr = (e.currentTarget as HTMLVideoElement).error;
               console.warn("[BackgroundVideo] Failed to load/play video:", {
