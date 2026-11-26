@@ -21,6 +21,15 @@ export type BuilderComponentType =
   | "separator"
   | "music-display"
   | "custom-rpc"
+  | "custom-rpc-embed"
+  | "rpc-icon"
+  | "rpc-title"
+  | "rpc-status"
+  | "rpc-details"
+  | "rpc-state"
+  | "rpc-timestamp"
+  | "rpc-achievement"
+  | "rpc-buttons"
   | "social-group"
   | "image-gallery"
   | "image"
@@ -35,11 +44,13 @@ export type BuilderComponentType =
 export type BuilderLayoutMode = "absolute" | "flex-col" | "flex-row" | "grid";
 
 export interface BuilderStyle {
-  backgroundType?: "solid" | "gradient" | "image" | "transparent";
+  backgroundType?: "solid" | "gradient" | "image" | "video" | "transparent";
   backgroundColor?: string;
   backgroundGradientTo?: string;
   backgroundGradientAngle?: number;
   backgroundImage?: string;
+  backgroundVideo?: string;
+  backgroundVideoMuted?: boolean;
   backgroundSize?: "cover" | "contain" | "auto";
   backgroundPosition?: string;
   backgroundOpacity?: number; // 0-1
@@ -156,6 +167,35 @@ export interface BuilderComponentConfig {
   useLiveRpc?: boolean;
   rpcEmptyText?: string;
   accentColor?: string;
+
+  // Custom Rich Presence Parent Embed & Child Elements
+  rpcTemplateId?: string;
+  rpcTemplateName?: string;
+  rpcTemplateVersion?: string;
+  rpcCategory?: string;
+  rpcSkinPreset?: "default" | "glass" | "neon" | "valorant" | "minecraft" | "minimal";
+  rpcFieldBinding?:
+    | "auto"
+    | "appName"
+    | "details"
+    | "state"
+    | "status"
+    | "party"
+    | "timestamp"
+    | "largeImage"
+    | "smallImage"
+    | "achievement"
+    | "streak"
+    | "custom";
+  rpcDataSource?: "live" | "custom";
+  rpcIsDecorative?: boolean;
+  rpcOfflineText?: string;
+  rpcPartyLabel?: string;
+  rpcStreakValue?: string;
+  rpcAchievementLabel?: string;
+  rpcCustomLabel?: string;
+  rpcShowSecondaryBadge?: boolean;
+  rpcButtons?: Array<{ id: string; label: string; url: string; variant?: "primary" | "ghost" }>;
 
   // Social Media Group
   socialItems?: SocialLinkItem[];

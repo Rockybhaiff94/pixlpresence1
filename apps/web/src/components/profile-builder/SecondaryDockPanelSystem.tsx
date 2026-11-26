@@ -25,6 +25,7 @@ import {
   BuilderDeviceMode,
   BuilderNode,
 } from "./profileBuilderTypes";
+import { RpcVisualTemplate } from "./rpcTemplates";
 import { LayersPanel } from "./LayersPanel";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { AddElementsLibraryContent } from "./AddElementsModal";
@@ -43,6 +44,21 @@ interface SecondaryDockPanelSystemProps {
   selectedId: string | null;
   deviceMode: BuilderDeviceMode;
   isFounder?: boolean;
+  isPremiumOrAdmin?: boolean;
+  isAdmin?: boolean;
+  rpcTemplates?: RpcVisualTemplate[];
+  onApplyRpcTemplate?: (embedId: string, template: RpcVisualTemplate) => void;
+  onSaveRpcTemplate?: (payload: {
+    embedId: string;
+    name: string;
+    category: string;
+    description?: string;
+    isGlobal?: boolean;
+    isPremiumRequired?: boolean;
+  }) => Promise<boolean>;
+  onDeleteRpcTemplate?: (templateId: string) => Promise<void>;
+  onInsertChild?: (parentId: string, type: BuilderComponentType) => void;
+  onRestrictedFeature?: (reason: string) => void;
   onSelect: (id: string | null) => void;
   onUpdateCanvas: (updates: Partial<BuilderCanvasSettings>) => void;
   onUpdateNode: (
@@ -108,6 +124,14 @@ export const SecondaryDockPanelSystem: React.FC<SecondaryDockPanelSystemProps> =
   selectedId,
   deviceMode,
   isFounder = false,
+  isPremiumOrAdmin = false,
+  isAdmin = false,
+  rpcTemplates = [],
+  onApplyRpcTemplate,
+  onSaveRpcTemplate,
+  onDeleteRpcTemplate,
+  onInsertChild,
+  onRestrictedFeature,
   onSelect,
   onUpdateCanvas,
   onUpdateNode,
@@ -897,9 +921,18 @@ return (
     >
       <PropertiesPanel
         canvas={canvas}
+        nodes={nodes}
         selectedNode={selectedNode}
         deviceMode={deviceMode}
         isFounder={isFounder}
+        isPremiumOrAdmin={isPremiumOrAdmin}
+        isAdmin={isAdmin}
+        rpcTemplates={rpcTemplates}
+        onApplyRpcTemplate={onApplyRpcTemplate}
+        onSaveRpcTemplate={onSaveRpcTemplate}
+        onDeleteRpcTemplate={onDeleteRpcTemplate}
+        onInsertChild={onInsertChild}
+        onRestrictedFeature={onRestrictedFeature}
         onUpdateCanvas={onUpdateCanvas}
         onUpdateNode={onUpdateNode}
         onOpenMediaPicker={onOpenMediaPicker}

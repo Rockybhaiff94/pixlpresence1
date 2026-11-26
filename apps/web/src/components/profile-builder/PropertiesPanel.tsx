@@ -21,6 +21,7 @@ import { PLATFORMS } from "@/components/links/PlatformIcons";
 import {
   BuilderCanvasSettings,
   BuilderComponentConfig,
+  BuilderComponentType,
   BuilderDeviceMode,
   BuilderLayoutMode,
   BuilderNode,
@@ -28,16 +29,39 @@ import {
   ProfileBadgeItem,
 } from "./profileBuilderTypes";
 import {
+  PROFILE_BUILDER_REGISTRY,
   createBuilderId,
   isContainerType,
   isValidUrlOrEmpty,
 } from "./componentRegistry";
+import {
+  RPC_CHILD_COMPONENT_TYPES,
+  RpcVisualTemplate,
+  isNodeRestrictedRpcForFree,
+  isRpcChildType,
+} from "./rpcTemplates";
 
 interface PropertiesPanelProps {
   canvas: BuilderCanvasSettings;
+  nodes?: BuilderNode[];
   selectedNode: BuilderNode | null;
   deviceMode: BuilderDeviceMode;
   isFounder?: boolean;
+  isPremiumOrAdmin?: boolean;
+  isAdmin?: boolean;
+  rpcTemplates?: RpcVisualTemplate[];
+  onApplyRpcTemplate?: (embedId: string, template: RpcVisualTemplate) => void;
+  onSaveRpcTemplate?: (payload: {
+    embedId: string;
+    name: string;
+    category: string;
+    description?: string;
+    isGlobal?: boolean;
+    isPremiumRequired?: boolean;
+  }) => Promise<boolean>;
+  onDeleteRpcTemplate?: (templateId: string) => Promise<void>;
+  onInsertChild?: (parentId: string, type: BuilderComponentType) => void;
+  onRestrictedFeature?: (reason: string) => void;
   onUpdateCanvas: (updates: Partial<BuilderCanvasSettings>) => void;
   onUpdateNode: (
     id: string,
@@ -77,8 +101,17 @@ function safeNum(val: string, fallback: number, min = 0, max = 9999): number {
 
 export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   canvas,
+  nodes = [],
   selectedNode,
   isFounder = false,
+  isPremiumOrAdmin = false,
+  isAdmin = false,
+  rpcTemplates = [],
+  onApplyRpcTemplate,
+  onSaveRpcTemplate,
+  onDeleteRpcTemplate,
+  onInsertChild,
+  onRestrictedFeature,
   onUpdateCanvas,
   onUpdateNode,
   onOpenMediaPicker,
@@ -91,6 +124,17 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const [videoSuccess, setVideoSuccess] = useState<string | null>(null);
   const [videoFileMeta, setVideoFileMeta] = useState<{ name: string; sizeBytes: number } | null>(null);
   const videoFileInputRef = useRef<HTMLInputElement>(null);
+
+  const [containerVideoUploading, setContainerVideoUploading] = useState(false);
+  const [containerVideoError, setContainerVideoError] = useState<string | null>(null);
+  const containerVideoInputRef = useRef<HTMLInputElement>(null);
+
+  const [tplCategoryFilter, setTplCategoryFilter] = useState<string>("all");
+  const [newTplName, setNewTplName] = useState("");
+  const [newTplCategory, setNewTplCategory] = useState("Gaming");
+  const [newTplIsGlobal, setNewTplIsGlobal] = useState(false);
+  const [newTplPremiumOnly, setNewTplPremiumOnly] = useState(true);
+  const [savingTpl, setSavingTpl] = useState(false);
 
   // 1. CANVAS LEVEL PROPERTIES
   if (!selectedNode || selectedNode.type === "background") {
@@ -572,6 +616,11 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   };
 
   const isContainer = isContainerType(selectedNode.type);
+  const isRpcParent = selectedNode.type === "custom-rpc-embed";
+  const isRpcChild = isRpcChildType(selectedNode.type);
+  const isFreeRpcChildLocked =
+    !isPremiumOrAdmin && (isRpcChild || isNodeRestrictedRpcForFree(selectedNode, nodes, isPremiumOrAdmin));
+  const isFreeRpcParentLocked = !isPremiumOrAdmin && isRpcParent;
   const isTextBased =
     selectedNode.type === "name-text" ||
     selectedNode.type === "subtitle" ||
@@ -580,6 +629,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     selectedNode.type === "banner-image" ||
     selectedNode.type === "profile-image" ||
     selectedNode.type === "image";
+
+  const transformDimensionLocked = selectedNode.locked || isFreeRpcChildLocked || isFreeRpcParentLocked;
+  const transformPositionLocked = selectedNode.locked || isFreeRpcChildLocked;
 
   return (
     <div
@@ -601,7 +653,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">W (px)</label>
             <input
               type="number"
-              disabled={selectedNode.locked}
+              disabled={transformDimensionLocked}
               value={Math.round(selectedNode.width)}
               onChange={(e) => {
                 const nextW = safeNum(e.target.value, selectedNode.width, 20, 4096);
@@ -620,7 +672,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">H (px)</label>
             <input
               type="number"
-              disabled={selectedNode.locked}
+              disabled={transformDimensionLocked}
               value={Math.round(selectedNode.height)}
               onChange={(e) => {
                 const nextH = safeNum(e.target.value, selectedNode.height, 8, 4096);
@@ -639,7 +691,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">X (px)</label>
             <input
               type="number"
-              disabled={selectedNode.locked}
+              disabled={transformPositionLocked}
               value={Math.round(selectedNode.x)}
               onChange={(e) =>
                 onUpdateNode(selectedNode.id, { x: safeNum(e.target.value, selectedNode.x, -2000, 4096) })
@@ -652,7 +704,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Y (px)</label>
             <input
               type="number"
-              disabled={selectedNode.locked}
+              disabled={transformPositionLocked}
               value={Math.round(selectedNode.y)}
               onChange={(e) =>
                 onUpdateNode(selectedNode.id, { y: safeNum(e.target.value, selectedNode.y, -2000, 4096) })
@@ -1144,6 +1196,460 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         </SectionGroup>
       )}
 
+      {/* Custom Rich Presence Parent Embed Controls */}
+      {isRpcParent && (
+        <SectionGroup title="Rich Presence Embed">
+          <div className="space-y-2.5">
+            <div className="px-2 py-1.5 rounded bg-[#111118] border border-[#23232f] text-[9px] text-neutral-400 leading-relaxed">
+              Website presentation container only. Visual themes and layout never alter your actual Discord Rich Presence.
+            </div>
+
+            {isFreeRpcParentLocked && (
+              <div
+                className="p-2 rounded-lg bg-amber-950/35 border border-amber-700/50 text-amber-200 text-[10px] space-y-1"
+                data-testid="rpc-free-upgrade-banner"
+              >
+                <div className="font-bold flex items-center gap-1">
+                  <Lock size={11} />
+                  <span>Free Plan Mode</span>
+                </div>
+                <p className="text-[9px] text-amber-200/80 leading-relaxed">
+                  You can display live activity and apply Free global templates. Upgrade to Premium to resize, customize backgrounds/videos, or arrange internal elements.
+                </p>
+              </div>
+            )}
+
+            <label className="flex items-center justify-between text-[10px] text-neutral-300 cursor-pointer">
+              <span>Sync Live Discord Activity</span>
+              <input
+                type="checkbox"
+                checked={selectedNode.config.useLiveRpc !== false}
+                disabled={isFreeRpcParentLocked}
+                onChange={(e) => patchConfig({ useLiveRpc: e.target.checked })}
+                className="accent-white cursor-pointer disabled:opacity-40"
+                data-testid="rpc-parent-live-toggle"
+              />
+            </label>
+
+            <div>
+              <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Offline Display Text</label>
+              <input
+                type="text"
+                disabled={isFreeRpcParentLocked}
+                value={selectedNode.config.rpcOfflineText ?? "Offline · No active session"}
+                onChange={(e) => patchConfig({ rpcOfflineText: e.target.value })}
+                className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none disabled:opacity-40"
+              />
+            </div>
+
+            {onInsertChild && (
+              <div className="space-y-1">
+                <div className="text-[9px] text-neutral-500 uppercase">Add RPC Child Element</div>
+                <div className="grid grid-cols-2 gap-1">
+                  {RPC_CHILD_COMPONENT_TYPES.map((childType) => (
+                    <button
+                      key={childType}
+                      type="button"
+                      onClick={() => {
+                        if (!isPremiumOrAdmin) {
+                          onRestrictedFeature?.("Adding custom Rich Presence children requires Premium.");
+                          return;
+                        }
+                        onInsertChild(selectedNode.id, childType);
+                      }}
+                      className={`px-2 py-1 rounded border text-[9px] text-left truncate transition-colors ${
+                        isPremiumOrAdmin
+                          ? "bg-[#13131a] hover:bg-[#1c1c26] border-[#262632] text-neutral-200 cursor-pointer"
+                          : "bg-[#101015] border-[#20202a] text-neutral-600 cursor-not-allowed"
+                      }`}
+                      data-testid={`rpc-quick-add-${childType}`}
+                    >
+                      + {PROFILE_BUILDER_REGISTRY[childType].label.replace(/^RPC\s+/, "")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* RPC Visual Templates */}
+            <div className="pt-2 border-t border-[#1b1b24] space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-neutral-200">RPC Templates</span>
+                <span className="text-[9px] text-neutral-500">{rpcTemplates.length}</span>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {["all", ...Array.from(new Set(rpcTemplates.map((t) => t.category)))].map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setTplCategoryFilter(cat)}
+                    className={`px-1.5 py-0.5 rounded text-[9px] uppercase cursor-pointer ${
+                      tplCategoryFilter === cat
+                        ? "bg-white text-black font-bold"
+                        : "bg-[#121218] text-neutral-400 border border-[#24242f]"
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+              <div className="space-y-1.5 max-h-44 overflow-y-auto custom-scrollbar pr-0.5">
+                {rpcTemplates
+                  .filter((t) => tplCategoryFilter === "all" || t.category === tplCategoryFilter)
+                  .map((tpl) => {
+                    const lockedTpl = !isPremiumOrAdmin && tpl.isPremiumRequired;
+                    const isActiveTpl = selectedNode.config.rpcTemplateId === tpl.id;
+                    const canDeleteTpl =
+                      onDeleteRpcTemplate &&
+                      !tpl.id.startsWith("rpc-tpl-") &&
+                      (isAdmin || !tpl.isGlobal);
+                    return (
+                      <div
+                        key={tpl.id}
+                        className={`p-2 rounded-lg border text-[10px] space-y-1 ${
+                          isActiveTpl
+                            ? "bg-[#171722] border-white/40"
+                            : "bg-[#111116] border-[#22222c]"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-semibold text-white truncate">{tpl.name}</span>
+                          <span
+                            className={`text-[8px] px-1 py-0.5 rounded uppercase shrink-0 ${
+                              tpl.isGlobal
+                                ? tpl.isPremiumRequired
+                                  ? "bg-amber-500/15 text-amber-300"
+                                  : "bg-emerald-500/15 text-emerald-300"
+                                : "bg-white/10 text-neutral-300"
+                            }`}
+                          >
+                            {tpl.isPremiumRequired ? "Premium" : "Free"}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-[9px] text-neutral-500 truncate">{tpl.category}</span>
+                          <div className="flex items-center gap-1">
+                            {canDeleteTpl && (
+                              <button
+                                type="button"
+                                onClick={() => void onDeleteRpcTemplate(tpl.id)}
+                                className="p-1 rounded text-neutral-500 hover:text-red-400 cursor-pointer"
+                                title="Delete saved template"
+                              >
+                                <Trash2 size={10} />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => onApplyRpcTemplate?.(selectedNode.id, tpl)}
+                              className={`px-2 py-0.5 rounded text-[9px] font-bold ${
+                                lockedTpl
+                                  ? "bg-amber-950/50 border border-amber-700/50 text-amber-200 cursor-pointer"
+                                  : "bg-white hover:bg-neutral-200 text-black cursor-pointer"
+                              }`}
+                              data-testid={`rpc-apply-tpl-${tpl.id}`}
+                            >
+                              {lockedTpl ? "Locked" : "Apply"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {onSaveRpcTemplate && isPremiumOrAdmin && (
+                <div className="pt-2 border-t border-[#1b1b24] space-y-1.5">
+                  <div className="text-[9px] text-neutral-400 uppercase font-semibold">
+                    {isAdmin ? "Save / Publish Official Template" : "Save Custom RPC Template"}
+                  </div>
+                  <input
+                    type="text"
+                    value={newTplName}
+                    onChange={(e) => setNewTplName(e.target.value)}
+                    placeholder="Template name..."
+                    className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                    data-testid="rpc-save-tpl-name"
+                  />
+                  <input
+                    type="text"
+                    value={newTplCategory}
+                    onChange={(e) => setNewTplCategory(e.target.value)}
+                    placeholder="Category (e.g. VALORANT, Minecraft)"
+                    className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                    data-testid="rpc-save-tpl-category"
+                  />
+                  {isAdmin && (
+                    <div className="space-y-1 pt-0.5">
+                      <label className="flex items-center justify-between text-[9px] text-neutral-300 cursor-pointer">
+                        <span>Publish Official Global Template</span>
+                        <input
+                          type="checkbox"
+                          checked={newTplIsGlobal}
+                          onChange={(e) => setNewTplIsGlobal(e.target.checked)}
+                          className="accent-white cursor-pointer"
+                          data-testid="rpc-save-tpl-global"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between text-[9px] text-neutral-300 cursor-pointer">
+                        <span>Require Premium Tier</span>
+                        <input
+                          type="checkbox"
+                          checked={newTplPremiumOnly}
+                          onChange={(e) => setNewTplPremiumOnly(e.target.checked)}
+                          className="accent-white cursor-pointer"
+                          data-testid="rpc-save-tpl-premium"
+                        />
+                      </label>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    disabled={savingTpl || !newTplName.trim()}
+                    onClick={async () => {
+                      setSavingTpl(true);
+                      const ok = await onSaveRpcTemplate({
+                        embedId: selectedNode.id,
+                        name: newTplName,
+                        category: newTplCategory || "Custom",
+                        isGlobal: isAdmin ? newTplIsGlobal : false,
+                        isPremiumRequired: isAdmin ? newTplPremiumOnly : true,
+                      });
+                      setSavingTpl(false);
+                      if (ok) setNewTplName("");
+                    }}
+                    className="w-full py-1.5 rounded bg-white hover:bg-neutral-200 text-black font-bold text-[10px] cursor-pointer disabled:opacity-40"
+                    data-testid="rpc-save-template-btn"
+                  >
+                    {savingTpl
+                      ? "Saving..."
+                      : isAdmin && newTplIsGlobal
+                        ? "Publish Official Template"
+                        : "Save As Template"}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </SectionGroup>
+      )}
+
+      {/* Rich Presence Child Element Inspector */}
+      {isRpcChild && (
+        <SectionGroup title="RPC Child Binding">
+          {isFreeRpcChildLocked ? (
+            <div
+              className="p-2 rounded-lg bg-amber-950/35 border border-amber-700/50 text-amber-200 text-[10px] space-y-1"
+              data-testid="rpc-child-locked-notice"
+            >
+              <div className="font-bold flex items-center gap-1">
+                <Lock size={11} />
+                <span>Premium Required</span>
+              </div>
+              <p className="text-[9px] text-amber-200/80 leading-relaxed">
+                Free accounts cannot modify, resize, or reposition child elements inside Custom RPC Embed.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              <div>
+                <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Data Source</label>
+                <div className="grid grid-cols-2 gap-1">
+                  {(["live", "custom"] as const).map((srcMode) => (
+                    <button
+                      key={srcMode}
+                      type="button"
+                      onClick={() => patchConfig({ rpcDataSource: srcMode })}
+                      className={`py-1 rounded border text-[10px] capitalize cursor-pointer ${
+                        (selectedNode.config.rpcDataSource || "live") === srcMode
+                          ? "bg-white text-black border-white font-bold"
+                          : "bg-[#121217] border-[#24242d] text-neutral-400"
+                      }`}
+                    >
+                      {srcMode === "live" ? "Live Discord" : "Website Custom"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {selectedNode.type === "rpc-icon" && (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onOpenMediaPicker(
+                        (url) => patchConfig({ largeImage: url, rpcDataSource: "custom" }),
+                        "Upload Custom Game Icon / GIF",
+                        selectedNode.config.largeImage || "",
+                        "rpc_icon"
+                      )
+                    }
+                    className="w-full py-1.5 rounded bg-[#14141b] hover:bg-[#1e1e28] border border-[#2a2a34] text-white text-[10px] font-semibold cursor-pointer"
+                  >
+                    Upload / Pick Thumbnail or GIF
+                  </button>
+                  <label className="flex items-center justify-between text-[10px] text-neutral-300 cursor-pointer">
+                    <span>Show Secondary Small Badge</span>
+                    <input
+                      type="checkbox"
+                      checked={selectedNode.config.rpcShowSecondaryBadge !== false}
+                      onChange={(e) => patchConfig({ rpcShowSecondaryBadge: e.target.checked })}
+                      className="accent-white cursor-pointer"
+                    />
+                  </label>
+                </div>
+              )}
+
+              {selectedNode.type === "rpc-achievement" && (
+                <div className="space-y-2">
+                  <label className="flex items-center justify-between text-[10px] text-neutral-300 cursor-pointer">
+                    <span>Decorative User Badge</span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selectedNode.config.rpcIsDecorative)}
+                      onChange={(e) => patchConfig({ rpcIsDecorative: e.target.checked })}
+                      className="accent-white cursor-pointer"
+                      data-testid="rpc-decorative-toggle"
+                    />
+                  </label>
+                  {selectedNode.config.rpcIsDecorative ? (
+                    <input
+                      type="text"
+                      value={selectedNode.config.rpcCustomLabel || ""}
+                      onChange={(e) => patchConfig({ rpcCustomLabel: e.target.value })}
+                      placeholder="Decorative badge label..."
+                      className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                      data-testid="rpc-decorative-label-input"
+                    />
+                  ) : (
+                    <p className="text-[9px] text-neutral-500">
+                      Only displays real synced streaks or stats when available.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {(selectedNode.type === "rpc-title" ||
+                selectedNode.type === "rpc-details" ||
+                selectedNode.type === "rpc-state" ||
+                selectedNode.type === "rpc-status" ||
+                selectedNode.type === "rpc-timestamp") && (
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={
+                      selectedNode.type === "rpc-title"
+                        ? selectedNode.config.appName || ""
+                        : selectedNode.type === "rpc-details"
+                          ? selectedNode.config.details || ""
+                          : selectedNode.type === "rpc-state"
+                            ? selectedNode.config.state || ""
+                            : selectedNode.type === "rpc-timestamp"
+                              ? selectedNode.config.startTimestampText || ""
+                              : selectedNode.config.rpcCustomLabel || ""
+                    }
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (selectedNode.type === "rpc-title") patchConfig({ appName: v });
+                      else if (selectedNode.type === "rpc-details") patchConfig({ details: v });
+                      else if (selectedNode.type === "rpc-state") patchConfig({ state: v });
+                      else if (selectedNode.type === "rpc-timestamp") patchConfig({ startTimestampText: v });
+                      else patchConfig({ rpcCustomLabel: v });
+                    }}
+                    placeholder="Custom website fallback / override text"
+                    className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Font Size</label>
+                      <input
+                        type="number"
+                        value={selectedNode.config.fontSize ?? 12}
+                        onChange={(e) => patchConfig({ fontSize: safeNum(e.target.value, 12, 8, 64) })}
+                        className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Color</label>
+                      <input
+                        type="color"
+                        value={selectedNode.config.color?.startsWith("#") ? selectedNode.config.color : "#ffffff"}
+                        onChange={(e) => patchConfig({ color: e.target.value })}
+                        className="w-full h-7 rounded border border-[#2e2e38] bg-transparent cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selectedNode.type === "rpc-buttons" && (
+                <div className="space-y-2">
+                  {(selectedNode.config.rpcButtons || []).map((btn, idx) => {
+                    const valid = isValidUrlOrEmpty(btn.url);
+                    return (
+                      <div key={btn.id} className="p-2 rounded bg-[#121217] border border-[#24242d] space-y-1.5">
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            value={btn.label}
+                            onChange={(e) => {
+                              const next = [...(selectedNode.config.rpcButtons || [])];
+                              next[idx] = { ...btn, label: e.target.value };
+                              patchConfig({ rpcButtons: next });
+                            }}
+                            placeholder="Button label"
+                            className="flex-1 bg-[#0b0b0f] border border-[#24242d] rounded px-1.5 py-0.5 text-[10px] text-white outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = (selectedNode.config.rpcButtons || []).filter((_, i) => i !== idx);
+                              patchConfig({ rpcButtons: next });
+                            }}
+                            className="text-neutral-500 hover:text-red-400 cursor-pointer"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          value={btn.url}
+                          onChange={(e) => {
+                            const next = [...(selectedNode.config.rpcButtons || [])];
+                            next[idx] = { ...btn, url: e.target.value };
+                            patchConfig({ rpcButtons: next });
+                          }}
+                          placeholder="https://..."
+                          className={`w-full bg-[#0b0b0f] border rounded px-1.5 py-0.5 text-[10px] text-white outline-none ${
+                            valid ? "border-[#24242d]" : "border-red-500"
+                          }`}
+                        />
+                      </div>
+                    );
+                  })}
+                  {(selectedNode.config.rpcButtons || []).length < 2 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        patchConfig({
+                          rpcButtons: [
+                            ...(selectedNode.config.rpcButtons || []),
+                            { id: createBuilderId("rpc-btn"), label: "Open Link", url: "https://pixel.gg", variant: "primary" },
+                          ],
+                        })
+                      }
+                      className="w-full py-1 rounded bg-[#14141b] border border-[#282832] text-white text-[10px] cursor-pointer"
+                    >
+                      + Add RPC Button
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </SectionGroup>
+      )}
+
       {/* Custom RPC Editor */}
       {selectedNode.type === "custom-rpc" && (
         <SectionGroup title="Discord Rich Presence">
@@ -1361,22 +1867,200 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         selectedNode.type === "custom-component" ||
         selectedNode.type === "heart-like") && (
         <SectionGroup title="Background">
+          {isContainer && (
+            <div className="space-y-2 pb-1">
+              <div className="grid grid-cols-4 gap-1">
+                {(["solid", "gradient", "image", "video"] as const).map((bgMode) => {
+                  const lockedBgMode =
+                    !isPremiumOrAdmin && (isRpcParent || bgMode === "video");
+                  return (
+                    <button
+                      key={bgMode}
+                      type="button"
+                      onClick={() => {
+                        if (lockedBgMode) {
+                          onRestrictedFeature?.(
+                            "Custom container backgrounds, GIFs, gradients, and videos require Premium."
+                          );
+                          return;
+                        }
+                        patchStyle({ backgroundType: bgMode });
+                      }}
+                      className={`py-1 rounded border text-[9px] capitalize ${
+                        (selectedNode.style.backgroundType || "solid") === bgMode
+                          ? "bg-white text-black border-white font-bold"
+                          : lockedBgMode
+                            ? "bg-[#101014] border-[#202028] text-neutral-600 cursor-not-allowed"
+                            : "bg-[#121217] border-[#24242d] text-neutral-400 cursor-pointer"
+                      }`}
+                      data-testid={`container-bg-mode-${bgMode}`}
+                    >
+                      {bgMode === "image" ? "Img/GIF" : bgMode}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {selectedNode.style.backgroundType === "gradient" && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Gradient To</label>
+                    <input
+                      type="color"
+                      disabled={isFreeRpcParentLocked}
+                      value={selectedNode.style.backgroundGradientTo || "#1a1a28"}
+                      onChange={(e) => patchStyle({ backgroundGradientTo: e.target.value })}
+                      className="w-full h-7 rounded border border-[#2e2e38] bg-transparent cursor-pointer"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Angle</label>
+                    <input
+                      type="number"
+                      disabled={isFreeRpcParentLocked}
+                      value={selectedNode.style.backgroundGradientAngle ?? 135}
+                      onChange={(e) =>
+                        patchStyle({ backgroundGradientAngle: safeNum(e.target.value, 135, 0, 360) })
+                      }
+                      className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {selectedNode.style.backgroundType === "image" && (
+                <div className="space-y-1.5">
+                  <button
+                    type="button"
+                    disabled={isFreeRpcParentLocked}
+                    onClick={() =>
+                      onOpenMediaPicker(
+                        (url) => patchStyle({ backgroundType: "image", backgroundImage: url }),
+                        `Upload ${selectedNode.name} Image / GIF`,
+                        selectedNode.style.backgroundImage || "",
+                        isRpcParent ? "rpc_bg" : "container_bg"
+                      )
+                    }
+                    className="w-full py-1.5 rounded bg-[#14141b] hover:bg-[#1e1e28] border border-[#2a2a34] text-white text-[10px] font-semibold cursor-pointer disabled:opacity-40"
+                    data-testid="container-bg-image-picker-btn"
+                  >
+                    Upload / Pick Image or GIF
+                  </button>
+                  <input
+                    type="text"
+                    disabled={isFreeRpcParentLocked}
+                    value={selectedNode.style.backgroundImage || ""}
+                    onChange={(e) => patchStyle({ backgroundImage: e.target.value })}
+                    placeholder="https://.../bg.gif or .png"
+                    className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                  />
+                </div>
+              )}
+
+              {selectedNode.style.backgroundType === "video" && (
+                <div className="space-y-1.5">
+                  <input
+                    ref={containerVideoInputRef}
+                    type="file"
+                    accept="video/mp4,video/webm"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (!isPremiumOrAdmin) {
+                        onRestrictedFeature?.("Container video backgrounds require Premium.");
+                        return;
+                      }
+                      setContainerVideoError(null);
+                      const validErr = validateUploadFile(file, "video", { unlimitedSize: isFounder });
+                      if (validErr) {
+                        setContainerVideoError(validErr);
+                        return;
+                      }
+                      setContainerVideoUploading(true);
+                      try {
+                        const uploaded = await uploadMediaAsset({
+                          file,
+                          targetSlot: "container_background_video",
+                          kind: "video",
+                          unlimitedSize: isFounder,
+                        });
+                        patchStyle({ backgroundType: "video", backgroundVideo: uploaded.url });
+                      } catch (err: unknown) {
+                        setContainerVideoError(err instanceof Error ? err.message : "Video upload failed.");
+                      } finally {
+                        setContainerVideoUploading(false);
+                        if (containerVideoInputRef.current) containerVideoInputRef.current.value = "";
+                      }
+                    }}
+                  />
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={containerVideoUploading || !isPremiumOrAdmin}
+                      onClick={() => containerVideoInputRef.current?.click()}
+                      className="flex-1 py-1.5 rounded bg-[#14141b] hover:bg-[#1e1e28] border border-[#2a2a34] text-white text-[10px] font-semibold flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40"
+                      data-testid="container-bg-video-upload-btn"
+                    >
+                      {containerVideoUploading ? <Loader2 size={11} className="animate-spin" /> : <Film size={11} />}
+                      <span>{containerVideoUploading ? "Uploading..." : "Upload MP4/WebM"}</span>
+                    </button>
+                    {selectedNode.style.backgroundVideo && (
+                      <button
+                        type="button"
+                        onClick={() => patchStyle({ backgroundVideo: "", backgroundType: "solid" })}
+                        className="p-1.5 rounded bg-[#14141b] border border-[#2a2a34] text-neutral-400 hover:text-red-400 cursor-pointer"
+                        title="Remove container video"
+                        data-testid="container-bg-video-remove-btn"
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    disabled={!isPremiumOrAdmin}
+                    value={selectedNode.style.backgroundVideo || ""}
+                    onChange={(e) => patchStyle({ backgroundVideo: e.target.value })}
+                    placeholder="https://.../loop.mp4"
+                    className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                    data-testid="container-bg-video-url"
+                  />
+                  <label className="flex items-center justify-between text-[10px] text-neutral-300 cursor-pointer">
+                    <span>Mute Container Video</span>
+                    <input
+                      type="checkbox"
+                      checked={selectedNode.style.backgroundVideoMuted !== false}
+                      onChange={(e) => patchStyle({ backgroundVideoMuted: e.target.checked })}
+                      className="accent-white cursor-pointer"
+                    />
+                  </label>
+                  {containerVideoError && (
+                    <div className="text-[9px] text-red-400">{containerVideoError}</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center gap-2">
             <input
               type="color"
+              disabled={isFreeRpcParentLocked}
               value={
                 selectedNode.style.backgroundColor?.startsWith("#")
                   ? selectedNode.style.backgroundColor
                   : "#0b0b0e"
               }
               onChange={(e) => patchStyle({ backgroundColor: e.target.value })}
-              className="w-7 h-7 rounded border border-[#2e2e38] bg-transparent cursor-pointer"
+              className="w-7 h-7 rounded border border-[#2e2e38] bg-transparent cursor-pointer disabled:opacity-40"
             />
             <input
               type="text"
+              disabled={isFreeRpcParentLocked}
               value={selectedNode.style.backgroundColor || "#0b0b0e"}
               onChange={(e) => patchStyle({ backgroundColor: e.target.value })}
-              className="flex-1 bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+              className="flex-1 bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none disabled:opacity-40"
             />
           </div>
           <div>
@@ -1386,11 +2070,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             </div>
             <input
               type="range"
+              disabled={isFreeRpcParentLocked}
               min={0}
               max={100}
               value={Math.round((selectedNode.style.backgroundOpacity ?? 0.92) * 100)}
               onChange={(e) => patchStyle({ backgroundOpacity: Number(e.target.value) / 100 })}
-              className="w-full accent-white"
+              className="w-full accent-white disabled:opacity-40"
             />
           </div>
         </SectionGroup>

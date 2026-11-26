@@ -3,9 +3,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   Activity,
+  Award,
   BadgeCheck,
+  Clock,
   Code2,
   Crown,
+  ExternalLink,
   Flame,
   Gamepad2,
   Heart,
@@ -51,11 +54,29 @@ export interface ProfileLiveActivityData {
   discordPresence?: {
     hasActivity?: boolean;
     status?: string | null;
+    type?: number | string | null;
+    activityType?: number | string | null;
     appName?: string | null;
+    name?: string | null;
     details?: string | null;
     state?: string | null;
     largeImage?: string | null;
     smallImage?: string | null;
+    timestamps?: {
+      start?: number | null;
+      end?: number | null;
+    } | null;
+    startTimestamp?: string | number | null;
+    endTimestamp?: string | number | null;
+    party?: {
+      size: [number, number];
+    } | null;
+    partySize?: number | null;
+    partyMax?: number | null;
+    buttons?: Array<{ label: string; url: string }> | null;
+    streaks?: Array<Record<string, unknown>> | null;
+    statistics?: Array<Record<string, unknown>> | null;
+    statusLabels?: Array<Record<string, unknown>> | null;
   } | null;
 }
 
@@ -188,10 +209,24 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
   const publicStageHostRef = useRef<HTMLDivElement>(null);
   const bgVideoRef = useRef<HTMLVideoElement>(null);
   const [videoMuted, setVideoMuted] = useState<boolean>(initialVideoMuted);
+  const [rpcNowMs, setRpcNowMs] = useState<number>(() => Date.now());
   const [measuredHostSize, setMeasuredHostSize] = useState<{ width: number; height: number }>({
     width: 1280,
     height: 720,
   });
+
+  const rpcStartRaw =
+    liveData?.discordPresence?.timestamps?.start ?? liveData?.discordPresence?.startTimestamp ?? null;
+  const rpcEndRaw =
+    liveData?.discordPresence?.timestamps?.end ?? liveData?.discordPresence?.endTimestamp ?? null;
+
+  useEffect(() => {
+    if (!rpcStartRaw && !rpcEndRaw) return;
+    const tick = setInterval(() => {
+      setRpcNowMs(Date.now());
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [rpcStartRaw, rpcEndRaw]);
 
   useEffect(() => {
     setVideoMuted(initialVideoMuted);
@@ -380,6 +415,28 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
         );
       });
 
+      const containerBgVideo =
+        node.style.backgroundType === "video" &&
+        typeof node.style.backgroundVideo === "string" &&
+        node.style.backgroundVideo.trim() &&
+        !/^\d+$/.test(node.style.backgroundVideo.trim())
+          ? node.style.backgroundVideo.trim()
+          : "";
+
+      const renderContainerVideoBg = () =>
+        containerBgVideo ? (
+          <video
+            key={containerBgVideo}
+            src={containerBgVideo}
+            autoPlay
+            loop
+            muted={node.style.backgroundVideoMuted !== false}
+            playsInline
+            data-testid={`container-bg-video-${node.id}`}
+            className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none z-0"
+          />
+        ) : null;
+
       const containerSurfaceStyle: React.CSSProperties = {
         background: bgFill,
         backgroundImage:
@@ -410,6 +467,7 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               alignItems: "stretch",
             }}
           >
+            {renderContainerVideoBg()}
             {childrenNodes.length === 0 ? (
               <div className="col-span-full flex flex-col items-center justify-center text-neutral-500 text-[11px] font-mono border border-dashed border-[#272730] rounded-lg p-3">
                 <ImageIcon size={16} className="mb-1 opacity-60" />
@@ -455,6 +513,7 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               flexWrap: isRow ? "wrap" : undefined,
             }}
           >
+            {renderContainerVideoBg()}
             {renderedChildren}
           </div>
         );
@@ -465,7 +524,9 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           className="w-full h-full relative"
           style={containerSurfaceStyle}
           data-testid={`builder-container-${node.id}`}
+          data-rpc-embed={node.type === "custom-rpc-embed" ? "true" : undefined}
         >
+          {renderContainerVideoBg()}
           {childrenNodes.length === 0 && (
             <div className="w-full h-full flex flex-col items-center justify-center text-center p-3 pointer-events-none select-none">
               <span className="text-[11px] font-mono uppercase tracking-wider text-neutral-300 font-bold">
@@ -1115,6 +1176,406 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
             className="w-full h-full px-3 flex items-center justify-center text-white/80 backdrop-blur-sm text-[11px] tracking-wide font-mono truncate select-none"
           >
             {claimLabel}
+          </div>
+        );
+      }
+
+      case "rpc-icon":
+      case "rpc-status":
+      case "rpc-title":
+      case "rpc-details":
+      case "rpc-state":
+      case "rpc-timestamp":
+      case "rpc-achievement":
+      case "rpc-buttons": {
+        const live = liveData?.discordPresence || null;
+        const parentEmbed = node.parentId ? nodes.find((p) => p.id === node.parentId) : null;
+        const useLive =
+          node.config.rpcDataSource !== "custom" &&
+          node.config.useLiveRpc !== false &&
+          parentEmbed?.config?.useLiveRpc !== false;
+        const liveIsOnline = Boolean(
+          live && live.status !== "offline" && (live.hasActivity || live.appName || live.name || live.details)
+        );
+        const activeLive = useLive && liveIsOnline ? live : null;
+        const isOfflineLive = Boolean(useLive && (!live || live.status === "offline" || !live.hasActivity));
+
+        if (node.type === "rpc-icon") {
+          const largeSrc = activeLive
+            ? activeLive.largeImage || node.config.largeImage || node.config.src
+            : isOfflineLive && !isInteractive
+              ? ""
+              : node.config.largeImage || node.config.src;
+          const smallSrc = activeLive
+            ? activeLive.smallImage || node.config.appIcon
+            : isOfflineLive && !isInteractive
+              ? ""
+              : node.config.appIcon;
+          const radius = node.style.borderRadius ?? 12;
+
+          return (
+            <div
+              className="w-full h-full relative overflow-visible select-none"
+              data-testid={`rpc-child-${node.type}`}
+            >
+              <div
+                className="w-full h-full overflow-hidden flex items-center justify-center bg-[#17171f]"
+                style={{
+                  borderRadius: `${radius}px`,
+                  borderWidth: `${node.style.borderWidth ?? 1}px`,
+                  borderStyle: node.style.borderStyle || "solid",
+                  borderColor: node.style.borderColor || "#2a2a35",
+                  backgroundColor: node.style.backgroundColor || "#17171f",
+                }}
+              >
+                {largeSrc ? (
+                  <img
+                    src={largeSrc}
+                    alt={activeLive?.appName || node.name}
+                    className="w-full h-full object-cover pointer-events-none"
+                    draggable={false}
+                  />
+                ) : (
+                  <Gamepad2 size={Math.max(18, Math.round(Math.min(node.width, node.height) * 0.42))} className="text-neutral-500" />
+                )}
+              </div>
+              {node.config.rpcShowSecondaryBadge !== false && smallSrc && (
+                <div className="absolute -right-1 -bottom-1 w-6 h-6 rounded-full border-2 border-[#111116] bg-[#18181f] overflow-hidden shadow-md">
+                  <img
+                    src={smallSrc}
+                    alt="Badge"
+                    className="w-full h-full object-cover pointer-events-none"
+                    draggable={false}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        if (node.type === "rpc-status") {
+          const rawType = activeLive?.type ?? activeLive?.activityType ?? 0;
+          const numType =
+            typeof rawType === "number"
+              ? rawType
+              : rawType === "streaming"
+                ? 1
+                : rawType === "listening"
+                  ? 2
+                  : rawType === "watching"
+                    ? 3
+                    : rawType === "competing"
+                      ? 5
+                      : 0;
+          const statusLabel = activeLive
+            ? numType === 1
+              ? "STREAMING LIVE"
+              : numType === 2
+                ? "LISTENING"
+                : numType === 3
+                  ? "WATCHING"
+                  : numType === 5
+                    ? "COMPETING"
+                    : "PLAYING A GAME"
+            : isOfflineLive
+              ? live?.status === "online" || live?.status === "idle" || live?.status === "dnd"
+                ? `${live.status.toUpperCase()} · IDLE`
+                : "OFFLINE"
+              : node.config.rpcCustomLabel || "DISCORD RPC";
+          const dotColor = activeLive
+            ? "#22c55e"
+            : live?.status === "dnd"
+              ? "#ef4444"
+              : live?.status === "idle"
+                ? "#f59e0b"
+                : useLive
+                  ? "#71717a"
+                  : node.config.accentColor || "#22c55e";
+
+          return (
+            <div
+              className="w-full h-full flex items-center gap-1.5 overflow-hidden select-none uppercase tracking-wider truncate"
+              data-testid={`rpc-child-${node.type}`}
+              style={{
+                fontFamily: node.config.fontFamily || "JetBrains Mono, monospace",
+                fontSize: `${node.config.fontSize ?? 10}px`,
+                fontWeight: node.config.fontWeight ?? 700,
+                color: node.config.color || "#a1a1aa",
+              }}
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full shrink-0"
+                style={{ backgroundColor: dotColor }}
+              />
+              <span className="truncate">{statusLabel}</span>
+            </div>
+          );
+        }
+
+        if (node.type === "rpc-title") {
+          const textVal = activeLive
+            ? activeLive.appName || activeLive.name || "Active Application"
+            : isOfflineLive
+              ? parentEmbed?.config?.rpcOfflineText || (isInteractive ? "Offline · No Active Game" : "Offline")
+              : node.config.text || node.config.appName || "Active Application";
+          return (
+            <div
+              className="w-full h-full flex items-center overflow-hidden truncate select-none"
+              data-testid={`rpc-child-${node.type}`}
+              style={{
+                fontFamily: node.config.fontFamily || "Space Grotesk, sans-serif",
+                fontSize: `${node.config.fontSize ?? 15}px`,
+                fontWeight: node.config.fontWeight ?? 700,
+                color: isOfflineLive && !isInteractive ? "#71717a" : node.config.color || "#ffffff",
+                justifyContent:
+                  node.config.textAlign === "center"
+                    ? "center"
+                    : node.config.textAlign === "right"
+                      ? "flex-end"
+                      : "flex-start",
+              }}
+            >
+              <span className="truncate">{textVal}</span>
+            </div>
+          );
+        }
+
+        if (node.type === "rpc-details") {
+          const textVal = activeLive
+            ? activeLive.details || ""
+            : isOfflineLive
+              ? isInteractive
+                ? "Discord is disconnected or idle"
+                : ""
+              : node.config.text || node.config.details || "";
+          return (
+            <div
+              className="w-full h-full flex items-center overflow-hidden truncate select-none"
+              data-testid={`rpc-child-${node.type}`}
+              style={{
+                fontFamily: node.config.fontFamily || "Inter, sans-serif",
+                fontSize: `${node.config.fontSize ?? 12}px`,
+                fontWeight: node.config.fontWeight ?? 500,
+                color: node.config.color || "#d4d4d8",
+                justifyContent:
+                  node.config.textAlign === "center"
+                    ? "center"
+                    : node.config.textAlign === "right"
+                      ? "flex-end"
+                      : "flex-start",
+              }}
+            >
+              <span className="truncate">{textVal}</span>
+            </div>
+          );
+        }
+
+        if (node.type === "rpc-state") {
+          const partyArr = activeLive?.party?.size;
+          const partyText =
+            Array.isArray(partyArr) && partyArr.length >= 2
+              ? ` (${partyArr[0]} of ${partyArr[1]})`
+              : activeLive?.partySize && activeLive?.partyMax
+                ? ` (${activeLive.partySize} of ${activeLive.partyMax})`
+                : "";
+          const baseState = activeLive
+            ? activeLive.state || ""
+            : isOfflineLive
+              ? isInteractive
+                ? "Launch any game or PixelRPC to sync"
+                : ""
+              : node.config.text || node.config.state || "";
+          const textVal = baseState ? `${baseState}${partyText}` : partyText.trim();
+          return (
+            <div
+              className="w-full h-full flex items-center overflow-hidden truncate select-none"
+              data-testid={`rpc-child-${node.type}`}
+              style={{
+                fontFamily: node.config.fontFamily || "JetBrains Mono, monospace",
+                fontSize: `${node.config.fontSize ?? 11}px`,
+                fontWeight: node.config.fontWeight ?? 500,
+                color: node.config.color || "#a1a1aa",
+                justifyContent:
+                  node.config.textAlign === "center"
+                    ? "center"
+                    : node.config.textAlign === "right"
+                      ? "flex-end"
+                      : "flex-start",
+              }}
+            >
+              <span className="truncate">{textVal}</span>
+            </div>
+          );
+        }
+
+        if (node.type === "rpc-timestamp") {
+          let timerLabel = "";
+          if (activeLive) {
+            const rawStart = activeLive.timestamps?.start ?? activeLive.startTimestamp;
+            const rawEnd = activeLive.timestamps?.end ?? activeLive.endTimestamp;
+            const startMs =
+              typeof rawStart === "number"
+                ? rawStart
+                : typeof rawStart === "string" && rawStart
+                  ? Date.parse(rawStart)
+                  : NaN;
+            const endMs =
+              typeof rawEnd === "number"
+                ? rawEnd
+                : typeof rawEnd === "string" && rawEnd
+                  ? Date.parse(rawEnd)
+                  : NaN;
+
+            const fmtSec = (secTotal: number) => {
+              const s = Math.max(0, Math.floor(secTotal));
+              const h = Math.floor(s / 3600);
+              const m = Math.floor((s % 3600) / 60);
+              const rem = s % 60;
+              return h > 0
+                ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(rem).padStart(2, "0")}`
+                : `${String(m).padStart(2, "0")}:${String(rem).padStart(2, "0")}`;
+            };
+
+            if (Number.isFinite(endMs) && endMs > rpcNowMs) {
+              timerLabel = `${fmtSec((endMs - rpcNowMs) / 1000)} left`;
+            } else if (Number.isFinite(startMs) && startMs > 0) {
+              timerLabel = `${fmtSec((rpcNowMs - startMs) / 1000)} elapsed`;
+            }
+          } else if (!isOfflineLive) {
+            timerLabel = node.config.startTimestampText || "00:00 elapsed";
+          } else if (isInteractive) {
+            timerLabel = "--:--";
+          }
+
+          return (
+            <div
+              className="w-full h-full flex items-center gap-1 overflow-hidden tabular-nums truncate select-none"
+              data-testid={`rpc-child-${node.type}`}
+              style={{
+                fontFamily: node.config.fontFamily || "JetBrains Mono, monospace",
+                fontSize: `${node.config.fontSize ?? 10}px`,
+                fontWeight: node.config.fontWeight ?? 600,
+                color: node.config.color || "#a1a1aa",
+                justifyContent:
+                  node.config.textAlign === "left"
+                    ? "flex-start"
+                    : node.config.textAlign === "center"
+                      ? "center"
+                      : "flex-end",
+              }}
+            >
+              {timerLabel && <Clock size={10} className="shrink-0 opacity-70" />}
+              <span className="truncate">{timerLabel}</span>
+            </div>
+          );
+        }
+
+        if (node.type === "rpc-achievement") {
+          const isDecorative = Boolean(node.config.rpcIsDecorative);
+          let syncedValue = "";
+          if (!isDecorative && activeLive) {
+            const streaks = Array.isArray(activeLive.streaks) ? activeLive.streaks : [];
+            const stats = Array.isArray(activeLive.statistics) ? activeLive.statistics : [];
+            const enabledStreak = streaks.find((s) => s && s.enabled !== false && (s.value || s.label));
+            const enabledStat = stats.find((s) => s && s.enabled !== false && (s.value || s.label));
+            if (enabledStreak) {
+              syncedValue = `${String(enabledStreak.label || "Streak")}: ${String(enabledStreak.value || "")}`.trim();
+            } else if (enabledStat) {
+              syncedValue = `${String(enabledStat.label || "Stat")}: ${String(enabledStat.value || "")}`.trim();
+            }
+          }
+
+          const displayLabel = isDecorative
+            ? node.config.rpcCustomLabel || node.config.rpcAchievementLabel || "Custom Badge"
+            : syncedValue;
+
+          if (!displayLabel && !isInteractive) {
+            return null;
+          }
+
+          return (
+            <div
+              className="w-full h-full px-2 flex items-center gap-1.5 overflow-hidden select-none"
+              data-testid={`rpc-child-${node.type}`}
+              data-rpc-decorative={isDecorative ? "true" : "false"}
+              style={{
+                backgroundColor: node.style.backgroundColor || "#17171f",
+                borderColor: node.style.borderColor || "#292934",
+                borderWidth: `${node.style.borderWidth ?? 1}px`,
+                borderStyle: "solid",
+                borderRadius: `${node.style.borderRadius ?? 8}px`,
+                fontFamily: node.config.fontFamily || "JetBrains Mono, monospace",
+                fontSize: `${node.config.fontSize ?? 10}px`,
+                fontWeight: node.config.fontWeight ?? 600,
+                color: displayLabel ? node.config.color || "#e4e4e7" : "#71717a",
+              }}
+            >
+              <Award size={11} className="shrink-0 opacity-80" />
+              <span className="truncate flex-1">
+                {displayLabel || "No synced achievement/streak"}
+              </span>
+              {isDecorative && (
+                <span className="text-[8px] px-1 py-0.5 rounded bg-white/10 text-neutral-300 uppercase shrink-0">
+                  Custom
+                </span>
+              )}
+            </div>
+          );
+        }
+
+        // rpc-buttons (website-only action buttons; never mutates actual Discord RPC)
+        const configuredBtns = Array.isArray(node.config.rpcButtons) ? node.config.rpcButtons : [];
+        const liveBtns =
+          useLive && Array.isArray(activeLive?.buttons) && activeLive!.buttons!.length > 0
+            ? activeLive!.buttons!.map((b, i) => ({
+                id: `live-btn-${i}`,
+                label: b.label,
+                url: b.url,
+              }))
+            : [];
+        const buttonsToRender = liveBtns.length > 0 ? liveBtns : configuredBtns;
+
+        if (buttonsToRender.length === 0 && !isInteractive) {
+          return null;
+        }
+
+        return (
+          <div
+            className="w-full h-full flex items-center gap-1.5 overflow-hidden select-none"
+            data-testid={`rpc-child-${node.type}`}
+          >
+            {buttonsToRender.length === 0 ? (
+              <div className="w-full h-full rounded-md border border-dashed border-white/15 flex items-center justify-center text-[9px] text-neutral-500">
+                No RPC buttons
+              </div>
+            ) : (
+              buttonsToRender.slice(0, 2).map((btn) => {
+                const href = sanitizeExternalUrl(btn.url) || "/";
+                if (!isInteractive) {
+                  return (
+                    <a
+                      key={btn.id}
+                      href={href}
+                      target={href.startsWith("http") ? "_blank" : undefined}
+                      rel={href.startsWith("http") ? "noopener noreferrer" : undefined}
+                      className="flex-1 h-full px-2 rounded-md bg-white/10 hover:bg-white/20 border border-white/15 text-[10px] font-semibold text-white flex items-center justify-center gap-1 truncate transition-colors"
+                    >
+                      <span className="truncate">{btn.label || "Link"}</span>
+                      <ExternalLink size={9} className="shrink-0 opacity-75" />
+                    </a>
+                  );
+                }
+                return (
+                  <div
+                    key={btn.id}
+                    className="flex-1 h-full px-2 rounded-md bg-white/10 border border-white/15 text-[10px] font-semibold text-white flex items-center justify-center gap-1 truncate"
+                  >
+                    <span className="truncate">{btn.label || "Link"}</span>
+                    <ExternalLink size={9} className="shrink-0 opacity-75" />
+                  </div>
+                );
+              })
+            )}
           </div>
         );
       }

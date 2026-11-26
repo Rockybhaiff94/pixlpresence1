@@ -74,6 +74,7 @@ function collectFromBuilderDoc(doc: any, set: Set<string>) {
       if (!node || typeof node !== 'object') continue;
       if (node.style && typeof node.style === 'object') {
         addAssetRef(set, node.style.backgroundImage);
+        addAssetRef(set, node.style.backgroundVideo);
       }
       if (node.config && typeof node.config === 'object') {
         addAssetRef(set, node.config.src);

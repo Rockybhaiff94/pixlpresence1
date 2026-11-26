@@ -247,13 +247,35 @@ profileRouter.get('/u/:username', async (req: any, res) => {
 
     // Retrieve fresh live presence from central manager / Discord
     const livePresence = await presenceManager.getLivePresenceForUser(user as any);
+    let rpcExtras: { streaks?: any[]; statistics?: any[]; statusLabels?: any[] } | null = null;
+    if (rawRpc && rawRpc.showProfileRpc !== false && (rawRpc as any).customConfig) {
+      try {
+        const parsedCustom = JSON.parse((rawRpc as any).customConfig);
+        if (parsedCustom && typeof parsedCustom === 'object') {
+          rpcExtras = {
+            streaks: Array.isArray(parsedCustom.streaks) ? parsedCustom.streaks : [],
+            statistics: Array.isArray(parsedCustom.statistics) ? parsedCustom.statistics : [],
+            statusLabels: Array.isArray(parsedCustom.statusLabels) ? parsedCustom.statusLabels : [],
+          };
+        }
+      } catch {
+        // ignore invalid customConfig
+      }
+    }
+
     if (livePresence.hasActivity && livePresence.activity) {
-      safeRpc = livePresence.activity;
+      safeRpc = {
+        ...livePresence.activity,
+        ...(rpcExtras || {}),
+      };
     } else if (livePresence.status === 'offline' || !livePresence.hasActivity) {
       // If user is offline or has no live activity, do NOT serve a stale game snapshot
       if (rawRpc && rawRpc.showProfileRpc !== false && rawRpc.enableDiscordRpc === false) {
         // Only retain custom manual presence if explicitly configured as static custom presence
-        safeRpc = rawRpc;
+        safeRpc = {
+          ...rawRpc,
+          ...(rpcExtras || {}),
+        };
       } else {
         safeRpc = null;
       }
@@ -783,6 +805,8 @@ function containsUnsafeAssetUrls(obj: any): string | null {
         }
         const bgErr = inspectValue(node.style?.backgroundImage, `${node.id}.backgroundImage`);
         if (bgErr) return bgErr;
+        const bgVidErr = inspectValue(node.style?.backgroundVideo, `${node.id}.backgroundVideo`);
+        if (bgVidErr) return bgVidErr;
       }
     }
     return null;
@@ -864,7 +888,44 @@ profileRouter.patch('/me', requireAuth, async (req: any, res) => {
           // ignore
         }
       }
-      const capValidation = validateProfileCapabilities(parsedCfg, caps);
+      let permittedGlobalRpcTemplates: Array<{
+        id: string;
+        parentWidth?: number;
+        parentHeight?: number;
+        children?: Array<{ type: string; x: number; y: number; width: number; height: number }>;
+      }> = [];
+      if (!caps.allowCustomRpcLayout && parsedCfg && typeof parsedCfg === 'object') {
+        const hasCustomRpcEmbed =
+          (Array.isArray(parsedCfg.draftProfileBuilder?.nodes) &&
+            parsedCfg.draftProfileBuilder.nodes.some((n: any) => n?.type === 'custom-rpc-embed')) ||
+          (Array.isArray(parsedCfg.profileBuilder?.nodes) &&
+            parsedCfg.profileBuilder.nodes.some((n: any) => n?.type === 'custom-rpc-embed'));
+        if (hasCustomRpcEmbed) {
+          const globalTemplates = await prisma.activityTemplate.findMany({
+            where: { isGlobal: true },
+          });
+          permittedGlobalRpcTemplates = globalTemplates
+            .map((tpl) => {
+              try {
+                const parsed = JSON.parse(tpl.config);
+                if (parsed?.templateType !== 'rpc-embed-v2' || parsed?.isPremiumRequired !== false) {
+                  return null;
+                }
+                return {
+                  id: tpl.id,
+                  parentWidth: parsed.parentWidth,
+                  parentHeight: parsed.parentHeight,
+                  children: Array.isArray(parsed.children) ? parsed.children : undefined,
+                };
+              } catch {
+                return null;
+              }
+            })
+            .filter(Boolean) as typeof permittedGlobalRpcTemplates;
+        }
+      }
+
+      const capValidation = validateProfileCapabilities(parsedCfg, caps, permittedGlobalRpcTemplates);
       if (!capValidation.valid) {
         return res.status(403).json({ error: capValidation.error });
       }

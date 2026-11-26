@@ -169,11 +169,14 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
       lastUpdatedRef.current = data.updatedAt || Date.now();
 
       if (data.hasActivity && data.activity && data.status !== "offline") {
-        setLivePresence({
+        setLivePresence((prev: any) => ({
           ...data.activity,
+          streaks: data.activity.streaks ?? prev?.streaks ?? discordPresence?.streaks,
+          statistics: data.activity.statistics ?? prev?.statistics ?? discordPresence?.statistics,
+          statusLabels: data.activity.statusLabels ?? prev?.statusLabels ?? discordPresence?.statusLabels,
           status: data.status,
           hasActivity: true,
-        });
+        }));
       } else {
         // User closed game, went offline, or is idle without activity
         setLivePresence({
@@ -187,6 +190,10 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
           timestamps: null,
           startTimestamp: null,
           endTimestamp: null,
+          party: null,
+          buttons: null,
+          streaks: null,
+          statistics: null,
         });
       }
     };

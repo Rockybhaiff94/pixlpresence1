@@ -98,12 +98,146 @@ export function getUserCapabilities(user: {
   };
 }
 
+export interface PermittedRpcTemplateRule {
+  id: string;
+  parentWidth?: number;
+  parentHeight?: number;
+  children?: Array<{ type: string; x: number; y: number; width: number; height: number }>;
+}
+
+const DEFAULT_FREE_RPC_TEMPLATES: Record<string, PermittedRpcTemplateRule> = {
+  "rpc-tpl-default": {
+    id: "rpc-tpl-default",
+    parentWidth: 380,
+    parentHeight: 168,
+    children: [
+      { type: "rpc-status", x: 16, y: 12, width: 220, height: 20 },
+      { type: "rpc-timestamp", x: 244, y: 12, width: 120, height: 20 },
+      { type: "rpc-icon", x: 16, y: 40, width: 72, height: 72 },
+      { type: "rpc-title", x: 100, y: 42, width: 264, height: 24 },
+      { type: "rpc-details", x: 100, y: 68, width: 264, height: 20 },
+      { type: "rpc-state", x: 100, y: 90, width: 264, height: 20 },
+      { type: "rpc-achievement", x: 16, y: 124, width: 164, height: 28 },
+      { type: "rpc-buttons", x: 188, y: 124, width: 176, height: 28 },
+    ],
+  },
+  "rpc-tpl-minimal": {
+    id: "rpc-tpl-minimal",
+    parentWidth: 340,
+    parentHeight: 110,
+    children: [
+      { type: "rpc-icon", x: 14, y: 18, width: 64, height: 64 },
+      { type: "rpc-status", x: 90, y: 14, width: 136, height: 18 },
+      { type: "rpc-timestamp", x: 230, y: 14, width: 96, height: 18 },
+      { type: "rpc-title", x: 90, y: 34, width: 236, height: 22 },
+      { type: "rpc-details", x: 90, y: 58, width: 236, height: 18 },
+      { type: "rpc-state", x: 90, y: 78, width: 236, height: 18 },
+    ],
+  },
+};
+
+function validateRpcEmbedDocForFree(
+  doc: any,
+  permittedMap: Record<string, PermittedRpcTemplateRule>
+): { valid: boolean; error?: string } {
+  if (!doc || !Array.isArray(doc.nodes)) return { valid: true };
+  const nodes: any[] = doc.nodes;
+
+  const rpcEmbeds = nodes.filter((n) => n && n.type === "custom-rpc-embed");
+  const rpcEmbedIds = new Set(rpcEmbeds.map((e) => e.id));
+
+  for (const node of nodes) {
+    if (!node || typeof node !== "object") continue;
+
+    // Container video backgrounds anywhere are Premium/Admin only
+    if (
+      node.style &&
+      (node.style.backgroundType === "video" ||
+        (typeof node.style.backgroundVideo === "string" && node.style.backgroundVideo.trim()))
+    ) {
+      return {
+        valid: false,
+        error: "Video backgrounds inside containers require a Premium account.",
+      };
+    }
+
+    // Loose rpc-* nodes outside a permitted custom-rpc-embed are Premium only
+    if (typeof node.type === "string" && node.type.startsWith("rpc-") && !rpcEmbedIds.has(node.parentId)) {
+      return {
+        valid: false,
+        error: "Custom Rich Presence child elements require Premium.",
+      };
+    }
+  }
+
+  for (const embed of rpcEmbeds) {
+    const tplId = typeof embed.config?.rpcTemplateId === "string" ? embed.config.rpcTemplateId : "rpc-tpl-default";
+    const rule = permittedMap[tplId];
+    if (!rule) {
+      return {
+        valid: false,
+        error: "Custom or premium Rich Presence templates require a Premium subscription.",
+      };
+    }
+
+    const bgType = embed.style?.backgroundType || "solid";
+    if (bgType === "image" || bgType === "video" || bgType === "gradient" || embed.style?.backgroundImage || embed.style?.backgroundVideo) {
+      return {
+        valid: false,
+        error: "Custom Rich Presence container backgrounds, images, GIFs, and videos require Premium.",
+      };
+    }
+
+    if (
+      typeof rule.parentWidth === "number" &&
+      typeof rule.parentHeight === "number" &&
+      (Math.abs((embed.width || 0) - rule.parentWidth) > 2 || Math.abs((embed.height || 0) - rule.parentHeight) > 2)
+    ) {
+      return {
+        valid: false,
+        error: "Resizing or stretching the Rich Presence Embed container requires Premium.",
+      };
+    }
+
+    const children = nodes.filter((n) => n && n.parentId === embed.id);
+    if (Array.isArray(rule.children)) {
+      if (children.length !== rule.children.length) {
+        return {
+          valid: false,
+          error: "Adding, removing, or duplicating Rich Presence child elements requires Premium.",
+        };
+      }
+      for (const expected of rule.children) {
+        const match = children.find(
+          (c) =>
+            c.type === expected.type &&
+            Math.abs((c.x || 0) - expected.x) <= 2 &&
+            Math.abs((c.y || 0) - expected.y) <= 2 &&
+            Math.abs((c.width || 0) - expected.width) <= 2 &&
+            Math.abs((c.height || 0) - expected.height) <= 2 &&
+            c.config?.rpcDataSource !== "custom" &&
+            !c.config?.rpcIsDecorative
+        );
+        if (!match) {
+          return {
+            valid: false,
+            error: "Customizing, moving, or resizing child elements inside the Rich Presence Embed requires Premium.",
+          };
+        }
+      }
+    }
+  }
+
+  return { valid: true };
+}
+
 /**
  * Validates a profile configuration against user capabilities on save.
  */
 export function validateProfileCapabilities(
   designConfig: any,
-  capabilities: UserCapabilities
+  capabilities: UserCapabilities,
+  permittedGlobalRpcTemplates: PermittedRpcTemplateRule[] = []
 ): { valid: boolean; error?: string } {
   if (!designConfig || typeof designConfig !== "object") {
     return { valid: true };
@@ -171,7 +305,7 @@ export function validateProfileCapabilities(
     }
   }
 
-  // Validate Discord RPC Custom Layout (Premium restriction)
+  // Validate Discord RPC Custom Layout & V2 Custom Rich Presence Parent Embed (Premium restriction)
   if (!capabilities.allowCustomRpcLayout) {
     if (designConfig.discordRpc?.customLayout?.enabled) {
       return {
@@ -179,6 +313,19 @@ export function validateProfileCapabilities(
         error: "Custom Discord Rich Presence card layouts and internal element positioning are exclusive Premium features. Standard accounts display the default Discord presentation.",
       };
     }
+
+    const permittedMap: Record<string, PermittedRpcTemplateRule> = {
+      ...DEFAULT_FREE_RPC_TEMPLATES,
+    };
+    for (const tpl of permittedGlobalRpcTemplates) {
+      if (tpl && tpl.id) permittedMap[tpl.id] = tpl;
+    }
+
+    const draftCheck = validateRpcEmbedDocForFree(designConfig.draftProfileBuilder, permittedMap);
+    if (!draftCheck.valid) return draftCheck;
+
+    const pubCheck = validateRpcEmbedDocForFree(designConfig.profileBuilder, permittedMap);
+    if (!pubCheck.valid) return pubCheck;
   }
 
   return { valid: true };

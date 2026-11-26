@@ -9,6 +9,7 @@ import { resolveDiscordAvatarUrl } from '../auth';
 import { presenceManager, LiveActivity } from '../services/presenceManager';
 import { rpcSyncHub } from '../services/rpcSyncHub';
 import { ImageAssetService, UploadServiceError } from '../services/imageAssetService';
+import { FOUNDER_USER_ID } from '../services/entitlements';
 import { isPersistentStorageConfigured } from '../services/storage';
 import { parseMultipartFormData } from '../utils/multipartParser';
 import { formatRichPresenceField } from '../utils/rpcFormat';
@@ -1005,8 +1006,6 @@ export function validateImageBuffer(buffer: Buffer): {
   };
 }
 
-const FOUNDER_USER_ID = 'cmw4fbemh0000a1sa2h3h5zzk';
-
 const parseUploadMultipartStandard = expressRaw({
   type: ['multipart/form-data', 'text/plain'],
   limit: '36mb',
@@ -1225,16 +1224,36 @@ rpcRouter.delete('/assets/:id', requireAuth, async (req: any, res) => {
   }
 });
 
+function isRpcAdmin(user: { id?: string; role?: string } | null | undefined): boolean {
+  return Boolean(user && (user.role === 'ADMIN' || user.id === FOUNDER_USER_ID));
+}
+
+function isRpcPremiumOrAdmin(user: { id?: string; role?: string; premiumStatus?: boolean; nitroStatus?: number } | null | undefined): boolean {
+  if (!user) return false;
+  return isRpcAdmin(user) || Boolean(user.premiumStatus) || (user.nitroStatus || 0) > 0;
+}
+
 // GET /rpc/templates
 rpcRouter.get('/templates', requireAuth, async (req: any, res) => {
   try {
+    const requestedType = typeof req.query.templateType === 'string' ? req.query.templateType.trim() : null;
     const templates = await prisma.activityTemplate.findMany({
       where: {
         OR: [{ isGlobal: true }, { userId: req.user.id }],
       },
       orderBy: { createdAt: 'desc' },
     });
-    res.json(templates);
+    const filtered = requestedType
+      ? templates.filter((t) => {
+          try {
+            const parsed = JSON.parse(t.config);
+            return parsed?.templateType === requestedType;
+          } catch {
+            return false;
+          }
+        })
+      : templates;
+    res.json(filtered);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch templates' });
   }
@@ -1243,10 +1262,32 @@ rpcRouter.get('/templates', requireAuth, async (req: any, res) => {
 // POST /rpc/templates
 rpcRouter.post('/templates', requireAuth, async (req: any, res) => {
   try {
-    const { name, category, config } = req.body;
+    const { name, category, config, isGlobal } = req.body || {};
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Template name is required' });
+    }
+    if (!config || typeof config !== 'object') {
+      return res.status(400).json({ error: 'Template configuration payload is required' });
+    }
 
-    // Check premium limits
-    if (!req.user.premiumStatus) {
+    const admin = isRpcAdmin(req.user);
+    const premium = isRpcPremiumOrAdmin(req.user);
+
+    if (isGlobal === true && !admin) {
+      return res.status(403).json({
+        error: 'Only administrators can create or publish global official Rich Presence templates.',
+      });
+    }
+
+    const isV2VisualTemplate = config?.templateType === 'rpc-embed-v2';
+    if (isV2VisualTemplate && !premium) {
+      return res.status(403).json({
+        error: 'Saving custom Rich Presence Embed themes requires a Premium account.',
+      });
+    }
+
+    // Legacy standard user template limit (non-V2 templates only)
+    if (!premium) {
       const count = await prisma.activityTemplate.count({ where: { userId: req.user.id } });
       if (count >= 1) {
         return res.status(403).json({
@@ -1258,10 +1299,10 @@ rpcRouter.post('/templates', requireAuth, async (req: any, res) => {
     const template = await prisma.activityTemplate.create({
       data: {
         userId: req.user.id,
-        name,
-        category: category || 'Custom',
+        name: name.trim().slice(0, 80),
+        category: (typeof category === 'string' && category.trim() ? category.trim() : 'Custom').slice(0, 48),
         config: JSON.stringify(config),
-        isGlobal: req.user.role === 'ADMIN' ? req.body.isGlobal : false,
+        isGlobal: admin ? Boolean(isGlobal) : false,
       },
     });
 
@@ -1270,6 +1311,60 @@ rpcRouter.post('/templates', requireAuth, async (req: any, res) => {
     res.status(500).json({ error: 'Failed to create template' });
   }
 });
+
+// PATCH / PUT /rpc/templates/:id (Edit personal template as owner, or Global Official template as Admin)
+const handleUpdateTemplate = async (req: any, res: any) => {
+  try {
+    const existing = await prisma.activityTemplate.findUnique({
+      where: { id: req.params.id },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    const admin = isRpcAdmin(req.user);
+    if (existing.isGlobal && !admin) {
+      return res.status(403).json({
+        error: 'Only administrators can edit global official templates.',
+      });
+    }
+    if (!existing.isGlobal && existing.userId !== req.user.id && !admin) {
+      return res.status(403).json({ error: 'Unauthorized to edit this template' });
+    }
+
+    const { name, category, config, isGlobal } = req.body || {};
+    if (isGlobal === true && !admin) {
+      return res.status(403).json({
+        error: 'Only administrators can publish global official templates.',
+      });
+    }
+
+    const updateData: any = {};
+    if (typeof name === 'string' && name.trim()) {
+      updateData.name = name.trim().slice(0, 80);
+    }
+    if (typeof category === 'string' && category.trim()) {
+      updateData.category = category.trim().slice(0, 48);
+    }
+    if (config && typeof config === 'object') {
+      updateData.config = JSON.stringify(config);
+    }
+    if (typeof isGlobal === 'boolean' && admin) {
+      updateData.isGlobal = isGlobal;
+    }
+
+    const updated = await prisma.activityTemplate.update({
+      where: { id: existing.id },
+      data: updateData,
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update template' });
+  }
+};
+
+rpcRouter.patch('/templates/:id', requireAuth, handleUpdateTemplate);
+rpcRouter.put('/templates/:id', requireAuth, handleUpdateTemplate);
 
 // POST /rpc/templates/:id/apply
 rpcRouter.post('/templates/:id/apply', requireAuth, async (req: any, res) => {
@@ -1283,6 +1378,20 @@ rpcRouter.post('/templates/:id/apply', requireAuth, async (req: any, res) => {
     }
 
     const configData = JSON.parse(template.config);
+
+    // Website V2 visual container templates NEVER overwrite the user's real Discord RichPresence DB row
+    if (configData?.templateType === 'rpc-embed-v2') {
+      if (configData.isPremiumRequired && !isRpcPremiumOrAdmin(req.user)) {
+        return res.status(403).json({
+          error: 'This Rich Presence template requires a Premium subscription.',
+        });
+      }
+      return res.json({
+        isVisualTemplate: true,
+        template,
+        config: configData,
+      });
+    }
 
     const updated = await prisma.richPresence.upsert({
       where: { userId: req.user.id },
@@ -1301,12 +1410,22 @@ rpcRouter.post('/templates/:id/apply', requireAuth, async (req: any, res) => {
 // DELETE /rpc/templates/:id
 rpcRouter.delete('/templates/:id', requireAuth, async (req: any, res) => {
   try {
-    await prisma.activityTemplate.deleteMany({
-      where: {
-        id: req.params.id,
-        userId: req.user.id,
-      },
+    const existing = await prisma.activityTemplate.findUnique({
+      where: { id: req.params.id },
     });
+    if (!existing) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    const admin = isRpcAdmin(req.user);
+    if (existing.isGlobal && !admin) {
+      return res.status(403).json({ error: 'Only administrators can delete global official templates' });
+    }
+    if (!existing.isGlobal && existing.userId !== req.user.id && !admin) {
+      return res.status(403).json({ error: 'Unauthorized to delete this template' });
+    }
+
+    await prisma.activityTemplate.delete({ where: { id: existing.id } });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete template' });

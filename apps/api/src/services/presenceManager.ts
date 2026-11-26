@@ -34,6 +34,7 @@ export interface LivePresence {
   activity: LiveActivity | null;
   updatedAt: number;
   sequence: number;
+  clientSequence?: number;
   source: 'discord_bot' | 'lanyard' | 'client' | 'database' | 'idle';
 }
 
@@ -128,12 +129,16 @@ class PresenceManager {
     const existing = this.presenceByUsername.get(key);
     const now = update.timestamp || Date.now();
 
-    // Prevent race conditions: Ignore updates that are demonstrably older
+    // Prevent race conditions: Ignore demonstrably older packets using timestamps or per-user client sequence
     if (existing) {
       if (update.timestamp && existing.updatedAt > update.timestamp) {
         return existing;
       }
-      if (update.sequence !== undefined && existing.sequence > update.sequence) {
+      if (
+        update.sequence !== undefined &&
+        existing.clientSequence !== undefined &&
+        existing.clientSequence > update.sequence
+      ) {
         return existing;
       }
     }
@@ -176,6 +181,7 @@ class PresenceManager {
       activity: cleanActivity,
       updatedAt: now,
       sequence: nextSequence,
+      clientSequence: update.sequence !== undefined ? update.sequence : existing?.clientSequence,
       source: update.source,
     };
 

@@ -874,7 +874,8 @@ export const MediaUploadModal: React.FC<MediaUploadModalProps> = ({
     abortControllerRef.current = controller;
 
     try {
-      const isVideoSlot = targetSlot === "background_video";
+      const isVideoSlot =
+        targetSlot === "background_video" || targetSlot === "container_background_video";
       const uploaded = await uploadMediaAsset({
         file,
         targetSlot,
@@ -979,7 +980,7 @@ export const MediaUploadModal: React.FC<MediaUploadModalProps> = ({
               ref={fileInputRef}
               type="file"
               accept={
-                targetSlot === "background_video"
+                targetSlot === "background_video" || targetSlot === "container_background_video"
                   ? "video/mp4,video/webm,.mp4,.webm"
                   : "image/png,image/jpeg,image/webp,image/gif"
               }

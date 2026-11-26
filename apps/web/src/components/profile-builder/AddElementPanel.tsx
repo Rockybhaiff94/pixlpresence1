@@ -3,11 +3,13 @@
 import React, { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
+  Activity,
   AlignLeft,
   Award,
   Box,
   ChevronDown,
   ChevronRight,
+  Clock,
   Code2,
   CreditCard,
   ExternalLink,
@@ -25,6 +27,7 @@ import {
   Share2,
   Type,
   User,
+  Users,
   X,
 } from "lucide-react";
 import { BuilderComponentType } from "./profileBuilderTypes";
@@ -68,7 +71,24 @@ export function getBuilderComponentIcon(
     case "music-display":
       return Music;
     case "custom-rpc":
+    case "custom-rpc-embed":
       return Gamepad2;
+    case "rpc-icon":
+      return ImageIcon;
+    case "rpc-title":
+      return Type;
+    case "rpc-status":
+      return Activity;
+    case "rpc-details":
+      return FileText;
+    case "rpc-state":
+      return Users;
+    case "rpc-timestamp":
+      return Clock;
+    case "rpc-achievement":
+      return Award;
+    case "rpc-buttons":
+      return ExternalLink;
     case "embed":
     case "nested-embed":
       return CreditCard;

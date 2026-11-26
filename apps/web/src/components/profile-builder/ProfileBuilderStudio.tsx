@@ -3,8 +3,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { AlertCircle, X } from "lucide-react";
+import { io } from "socket.io-client";
 import { ComponentDockViewState } from "../studio/StudioFloatingDock";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getApiBaseUrl } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import {
   BuilderCanvasSettings,
@@ -23,6 +24,7 @@ import {
   countHeartNodes,
   createDefaultReferenceDocument,
   createNodeFromRegistry,
+  createNodeTreeFromRegistry,
   deleteNodeSubtree,
   ensureFreeTierClaimProfileNode,
   getNestingDepth,
@@ -31,6 +33,14 @@ import {
   validateProfileBuilderDocument,
   wouldCreateCycle,
 } from "./componentRegistry";
+import {
+  BUILTIN_RPC_TEMPLATES,
+  RpcVisualTemplate,
+  applyRpcTemplateToEmbedNodes,
+  isNodeRestrictedRpcForFree,
+  isRpcChildType,
+  serializeRpcEmbedAsTemplate,
+} from "./rpcTemplates";
 import { exportProfileBuilderJson, exportProfileBuilderPng } from "./profileBuilderExport";
 import { TopToolbar } from "./TopToolbar";
 import { AddElementPanel } from "./AddElementPanel";
@@ -108,6 +118,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
   const [dockActiveTool, setDockActiveTool] = useState<string | null>(null);
   const [dockAddedIds, setDockAddedIds] = useState<string[]>([]);
   const [liveRpc, setLiveRpc] = useState<ProfileLiveActivityData["discordPresence"]>(null);
+  const [rpcTemplates, setRpcTemplates] = useState<RpcVisualTemplate[]>(BUILTIN_RPC_TEMPLATES);
 
   // Undo / Redo transaction history
   const [history, setHistory] = useState<BuilderHistorySnapshot[]>(() => [
@@ -233,22 +244,126 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     return () => window.cancelAnimationFrame(raf);
   }, [authStatus, identitySeed, profile, user?.id]);
 
-  // Fetch optional live Discord RPC status for preview without fabricating data
+  // Fetch & real-time subscribe to live Discord RPC status for Studio preview (without mutating layout coordinates)
   useEffect(() => {
     if (!user?.username) return;
     let active = true;
+    const normalizePresencePayload = (raw: any): ProfileLiveActivityData["discordPresence"] => {
+      if (!raw || typeof raw !== "object") return null;
+      if (raw.activity && typeof raw.activity === "object") {
+        return {
+          ...raw.activity,
+          status: raw.status || "online",
+          hasActivity: Boolean(raw.hasActivity && raw.status !== "offline"),
+        };
+      }
+      if (raw.status === "offline" || raw.hasActivity === false) {
+        return {
+          status: raw.status || "offline",
+          hasActivity: false,
+          appName: null,
+          details: null,
+          state: null,
+          largeImage: null,
+          smallImage: null,
+          timestamps: null,
+        };
+      }
+      return {
+        ...raw,
+        hasActivity: raw.hasActivity ?? Boolean(raw.appName || raw.details || raw.state),
+      };
+    };
+
     apiFetch(`/api/profile/u/${encodeURIComponent(user.username)}/presence`, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => {
         if (active && json?.presence) {
-          setLiveRpc(json.presence);
+          setLiveRpc(normalizePresencePayload(json.presence));
         }
+      })
+      .catch(() => { });
+
+    const socket = io(getApiBaseUrl(), {
+      transports: ["websocket", "polling"],
+      reconnectionAttempts: 10,
+      reconnectionDelay: 2500,
+    });
+    socket.on("connect", () => {
+      socket.emit("subscribe_profile", { username: user.username, discordId: user.discordId });
+    });
+    const onPresencePacket = (pkt: any) => {
+      if (!active || !pkt) return;
+      setLiveRpc(normalizePresencePayload(pkt));
+    };
+    socket.on("presence_sync", onPresencePacket);
+    socket.on("presence_update", onPresencePacket);
+    socket.on("rpc_update", onPresencePacket);
+
+    const pollInterval = setInterval(async () => {
+      if (!socket.connected && active) {
+        try {
+          const res = await apiFetch(
+            `/api/profile/u/${encodeURIComponent(user.username)}/presence`,
+            { cache: "no-store" }
+          );
+          if (res.ok) {
+            const json = await res.json();
+            if (active && json?.presence) {
+              setLiveRpc(normalizePresencePayload(json.presence));
+            }
+          }
+        } catch {
+          // ignore transient poll failure
+        }
+      }
+    }, 6000);
+
+    return () => {
+      active = false;
+      clearInterval(pollInterval);
+      socket.disconnect();
+    };
+  }, [user?.discordId, user?.username]);
+
+  // Load saved & global official V2 Rich Presence Visual Templates
+  useEffect(() => {
+    if (authStatus !== "AUTHENTICATED") return;
+    let active = true;
+    apiFetch("/api/rpc/templates?templateType=rpc-embed-v2", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((list) => {
+        if (!active || !Array.isArray(list)) return;
+        const dbTemplates: RpcVisualTemplate[] = [];
+        for (const item of list) {
+          try {
+            const parsed = JSON.parse(item.config);
+            if (parsed?.templateType !== "rpc-embed-v2") continue;
+            dbTemplates.push({
+              ...parsed,
+              id: item.id,
+              name: item.name || parsed.name,
+              category: item.category || parsed.category || "Custom",
+              isGlobal: Boolean(item.isGlobal),
+              userId: item.userId || null,
+            });
+          } catch {
+            // ignore invalid template json
+          }
+        }
+        const merged = [...BUILTIN_RPC_TEMPLATES];
+        for (const dbTpl of dbTemplates) {
+          if (!merged.some((m) => m.id === dbTpl.id)) {
+            merged.push(dbTpl);
+          }
+        }
+        setRpcTemplates(merged);
       })
       .catch(() => { });
     return () => {
       active = false;
     };
-  }, [user?.username]);
+  }, [authStatus]);
 
   const liveData: ProfileLiveActivityData = useMemo(
     () => ({
@@ -407,8 +522,45 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     }));
   }, []);
 
+  const isAdmin = Boolean(
+    user?.role === "ADMIN" || user?.id === "cmw4fbemh0000a1sa2h3h5zzk"
+  );
+  const isPremium = Boolean(
+    user?.premiumStatus || (user?.nitroStatus ?? 0) > 0 || isAdmin
+  );
+
+  const reportRestrictedFeature = useCallback(
+    (msg: string) => {
+      setErrorBanner(msg);
+      showToast(msg);
+      setTimeout(() => setErrorBanner(null), 4500);
+    },
+    [showToast]
+  );
+
   const handleUpdateNode = useCallback(
     (id: string, updates: Partial<BuilderNode>, options?: { skipHistory?: boolean }) => {
+      const currentTarget = doc.nodes.find((n) => n.id === id);
+      if (currentTarget && !isPremium) {
+        if (isNodeRestrictedRpcForFree(currentTarget, doc.nodes, isPremium)) {
+          reportRestrictedFeature(
+            "Customizing child elements inside Custom RPC Embed requires Premium."
+          );
+          return;
+        }
+        if (
+          currentTarget.type === "custom-rpc-embed" &&
+          (updates.width !== undefined ||
+            updates.height !== undefined ||
+            updates.rotation !== undefined ||
+            updates.style !== undefined)
+        ) {
+          reportRestrictedFeature(
+            "Resizing, stretching, or customizing the background/style of Custom RPC Embed requires Premium."
+          );
+          return;
+        }
+      }
       setDoc((prev) => {
         const target = prev.nodes.find((n) => n.id === id);
         if (!target) return prev;
@@ -440,7 +592,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         };
       });
     },
-    [commitSnapshot, selectedId]
+    [commitSnapshot, doc.nodes, isPremium, reportRestrictedFeature, selectedId]
   );
 
   const handleCommitHistory = useCallback(() => {
@@ -449,6 +601,20 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
 
   const handleReplaceNodes = useCallback(
     (nextNodes: BuilderNode[], options?: { skipHistory?: boolean }) => {
+      if (!isPremium) {
+        const prevRpc = doc.nodes.find((n) => n.type === "custom-rpc-embed");
+        const nextRpc = prevRpc ? nextNodes.find((n) => n.id === prevRpc.id) : null;
+        if (
+          prevRpc &&
+          nextRpc &&
+          (prevRpc.width !== nextRpc.width || prevRpc.height !== nextRpc.height)
+        ) {
+          reportRestrictedFeature(
+            "Resizing or scaling Custom RPC Embed requires Premium."
+          );
+          return;
+        }
+      }
       setDoc((prev) => {
         if (!options?.skipHistory) {
           commitSnapshot(prev.canvas, nextNodes, selectedId);
@@ -460,13 +626,15 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         };
       });
     },
-    [commitSnapshot, selectedId]
+    [commitSnapshot, doc.nodes, isPremium, reportRestrictedFeature, selectedId]
   );
 
   const resolveInsertParent = useCallback(
     (type: BuilderComponentType, explicitParentId?: string | null): { parentId: string | null; error?: string } => {
-      if (type === "embed" || type === "background") {
-        return { parentId: null };
+      if (type === "embed" || type === "background" || type === "custom-rpc-embed") {
+        if (type !== "custom-rpc-embed" || explicitParentId === undefined || explicitParentId === null) {
+          return { parentId: null };
+        }
       }
 
       if (explicitParentId !== undefined) {
@@ -514,10 +682,6 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     [doc.nodes, doc.preferences.defaultInsertTarget, selectedId]
   );
 
-  const isPremium = Boolean(
-    user?.premiumStatus || (user?.nitroStatus ?? 0) > 0 || user?.role === "ADMIN"
-  );
-
   const insertComponent = useCallback(
     (
       type: BuilderComponentType,
@@ -526,6 +690,13 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       y?: number,
       extra?: Partial<BuilderNode>
     ): string | null => {
+      if (!isPremium && isRpcChildType(type)) {
+        reportRestrictedFeature(
+          "Adding custom Rich Presence child elements requires a Premium subscription."
+        );
+        return null;
+      }
+
       if (!isPremium && type === "claim-profile") {
         const msg = "Claim Your Profile is locked on the Free plan. Upgrade to Premium to add or remove Claim buttons.";
         setErrorBanner(msg);
@@ -549,7 +720,17 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         if (explicitParentId !== undefined) return null;
       }
 
-      const created = createNodeFromRegistry(type, {
+      if (target.parentId) {
+        const targetContainer = doc.nodes.find((n) => n.id === target.parentId);
+        if (!isPremium && targetContainer?.type === "custom-rpc-embed") {
+          reportRestrictedFeature(
+            "Adding or customizing elements inside Custom RPC Embed requires Premium."
+          );
+          return null;
+        }
+      }
+
+      const { rootNode: created, childNodes } = createNodeTreeFromRegistry(type, {
         parentId: target.parentId,
         nodes: doc.nodes,
         canvas: doc.canvas,
@@ -568,7 +749,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       });
       const finalNode: BuilderNode = extra ? { ...created, ...extra } : created;
 
-      const nextNodes = [...doc.nodes, finalNode];
+      const nextNodes = [...doc.nodes, finalNode, ...childNodes];
       setDoc((prev) => ({
         ...prev,
         nodes: nextNodes,
@@ -578,12 +759,18 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       commitSnapshot(doc.canvas, nextNodes, finalNode.id);
       return finalNode.id;
     },
-    [commitSnapshot, doc.canvas, doc.nodes, isPremium, liveData, resolveInsertParent, showToast]
+    [commitSnapshot, doc.canvas, doc.nodes, isPremium, liveData, reportRestrictedFeature, resolveInsertParent, showToast]
   );
 
   const handleDuplicateNode = useCallback(
     (id: string) => {
       const source = doc.nodes.find((n) => n.id === id);
+      if (!isPremium && source && isNodeRestrictedRpcForFree(source, doc.nodes, isPremium)) {
+        reportRestrictedFeature(
+          "Duplicating Rich Presence child elements requires a Premium account."
+        );
+        return;
+      }
       if (!isPremium && source?.type === "claim-profile") {
         const msg = "Claim Your Profile cannot be duplicated on the Free plan. Upgrade to Premium to unlock.";
         setErrorBanner(msg);
@@ -604,13 +791,19 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       setSelectedId(clonedRootId);
       commitSnapshot(doc.canvas, nextNodes, clonedRootId);
     },
-    [commitSnapshot, doc.canvas, doc.nodes, isPremium, showToast]
+    [commitSnapshot, doc.canvas, doc.nodes, isPremium, reportRestrictedFeature, showToast]
   );
 
   const handleDeleteNode = useCallback(
     (id: string) => {
       const target = doc.nodes.find((n) => n.id === id);
       if (!target || target.type === "background") return;
+      if (!isPremium && isNodeRestrictedRpcForFree(target, doc.nodes, isPremium)) {
+        reportRestrictedFeature(
+          "Removing internal Rich Presence child elements requires Premium."
+        );
+        return;
+      }
       if (target.locked) {
         showToast("Unlock component before deleting.");
         return;
@@ -744,6 +937,9 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       if (dragged.type === "background" || target.type === "background") {
         return { ok: false, error: "Background layer cannot be reordered." };
       }
+      if (!isPremium && isNodeRestrictedRpcForFree(dragged, doc.nodes, isPremium)) {
+        return { ok: false, error: "Reordering Rich Presence child elements requires Premium." };
+      }
 
       const newParentId = position === "inside" ? target.id : target.parentId || null;
 
@@ -751,6 +947,9 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         const targetContainer = doc.nodes.find((n) => n.id === newParentId);
         if (!targetContainer || !isContainerType(targetContainer.type)) {
           return { ok: false, error: "Destination cannot contain child elements." };
+        }
+        if (!isPremium && targetContainer.type === "custom-rpc-embed") {
+          return { ok: false, error: "Moving elements into Custom RPC Embed requires Premium." };
         }
         if (wouldCreateCycle(dragged.id, newParentId, doc.nodes)) {
           return { ok: false, error: "Invalid circular drop: parent cannot move into descendant." };
@@ -829,16 +1028,132 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     [insertComponent]
   );
 
+  const handleApplyRpcTemplate = useCallback(
+    (embedId: string, template: RpcVisualTemplate) => {
+      const result = applyRpcTemplateToEmbedNodes({
+        nodes: doc.nodes,
+        embedId,
+        template,
+        isPremiumOrAdmin: isPremium,
+      });
+      if (!result.ok || !result.nextNodes) {
+        reportRestrictedFeature(result.error || "Unable to apply template.");
+        return;
+      }
+      setDoc((prev) => ({
+        ...prev,
+        nodes: result.nextNodes!,
+        metadata: { ...prev.metadata, updatedAt: new Date().toISOString() },
+      }));
+      setSelectedId(embedId);
+      commitSnapshot(doc.canvas, result.nextNodes, embedId);
+      showToast(`Applied Rich Presence template "${template.name}"`);
+    },
+    [commitSnapshot, doc.canvas, doc.nodes, isPremium, reportRestrictedFeature, showToast]
+  );
+
+  const handleSaveRpcTemplate = useCallback(
+    async (payload: {
+      embedId: string;
+      name: string;
+      category: string;
+      description?: string;
+      isGlobal?: boolean;
+      isPremiumRequired?: boolean;
+    }): Promise<boolean> => {
+      if (!isPremium) {
+        reportRestrictedFeature("Saving custom Rich Presence themes requires Premium.");
+        return false;
+      }
+      const embedNode = doc.nodes.find(
+        (n) => n.id === payload.embedId && n.type === "custom-rpc-embed"
+      );
+      if (!embedNode) return false;
+      const serialized = serializeRpcEmbedAsTemplate({
+        embedNode,
+        nodes: doc.nodes,
+        name: payload.name,
+        category: payload.category,
+        description: payload.description,
+        isGlobal: isAdmin ? Boolean(payload.isGlobal) : false,
+        isPremiumRequired: payload.isPremiumRequired ?? true,
+      });
+      try {
+        const res = await apiFetch("/api/rpc/templates", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: serialized.name,
+            category: serialized.category,
+            isGlobal: serialized.isGlobal,
+            config: {
+              ...serialized,
+              templateType: "rpc-embed-v2",
+            },
+          }),
+        });
+        const saved = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          reportRestrictedFeature(saved?.error || "Failed to save template.");
+          return false;
+        }
+        const savedTpl: RpcVisualTemplate = {
+          ...serialized,
+          id: saved.id || serialized.id,
+          userId: saved.userId || user?.id || null,
+          isGlobal: Boolean(saved.isGlobal),
+        };
+        setRpcTemplates((prev) => [savedTpl, ...prev]);
+        showToast(
+          savedTpl.isGlobal
+            ? `Published global official template "${savedTpl.name}"`
+            : `Saved template "${savedTpl.name}"`
+        );
+        return true;
+      } catch {
+        reportRestrictedFeature("Failed to save Rich Presence template.");
+        return false;
+      }
+    },
+    [doc.nodes, isAdmin, isPremium, reportRestrictedFeature, showToast, user?.id]
+  );
+
+  const handleDeleteRpcTemplate = useCallback(
+    async (templateId: string) => {
+      try {
+        const res = await apiFetch(`/api/rpc/templates/${encodeURIComponent(templateId)}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) {
+          const payload = await res.json().catch(() => ({}));
+          reportRestrictedFeature(payload?.error || "Cannot delete template.");
+          return;
+        }
+        setRpcTemplates((prev) => prev.filter((t) => t.id !== templateId));
+        showToast("Removed Rich Presence template.");
+      } catch {
+        reportRestrictedFeature("Failed to remove template.");
+      }
+    },
+    [reportRestrictedFeature, showToast]
+  );
+
   const handleReparentNode = useCallback(
     (nodeId: string, newParentId: string | null): { ok: boolean; error?: string } => {
       const node = doc.nodes.find((n) => n.id === nodeId);
       if (!node || node.type === "background") {
         return { ok: false, error: "This item cannot be reparented." };
       }
+      if (!isPremium && isNodeRestrictedRpcForFree(node, doc.nodes, isPremium)) {
+        return { ok: false, error: "Customizing Rich Presence children requires Premium." };
+      }
       if (newParentId) {
         const targetParent = doc.nodes.find((n) => n.id === newParentId);
         if (!targetParent || !isContainerType(targetParent.type)) {
           return { ok: false, error: "Destination cannot contain child elements." };
+        }
+        if (!isPremium && targetParent.type === "custom-rpc-embed") {
+          return { ok: false, error: "Adding elements to Custom RPC Embed requires Premium." };
         }
         if (wouldCreateCycle(nodeId, newParentId, doc.nodes)) {
           return { ok: false, error: "Invalid circular drop: parent cannot move into descendant." };
@@ -1384,6 +1699,14 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           selectedId={selectedId}
           deviceMode={deviceMode}
           isFounder={user?.id === "cmw4fbemh0000a1sa2h3h5zzk"}
+          isPremiumOrAdmin={isPremium}
+          isAdmin={isAdmin}
+          rpcTemplates={rpcTemplates}
+          onApplyRpcTemplate={handleApplyRpcTemplate}
+          onSaveRpcTemplate={handleSaveRpcTemplate}
+          onDeleteRpcTemplate={handleDeleteRpcTemplate}
+          onInsertChild={(parentId, type) => insertComponent(type, parentId)}
+          onRestrictedFeature={reportRestrictedFeature}
           onSelect={setSelectedId}
           onUpdateCanvas={handleUpdateCanvas}
           onUpdateNode={handleUpdateNode}

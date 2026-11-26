@@ -4,6 +4,11 @@ import {
   BuilderNode,
   ProfileBuilderDocument,
 } from "./profileBuilderTypes";
+import {
+  RpcVisualTemplate,
+  buildRpcEmbedSubtree,
+  getRpcTemplateById,
+} from "./rpcTemplates";
 
 export const MAX_NESTING_DEPTH = 4;
 
@@ -12,6 +17,7 @@ export const CONTAINER_COMPONENT_TYPES: ReadonlySet<BuilderComponentType> = new 
   "nested-embed",
   "image-gallery",
   "group-section",
+  "custom-rpc-embed",
 ]);
 
 export function isContainerType(type: BuilderComponentType): boolean {
@@ -132,13 +138,130 @@ export const PROFILE_BUILDER_REGISTRY: Record<BuilderComponentType, ComponentReg
     type: "custom-rpc",
     category: "profile",
     label: "Custom RPC",
-    shortDesc: "Discord Rich Presence activity display",
+    shortDesc: "Compact Discord Rich Presence activity display",
     defaultWidth: 324,
     defaultHeight: 92,
     minWidth: 180,
     minHeight: 68,
     canHaveChildren: false,
     preferEmbedParent: true,
+  },
+  "custom-rpc-embed": {
+    type: "custom-rpc-embed",
+    category: "profile",
+    label: "Custom RPC Embed",
+    shortDesc: "Modular Discord Rich Presence container with child elements",
+    defaultWidth: 380,
+    defaultHeight: 168,
+    minWidth: 240,
+    minHeight: 96,
+    canHaveChildren: true,
+    allowInRoot: true,
+    preferEmbedParent: false,
+  },
+  "rpc-icon": {
+    type: "rpc-icon",
+    category: "profile",
+    label: "RPC Icon / Art",
+    shortDesc: "Synced game artwork or custom thumbnail",
+    defaultWidth: 72,
+    defaultHeight: 72,
+    minWidth: 28,
+    minHeight: 28,
+    canHaveChildren: false,
+    allowInRoot: false,
+    preferEmbedParent: false,
+  },
+  "rpc-title": {
+    type: "rpc-title",
+    category: "profile",
+    label: "RPC Game Title",
+    shortDesc: "Synced application or game title",
+    defaultWidth: 240,
+    defaultHeight: 24,
+    minWidth: 80,
+    minHeight: 18,
+    canHaveChildren: false,
+    allowInRoot: false,
+    preferEmbedParent: false,
+  },
+  "rpc-status": {
+    type: "rpc-status",
+    category: "profile",
+    label: "RPC Status Header",
+    shortDesc: "Playing / Streaming / Offline status pill",
+    defaultWidth: 200,
+    defaultHeight: 20,
+    minWidth: 80,
+    minHeight: 16,
+    canHaveChildren: false,
+    allowInRoot: false,
+    preferEmbedParent: false,
+  },
+  "rpc-details": {
+    type: "rpc-details",
+    category: "profile",
+    label: "RPC Details",
+    shortDesc: "Live activity details line",
+    defaultWidth: 240,
+    defaultHeight: 20,
+    minWidth: 80,
+    minHeight: 16,
+    canHaveChildren: false,
+    allowInRoot: false,
+    preferEmbedParent: false,
+  },
+  "rpc-state": {
+    type: "rpc-state",
+    category: "profile",
+    label: "RPC State & Party",
+    shortDesc: "Activity state and party count",
+    defaultWidth: 240,
+    defaultHeight: 20,
+    minWidth: 80,
+    minHeight: 16,
+    canHaveChildren: false,
+    allowInRoot: false,
+    preferEmbedParent: false,
+  },
+  "rpc-timestamp": {
+    type: "rpc-timestamp",
+    category: "profile",
+    label: "RPC Live Timer",
+    shortDesc: "Real-time elapsed or remaining session time",
+    defaultWidth: 120,
+    defaultHeight: 20,
+    minWidth: 64,
+    minHeight: 16,
+    canHaveChildren: false,
+    allowInRoot: false,
+    preferEmbedParent: false,
+  },
+  "rpc-achievement": {
+    type: "rpc-achievement",
+    category: "profile",
+    label: "RPC Achievement / Streak",
+    shortDesc: "Synced telemetry or decorative badge",
+    defaultWidth: 164,
+    defaultHeight: 28,
+    minWidth: 80,
+    minHeight: 20,
+    canHaveChildren: false,
+    allowInRoot: false,
+    preferEmbedParent: false,
+  },
+  "rpc-buttons": {
+    type: "rpc-buttons",
+    category: "profile",
+    label: "RPC Buttons",
+    shortDesc: "Website Rich Presence action buttons",
+    defaultWidth: 176,
+    defaultHeight: 28,
+    minWidth: 88,
+    minHeight: 22,
+    canHaveChildren: false,
+    allowInRoot: false,
+    preferEmbedParent: false,
   },
   embed: {
     type: "embed",
@@ -320,6 +443,7 @@ export const LIBRARY_CATALOG_ORDER: BuilderComponentType[] = [
   "claim-profile",
   "music-display",
   "custom-rpc",
+  "custom-rpc-embed",
   "embed",
   "nested-embed",
   "banner-image",
@@ -798,11 +922,180 @@ export function createNodeFromRegistry(
       base.style.borderColor = "#2e2e38";
       base.style.borderRadius = 8;
       break;
+    case "custom-rpc-embed":
+      base.name = "Custom RPC Embed";
+      base.style.backgroundType = "solid";
+      base.style.backgroundColor = "#111116";
+      base.style.backgroundOpacity = 0.94;
+      base.style.borderWidth = 1;
+      base.style.borderColor = "#272730";
+      base.style.borderRadius = 14;
+      base.style.blur = 14;
+      base.style.padding = 0;
+      base.style.gap = 0;
+      base.style.overflow = "hidden";
+      base.config = {
+        rpcTemplateId: "rpc-tpl-default",
+        rpcTemplateName: "Default Rich Presence",
+        rpcTemplateVersion: "1.0.0",
+        rpcCategory: "Standard",
+        rpcSkinPreset: "default",
+        useLiveRpc: true,
+        rpcEmptyText: "Discord is currently offline or idle",
+        rpcOfflineText: "Offline · No active session",
+        accentColor: "#ffffff",
+      };
+      break;
+    case "rpc-icon":
+      base.aspectRatioLocked = true;
+      base.style.backgroundType = "solid";
+      base.style.backgroundColor = "#17171f";
+      base.style.borderWidth = 1;
+      base.style.borderColor = "#2a2a35";
+      base.style.borderRadius = 12;
+      base.config = {
+        rpcFieldBinding: "largeImage",
+        rpcDataSource: "live",
+        useLiveRpc: true,
+        rpcShowSecondaryBadge: true,
+        fit: "cover",
+      };
+      break;
+    case "rpc-title":
+      base.config = {
+        rpcFieldBinding: "appName",
+        rpcDataSource: "live",
+        useLiveRpc: true,
+        appName: seed?.appName || "Active Application",
+        fontFamily: "Space Grotesk, sans-serif",
+        fontSize: 15,
+        fontWeight: 700,
+        color: "#ffffff",
+        textAlign: "left",
+      };
+      break;
+    case "rpc-status":
+      base.config = {
+        rpcFieldBinding: "status",
+        rpcDataSource: "live",
+        useLiveRpc: true,
+        statusIndicator: "online",
+        fontFamily: "JetBrains Mono, monospace",
+        fontSize: 10,
+        fontWeight: 700,
+        color: "#a1a1aa",
+        accentColor: "#22c55e",
+      };
+      break;
+    case "rpc-details":
+      base.config = {
+        rpcFieldBinding: "details",
+        rpcDataSource: "live",
+        useLiveRpc: true,
+        details: seed?.details || "Waiting for Discord activity",
+        fontFamily: "Inter, sans-serif",
+        fontSize: 12,
+        fontWeight: 500,
+        color: "#d4d4d8",
+        textAlign: "left",
+      };
+      break;
+    case "rpc-state":
+      base.config = {
+        rpcFieldBinding: "state",
+        rpcDataSource: "live",
+        useLiveRpc: true,
+        state: seed?.state || "Connected to Pixel.gg",
+        fontFamily: "JetBrains Mono, monospace",
+        fontSize: 11,
+        fontWeight: 500,
+        color: "#a1a1aa",
+        textAlign: "left",
+      };
+      break;
+    case "rpc-timestamp":
+      base.config = {
+        rpcFieldBinding: "timestamp",
+        rpcDataSource: "live",
+        useLiveRpc: true,
+        startTimestampText: "00:00 elapsed",
+        fontFamily: "JetBrains Mono, monospace",
+        fontSize: 10,
+        fontWeight: 600,
+        color: "#a1a1aa",
+        textAlign: "right",
+      };
+      break;
+    case "rpc-achievement":
+      base.style.backgroundType = "solid";
+      base.style.backgroundColor = "#17171f";
+      base.style.borderWidth = 1;
+      base.style.borderColor = "#292934";
+      base.style.borderRadius = 8;
+      base.config = {
+        rpcFieldBinding: "streak",
+        rpcDataSource: "live",
+        useLiveRpc: true,
+        rpcIsDecorative: false,
+        rpcAchievementLabel: "Synced Telemetry",
+        fontFamily: "JetBrains Mono, monospace",
+        fontSize: 10,
+        fontWeight: 600,
+        color: "#e4e4e7",
+      };
+      break;
+    case "rpc-buttons":
+      base.config = {
+        rpcDataSource: "live",
+        useLiveRpc: true,
+        rpcButtons: [{ id: createBuilderId("rpc-btn"), label: "View Activity", url: "/", variant: "primary" }],
+      };
+      break;
     default:
       break;
   }
 
   return base;
+}
+
+export function createNodeTreeFromRegistry(
+  type: BuilderComponentType,
+  options: Parameters<typeof createNodeFromRegistry>[1] & {
+    rpcTemplate?: RpcVisualTemplate;
+  }
+): { rootNode: BuilderNode; childNodes: BuilderNode[] } {
+  if (type === "custom-rpc-embed") {
+    const template = options.rpcTemplate || getRpcTemplateById("rpc-tpl-default");
+    const nonBgSiblings = options.nodes.filter(
+      (n) => (n.parentId || null) === (options.parentId || null) && n.type !== "background"
+    );
+    const parent = options.parentId ? options.nodes.find((n) => n.id === options.parentId) : null;
+    const containerW = parent ? parent.width : options.canvas.width;
+    const containerH = parent ? parent.height : options.canvas.height;
+    const nextZ = nonBgSiblings.reduce((m, s) => Math.max(m, s.zIndex), 0) + 1;
+
+    const defaultX = parent
+      ? Math.max(8, Math.round((containerW - template.parentWidth) / 2))
+      : Math.round(Math.max(40, Math.min(containerW - template.parentWidth - 40, (containerW - template.parentWidth) / 2 + (nonBgSiblings.length % 4) * 24)));
+    const defaultY = parent
+      ? Math.max(8, Math.min(containerH - template.parentHeight - 8, 24 + (nonBgSiblings.length % 3) * 24))
+      : Math.round(Math.max(40, Math.min(containerH - template.parentHeight - 40, (containerH - template.parentHeight) / 2 + (nonBgSiblings.length % 4) * 24)));
+
+    const { parentNode, childNodes } = buildRpcEmbedSubtree({
+      parentId: options.parentId,
+      x: options.x ?? defaultX,
+      y: options.y ?? defaultY,
+      zIndex: nextZ,
+      template,
+      seed: options.seed,
+    });
+    return { rootNode: parentNode, childNodes };
+  }
+
+  return {
+    rootNode: createNodeFromRegistry(type, options),
+    childNodes: [],
+  };
 }
 
 export function createDefaultReferenceDocument(seed?: {

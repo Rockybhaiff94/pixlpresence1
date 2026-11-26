@@ -38,6 +38,7 @@ const EXPECTED_ALL_17 = [
   "claim-profile",
   "music-display",
   "custom-rpc",
+  "custom-rpc-embed",
   // Layout & Content (7)
   "embed",
   "nested-embed",

@@ -36,6 +36,7 @@ import {
 } from "./ProfileBuilderRenderer";
 import { applyProportionalContainerCornerScale } from "./boundaryConstraints";
 import { getBuilderComponentIcon } from "./AddElementPanel";
+import { RPC_CHILD_COMPONENT_TYPES, isNodeRestrictedRpcForFree } from "./rpcTemplates";
 
 type HandleId = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
@@ -675,7 +676,10 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
   const renderInteractiveChrome = (node: BuilderNode, innerRendered: React.ReactNode) => {
     const isSelected = selectedId === node.id;
     const containerLocked = isAncestorLocked(node);
-    const locked = node.locked || containerLocked;
+    const isRpcChildFreeLocked =
+      !isPremiumOrAdmin && isNodeRestrictedRpcForFree(node, doc.nodes, isPremiumOrAdmin);
+    const isRpcParentResizeLocked = !isPremiumOrAdmin && node.type === "custom-rpc-embed";
+    const locked = node.locked || containerLocked || isRpcChildFreeLocked;
     const isContainer = isContainerType(node.type);
 
     return (
@@ -738,14 +742,14 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
       >
         {innerRendered}
 
-        {isSelected && locked && (
+        {isSelected && (locked || isRpcParentResizeLocked) && (
           <div
             className="absolute -inset-0.5 border border-dashed border-amber-400/80 pointer-events-none z-50 rounded-sm"
             data-testid="builder-locked-outline"
           />
         )}
 
-        {isSelected && !locked && (
+        {isSelected && !locked && !isRpcParentResizeLocked && (
           <div
             className={`absolute -inset-0.5 border pointer-events-none z-50 ${isContainer ? "border-[#d71920]" : "border-white"
               }`}
@@ -921,15 +925,22 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
             <div className="flex items-center gap-0.5">
               {(() => {
                 const heartCount = doc.nodes.filter((n) => n.type === "heart-like").length;
+                const rpcChildLocked =
+                  !isPremiumOrAdmin &&
+                  isNodeRestrictedRpcForFree(selectedNode, doc.nodes, isPremiumOrAdmin);
+                const rpcParentAddLocked =
+                  !isPremiumOrAdmin && selectedNode.type === "custom-rpc-embed";
                 const duplicateBlocked =
-                  !isPremiumOrAdmin &&
-                  (selectedNode.type === "claim-profile" ||
-                    (selectedNode.type === "heart-like" && heartCount >= 5));
+                  rpcChildLocked ||
+                  (!isPremiumOrAdmin &&
+                    (selectedNode.type === "claim-profile" ||
+                      (selectedNode.type === "heart-like" && heartCount >= 5)));
                 const deleteBlocked =
-                  !isPremiumOrAdmin &&
-                  (selectedNode.type === "claim-profile" ||
-                    (selectedNode.type === "heart-like" &&
-                      (selectedNode.id === "node-default-heart-like" || heartCount <= 1)));
+                  rpcChildLocked ||
+                  (!isPremiumOrAdmin &&
+                    (selectedNode.type === "claim-profile" ||
+                      (selectedNode.type === "heart-like" &&
+                        (selectedNode.id === "node-default-heart-like" || heartCount <= 1))));
 
                 return (
                   <>
@@ -970,7 +981,7 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
                       {selectedNode.locked ? <Lock size={12} /> : <Unlock size={12} />}
                     </button>
 
-                    {isContainerType(selectedNode.type) && (
+                    {isContainerType(selectedNode.type) && !rpcParentAddLocked && (
                       <button
                         type="button"
                         onClick={() => setIsAddPopoverOpen((p) => !p)}
@@ -1043,6 +1054,32 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
               <div className="px-2 py-1 mb-1 border-b border-[#1f1f28] text-[10px] text-neutral-400 uppercase font-bold">
                 Add to {selectedNode.name}
               </div>
+              {selectedNode.type === "custom-rpc-embed" && (
+                <div className="mb-1 pb-1 border-b border-[#1f1f28] space-y-0.5">
+                  <div className="px-2 py-0.5 text-[9px] text-neutral-500 uppercase font-semibold">
+                    Rich Presence Children
+                  </div>
+                  {RPC_CHILD_COMPONENT_TYPES.map((type) => {
+                    const meta = PROFILE_BUILDER_REGISTRY[type];
+                    const Icon = getBuilderComponentIcon(type);
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => {
+                          onInsertChild(selectedNode.id, type);
+                          setIsAddPopoverOpen(false);
+                        }}
+                        className="w-full px-2 py-1.5 rounded-lg hover:bg-white/10 text-left flex items-center gap-2 text-[11px] text-white cursor-pointer"
+                        data-testid={`ft-add-opt-${type}`}
+                      >
+                        <Icon size={12} className="text-neutral-300 shrink-0" />
+                        <span className="truncate">{meta.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               {LIBRARY_CATALOG_ORDER.filter((t) => t !== "background" && t !== "embed").map(
                 (type) => {
                   const meta = PROFILE_BUILDER_REGISTRY[type];

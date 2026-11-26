@@ -94,7 +94,8 @@ export async function exportProfileBuilderPng(
         node.type === "embed" ||
         node.type === "nested-embed" ||
         node.type === "image-gallery" ||
-        node.type === "group-section"
+        node.type === "group-section" ||
+        node.type === "custom-rpc-embed"
       ) {
         const radius = node.style.borderRadius ?? 16;
         ctx.beginPath();
