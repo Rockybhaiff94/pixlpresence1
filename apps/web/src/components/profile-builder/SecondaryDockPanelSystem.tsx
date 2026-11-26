@@ -595,6 +595,7 @@ const dockTargetGeometry =
       width: dockWidth,
       height: dockHeight,
       opacity: 1,
+      scale: 1,
       ...getCornerRadii(),
     }
     : {
@@ -603,6 +604,7 @@ const dockTargetGeometry =
       width: dockWidth,
       height: dockHeight,
       opacity: 1,
+      scale: 1,
       ...getCornerRadii(),
     };
 
