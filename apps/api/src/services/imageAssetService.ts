@@ -855,6 +855,10 @@ export class ImageAssetService {
           })
         : null;
 
+      // Persist binary backup in PostgreSQL for assets <= 16 MB; larger videos stay on disk/object storage
+      // to avoid exceeding Prisma query-engine / container memory limits on 512 MB hosts.
+      const dbDataBuffer = outBuffer.length <= 16 * 1024 * 1024 ? outBuffer : null;
+
       asset = await prisma.uploadedAsset.create({
         data: {
           userId,
@@ -875,7 +879,7 @@ export class ImageAssetService {
           offsetY,
           targetSlot: rawSlot,
           storageKey,
-          data: outBuffer,
+          data: dbDataBuffer,
         },
       });
 
