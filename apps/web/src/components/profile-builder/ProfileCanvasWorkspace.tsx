@@ -915,16 +915,17 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
               <GripVertical size={12} />
             </button>
 
-            {/* Right-Aligned Compact Action Group: Duplicate | Lock | Add Element | Delete */}
+            {/* Right-Aligned Icon-Only Action Group: Duplicate | Lock | Add Element | Delete */}
             <div className="flex items-center gap-0.5">
               <button
                 type="button"
                 onClick={() => onDuplicateNode(selectedNode.id)}
-                className="px-2 py-1 rounded-lg text-neutral-200 hover:text-white hover:bg-white/10 flex items-center gap-1 cursor-pointer shrink-0"
+                title="Duplicate"
+                aria-label="Duplicate"
+                className="p-1.5 rounded-lg text-neutral-200 hover:text-white hover:bg-white/10 flex items-center justify-center cursor-pointer shrink-0 transition-colors"
                 data-testid="ft-duplicate"
               >
-                <Copy size={11} />
-                <span>Duplicate</span>
+                <Copy size={12} />
               </button>
 
               <button
@@ -932,38 +933,40 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
                 onClick={() =>
                   onUpdateNode(selectedNode.id, { locked: !selectedNode.locked })
                 }
-                className={`px-2 py-1 rounded-lg flex items-center gap-1 cursor-pointer shrink-0 ${
+                title={selectedNode.locked ? "Unlock" : "Lock"}
+                aria-label={selectedNode.locked ? "Unlock" : "Lock"}
+                className={`p-1.5 rounded-lg flex items-center justify-center cursor-pointer shrink-0 transition-colors ${
                   selectedNode.locked
                     ? "text-amber-300 bg-amber-500/15"
                     : "text-neutral-200 hover:text-white hover:bg-white/10"
                 }`}
                 data-testid="ft-lock"
               >
-                {selectedNode.locked ? <Lock size={11} /> : <Unlock size={11} />}
-                <span>{selectedNode.locked ? "Unlock" : "Lock"}</span>
+                {selectedNode.locked ? <Lock size={12} /> : <Unlock size={12} />}
               </button>
 
               {isContainerType(selectedNode.type) && (
                 <button
                   type="button"
                   onClick={() => setIsAddPopoverOpen((p) => !p)}
-                  className={`px-2 py-1 rounded-lg flex items-center gap-1.5 font-bold cursor-pointer shrink-0 ${
+                  title="Add Element"
+                  aria-label="Add Element"
+                  className={`p-1 rounded-lg flex items-center justify-center cursor-pointer shrink-0 transition-colors ${
                     isAddPopoverOpen
                       ? "bg-white text-black"
-                      : "bg-[#1a1a22] hover:bg-[#24242f] border border-white/15 text-white"
+                      : "text-white hover:bg-white/10"
                   }`}
                   data-testid="ft-add-element"
                 >
                   <span
-                    className={`w-4 h-4 rounded-[4px] border flex items-center justify-center shrink-0 ${
+                    className={`w-5 h-5 rounded-[5px] border flex items-center justify-center shrink-0 ${
                       isAddPopoverOpen
-                        ? "bg-black/10 border-black/20"
+                        ? "bg-black/10 border-black/25"
                         : "bg-white/10 border-white/20"
                     }`}
                   >
-                    <Plus size={10} />
+                    <Plus size={11} />
                   </span>
-                  <span>Add Element</span>
                 </button>
               )}
 
@@ -973,13 +976,13 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
                 title={
                   selectedDescendantCount > 0
                     ? `Delete container & ${selectedDescendantCount} child item(s) (Undoable)`
-                    : "Delete element"
+                    : "Delete"
                 }
-                className="px-2 py-1 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/15 flex items-center gap-1 cursor-pointer shrink-0"
+                aria-label="Delete"
+                className="p-1.5 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/15 flex items-center justify-center cursor-pointer shrink-0 transition-colors"
                 data-testid="ft-delete"
               >
-                <Trash2 size={11} />
-                <span>Delete</span>
+                <Trash2 size={12} />
               </button>
             </div>
           </div>

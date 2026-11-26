@@ -876,14 +876,13 @@ profileRouter.patch('/me', requireAuth, async (req: any, res) => {
           });
         }
         if (caps.tier === 'FREE') {
-          const existingDraftHearts = countHearts(existingCfg?.draftProfileBuilder);
-          const existingPubHearts = countHearts(existingCfg?.profileBuilder);
-          if (
-            (existingDraftHearts > 0 && parsedCfg.draftProfileBuilder && incomingDraftHearts < existingDraftHearts) ||
-            (existingPubHearts > 0 && parsedCfg.profileBuilder && incomingPubHearts < existingPubHearts)
-          ) {
+          const hasVisibleClaim = (doc: any) =>
+            !doc ||
+            !Array.isArray(doc.nodes) ||
+            doc.nodes.some((n: any) => n && n.type === 'claim-profile' && n.visible !== false);
+          if (!hasVisibleClaim(parsedCfg.draftProfileBuilder) || !hasVisibleClaim(parsedCfg.profileBuilder)) {
             return res.status(403).json({
-              error: 'Deleting the protected Heart component requires Premium.',
+              error: 'Removing or hiding the Claim Your Profile button requires Premium.',
             });
           }
         }

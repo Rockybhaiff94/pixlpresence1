@@ -158,9 +158,9 @@ async function runPlaywrightTests() {
       await page.getByTestId("dock-open-elements-panel").click();
       await page.waitForSelector('[data-testid="builder-add-element-panel"]', { timeout: 5000 });
 
-      // Insert 5 Heart components
+      // Default doc already has 1 heart-like + 1 claim-profile; add 4 more heart-like to reach 5
       const heartBtn = page.getByTestId("library-add-heart-like");
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 4; i++) {
         await heartBtn.click();
         await page.waitForTimeout(80);
       }
@@ -173,18 +173,32 @@ async function runPlaywrightTests() {
       const countAfter6th = await page.locator('[data-node-type="heart-like"]').count();
       assert.strictEqual(countAfter6th, 5, "6th Heart component must be rejected");
 
-      // Close Elements panel & attempt to delete the topmost Heart component
+      // Close Elements panel
       await page.getByTestId("elements-panel-close").click();
       await page.waitForTimeout(200);
+
+      // Claim Your Profile element must be present by default
+      const claimNode = page.locator('[data-node-type="claim-profile"]').first();
+      assert.strictEqual(await claimNode.count(), 1, "Claim Your Profile element must appear automatically");
+      await claimNode.click();
+      await page.getByTestId("subbar-delete-btn").click();
+      await page.waitForTimeout(150);
+      const claimAfterDel = await page.locator('[data-node-type="claim-profile"]').count();
+      if (!isPremium) {
+        assert.strictEqual(claimAfterDel, 1, "Free user must NOT be able to delete Claim Your Profile");
+      } else {
+        assert.strictEqual(claimAfterDel, 0, "Premium user MUST be able to delete Claim Your Profile");
+      }
+
+      // Users (both Free & Premium) can delete individual Heart components
       const topHeart = page.locator('[data-node-type="heart-like"]').last();
       await topHeart.click();
       await page.getByTestId("subbar-delete-btn").click();
       await page.waitForTimeout(150);
       const countAfterDel = await page.locator('[data-node-type="heart-like"]').count();
-      if (!isPremium) {
-        assert.strictEqual(countAfterDel, 5, "Free user must NOT be able to delete Heart component");
-      } else {
-        assert.strictEqual(countAfterDel, 4, "Premium user MUST be able to delete Heart component");
+      assert.strictEqual(countAfterDel, 4, "Users must be able to remove individual Heart components");
+
+      if (isPremium) {
 
         // Test Video Background Upload UI & 25 MB client rejection
         await page.getByTestId("subbar-select-canvas").click();

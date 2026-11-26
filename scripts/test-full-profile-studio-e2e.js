@@ -399,9 +399,9 @@ async function run() {
       `Public embed must match 720:610 aspect inside scaled canvas! Got: ${JSON.stringify(pubBox)}`
     );
 
-    // Heart & CLAIM YOUR OWN PROFILE controls must sit INSIDE the scaled canvas frame (not outside footer!)
-    const likeBtnBox = await anonPage.getByTestId("public-profile-like-btn").boundingBox();
-    const claimLinkBox = await anonPage.getByTestId("public-profile-claim-link").boundingBox();
+    // Heart & CLAIM YOUR OWN PROFILE controls must sit INSIDE the scaled canvas frame (as native canvas elements!)
+    const likeBtnBox = await anonPage.locator('[data-testid^="public-heart-node-"]').first().boundingBox();
+    const claimLinkBox = await anonPage.locator('[data-testid^="public-claim-node-"]').first().boundingBox();
     assert.ok(
       likeBtnBox &&
         likeBtnBox.x >= canvasFrameBox.x - 1 &&

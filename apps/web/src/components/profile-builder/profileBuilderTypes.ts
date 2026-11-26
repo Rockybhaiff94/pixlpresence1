@@ -29,7 +29,8 @@ export type BuilderComponentType =
   | "custom-component"
   | "shape"
   | "sticker"
-  | "heart-like";
+  | "heart-like"
+  | "claim-profile";
 
 export type BuilderLayoutMode = "absolute" | "flex-col" | "flex-row" | "grid";
 
@@ -196,6 +197,10 @@ export interface BuilderComponentConfig {
   heartLabel?: string;
   heartAccentColor?: string;
   heartShowCount?: boolean;
+
+  // Claim Your Profile promotional element
+  claimText?: string;
+  claimUrl?: string;
 }
 
 export interface BuilderNode {

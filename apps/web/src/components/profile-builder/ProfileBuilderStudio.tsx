@@ -24,6 +24,7 @@ import {
   createDefaultReferenceDocument,
   createNodeFromRegistry,
   deleteNodeSubtree,
+  ensureFreeTierClaimProfileNode,
   getNestingDepth,
   hydrateDocumentIdentity,
   isContainerType,
@@ -196,8 +197,11 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           chosen = remoteDoc || validLocal;
         }
 
+        const isUserPremium = Boolean(
+          user?.premiumStatus || (user?.nitroStatus ?? 0) > 0 || user?.role === "ADMIN"
+        );
         const base = createDefaultReferenceDocument(identitySeed);
-        const normalized: ProfileBuilderDocument = chosen
+        const normalizedBase: ProfileBuilderDocument = chosen
           ? hydrateDocumentIdentity(
             {
               ...base,
@@ -209,6 +213,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
             identitySeed
           )
           : base;
+        const normalized = ensureFreeTierClaimProfileNode(normalizedBase, isUserPremium);
 
         hasHydratedRef.current = true;
         setHasHydrated(true);
@@ -588,9 +593,13 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         return;
       }
       const nextNodes = deleteNodeSubtree(id, doc.nodes);
-      if (!isPremium && countHeartNodes(nextNodes) < countHeartNodes(doc.nodes)) {
+      if (
+        !isPremium &&
+        doc.nodes.some((n) => n.type === "claim-profile") &&
+        !nextNodes.some((n) => n.type === "claim-profile")
+      ) {
         const msg =
-          "Deleting the protected Heart component requires Premium. Upgrade to Premium to remove Heart components.";
+          "Removing the Claim Your Profile button requires Premium. Upgrade to Premium to remove promotional branding.";
         setErrorBanner(msg);
         showToast(msg);
         setTimeout(() => setErrorBanner(null), 4500);
@@ -622,9 +631,16 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     (id: string) => {
       const target = doc.nodes.find((n) => n.id === id);
       if (!target) return;
+      if (!isPremium && target.type === "claim-profile" && target.visible) {
+        const msg = "Hiding the Claim Your Profile button requires Premium.";
+        setErrorBanner(msg);
+        showToast(msg);
+        setTimeout(() => setErrorBanner(null), 4500);
+        return;
+      }
       handleUpdateNode(id, { visible: !target.visible });
     },
-    [doc.nodes, handleUpdateNode]
+    [doc.nodes, handleUpdateNode, isPremium, showToast]
   );
 
   const handleAlignNode = useCallback(

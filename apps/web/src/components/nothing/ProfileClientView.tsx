@@ -15,6 +15,7 @@ import { StudioProfilePreview } from "@/components/studio/StudioProfilePreview";
 import { computeBaseBackgroundStyle } from "@/components/studio/cssUtils";
 import { ProfileBuilderRenderer } from "@/components/profile-builder/ProfileBuilderRenderer";
 import { ProfileBuilderDocument } from "@/components/profile-builder/profileBuilderTypes";
+import { ensureFreeTierClaimProfileNode } from "@/components/profile-builder/componentRegistry";
 
 interface ProfileButton {
   id: string;
@@ -335,8 +336,16 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
     return null;
   }, [designConfig]);
 
+  const effectiveProfileBuilderDoc = React.useMemo(
+    () =>
+      parsedProfileBuilderDoc
+        ? ensureFreeTierClaimProfileNode(parsedProfileBuilderDoc, isPremium)
+        : null,
+    [parsedProfileBuilderDoc, isPremium]
+  );
+
   const hasActiveEmbeds = Boolean(
-    parsedProfileBuilderDoc ||
+    effectiveProfileBuilderDoc ||
     (activeConfig.canvas &&
       Array.isArray(activeConfig.canvas.embeds) &&
       activeConfig.canvas.embeds.length > 0)
@@ -344,16 +353,13 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
 
   const hasEntryScreen = Boolean(
     hasActiveEmbeds &&
-      (musicUrl || parsedProfileBuilderDoc?.canvas?.entryScreenEnabled)
+      (musicUrl || effectiveProfileBuilderDoc?.canvas?.entryScreenEnabled)
   );
   const entryPromptText =
-    parsedProfileBuilderDoc?.canvas?.entryScreenText?.trim() ||
+    effectiveProfileBuilderDoc?.canvas?.entryScreenText?.trim() ||
     (musicUrl
       ? "[ CLICK ANYWHERE TO INITIALIZE AUDIO & PROFILE ]"
       : "[ CLICK ANYWHERE TO ENTER PROFILE ]");
-  const hasPlacedHeartNodes = Boolean(
-    parsedProfileBuilderDoc?.nodes?.some((n) => n.type === "heart-like" && n.visible)
-  );
 
   return (
     <div
@@ -425,10 +431,10 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
 
       {/* Main Profile Layout — Rendered via Profile Builder V2, Legacy Studio Engine, or Clean Blank Slate */}
       <div className="w-full min-h-screen flex-1 flex flex-col items-center justify-between relative z-10">
-        {parsedProfileBuilderDoc ? (
+        {effectiveProfileBuilderDoc ? (
           <div className="w-full h-screen min-h-screen overflow-hidden flex flex-col">
             <ProfileBuilderRenderer
-              document={parsedProfileBuilderDoc}
+              document={effectiveProfileBuilderDoc}
               deviceMode={viewportDevice}
               isInteractive={false}
               initialVideoMuted={hasEntryScreen && !entered}
@@ -450,41 +456,6 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
                 musicArtist,
                 discordPresence: livePresence,
               }}
-              canvasOverlaySlot={
-                <>
-                  {!hasPlacedHeartNodes ? (
-                    <button
-                      onClick={handleToggleLike}
-                      disabled={isLiking}
-                      data-testid="public-profile-like-btn"
-                      className={`pointer-events-auto group flex items-center gap-2 px-3.5 py-2 rounded-full backdrop-blur-md transition-all cursor-pointer shadow-sm text-[13px] font-mono ${
-                        hasLiked
-                          ? "bg-rose-500/20 border border-rose-500/40 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.25)]"
-                          : "bg-black/35 hover:bg-black/55 border border-white/15 hover:border-white/30 text-white/85 hover:text-white"
-                      }`}
-                      title={hasLiked ? "Unlike profile" : "Like profile"}
-                    >
-                      <Heart
-                        size={14}
-                        className={`transition-transform group-hover:scale-110 ${
-                          hasLiked ? "fill-rose-500 text-rose-500" : "text-white/75 group-hover:text-white"
-                        }`}
-                      />
-                      <span className="font-semibold tracking-tight">{likes.toLocaleString()}</span>
-                    </button>
-                  ) : (
-                    <span />
-                  )}
-
-                  <Link
-                    href="/register"
-                    data-testid="public-profile-claim-link"
-                    className="pointer-events-auto text-white/70 hover:text-white px-3 py-1.5 rounded-md backdrop-blur-sm bg-black/25 hover:bg-black/45 border border-white/10 hover:border-white/25 transition-all text-[12px] tracking-wide font-mono"
-                  >
-                    CLAIM YOUR OWN PROFILE ↗
-                  </Link>
-                </>
-              }
             />
           </div>
         ) : hasActiveEmbeds ? (

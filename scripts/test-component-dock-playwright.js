@@ -27,7 +27,7 @@ const EXPECTED_PRIMARY = [
 ];
 
 const EXPECTED_ALL_17 = [
-  // Profile Components (9)
+  // Profile Components (10)
   "profile-image",
   "name-text",
   "subtitle",
@@ -35,6 +35,7 @@ const EXPECTED_ALL_17 = [
   "badges-group",
   "social-group",
   "heart-like",
+  "claim-profile",
   "music-display",
   "custom-rpc",
   // Layout & Content (7)

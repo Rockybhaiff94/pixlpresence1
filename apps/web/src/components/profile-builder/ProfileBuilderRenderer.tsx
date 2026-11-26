@@ -1055,6 +1055,46 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
         );
       }
 
+      case "claim-profile": {
+        const claimLabel = node.config.claimText?.trim() || "CLAIM YOUR OWN PROFILE ↗";
+        const claimHref = "https://pixels.in";
+        const bgColor = node.style.backgroundColor || "#0b0b0f";
+        const bgOpacity = node.style.backgroundOpacity ?? 0.65;
+        const radius = node.style.borderRadius ?? 8;
+        const claimStyle: React.CSSProperties = {
+          backgroundColor: hexToRgbaSafe(bgColor, bgOpacity),
+          borderColor: node.style.borderColor || "#2e2e38",
+          borderWidth: `${node.style.borderWidth ?? 1}px`,
+          borderStyle: node.style.borderStyle || "solid",
+          borderRadius: `${radius}px`,
+        };
+
+        if (!isInteractive) {
+          return (
+            <a
+              href={claimHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={claimStyle}
+              data-testid={`public-claim-node-${node.id}`}
+              className="w-full h-full px-3 flex items-center justify-center text-white/80 hover:text-white hover:border-white/30 backdrop-blur-sm transition-all text-[11px] tracking-wide font-mono truncate select-none"
+            >
+              {claimLabel}
+            </a>
+          );
+        }
+
+        return (
+          <div
+            style={claimStyle}
+            data-testid={`builder-claim-node-${node.id}`}
+            className="w-full h-full px-3 flex items-center justify-center text-white/80 backdrop-blur-sm text-[11px] tracking-wide font-mono truncate select-none"
+          >
+            {claimLabel}
+          </div>
+        );
+      }
+
       default:
         return (
           <div className="w-full h-full border border-dashed border-white/20 flex items-center justify-center text-[10px] font-mono text-neutral-500">

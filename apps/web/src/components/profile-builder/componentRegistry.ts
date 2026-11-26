@@ -288,6 +288,19 @@ export const PROFILE_BUILDER_REGISTRY: Record<BuilderComponentType, ComponentReg
     allowInRoot: true,
     preferEmbedParent: false,
   },
+  "claim-profile": {
+    type: "claim-profile",
+    category: "profile",
+    label: "Claim Your Profile",
+    shortDesc: "Promotional claim badge (https://pixels.in)",
+    defaultWidth: 214,
+    defaultHeight: 36,
+    minWidth: 140,
+    minHeight: 28,
+    canHaveChildren: false,
+    allowInRoot: true,
+    preferEmbedParent: false,
+  },
 };
 
 export const MAX_HEART_COMPONENTS = 5;
@@ -304,6 +317,7 @@ export const LIBRARY_CATALOG_ORDER: BuilderComponentType[] = [
   "badges-group",
   "social-group",
   "heart-like",
+  "claim-profile",
   "music-display",
   "custom-rpc",
   "embed",
@@ -771,6 +785,18 @@ export function createNodeFromRegistry(
       base.style.borderWidth = 1;
       base.style.borderColor = "#2a2a34";
       base.style.borderRadius = 9999;
+      break;
+    case "claim-profile":
+      base.config = {
+        claimText: "CLAIM YOUR OWN PROFILE ↗",
+        claimUrl: "https://pixels.in",
+      };
+      base.style.backgroundType = "solid";
+      base.style.backgroundColor = "#0b0b0f";
+      base.style.backgroundOpacity = 0.65;
+      base.style.borderWidth = 1;
+      base.style.borderColor = "#2e2e38";
+      base.style.borderRadius = 8;
       break;
     default:
       break;
@@ -1317,6 +1343,61 @@ export function createDefaultReferenceDocument(seed?: {
         accentColor: "#d71920",
       },
     },
+    {
+      id: "node-default-heart-like",
+      type: "heart-like",
+      name: "Heart / Like",
+      parentId: null,
+      x: 160,
+      y: canvas.height - 72,
+      width: 112,
+      height: 40,
+      zIndex: 50,
+      visible: true,
+      locked: false,
+      style: {
+        opacity: 1,
+        backgroundType: "solid",
+        backgroundColor: "#111116",
+        backgroundOpacity: 0.85,
+        borderWidth: 1,
+        borderColor: "#2a2a34",
+        borderRadius: 9999,
+      },
+      responsive: { hiddenOn: [], widthMode: "fixed" },
+      config: {
+        heartLabel: "Like",
+        heartAccentColor: "#f43f5e",
+        heartShowCount: true,
+      },
+    },
+    {
+      id: "node-default-claim-profile",
+      type: "claim-profile",
+      name: "Claim Your Profile",
+      parentId: null,
+      x: canvas.width - 246,
+      y: canvas.height - 68,
+      width: 214,
+      height: 36,
+      zIndex: 51,
+      visible: true,
+      locked: false,
+      style: {
+        opacity: 1,
+        backgroundType: "solid",
+        backgroundColor: "#0b0b0f",
+        backgroundOpacity: 0.65,
+        borderWidth: 1,
+        borderColor: "#2e2e38",
+        borderRadius: 8,
+      },
+      responsive: { hiddenOn: [], widthMode: "fixed" },
+      config: {
+        claimText: "CLAIM YOUR OWN PROFILE ↗",
+        claimUrl: "https://pixels.in",
+      },
+    },
   ];
 
   return {
@@ -1523,6 +1604,53 @@ export function hydrateDocumentIdentity(
 
   if (!changed) return doc;
   return { ...doc, nodes: nextNodes };
+}
+
+export function ensureFreeTierClaimProfileNode(
+  doc: ProfileBuilderDocument,
+  isPremium: boolean
+): ProfileBuilderDocument {
+  if (isPremium) return doc;
+  const existing = doc.nodes.find((n) => n.type === "claim-profile");
+  if (existing) {
+    if (existing.visible) return doc;
+    return {
+      ...doc,
+      nodes: doc.nodes.map((n) =>
+        n.type === "claim-profile" ? { ...n, visible: true } : n
+      ),
+    };
+  }
+  const cw = Math.max(320, doc.canvas.width || 1920);
+  const ch = Math.max(320, doc.canvas.height || 1080);
+  const claimNode: BuilderNode = {
+    id: "node-default-claim-profile",
+    type: "claim-profile",
+    name: "Claim Your Profile",
+    parentId: null,
+    x: Math.max(24, cw - 246),
+    y: Math.max(24, ch - 68),
+    width: 214,
+    height: 36,
+    zIndex: 51,
+    visible: true,
+    locked: false,
+    style: {
+      opacity: 1,
+      backgroundType: "solid",
+      backgroundColor: "#0b0b0f",
+      backgroundOpacity: 0.65,
+      borderWidth: 1,
+      borderColor: "#2e2e38",
+      borderRadius: 8,
+    },
+    responsive: { hiddenOn: [], widthMode: "fixed" },
+    config: {
+      claimText: "CLAIM YOUR OWN PROFILE ↗",
+      claimUrl: "https://pixels.in",
+    },
+  };
+  return { ...doc, nodes: [...doc.nodes, claimNode] };
 }
 
 export function collectDescendantsCount(parentId: string, nodes: BuilderNode[]): number {

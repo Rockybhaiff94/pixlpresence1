@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Code2,
   CreditCard,
+  ExternalLink,
   FileText,
   Gamepad2,
   Heart,
@@ -58,6 +59,8 @@ export function getBuilderComponentIcon(
       return Share2;
     case "heart-like":
       return Heart;
+    case "claim-profile":
+      return ExternalLink;
     case "music-display":
       return Music;
     case "custom-rpc":
