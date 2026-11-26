@@ -176,6 +176,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               data-testid="canvas-bg-type"
             >
               <option value="image">Image</option>
+              <option value="gif">Animated GIF</option>
               <option value="solid">Solid Color</option>
               <option value="gradient">Gradient</option>
               <option value="video">Video (MP4/WebM)</option>
@@ -232,14 +233,23 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             </div>
           )}
 
-          {bgType === "image" && (
+          {(bgType === "image" || bgType === "gif") && (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <div className="w-12 h-9 rounded bg-[#14141a] border border-[#262630] overflow-hidden shrink-0 flex items-center justify-center">
+                <div className="w-12 h-9 rounded bg-[#14141a] border border-[#262630] overflow-hidden shrink-0 flex items-center justify-center relative">
                   {bgImageUrl ? (
-                    <img src={bgImageUrl} alt="BG" className="w-full h-full object-cover" />
+                    <img
+                      src={bgImageUrl}
+                      alt={bgType === "gif" ? "Animated GIF BG" : "BG"}
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     <ImageIcon size={14} className="text-neutral-600" />
+                  )}
+                  {bgType === "gif" && (
+                    <span className="absolute bottom-0.5 right-0.5 px-1 rounded bg-black/80 text-[8px] font-bold text-white">
+                      GIF
+                    </span>
                   )}
                 </div>
                 <button
@@ -247,21 +257,24 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   onClick={() =>
                     onOpenMediaPicker(
                       (url) => patchBg({ backgroundImage: url }, { bgImageUrl: url }),
-                      "Replace Canvas Background Image",
+                      bgType === "gif"
+                        ? "Upload Animated GIF Background (Max 10 MB)"
+                        : "Replace Canvas Background Image",
                       bgImageUrl,
-                      "canvas_background"
+                      bgType === "gif" ? "background_gif" : "canvas_background"
                     )
                   }
                   className="px-2.5 py-1.5 rounded bg-[#14141b] hover:bg-[#1e1e28] border border-[#2a2a34] text-white cursor-pointer"
                   data-testid="canvas-bg-replace"
                 >
-                  Replace
+                  {bgType === "gif" ? (bgImageUrl ? "Replace GIF" : "Upload GIF (10MB)") : "Replace"}
                 </button>
                 <button
                   type="button"
                   onClick={() => patchBg({ backgroundImage: "" }, { bgImageUrl: "" })}
                   className="p-1.5 rounded bg-[#14141b] hover:bg-red-950/40 border border-[#2a2a34] text-neutral-400 hover:text-red-400 cursor-pointer"
-                  title="Remove Background Image"
+                  title={bgType === "gif" ? "Remove GIF Background" : "Remove Background Image"}
+                  data-testid="canvas-bg-remove"
                 >
                   <Trash2 size={12} />
                 </button>

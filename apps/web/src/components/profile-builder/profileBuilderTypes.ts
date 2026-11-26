@@ -171,7 +171,7 @@ export interface BuilderComponentConfig {
   separatorStyle?: "solid" | "dashed" | "dotted";
 
   // Background layer node
-  bgType?: "image" | "video" | "solid" | "gradient";
+  bgType?: "image" | "gif" | "video" | "solid" | "gradient";
   bgColor?: string;
   bgGradientTo?: string;
   bgGradientAngle?: number;
@@ -214,7 +214,7 @@ export interface BuilderNode {
 export interface BuilderCanvasSettings {
   width: number;
   height: number;
-  backgroundType: "solid" | "gradient" | "image" | "video";
+  backgroundType: "solid" | "gradient" | "image" | "gif" | "video";
   backgroundColor: string;
   backgroundGradientTo: string;
   backgroundGradientAngle: number;

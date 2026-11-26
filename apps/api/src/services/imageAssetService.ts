@@ -499,8 +499,14 @@ export class ImageAssetService {
         (crop.offsetY && crop.offsetY !== 0))
     );
 
-    // For Studio / Profile backgrounds & image elements, preserve original aspect ratio & frames directly if <= 10MB and <= 1920px.
-    if (preserveAspectRatio && !hasCustomCrop && origWidth <= 1920 && pageHeight <= 1920 && buffer.length <= this.MAX_GIF_BYTES) {
+    // For Studio / Profile backgrounds & image elements, preserve original aspect ratio & frames directly up to 10MB and MAX_DIMENSION.
+    if (
+      preserveAspectRatio &&
+      !hasCustomCrop &&
+      origWidth <= this.MAX_DIMENSION &&
+      pageHeight <= this.MAX_DIMENSION &&
+      buffer.length <= this.MAX_GIF_BYTES
+    ) {
       return {
         buffer,
         mimeType: 'image/gif',

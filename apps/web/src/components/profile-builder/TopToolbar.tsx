@@ -164,7 +164,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
         <div className="flex items-center gap-2.5 min-w-0 shrink-0">
           <div className="flex items-center gap-1.5 text-[11px] font-bold tracking-wider text-neutral-300 uppercase">
             <span className="w-2 h-2 rounded-full bg-[#d71920]" />
-            <span>PIXEL.GG STUDIO</span>
+            <span data-testid="studio-brand-name">PIXLS.IN STUDIO</span>
             <span className="text-neutral-600">|</span>
           </div>
 
@@ -172,8 +172,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
             type="text"
             value={title}
             onChange={(e) => onUpdateTitle(e.target.value)}
-            aria-label="Profile Builder Title"
-            className="bg-transparent border border-transparent hover:border-[#26262f] focus:border-white/30 rounded px-1.5 py-0.5 text-xs font-bold text-white outline-none w-40 sm:w-48 truncate"
+            aria-label="Studio Title"
+            className="bg-transparent border border-transparent hover:border-[#26262f] focus:border-white/30 rounded px-1.5 py-0.5 text-xs font-bold text-white outline-none w-36 sm:w-44 truncate"
             data-testid="builder-title-input"
           />
 
@@ -254,91 +254,102 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
           </div>
         </div>
 
-        {/* Right: Settings, Export, Save Draft, Publish */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            className="px-2.5 py-1.5 rounded-lg bg-[#111116] hover:bg-[#191921] border border-[#24242d] text-neutral-300 hover:text-white text-[11px] flex items-center gap-1.5 cursor-pointer"
-            data-testid="builder-settings-btn"
+        {/* Right: Grouped Icon Controls (Settings, Export, View Public Page), Save Draft, Publish */}
+        <div className="flex items-center gap-2 shrink-0">
+          <div
+            className="flex items-center gap-0.5 bg-[#101015] border border-[#22222b] rounded-lg p-0.5"
+            data-testid="builder-utility-icon-group"
           >
-            <Settings size={12} />
-            <span className="hidden sm:inline">Settings</span>
-          </button>
-
-          {/* Export Dropdown */}
-          <div className="relative">
             <button
               type="button"
-              onClick={() => {
-                setExportOpen((p) => !p);
-                setAlignOpen(false);
-                setOrderOpen(false);
-              }}
-              className="px-2.5 py-1.5 rounded-lg bg-[#111116] hover:bg-[#191921] border border-[#24242d] text-neutral-300 hover:text-white text-[11px] flex items-center gap-1 cursor-pointer"
-              data-testid="builder-export-btn"
+              onClick={onOpenSettings}
+              title="Settings"
+              aria-label="Settings"
+              className="p-1.5 rounded-md text-neutral-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              data-testid="builder-settings-btn"
             >
-              <Download size={12} />
-              <span className="hidden sm:inline">Export</span>
-              <ChevronDown size={11} />
+              <Settings size={14} />
             </button>
-            {exportOpen && (
-              <div
-                className="absolute right-0 mt-1.5 w-52 bg-[#0e0e13] border border-[#282832] rounded-xl shadow-2xl p-1.5 z-50"
-                data-testid="builder-export-menu"
+
+            {/* Export Dropdown */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setExportOpen((p) => !p);
+                  setAlignOpen(false);
+                  setOrderOpen(false);
+                }}
+                title="Export"
+                aria-label="Export"
+                aria-expanded={exportOpen}
+                className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                  exportOpen
+                    ? "bg-white text-black"
+                    : "text-neutral-300 hover:text-white hover:bg-white/10"
+                }`}
+                data-testid="builder-export-btn"
               >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setExportOpen(false);
-                    onExport("png");
-                  }}
-                  className="w-full px-2.5 py-2 rounded-lg text-left text-[11px] text-neutral-200 hover:bg-white/10 flex items-center gap-2 cursor-pointer"
-                  data-testid="builder-export-png"
+                <Download size={14} />
+              </button>
+              {exportOpen && (
+                <div
+                  className="absolute right-0 mt-1.5 w-52 bg-[#0e0e13] border border-[#282832] rounded-xl shadow-2xl p-1.5 z-50"
+                  data-testid="builder-export-menu"
                 >
-                  <FileImage size={13} className="text-neutral-400" />
-                  <span>Export Profile Image (PNG)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setExportOpen(false);
-                    onExport("design-json");
-                  }}
-                  className="w-full px-2.5 py-2 rounded-lg text-left text-[11px] text-neutral-200 hover:bg-white/10 flex items-center gap-2 cursor-pointer"
-                  data-testid="builder-export-json"
-                >
-                  <FileJson size={13} className="text-neutral-400" />
-                  <span>Export Design Data (JSON)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setExportOpen(false);
-                    onExport("template-json");
-                  }}
-                  className="w-full px-2.5 py-2 rounded-lg text-left text-[11px] text-neutral-200 hover:bg-white/10 flex items-center gap-2 cursor-pointer"
-                  data-testid="builder-export-template"
-                >
-                  <FileCode2 size={13} className="text-neutral-400" />
-                  <span>Export Reusable Template</span>
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExportOpen(false);
+                      onExport("png");
+                    }}
+                    className="w-full px-2.5 py-2 rounded-lg text-left text-[11px] text-neutral-200 hover:bg-white/10 flex items-center gap-2 cursor-pointer"
+                    data-testid="builder-export-png"
+                  >
+                    <FileImage size={13} className="text-neutral-400" />
+                    <span>Export Profile Image (PNG)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExportOpen(false);
+                      onExport("design-json");
+                    }}
+                    className="w-full px-2.5 py-2 rounded-lg text-left text-[11px] text-neutral-200 hover:bg-white/10 flex items-center gap-2 cursor-pointer"
+                    data-testid="builder-export-json"
+                  >
+                    <FileJson size={13} className="text-neutral-400" />
+                    <span>Export Design Data (JSON)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExportOpen(false);
+                      onExport("template-json");
+                    }}
+                    className="w-full px-2.5 py-2 rounded-lg text-left text-[11px] text-neutral-200 hover:bg-white/10 flex items-center gap-2 cursor-pointer"
+                    data-testid="builder-export-template"
+                  >
+                    <FileCode2 size={13} className="text-neutral-400" />
+                    <span>Export Reusable Template</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {onViewPublicProfile && (
+              <button
+                type="button"
+                onClick={onViewPublicProfile}
+                title="View Public Page"
+                aria-label="View Public Page"
+                className="p-1.5 rounded-md text-neutral-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                data-testid="builder-view-public-btn"
+              >
+                <ExternalLink size={14} />
+              </button>
             )}
           </div>
-
-          {onViewPublicProfile && (
-            <button
-              type="button"
-              onClick={onViewPublicProfile}
-              className="px-2.5 py-1.5 rounded-lg bg-[#111116] hover:bg-[#191921] border border-[#24242d] text-neutral-200 hover:text-white text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer"
-              data-testid="builder-view-public-btn"
-              title="View Live Public Page"
-            >
-              <ExternalLink size={12} />
-              <span className="hidden sm:inline">View Public Page</span>
-            </button>
-          )}
 
           <button
             type="button"

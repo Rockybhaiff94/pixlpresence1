@@ -96,7 +96,7 @@ export function resolveEffectiveBackground(
   nodes: BuilderNode[]
 ): {
   visible: boolean;
-  type: "solid" | "gradient" | "image" | "video";
+  type: "solid" | "gradient" | "image" | "gif" | "video";
   color: string;
   gradientTo: string;
   gradientAngle: number;
@@ -969,10 +969,10 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               : bg.color,
         }}
       >
-        {bg.type === "image" && bg.imageUrl && (
+        {(bg.type === "image" || bg.type === "gif") && bg.imageUrl && (
           <img
             src={bg.imageUrl}
-            alt="Canvas Background"
+            alt={bg.type === "gif" ? "Animated GIF Canvas Background" : "Canvas Background"}
             draggable={false}
             className="w-full h-full"
             style={{
@@ -1018,9 +1018,9 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
         style={{ backgroundColor: bg.color || "#060608" }}
         data-testid="public-profile-viewport"
       >
-        {/* Subtle ambient backdrop behind the centered uncropped canvas on wide/tall viewports */}
-        {bg.visible && (bg.type === "image" || bg.type === "gradient") && (
-          <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-35 blur-2xl scale-105">
+        {/* Crisp full-bleed canvas background spans entire viewport without ugly dark letterbox bars */}
+        {bg.visible && (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
             {renderBackgroundLayer()}
           </div>
         )}
@@ -1044,13 +1044,12 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               height: `${canvasH}px`,
               transform: `scale(${publicScale})`,
               transformOrigin: "top left",
-              backgroundColor: bg.color || "#060608",
+              backgroundColor: "transparent",
               position: "relative",
               overflow: "hidden",
             }}
           >
-            {renderBackgroundLayer()}
-
+            {/* Inner stage stays seamless against the full-bleed background while keeping saved coordinates */}
             <div
               className="absolute inset-0 z-10"
               data-testid="public-profile-composition"

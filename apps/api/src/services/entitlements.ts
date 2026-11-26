@@ -63,7 +63,7 @@ export function getUserCapabilities(user: {
       allowVideoBackground: true,
       allowCustomFonts: true,
       allowHighResUploads: true,
-      maxGifSizeBytes: 8 * 1024 * 1024,
+      maxGifSizeBytes: 10 * 1024 * 1024,
       maxImageSizeBytes: 15 * 1024 * 1024,
       canRemoveBranding: true,
       allowRepositionLikeButton: true,
@@ -84,7 +84,7 @@ export function getUserCapabilities(user: {
     allowVideoBackground: false,
     allowCustomFonts: true,
     allowHighResUploads: false,
-    maxGifSizeBytes: 5 * 1024 * 1024, // Standard 5 MB GIF upload limit
+    maxGifSizeBytes: 10 * 1024 * 1024, // 10 MB GIF background & asset limit
     maxImageSizeBytes: 10 * 1024 * 1024,
     canRemoveBranding: false,
     allowRepositionLikeButton: false,

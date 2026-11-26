@@ -121,9 +121,28 @@ export function extractAssetUrlsFromSnapshot(snapshotObj: any): string[] {
   return Array.from(refs);
 }
 
+function normalizeSnapshotForDiff(snapshotObj: Record<string, any>): string {
+  const clone: Record<string, any> = JSON.parse(JSON.stringify(snapshotObj || {}));
+  if (clone.designConfig && typeof clone.designConfig === 'object') {
+    if (clone.designConfig.draftProfileBuilder?.metadata) {
+      clone.designConfig.draftProfileBuilder.metadata = {
+        ...clone.designConfig.draftProfileBuilder.metadata,
+        updatedAt: undefined,
+      };
+    }
+    if (clone.designConfig.profileBuilder?.metadata) {
+      clone.designConfig.profileBuilder.metadata = {
+        ...clone.designConfig.profileBuilder.metadata,
+        updatedAt: undefined,
+      };
+    }
+  }
+  return JSON.stringify(clone);
+}
+
 /**
  * Persists a complete profile snapshot inside a Prisma transaction.
- * Deduplicates duplicate clientRequestId retries without creating extra entries.
+ * Deduplicates duplicate clientRequestId retries and unchanged consecutive snapshots.
  */
 export async function createHistorySnapshotTx(
   tx: any,
@@ -154,7 +173,27 @@ export async function createHistorySnapshotTx(
     }
   }
 
-  const createdAt = params.createdAt ?? new Date();
+  const now = params.createdAt ?? new Date();
+  const latest = await tx.profileHistorySnapshot.findFirst({
+    where: {
+      userId: params.userId,
+      expiresAt: { gt: now },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (latest?.snapshotJson) {
+    try {
+      const prevNorm = normalizeSnapshotForDiff(JSON.parse(latest.snapshotJson));
+      const nextNorm = normalizeSnapshotForDiff(params.snapshotObj);
+      if (prevNorm === nextNorm) {
+        return latest;
+      }
+    } catch {
+      // Proceed to create snapshot if prior JSON was unreadable
+    }
+  }
+
+  const createdAt = now;
   const expiresAt = new Date(createdAt.getTime() + HISTORY_RETENTION_MS);
   const assetUrls = extractAssetUrlsFromSnapshot(params.snapshotObj);
 

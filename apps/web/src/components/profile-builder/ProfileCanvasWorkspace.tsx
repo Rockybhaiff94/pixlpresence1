@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Copy,
+  Eye,
   GripVertical,
   Hand,
   Lock,
@@ -66,6 +67,7 @@ interface ProfileCanvasWorkspaceProps {
     y?: number
   ) => void;
   onQuickAddGalleryImage: (galleryId: string) => void;
+  onOpenLivePreview?: () => void;
 }
 
 export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
@@ -84,6 +86,7 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
   onInsertChild,
   onDropComponent,
   onQuickAddGalleryImage,
+  onOpenLivePreview,
 }) => {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const stageWrapperRef = useRef<HTMLDivElement>(null);
@@ -165,23 +168,26 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
     setPan({ x: 0, y: 0 });
   }, [effectiveCanvasHeight, effectiveCanvasWidth, onZoomChange, workspaceSize]);
 
-  // Initial viewport scaling on mount so foreground Embed & typography remain crisp and legible
+  // Initial viewport scaling & responsive device fit so full canvas remains centered without clipping
   const didInitialFitRef = useRef(false);
+  const lastDeviceModeRef = useRef<BuilderDeviceMode>(deviceMode);
   useEffect(() => {
-    if (!didInitialFitRef.current && workspaceSize.width > 120) {
+    const modeChanged = lastDeviceModeRef.current !== deviceMode;
+    if ((!didInitialFitRef.current || modeChanged) && workspaceSize.width > 120 && workspaceSize.height > 120) {
       didInitialFitRef.current = true;
+      lastDeviceModeRef.current = deviceMode;
       const raf = window.requestAnimationFrame(() => {
-        const primary = doc.nodes.find((n) => n.type === "embed" && n.parentId === null);
-        const focusW = primary ? Math.max(760, primary.width + 96) : effectiveCanvasWidth;
-        const focusH = primary ? Math.max(660, primary.height + 120) : effectiveCanvasHeight;
-        const wRatio = (workspaceSize.width - 48) / focusW;
-        const hRatio = (workspaceSize.height - 48) / focusH;
-        const initialZoom = Math.max(0.42, Math.min(0.85, Number(Math.min(wRatio, hRatio).toFixed(2))));
+        const padX = 36;
+        const padY = 36;
+        const wRatio = (workspaceSize.width - padX) / Math.max(320, effectiveCanvasWidth);
+        const hRatio = (workspaceSize.height - padY) / Math.max(320, effectiveCanvasHeight);
+        const initialZoom = Math.max(0.32, Math.min(1.0, Number(Math.min(wRatio, hRatio).toFixed(2))));
         onZoomChange(initialZoom);
+        setPan({ x: 0, y: 0 });
       });
       return () => window.cancelAnimationFrame(raf);
     }
-  }, [doc.nodes, effectiveCanvasHeight, effectiveCanvasWidth, onZoomChange, workspaceSize.height, workspaceSize.width]);
+  }, [deviceMode, effectiveCanvasHeight, effectiveCanvasWidth, onZoomChange, workspaceSize.height, workspaceSize.width]);
 
   const selectedNode = doc.nodes.find((n) => n.id === selectedId) || null;
 
@@ -1014,6 +1020,19 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
             <Scan size={11} />
             <span className="hidden sm:inline">Fit</span>
           </button>
+
+          {onOpenLivePreview && (
+            <button
+              type="button"
+              onClick={onOpenLivePreview}
+              title="Open In-Editor Live Preview"
+              className="px-2 py-1 rounded bg-[#15151d] hover:bg-[#1f1f2b] border border-[#2c2c38] text-neutral-100 hover:text-white flex items-center gap-1 cursor-pointer font-semibold"
+              data-testid="builder-preview-btn"
+            >
+              <Eye size={11} />
+              <span className="hidden sm:inline">Preview</span>
+            </button>
+          )}
 
           <button
             type="button"

@@ -867,9 +867,9 @@ profileRouter.patch('/me', requireAuth, async (req: any, res) => {
       });
 
       let snapshotRecord: { id: string } | null = null;
-      // Strict Rule: ONLY explicit "Save Draft" creates a 7-day history snapshot.
-      // Autosave, Publish, Preview, Undo/Redo, Reset, and Restore do NOT create history entries.
-      if (saveMode === 'manual_save_draft') {
+      // Strict Rule: ONLY explicit "Save Draft" or pre-reset backup creates a 7-day history snapshot.
+      // Autosave, Publish, Preview, Undo/Redo, and Restore do NOT create spurious history entries.
+      if (saveMode === 'manual_save_draft' || saveMode === 'pre_reset_backup') {
         const parsedCfg = parseDesignConfigObject(updatedProfile.designConfig);
         const builderDoc = parsedCfg.draftProfileBuilder || parsedCfg.profileBuilder || null;
         snapshotRecord = await createHistorySnapshotTx(tx, {
@@ -877,7 +877,7 @@ profileRouter.patch('/me', requireAuth, async (req: any, res) => {
           profileId: updatedProfile.id,
           profileVersion: updatedProfile.profileVersion,
           schemaVersion: builderDoc?.version || '2.0',
-          saveSource: 'manual_save_draft',
+          saveSource: saveMode,
           clientRequestId,
           snapshotObj: {
             displayName: updatedProfile.displayName,

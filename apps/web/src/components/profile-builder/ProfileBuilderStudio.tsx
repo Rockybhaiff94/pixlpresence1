@@ -1279,6 +1279,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
                   }),
               });
             }}
+            onOpenLivePreview={() => setPreviewModalState({ open: true, mode: "draft" })}
           />
         </div>
 

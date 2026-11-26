@@ -122,20 +122,22 @@ export const AddElementPanel: React.FC<AddElementPanelProps> = ({
 
   return (
     <motion.aside
-      initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, x: -24 }}
+      initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, x: -24, scale: 0.96 }}
       animate={{
         opacity: 1,
         x: 0,
+        scale: 1,
         transition: prefersReducedMotion
           ? { duration: 0.01 }
-          : { duration: 0.2, delay: 0.1, ease: [0.16, 1, 0.3, 1] as const },
+          : { duration: 0.24, ease: [0.16, 1, 0.3, 1] as const },
       }}
       exit={
         prefersReducedMotion
           ? { opacity: 0, transition: { duration: 0.01 } }
-          : { opacity: 0, x: -24, transition: { duration: 0.12, ease: "easeIn" as const } }
+          : { opacity: 0, x: -24, scale: 0.96, transition: { duration: 0.16, ease: "easeIn" as const } }
       }
-      className="w-56 shrink-0 bg-[#09090d] border-r border-[#1d1d24] flex flex-col h-full overflow-hidden font-mono select-none absolute inset-y-0 left-0 z-40 sm:static sm:z-auto shadow-2xl sm:shadow-none"
+      style={{ transformOrigin: "left center" }}
+      className="w-56 shrink-0 bg-[#09090d]/95 backdrop-blur-xl border-r border-[#1d1d24] flex flex-col h-full overflow-hidden font-mono select-none absolute inset-y-0 left-0 z-40 shadow-2xl"
       data-testid="builder-add-element-panel"
     >
       {/* Header */}

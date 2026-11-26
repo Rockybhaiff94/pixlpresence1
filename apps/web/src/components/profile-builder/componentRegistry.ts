@@ -1289,7 +1289,7 @@ export function createDefaultReferenceDocument(seed?: {
   return {
     version: "2.0",
     id: createBuilderId("profile-doc"),
-    title: "Profile Builder (Advanced)",
+    title: "Main Profile",
     canvas,
     nodes,
     preferences: {

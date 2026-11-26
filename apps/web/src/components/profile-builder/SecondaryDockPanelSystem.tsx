@@ -530,47 +530,62 @@ const getCornerRadii = () => getAdaptiveDockCornerRadii(compactPlacement, 14);
 const getBorderClasses = () =>
   getAdaptiveDockBorderClasses(compactPlacement, dragState.isDragging);
 
-const panelPositionClasses = (() => {
-  switch (dockState.attachedEdge) {
-    case "left":
-      return "absolute inset-y-0 left-0 lg:static lg:order-first w-[min(18rem,100%)] sm:w-80 shrink-0 h-full border-r border-[#1f1f27] z-[35]";
-    case "right":
-      return "absolute inset-y-0 right-0 lg:static lg:order-last w-[min(18rem,100%)] sm:w-80 shrink-0 h-full border-l border-[#1f1f27] z-[35]";
-    case "top":
-      return "absolute top-0 inset-x-3 sm:inset-x-6 mx-auto max-w-2xl h-[68%] max-h-[480px] min-h-[260px] rounded-b-xl border border-t-0 border-[#252530] z-[35]";
-    case "bottom":
-      return "absolute bottom-0 inset-x-3 sm:inset-x-6 mx-auto max-w-2xl h-[68%] max-h-[480px] min-h-[260px] rounded-t-xl border border-b-0 border-[#252530] z-[35]";
-  }
-})();
+  const panelPositionClasses = (() => {
+    switch (dockState.attachedEdge) {
+      case "left":
+        return "absolute inset-y-0 left-0 w-[min(18rem,100%)] sm:w-80 shrink-0 h-full border-r border-[#1f1f27] z-[35]";
+      case "right":
+        return "absolute inset-y-0 right-0 w-[min(18rem,100%)] sm:w-80 shrink-0 h-full border-l border-[#1f1f27] z-[35]";
+      case "top":
+        return "absolute top-0 inset-x-3 sm:inset-x-6 mx-auto max-w-2xl h-[68%] max-h-[480px] min-h-[260px] rounded-b-xl border border-t-0 border-[#252530] z-[35]";
+      case "bottom":
+        return "absolute bottom-0 inset-x-3 sm:inset-x-6 mx-auto max-w-2xl h-[68%] max-h-[480px] min-h-[260px] rounded-t-xl border border-b-0 border-[#252530] z-[35]";
+    }
+  })();
 
-const panelMotionInitial = (() => {
-  if (prefersReducedMotion) return { opacity: 1 };
-  switch (dockState.attachedEdge) {
-    case "left":
-      return { opacity: 0, x: -28 };
-    case "right":
-      return { opacity: 0, x: 28 };
-    case "top":
-      return { opacity: 0, y: -24 };
-    case "bottom":
-      return { opacity: 0, y: 24 };
-  }
-})();
+  const dockOriginX = Math.round(compactRect.left + dockWidth / 2);
+  const dockOriginY = Math.round(compactRect.top + dockHeight / 2);
+  const panelTransformOrigin = (() => {
+    switch (dockState.attachedEdge) {
+      case "left":
+        return `0px ${dockOriginY}px`;
+      case "right":
+        return `100% ${dockOriginY}px`;
+      case "top":
+        return `${dockOriginX}px 0px`;
+      case "bottom":
+        return `${dockOriginX}px 100%`;
+    }
+  })();
 
-const panelMotionExit = (() => {
-  if (prefersReducedMotion) return { opacity: 0, transition: { duration: 0.01 } };
-  const exitTransition = { duration: 0.2, ease: [0.22, 1, 0.36, 1] as const };
-  switch (dockState.attachedEdge) {
-    case "left":
-      return { opacity: 0, x: -24, transition: exitTransition };
-    case "right":
-      return { opacity: 0, x: 24, transition: exitTransition };
-    case "top":
-      return { opacity: 0, y: -20, transition: exitTransition };
-    case "bottom":
-      return { opacity: 0, y: 20, transition: exitTransition };
-  }
-})();
+  const panelMotionInitial = (() => {
+    if (prefersReducedMotion) return { opacity: 1 };
+    switch (dockState.attachedEdge) {
+      case "left":
+        return { opacity: 0, x: -24, scale: 0.92 };
+      case "right":
+        return { opacity: 0, x: 24, scale: 0.92 };
+      case "top":
+        return { opacity: 0, y: -20, scale: 0.94 };
+      case "bottom":
+        return { opacity: 0, y: 20, scale: 0.94 };
+    }
+  })();
+
+  const panelMotionExit = (() => {
+    if (prefersReducedMotion) return { opacity: 0, transition: { duration: 0.01 } };
+    const exitTransition = { duration: 0.2, ease: [0.22, 1, 0.36, 1] as const };
+    switch (dockState.attachedEdge) {
+      case "left":
+        return { opacity: 0, x: -20, scale: 0.92, transition: exitTransition };
+      case "right":
+        return { opacity: 0, x: 20, scale: 0.92, transition: exitTransition };
+      case "top":
+        return { opacity: 0, y: -16, scale: 0.94, transition: exitTransition };
+      case "bottom":
+        return { opacity: 0, y: 16, scale: 0.94, transition: exitTransition };
+    }
+  })();
 
 const dockTargetGeometry =
   dragState.isDragging && dragState.pos
@@ -598,12 +613,12 @@ const selectedLabel = selectedNode
 return (
   <>
     {/* STATE A: Compact 3-Option Secondary Dock */}
-    <AnimatePresence mode="wait" initial={false}>
+    <AnimatePresence initial={false}>
       {!dockState.isPanelOpen && (
         <motion.div
           key="secondary-compact-dock"
           ref={compactDockRef}
-          initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0 }}
+          initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.92 }}
           animate={dockTargetGeometry}
           exit={
             prefersReducedMotion
@@ -736,7 +751,7 @@ return (
       </AnimatePresence>
 
       {/* STATE B: Unified Side Panel */}
-      <AnimatePresence mode="wait" initial={false}>
+      <AnimatePresence initial={false}>
         {dockState.isPanelOpen && (
           <motion.aside
             key={`secondary-unified-panel-${dockState.attachedEdge}`}
@@ -745,12 +760,14 @@ return (
               opacity: 1,
               x: 0,
               y: 0,
+              scale: 1,
               transition: prefersReducedMotion
                 ? { duration: 0.01 }
-                : { duration: 0.28, ease: [0.22, 1, 0.36, 1] },
+                : { duration: 0.26, ease: [0.22, 1, 0.36, 1] },
             }}
             exit={panelMotionExit}
-            className={`${panelPositionClasses} bg-[#09090d] flex flex-col overflow-hidden font-mono shadow-2xl`}
+            style={{ transformOrigin: panelTransformOrigin }}
+            className={`${panelPositionClasses} bg-[#09090d]/95 backdrop-blur-xl flex flex-col overflow-hidden font-mono shadow-2xl`}
             aria-label="Secondary Editor Panel"
             data-testid="secondary-unified-panel"
             data-panel-edge={dockState.attachedEdge}
