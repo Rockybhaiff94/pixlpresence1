@@ -514,6 +514,10 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     [doc.nodes, doc.preferences.defaultInsertTarget, selectedId]
   );
 
+  const isPremium = Boolean(
+    user?.premiumStatus || (user?.nitroStatus ?? 0) > 0 || user?.role === "ADMIN"
+  );
+
   const insertComponent = useCallback(
     (
       type: BuilderComponentType,
@@ -522,11 +526,19 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       y?: number,
       extra?: Partial<BuilderNode>
     ): string | null => {
-      if (type === "heart-like" && countHeartNodes(doc.nodes) >= MAX_HEART_COMPONENTS) {
-        const msg = "You can add a maximum of 5 Heart components to your profile.";
+      if (!isPremium && type === "claim-profile") {
+        const msg = "Claim Your Profile is locked on the Free plan. Upgrade to Premium to add or remove Claim buttons.";
         setErrorBanner(msg);
         showToast(msg);
-        setTimeout(() => setErrorBanner(null), 4000);
+        setTimeout(() => setErrorBanner(null), 4500);
+        return null;
+      }
+
+      if (!isPremium && type === "heart-like" && countHeartNodes(doc.nodes) >= 5) {
+        const msg = "Free plan limit reached! You can add up to 5 Like Buttons to your profile. Upgrade to Premium to unlock additional customization.";
+        setErrorBanner(msg);
+        showToast(msg);
+        setTimeout(() => setErrorBanner(null), 4500);
         return null;
       }
 
@@ -566,29 +578,33 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       commitSnapshot(doc.canvas, nextNodes, finalNode.id);
       return finalNode.id;
     },
-    [commitSnapshot, doc.canvas, doc.nodes, liveData, resolveInsertParent]
+    [commitSnapshot, doc.canvas, doc.nodes, isPremium, liveData, resolveInsertParent, showToast]
   );
 
   const handleDuplicateNode = useCallback(
     (id: string) => {
-      const { nextNodes, clonedRootId } = cloneNodeTree(id, doc.nodes);
-      if (!clonedRootId) return;
-      if (countHeartNodes(nextNodes) > MAX_HEART_COMPONENTS) {
-        const msg = "You can add a maximum of 5 Heart components to your profile.";
+      const source = doc.nodes.find((n) => n.id === id);
+      if (!isPremium && source?.type === "claim-profile") {
+        const msg = "Claim Your Profile cannot be duplicated on the Free plan. Upgrade to Premium to unlock.";
         setErrorBanner(msg);
         showToast(msg);
-        setTimeout(() => setErrorBanner(null), 4000);
+        setTimeout(() => setErrorBanner(null), 4500);
+        return;
+      }
+      const { nextNodes, clonedRootId } = cloneNodeTree(id, doc.nodes);
+      if (!clonedRootId) return;
+      if (!isPremium && countHeartNodes(nextNodes) > MAX_HEART_COMPONENTS) {
+        const msg = "Free plan limit reached! You can add up to 5 Like Buttons to your profile. Upgrade to Premium to unlock additional customization.";
+        setErrorBanner(msg);
+        showToast(msg);
+        setTimeout(() => setErrorBanner(null), 4500);
         return;
       }
       setDoc((prev) => ({ ...prev, nodes: nextNodes }));
       setSelectedId(clonedRootId);
       commitSnapshot(doc.canvas, nextNodes, clonedRootId);
     },
-    [commitSnapshot, doc.canvas, doc.nodes, showToast]
-  );
-
-  const isPremium = Boolean(
-    user?.premiumStatus || (user?.nitroStatus ?? 0) > 0 || user?.role === "ADMIN"
+    [commitSnapshot, doc.canvas, doc.nodes, isPremium, showToast]
   );
 
   const handleDeleteNode = useCallback(
@@ -612,10 +628,26 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         setTimeout(() => setErrorBanner(null), 4500);
         return;
       }
+      if (
+        !isPremium &&
+        (target.id === "node-default-heart-like" ||
+          (doc.nodes.some((n) => n.type === "heart-like") && countHeartNodes(nextNodes) < 1))
+      ) {
+        const msg =
+          "The default Like Button cannot be deleted on the Free plan. Upgrade to Premium to remove it.";
+        setErrorBanner(msg);
+        showToast(msg);
+        setTimeout(() => setErrorBanner(null), 4500);
+        return;
+      }
       const nextSelected = selectedId === id || !nextNodes.some((n) => n.id === selectedId)
         ? null
         : selectedId;
-      setDoc((prev) => ({ ...prev, nodes: nextNodes }));
+      setDoc((prev) => ({
+        ...prev,
+        nodes: nextNodes,
+        metadata: { ...prev.metadata, defaultElementsInitialized: true },
+      }));
       setSelectedId(nextSelected);
       commitSnapshot(doc.canvas, nextNodes, nextSelected);
       if (isContainerType(target.type)) {
@@ -1296,6 +1328,13 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
               key="builder-elements-panel"
               onAddComponent={(type) => insertComponent(type)}
               onClose={() => setDockNavState("expanded-dock")}
+              isPremiumOrAdmin={isPremium}
+              heartCount={countHeartNodes(doc.nodes)}
+              onLockedFeature={(reason) => {
+                setErrorBanner(reason);
+                showToast(reason);
+                setTimeout(() => setErrorBanner(null), 4500);
+              }}
             />
           )}
         </AnimatePresence>
@@ -1306,6 +1345,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
             document={doc}
             deviceMode={deviceMode}
             selectedId={selectedId}
+            isPremiumOrAdmin={isPremium}
             liveData={liveData}
             zoom={zoom}
             onZoomChange={setZoom}

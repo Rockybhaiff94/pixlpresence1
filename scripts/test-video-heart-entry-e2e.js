@@ -167,11 +167,20 @@ async function runPlaywrightTests() {
       const placedCount = await page.locator('[data-node-type="heart-like"]').count();
       assert.strictEqual(placedCount, 5, `Expected 5 heart nodes, got ${placedCount}`);
 
-      // Attempt 6th Heart component -> must stay 5
-      await heartBtn.click();
+      // Attempt 6th Heart component -> Free blocked at 5 (locked/disabled), Premium/Admin allowed
+      if (!isPremium) {
+        assert.strictEqual(await heartBtn.getAttribute("data-locked"), "true");
+        await heartBtn.click({ force: true });
+      } else {
+        await heartBtn.click();
+      }
       await page.waitForTimeout(120);
       const countAfter6th = await page.locator('[data-node-type="heart-like"]').count();
-      assert.strictEqual(countAfter6th, 5, "6th Heart component must be rejected");
+      if (!isPremium) {
+        assert.strictEqual(countAfter6th, 5, "Free user 6th Heart component must be rejected");
+      } else {
+        assert.strictEqual(countAfter6th, 6, "Premium user must be able to add >5 Heart components");
+      }
 
       // Close Elements panel
       await page.getByTestId("elements-panel-close").click();
@@ -190,13 +199,24 @@ async function runPlaywrightTests() {
         assert.strictEqual(claimAfterDel, 0, "Premium user MUST be able to delete Claim Your Profile");
       }
 
-      // Users (both Free & Premium) can delete individual Heart components
-      const topHeart = page.locator('[data-node-type="heart-like"]').last();
-      await topHeart.click();
+      // Default Heart component: Free user cannot delete default Heart; Premium can delete any Heart
+      const defaultHeart = page.getByTestId("canvas-node-node-default-heart-like");
+      await defaultHeart.click();
       await page.getByTestId("subbar-delete-btn").click();
       await page.waitForTimeout(150);
-      const countAfterDel = await page.locator('[data-node-type="heart-like"]').count();
-      assert.strictEqual(countAfterDel, 4, "Users must be able to remove individual Heart components");
+      if (!isPremium) {
+        assert.strictEqual(
+          await page.getByTestId("canvas-node-node-default-heart-like").count(),
+          1,
+          "Free user must NOT be able to delete default Heart component"
+        );
+      } else {
+        assert.strictEqual(
+          await page.getByTestId("canvas-node-node-default-heart-like").count(),
+          0,
+          "Premium user MUST be able to delete default Heart component"
+        );
+      }
 
       if (isPremium) {
 
@@ -392,8 +412,11 @@ async function runPlaywrightTests() {
       const pubPage = await pubContext.newPage();
       await pubPage.goto(`${BASE_URL}/heart_tester`, { waitUntil: "networkidle" });
 
-      // Entry screen must be visible first
+      // Entry screen must be visible first with Like & Claim controls
       await pubPage.waitForSelector('[data-testid="public-entry-screen"]', { timeout: 10000 });
+      await pubPage.waitForSelector('[data-testid="public-entry-like-btn"]', { timeout: 5000 });
+      const entryClaimHref = await pubPage.getByTestId("public-entry-claim-link").getAttribute("href");
+      assert(entryClaimHref && !entryClaimHref.includes("pixels.in"), `Claim href must not point to pixels.in, got ${entryClaimHref}`);
       await pubPage.getByTestId("public-enter-profile-btn").click();
       await pubPage.waitForTimeout(550);
       assert.strictEqual(await pubPage.getByTestId("public-entry-screen").count(), 0, "Entry screen should dismiss");

@@ -381,6 +381,10 @@ async function run() {
     const anonContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const anonPage = await anonContext.newPage();
     await anonPage.goto(`${WEB_URL}/${usernameA}`, { waitUntil: "networkidle" });
+    if ((await anonPage.getByTestId("public-entry-screen").count()) > 0) {
+      await anonPage.getByTestId("public-enter-profile-btn").click();
+      await anonPage.waitForTimeout(500);
+    }
     await anonPage.waitForSelector('[data-testid="public-profile-canvas-frame"]', { timeout: 15000 });
     const canvasFrameBox = await anonPage.getByTestId("public-profile-canvas-frame").boundingBox();
     assert.ok(

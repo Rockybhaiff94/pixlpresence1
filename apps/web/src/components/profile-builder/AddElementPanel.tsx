@@ -17,6 +17,7 @@ import {
   Image as ImageIcon,
   Layers,
   LayoutGrid,
+  Lock,
   Minus,
   Music,
   PaintBucket,
@@ -39,6 +40,9 @@ interface AddElementPanelProps {
   collapsed?: boolean;
   onToggleCollapse?: () => void;
   onClose?: () => void;
+  isPremiumOrAdmin?: boolean;
+  heartCount?: number;
+  onLockedFeature?: (reason: string) => void;
 }
 
 export function getBuilderComponentIcon(
@@ -90,6 +94,9 @@ export const AddElementPanel: React.FC<AddElementPanelProps> = ({
   collapsed = false,
   onToggleCollapse,
   onClose,
+  isPremiumOrAdmin = false,
+  heartCount = 0,
+  onLockedFeature,
 }) => {
   const prefersReducedMotion = useReducedMotion();
   const [search, setSearch] = useState("");
@@ -220,25 +227,68 @@ export const AddElementPanel: React.FC<AddElementPanelProps> = ({
                 <div className="space-y-1">
                   {items.map((item) => {
                     const Icon = getBuilderComponentIcon(item.type);
+                    const isClaimLocked = !isPremiumOrAdmin && item.type === "claim-profile";
+                    const isHeartLimitReached =
+                      !isPremiumOrAdmin && item.type === "heart-like" && heartCount >= 5;
+                    const isRestricted = isClaimLocked || isHeartLimitReached;
+                    const lockReason = isClaimLocked
+                      ? "Claim Your Profile is locked on the Free plan. Upgrade to Premium to add or remove Claim buttons."
+                      : "Free plan limit reached! You can add up to 5 Like Buttons to your profile. Upgrade to Premium to unlock additional customization.";
+
                     return (
                       <button
                         key={item.type}
                         type="button"
-                        draggable
+                        draggable={!isRestricted}
                         onDragStart={(e) => {
+                          if (isRestricted) {
+                            e.preventDefault();
+                            onLockedFeature?.(lockReason);
+                            return;
+                          }
                           e.dataTransfer.setData("application/x-pixel-builder-type", item.type);
                           e.dataTransfer.effectAllowed = "copy";
                         }}
-                        onClick={() => onAddComponent(item.type)}
-                        title={item.shortDesc}
-                        className="w-full px-2.5 py-2 rounded-lg bg-[#111116] hover:bg-[#191922] border border-[#22222b] hover:border-white/25 text-left flex items-center gap-2 text-[11px] text-neutral-200 hover:text-white transition-all cursor-pointer group"
+                        onClick={() => {
+                          if (isRestricted) {
+                            onLockedFeature?.(lockReason);
+                            return;
+                          }
+                          onAddComponent(item.type);
+                        }}
+                        title={isRestricted ? lockReason : item.shortDesc}
+                        aria-disabled={isRestricted}
+                        className={`w-full px-2.5 py-2 rounded-lg border text-left flex items-center gap-2 text-[11px] transition-all group ${
+                          isRestricted
+                            ? "bg-[#0e0e13] border-[#22222b] text-neutral-500 cursor-not-allowed opacity-75"
+                            : "bg-[#111116] hover:bg-[#191922] border-[#22222b] hover:border-white/25 text-neutral-200 hover:text-white cursor-pointer"
+                        }`}
                         data-testid={`library-add-${item.type}`}
+                        data-locked={isRestricted ? "true" : "false"}
                       >
                         <Icon
                           size={13}
-                          className="text-neutral-400 group-hover:text-white shrink-0"
+                          className={
+                            isRestricted
+                              ? "text-neutral-600 shrink-0"
+                              : "text-neutral-400 group-hover:text-white shrink-0"
+                          }
                         />
                         <span className="truncate flex-1">{item.label}</span>
+                        {isClaimLocked && (
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-[9px] text-amber-300 shrink-0"
+                            data-testid="claim-locked-badge"
+                          >
+                            <Lock size={9} />
+                            <span>PRO</span>
+                          </span>
+                        )}
+                        {isHeartLimitReached && (
+                          <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[9px] text-neutral-400 shrink-0">
+                            5/5
+                          </span>
+                        )}
                       </button>
                     );
                   })}

@@ -353,13 +353,19 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
 
   const hasEntryScreen = Boolean(
     hasActiveEmbeds &&
-      (musicUrl || effectiveProfileBuilderDoc?.canvas?.entryScreenEnabled)
+      (effectiveProfileBuilderDoc ? effectiveProfileBuilderDoc.canvas?.entryScreenEnabled !== false : Boolean(musicUrl))
   );
   const entryPromptText =
     effectiveProfileBuilderDoc?.canvas?.entryScreenText?.trim() ||
     (musicUrl
       ? "[ CLICK ANYWHERE TO INITIALIZE AUDIO & PROFILE ]"
       : "[ CLICK ANYWHERE TO ENTER PROFILE ]");
+  const configuredSiteUrl =
+    typeof process.env.NEXT_PUBLIC_SITE_URL === "string" && process.env.NEXT_PUBLIC_SITE_URL.trim()
+      ? process.env.NEXT_PUBLIC_SITE_URL.trim().replace(/\/+$/, "")
+      : "";
+  const claimHomeHref =
+    configuredSiteUrl || (typeof window !== "undefined" ? window.location.origin : "/");
 
   return (
     <div
@@ -421,7 +427,39 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
                 {entryPromptText}
               </motion.button>
 
-              <div className="pt-4 text-[10px] text-neutral-600">
+              <div className="pt-4 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleToggleLike();
+                  }}
+                  disabled={isLiking}
+                  data-testid="public-entry-like-btn"
+                  className={`group flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md transition-all cursor-pointer text-xs font-mono ${
+                    hasLiked
+                      ? "bg-rose-500/20 border border-rose-500/40 text-rose-300"
+                      : "bg-white/[0.04] hover:bg-white/[0.09] border border-white/15 text-white/85 hover:text-white"
+                  }`}
+                >
+                  <Heart
+                    size={13}
+                    className={hasLiked ? "fill-rose-500 text-rose-500" : "text-white/75"}
+                  />
+                  <span className="font-semibold tabular-nums">{likes.toLocaleString()}</span>
+                </button>
+
+                <a
+                  href={claimHomeHref}
+                  onClick={(e) => e.stopPropagation()}
+                  data-testid="public-entry-claim-link"
+                  className="text-white/75 hover:text-white px-3 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/15 transition-all text-[11px] tracking-wide font-mono"
+                >
+                  CLAIM YOUR OWN PROFILE ↗
+                </a>
+              </div>
+
+              <div className="pt-2 text-[10px] text-neutral-600">
                 PIXLS.IN STUDIO &bull; PROFILE ENGINE
               </div>
             </motion.div>

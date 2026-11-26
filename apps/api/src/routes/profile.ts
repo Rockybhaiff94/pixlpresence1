@@ -876,19 +876,28 @@ profileRouter.patch('/me', requireAuth, async (req: any, res) => {
             : 0;
         const incomingDraftHearts = countHearts(parsedCfg.draftProfileBuilder);
         const incomingPubHearts = countHearts(parsedCfg.profileBuilder);
-        if (incomingDraftHearts > 5 || incomingPubHearts > 5) {
-          return res.status(400).json({
-            error: 'You can add a maximum of 5 Heart components to your profile.',
-          });
-        }
         if (caps.tier === 'FREE') {
-          const hasVisibleClaim = (doc: any) =>
-            !doc ||
-            !Array.isArray(doc.nodes) ||
-            doc.nodes.some((n: any) => n && n.type === 'claim-profile' && n.visible !== false);
-          if (!hasVisibleClaim(parsedCfg.draftProfileBuilder) || !hasVisibleClaim(parsedCfg.profileBuilder)) {
+          if (incomingDraftHearts > 5 || incomingPubHearts > 5) {
+            return res.status(400).json({
+              error: 'Free plan limit reached! You can add up to 5 Like Buttons to your profile. Upgrade to Premium to unlock additional customization.',
+            });
+          }
+          if (
+            (parsedCfg.draftProfileBuilder && Array.isArray(parsedCfg.draftProfileBuilder.nodes) && incomingDraftHearts < 1) ||
+            (parsedCfg.profileBuilder && Array.isArray(parsedCfg.profileBuilder.nodes) && incomingPubHearts < 1)
+          ) {
             return res.status(403).json({
-              error: 'Removing or hiding the Claim Your Profile button requires Premium.',
+              error: 'The default Like Button cannot be deleted on the Free plan. Upgrade to Premium to remove it.',
+            });
+          }
+          const hasSingleVisibleClaim = (doc: any) => {
+            if (!doc || !Array.isArray(doc.nodes)) return true;
+            const claims = doc.nodes.filter((n: any) => n && n.type === 'claim-profile');
+            return claims.length === 1 && claims[0].visible !== false;
+          };
+          if (!hasSingleVisibleClaim(parsedCfg.draftProfileBuilder) || !hasSingleVisibleClaim(parsedCfg.profileBuilder)) {
+            return res.status(403).json({
+              error: 'Adding, duplicating, hiding, or removing Claim Your Profile buttons requires Premium.',
             });
           }
         }

@@ -43,6 +43,7 @@ interface ProfileCanvasWorkspaceProps {
   document: ProfileBuilderDocument;
   deviceMode: BuilderDeviceMode;
   selectedId: string | null;
+  isPremiumOrAdmin?: boolean;
   liveData?: ProfileLiveActivityData;
   zoom: number;
   onZoomChange: (zoom: number) => void;
@@ -74,6 +75,7 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
   document: doc,
   deviceMode,
   selectedId,
+  isPremiumOrAdmin = false,
   liveData,
   zoom,
   onZoomChange,
@@ -917,73 +919,106 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
 
             {/* Right-Aligned Icon-Only Action Group: Duplicate | Lock | Add Element | Delete */}
             <div className="flex items-center gap-0.5">
-              <button
-                type="button"
-                onClick={() => onDuplicateNode(selectedNode.id)}
-                title="Duplicate"
-                aria-label="Duplicate"
-                className="p-1.5 rounded-lg text-neutral-200 hover:text-white hover:bg-white/10 flex items-center justify-center cursor-pointer shrink-0 transition-colors"
-                data-testid="ft-duplicate"
-              >
-                <Copy size={12} />
-              </button>
+              {(() => {
+                const heartCount = doc.nodes.filter((n) => n.type === "heart-like").length;
+                const duplicateBlocked =
+                  !isPremiumOrAdmin &&
+                  (selectedNode.type === "claim-profile" ||
+                    (selectedNode.type === "heart-like" && heartCount >= 5));
+                const deleteBlocked =
+                  !isPremiumOrAdmin &&
+                  (selectedNode.type === "claim-profile" ||
+                    (selectedNode.type === "heart-like" &&
+                      (selectedNode.id === "node-default-heart-like" || heartCount <= 1)));
 
-              <button
-                type="button"
-                onClick={() =>
-                  onUpdateNode(selectedNode.id, { locked: !selectedNode.locked })
-                }
-                title={selectedNode.locked ? "Unlock" : "Lock"}
-                aria-label={selectedNode.locked ? "Unlock" : "Lock"}
-                className={`p-1.5 rounded-lg flex items-center justify-center cursor-pointer shrink-0 transition-colors ${
-                  selectedNode.locked
-                    ? "text-amber-300 bg-amber-500/15"
-                    : "text-neutral-200 hover:text-white hover:bg-white/10"
-                }`}
-                data-testid="ft-lock"
-              >
-                {selectedNode.locked ? <Lock size={12} /> : <Unlock size={12} />}
-              </button>
+                return (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => onDuplicateNode(selectedNode.id)}
+                      title={
+                        duplicateBlocked
+                          ? "Premium required to duplicate beyond Free plan limit"
+                          : "Duplicate"
+                      }
+                      aria-label="Duplicate"
+                      aria-disabled={duplicateBlocked}
+                      className={`p-1.5 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                        duplicateBlocked
+                          ? "text-neutral-600 cursor-not-allowed opacity-50"
+                          : "text-neutral-200 hover:text-white hover:bg-white/10 cursor-pointer"
+                      }`}
+                      data-testid="ft-duplicate"
+                    >
+                      <Copy size={12} />
+                    </button>
 
-              {isContainerType(selectedNode.type) && (
-                <button
-                  type="button"
-                  onClick={() => setIsAddPopoverOpen((p) => !p)}
-                  title="Add Element"
-                  aria-label="Add Element"
-                  className={`p-1 rounded-lg flex items-center justify-center cursor-pointer shrink-0 transition-colors ${
-                    isAddPopoverOpen
-                      ? "bg-white text-black"
-                      : "text-white hover:bg-white/10"
-                  }`}
-                  data-testid="ft-add-element"
-                >
-                  <span
-                    className={`w-5 h-5 rounded-[5px] border flex items-center justify-center shrink-0 ${
-                      isAddPopoverOpen
-                        ? "bg-black/10 border-black/25"
-                        : "bg-white/10 border-white/20"
-                    }`}
-                  >
-                    <Plus size={11} />
-                  </span>
-                </button>
-              )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onUpdateNode(selectedNode.id, { locked: !selectedNode.locked })
+                      }
+                      title={selectedNode.locked ? "Unlock" : "Lock"}
+                      aria-label={selectedNode.locked ? "Unlock" : "Lock"}
+                      className={`p-1.5 rounded-lg flex items-center justify-center cursor-pointer shrink-0 transition-colors ${
+                        selectedNode.locked
+                          ? "text-amber-300 bg-amber-500/15"
+                          : "text-neutral-200 hover:text-white hover:bg-white/10"
+                      }`}
+                      data-testid="ft-lock"
+                    >
+                      {selectedNode.locked ? <Lock size={12} /> : <Unlock size={12} />}
+                    </button>
 
-              <button
-                type="button"
-                onClick={() => onDeleteNode(selectedNode.id)}
-                title={
-                  selectedDescendantCount > 0
-                    ? `Delete container & ${selectedDescendantCount} child item(s) (Undoable)`
-                    : "Delete"
-                }
-                aria-label="Delete"
-                className="p-1.5 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/15 flex items-center justify-center cursor-pointer shrink-0 transition-colors"
-                data-testid="ft-delete"
-              >
-                <Trash2 size={12} />
-              </button>
+                    {isContainerType(selectedNode.type) && (
+                      <button
+                        type="button"
+                        onClick={() => setIsAddPopoverOpen((p) => !p)}
+                        title="Add Element"
+                        aria-label="Add Element"
+                        className={`p-1 rounded-lg flex items-center justify-center cursor-pointer shrink-0 transition-colors ${
+                          isAddPopoverOpen
+                            ? "bg-white text-black"
+                            : "text-white hover:bg-white/10"
+                        }`}
+                        data-testid="ft-add-element"
+                      >
+                        <span
+                          className={`w-5 h-5 rounded-[5px] border flex items-center justify-center shrink-0 ${
+                            isAddPopoverOpen
+                              ? "bg-black/10 border-black/25"
+                              : "bg-white/10 border-white/20"
+                          }`}
+                        >
+                          <Plus size={11} />
+                        </span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => onDeleteNode(selectedNode.id)}
+                      title={
+                        deleteBlocked
+                          ? "Protected default element (Upgrade to Premium to delete)"
+                          : selectedDescendantCount > 0
+                            ? `Delete container & ${selectedDescendantCount} child item(s) (Undoable)`
+                            : "Delete"
+                      }
+                      aria-label="Delete"
+                      aria-disabled={deleteBlocked}
+                      className={`p-1.5 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                        deleteBlocked
+                          ? "text-neutral-600 cursor-not-allowed opacity-50"
+                          : "text-red-400 hover:text-red-300 hover:bg-red-500/15 cursor-pointer"
+                      }`}
+                      data-testid="ft-delete"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}

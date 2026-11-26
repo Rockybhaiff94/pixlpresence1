@@ -292,7 +292,7 @@ export const PROFILE_BUILDER_REGISTRY: Record<BuilderComponentType, ComponentReg
     type: "claim-profile",
     category: "profile",
     label: "Claim Your Profile",
-    shortDesc: "Promotional claim badge (https://pixels.in)",
+    shortDesc: "Promotional claim badge (Homepage redirect)",
     defaultWidth: 214,
     defaultHeight: 36,
     minWidth: 140,
@@ -789,7 +789,7 @@ export function createNodeFromRegistry(
     case "claim-profile":
       base.config = {
         claimText: "CLAIM YOUR OWN PROFILE ↗",
-        claimUrl: "https://pixels.in",
+        claimUrl: "/",
       };
       base.style.backgroundType = "solid";
       base.style.backgroundColor = "#0b0b0f";
@@ -1395,7 +1395,7 @@ export function createDefaultReferenceDocument(seed?: {
       responsive: { hiddenOn: [], widthMode: "fixed" },
       config: {
         claimText: "CLAIM YOUR OWN PROFILE ↗",
-        claimUrl: "https://pixels.in",
+        claimUrl: "/",
       },
     },
   ];
@@ -1419,6 +1419,7 @@ export function createDefaultReferenceDocument(seed?: {
     },
     metadata: {
       updatedAt: new Date().toISOString(),
+      defaultElementsInitialized: true,
     },
   };
 }
@@ -1606,52 +1607,112 @@ export function hydrateDocumentIdentity(
   return { ...doc, nodes: nextNodes };
 }
 
-export function ensureFreeTierClaimProfileNode(
+export function ensureDefaultSystemElements(
   doc: ProfileBuilderDocument,
-  isPremium: boolean
+  isPremiumOrAdmin: boolean
 ): ProfileBuilderDocument {
-  if (isPremium) return doc;
-  const existing = doc.nodes.find((n) => n.type === "claim-profile");
-  if (existing) {
-    if (existing.visible) return doc;
-    return {
-      ...doc,
-      nodes: doc.nodes.map((n) =>
-        n.type === "claim-profile" ? { ...n, visible: true } : n
-      ),
-    };
-  }
   const cw = Math.max(320, doc.canvas.width || 1920);
   const ch = Math.max(320, doc.canvas.height || 1080);
-  const claimNode: BuilderNode = {
-    id: "node-default-claim-profile",
-    type: "claim-profile",
-    name: "Claim Your Profile",
-    parentId: null,
-    x: Math.max(24, cw - 246),
-    y: Math.max(24, ch - 68),
-    width: 214,
-    height: 36,
-    zIndex: 51,
-    visible: true,
-    locked: false,
-    style: {
-      opacity: 1,
-      backgroundType: "solid",
-      backgroundColor: "#0b0b0f",
-      backgroundOpacity: 0.65,
-      borderWidth: 1,
-      borderColor: "#2e2e38",
-      borderRadius: 8,
-    },
-    responsive: { hiddenOn: [], widthMode: "fixed" },
-    config: {
-      claimText: "CLAIM YOUR OWN PROFILE ↗",
-      claimUrl: "https://pixels.in",
+
+  // For Premium/Admin, if defaults were already initialized once, never re-insert deleted defaults.
+  if (isPremiumOrAdmin && doc.metadata?.defaultElementsInitialized) {
+    return doc;
+  }
+
+  let nextNodes = doc.nodes;
+  let changed = false;
+
+  const hasHeart = nextNodes.some((n) => n.type === "heart-like");
+  if (!hasHeart) {
+    changed = true;
+    nextNodes = [
+      ...nextNodes,
+      {
+        id: "node-default-heart-like",
+        type: "heart-like",
+        name: "Heart / Like",
+        parentId: null,
+        x: 160,
+        y: Math.max(24, ch - 72),
+        width: 112,
+        height: 40,
+        zIndex: 50,
+        visible: true,
+        locked: false,
+        style: {
+          opacity: 1,
+          backgroundType: "solid",
+          backgroundColor: "#111116",
+          backgroundOpacity: 0.85,
+          borderWidth: 1,
+          borderColor: "#2a2a34",
+          borderRadius: 9999,
+        },
+        responsive: { hiddenOn: [], widthMode: "fixed" },
+        config: {
+          heartLabel: "Like",
+          heartAccentColor: "#f43f5e",
+          heartShowCount: true,
+        },
+      },
+    ];
+  }
+
+  const existingClaim = nextNodes.find((n) => n.type === "claim-profile");
+  if (!existingClaim) {
+    changed = true;
+    nextNodes = [
+      ...nextNodes,
+      {
+        id: "node-default-claim-profile",
+        type: "claim-profile",
+        name: "Claim Your Profile",
+        parentId: null,
+        x: Math.max(24, cw - 246),
+        y: Math.max(24, ch - 68),
+        width: 214,
+        height: 36,
+        zIndex: 51,
+        visible: true,
+        locked: false,
+        style: {
+          opacity: 1,
+          backgroundType: "solid",
+          backgroundColor: "#0b0b0f",
+          backgroundOpacity: 0.65,
+          borderWidth: 1,
+          borderColor: "#2e2e38",
+          borderRadius: 8,
+        },
+        responsive: { hiddenOn: [], widthMode: "fixed" },
+        config: {
+          claimText: "CLAIM YOUR OWN PROFILE ↗",
+          claimUrl: "/",
+        },
+      },
+    ];
+  } else if (!isPremiumOrAdmin && !existingClaim.visible) {
+    changed = true;
+    nextNodes = nextNodes.map((n) =>
+      n.type === "claim-profile" ? { ...n, visible: true } : n
+    );
+  }
+
+  if (!changed && doc.metadata?.defaultElementsInitialized) {
+    return doc;
+  }
+
+  return {
+    ...doc,
+    nodes: nextNodes,
+    metadata: {
+      ...doc.metadata,
+      defaultElementsInitialized: true,
     },
   };
-  return { ...doc, nodes: [...doc.nodes, claimNode] };
 }
+
+export const ensureFreeTierClaimProfileNode = ensureDefaultSystemElements;
 
 export function collectDescendantsCount(parentId: string, nodes: BuilderNode[]): number {
   let count = 0;

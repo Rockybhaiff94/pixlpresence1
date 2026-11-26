@@ -268,6 +268,7 @@ export interface ProfileBuilderDocument {
   metadata: {
     updatedAt: string;
     lastPublishedAt?: string;
+    defaultElementsInitialized?: boolean;
   };
 }
 

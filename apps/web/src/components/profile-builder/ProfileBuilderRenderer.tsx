@@ -1065,7 +1065,12 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
 
       case "claim-profile": {
         const claimLabel = node.config.claimText?.trim() || "CLAIM YOUR OWN PROFILE ↗";
-        const claimHref = "https://pixels.in";
+        const configuredSiteUrl =
+          typeof process.env.NEXT_PUBLIC_SITE_URL === "string" && process.env.NEXT_PUBLIC_SITE_URL.trim()
+            ? process.env.NEXT_PUBLIC_SITE_URL.trim().replace(/\/+$/, "")
+            : "";
+        const claimHref =
+          configuredSiteUrl || (typeof window !== "undefined" ? window.location.origin : "/");
         const bgColor = node.style.backgroundColor || "#0b0b0f";
         const bgOpacity = node.style.backgroundOpacity ?? 0.65;
         const radius = node.style.borderRadius ?? 8;
