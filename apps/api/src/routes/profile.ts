@@ -745,9 +745,15 @@ profileRouter.get('/capabilities', requireAuth, async (req: any, res) => {
 
 function containsUnsafeAssetUrls(obj: any): string | null {
   const inspectValue = (val: unknown, field: string): string | null => {
+    if (typeof val === 'number') {
+      return `Invalid numeric value in ${field}`;
+    }
     if (typeof val !== 'string') return null;
     const trimmed = val.trim().toLowerCase();
     if (!trimmed) return null;
+    if (/^\d+$/.test(trimmed)) {
+      return `Invalid numeric identifier in ${field}; expected media URL`;
+    }
     if (trimmed.startsWith('blob:') || trimmed.startsWith('javascript:') || trimmed.startsWith('vbscript:')) {
       return `Invalid non-persistent or unsafe URL in ${field}`;
     }

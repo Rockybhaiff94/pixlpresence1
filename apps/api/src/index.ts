@@ -256,16 +256,16 @@ app.use('/uploads/rpc/:fileName', async (req, res, next) => {
         const CHUNK_SIZE = 4 * 1024 * 1024;
         const fd = await fs.promises.open(tmpPath, 'w');
         try {
-          for (let offset = 0; offset < total; offset += CHUNK_SIZE) {
-            const len = Math.min(CHUNK_SIZE, total - offset);
-            const rows = await prisma.$queryRaw<Array<{ chunk: Buffer }>>`
-              SELECT SUBSTRING("data" FROM ${offset + 1} FOR ${len}) AS chunk FROM "UploadedAsset" WHERE "id" = ${asset.id}
-            `;
-            const chunk = rows?.[0]?.chunk;
-            if (chunk && chunk.length > 0) {
-              await fd.write(chunk);
-            }
+        for (let offset = 0; offset < total; offset += CHUNK_SIZE) {
+          const len = Math.min(CHUNK_SIZE, total - offset);
+          const rows = await prisma.$queryRaw<Array<{ chunk: Buffer }>>`
+            SELECT SUBSTRING("data" FROM ${offset + 1}::int FOR ${len}::int) AS chunk FROM "UploadedAsset" WHERE "id" = ${asset.id}
+          `;
+          const chunk = rows?.[0]?.chunk;
+          if (chunk && chunk.length > 0) {
+            await fd.write(chunk);
           }
+        }
         } finally {
           await fd.close();
         }

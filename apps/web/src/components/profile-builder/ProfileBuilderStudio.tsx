@@ -340,6 +340,13 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
 
   const handleUpdateCanvas = useCallback(
     (updates: Partial<BuilderCanvasSettings>) => {
+      if (updates.backgroundVideo !== undefined) {
+        const rawVid = updates.backgroundVideo;
+        if (typeof rawVid !== "string" || /^\d+$/.test(rawVid.trim())) {
+          console.warn("[VideoGuard] Rejected invalid numeric backgroundVideo update:", rawVid);
+          return;
+        }
+      }
       setDoc((prev) => {
         const nextCanvas = { ...prev.canvas, ...updates };
         const hasBgUpdate =

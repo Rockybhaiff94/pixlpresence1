@@ -119,6 +119,13 @@ export function resolveEffectiveBackground(
   overlayOpacity: number;
   overlayColor: string;
 } {
+  const sanitizeVideoRef = (raw: unknown): string => {
+    if (typeof raw !== "string") return "";
+    const trimmed = raw.trim();
+    if (!trimmed || /^\d+$/.test(trimmed)) return "";
+    return trimmed;
+  };
+
   const bgNode = nodes.find((n) => n.parentId === null && n.type === "background");
   if (bgNode) {
     return {
@@ -131,10 +138,11 @@ export function resolveEffectiveBackground(
         bgNode.config.bgImageUrl !== undefined
           ? bgNode.config.bgImageUrl
           : canvas.backgroundImage,
-      videoUrl:
+      videoUrl: sanitizeVideoRef(
         bgNode.config.bgVideoUrl !== undefined
           ? bgNode.config.bgVideoUrl
-          : canvas.backgroundVideo,
+          : canvas.backgroundVideo
+      ),
       position: bgNode.config.bgPosition || canvas.backgroundPosition || "center center",
       size: bgNode.config.bgSize || canvas.backgroundSize || "cover",
       opacity: bgNode.style.opacity ?? canvas.backgroundOpacity ?? 1,
@@ -150,7 +158,7 @@ export function resolveEffectiveBackground(
     gradientTo: canvas.backgroundGradientTo,
     gradientAngle: canvas.backgroundGradientAngle,
     imageUrl: canvas.backgroundImage,
-    videoUrl: canvas.backgroundVideo,
+    videoUrl: sanitizeVideoRef(canvas.backgroundVideo),
     position: canvas.backgroundPosition || "center center",
     size: canvas.backgroundSize || "cover",
     opacity: canvas.backgroundOpacity ?? 1,
@@ -1147,6 +1155,14 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
             loop
             muted={isInteractive ? true : videoMuted}
             playsInline
+            onError={(e) => {
+              const mediaErr = (e.currentTarget as HTMLVideoElement).error;
+              console.warn("[BackgroundVideo] Failed to load/play video:", {
+                src: bg.videoUrl,
+                code: mediaErr?.code,
+                message: mediaErr?.message,
+              });
+            }}
             className="w-full h-full object-cover"
             style={{ objectPosition: bg.position }}
           />
