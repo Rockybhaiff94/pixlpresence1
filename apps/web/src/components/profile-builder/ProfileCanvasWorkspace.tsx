@@ -90,8 +90,13 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
 }) => {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const stageWrapperRef = useRef<HTMLDivElement>(null);
+  const floatingToolbarRef = useRef<HTMLDivElement>(null);
 
   const [workspaceSize, setWorkspaceSize] = useState({ width: 800, height: 600 });
+  const [toolbarSize, setToolbarSize] = useState({ width: 0, height: 34 });
+  const [toolbarDragOffset, setToolbarDragOffset] = useState({ x: 0, y: 0 });
+  const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
+  const toolbarDragStartRef = useRef({ pointerX: 0, pointerY: 0, baseX: 0, baseY: 0 });
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanMode, setIsPanMode] = useState(false);
   const [spacePressed, setSpacePressed] = useState(false);
@@ -115,6 +120,9 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
   if (selectedId !== prevSelectedId) {
     setPrevSelectedId(selectedId);
     if (isAddPopoverOpen) setIsAddPopoverOpen(false);
+    if (toolbarDragOffset.x !== 0 || toolbarDragOffset.y !== 0) {
+      setToolbarDragOffset({ x: 0, y: 0 });
+    }
   }
 
   const measureWorkspace = useCallback(() => {
@@ -551,7 +559,44 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
     }
   };
 
-  // Dynamic Contextual Toolbar Geometry (clamped strictly inside workspace)
+  // Measure floating toolbar actual content width for exact horizontal centering
+  const selectedType = selectedNode?.type;
+  const selectedLocked = selectedNode?.locked;
+  useLayoutEffect(() => {
+    const el = floatingToolbarRef.current;
+    if (!el) return;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    if (w > 0 && h > 0) {
+      setToolbarSize((prev) =>
+        prev.width === w && prev.height === h ? prev : { width: w, height: h }
+      );
+    }
+  }, [selectedId, selectedType, selectedLocked, isAddPopoverOpen]);
+
+  useEffect(() => {
+    if (!isDraggingToolbar) return;
+    const onMove = (e: PointerEvent) => {
+      const start = toolbarDragStartRef.current;
+      setToolbarDragOffset({
+        x: Math.round(start.baseX + (e.clientX - start.pointerX)),
+        y: Math.round(start.baseY + (e.clientY - start.pointerY)),
+      });
+    };
+    const onUp = () => {
+      setIsDraggingToolbar(false);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [isDraggingToolbar]);
+
+  // Dynamic Contextual Toolbar Geometry (centered above element, draggable via handle, clamped inside workspace)
   const computeToolbarGeom = () => {
     if (!selectedNode || !selectedNode.visible || selectedNode.type === "background") return null;
     const abs = getAbsoluteNodeRect(selectedNode, doc.nodes);
@@ -563,8 +608,8 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
     const eW = abs.width * zoom;
     const eH = abs.height * zoom;
     const isContainer = isContainerType(selectedNode.type);
-    const tbW = isContainer ? 250 : 148;
-    const tbH = 34;
+    const tbW = toolbarSize.width > 40 ? toolbarSize.width : isContainer ? 344 : 244;
+    const tbH = toolbarSize.height > 20 ? toolbarSize.height : 34;
     const gap = 12;
     const pad = 10;
 
@@ -573,28 +618,31 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
     const clampY = (y: number) =>
       Math.round(Math.max(pad, Math.min(Math.max(pad, workspaceSize.height - tbH - pad), y)));
 
-    let left = clampX(eLeft + eW / 2 - tbW / 2);
-    let top = clampY(eTop - gap - tbH);
+    let baseLeft = eLeft + eW / 2 - tbW / 2;
+    let baseTop = eTop - gap - tbH;
     let placement: "top" | "bottom" | "right" | "left" = "top";
 
     if (eTop - gap - tbH >= pad) {
       placement = "top";
-      top = Math.round(eTop - gap - tbH);
+      baseTop = eTop - gap - tbH;
     } else if (eTop + eH + gap + tbH <= workspaceSize.height - pad) {
       placement = "bottom";
-      top = Math.round(eTop + eH + gap);
+      baseTop = eTop + eH + gap;
     } else if (eLeft + eW + gap + tbW <= workspaceSize.width - pad) {
       placement = "right";
-      left = Math.round(eLeft + eW + gap);
-      top = clampY(eTop + eH / 2 - tbH / 2);
+      baseLeft = eLeft + eW + gap;
+      baseTop = eTop + eH / 2 - tbH / 2;
     } else if (eLeft - gap - tbW >= pad) {
       placement = "left";
-      left = Math.round(eLeft - gap - tbW);
-      top = clampY(eTop + eH / 2 - tbH / 2);
+      baseLeft = eLeft - gap - tbW;
+      baseTop = eTop + eH / 2 - tbH / 2;
     } else {
       placement = "bottom";
-      top = clampY(eTop + 8);
+      baseTop = eTop + 8;
     }
+
+    const left = clampX(baseLeft + toolbarDragOffset.x);
+    const top = clampY(baseTop + toolbarDragOffset.y);
 
     const menuW = 224;
     const menuH = Math.min(310, Math.max(180, workspaceSize.height - pad * 2));
@@ -826,9 +874,10 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
           </ProfileBuilderRenderer>
         </div>
 
-        {/* Secondary Contextual Floating Toolbar (Clamped strictly inside workspace) */}
+        {/* Secondary Contextual Floating Toolbar (Centered, Draggable, Clamped strictly inside workspace) */}
         {selectedNode && toolbarGeom && (
           <div
+            ref={floatingToolbarRef}
             style={{
               position: "absolute",
               left: `${toolbarGeom.left}px`,
@@ -837,68 +886,102 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
             }}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
-            className="z-40 bg-[#0d0d12]/96 backdrop-blur-xl border border-white/15 rounded-xl px-1.5 shadow-2xl flex items-center gap-1 text-[11px]"
+            className="z-40 bg-[#0d0d12]/96 backdrop-blur-xl border border-white/15 rounded-xl px-1.5 shadow-2xl inline-flex items-center gap-1 text-[11px] whitespace-nowrap select-none w-max"
             data-testid="builder-floating-toolbar"
             data-placement={toolbarGeom.placement}
           >
-            <span className="p-1 text-neutral-500">
+            {/* Dedicated Six-Dot Drag Handle (Left) */}
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                if (e.button !== 0) return;
+                e.stopPropagation();
+                e.preventDefault();
+                toolbarDragStartRef.current = {
+                  pointerX: e.clientX,
+                  pointerY: e.clientY,
+                  baseX: toolbarDragOffset.x,
+                  baseY: toolbarDragOffset.y,
+                };
+                setIsDraggingToolbar(true);
+              }}
+              title="Drag toolbar"
+              aria-label="Drag floating toolbar"
+              className={`p-1 pr-1.5 mr-0.5 border-r border-white/10 text-neutral-400 hover:text-white flex items-center justify-center shrink-0 ${
+                isDraggingToolbar ? "cursor-grabbing text-white" : "cursor-grab"
+              }`}
+              data-testid="ft-drag-handle"
+            >
               <GripVertical size={12} />
-            </span>
-
-            <button
-              type="button"
-              onClick={() => onDuplicateNode(selectedNode.id)}
-              className="px-2 py-1 rounded-lg text-neutral-200 hover:text-white hover:bg-white/10 flex items-center gap-1 cursor-pointer"
-              data-testid="ft-duplicate"
-            >
-              <Copy size={11} />
-              <span>Duplicate</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() =>
-                onUpdateNode(selectedNode.id, { locked: !selectedNode.locked })
-              }
-              className={`px-2 py-1 rounded-lg flex items-center gap-1 cursor-pointer ${selectedNode.locked
-                ? "text-amber-300 bg-amber-500/15"
-                : "text-neutral-200 hover:text-white hover:bg-white/10"
-                }`}
-              data-testid="ft-lock"
-            >
-              {selectedNode.locked ? <Lock size={11} /> : <Unlock size={11} />}
-              <span>{selectedNode.locked ? "Unlock" : "Lock"}</span>
-            </button>
-
-            {isContainerType(selectedNode.type) && (
+            {/* Right-Aligned Compact Action Group: Duplicate | Lock | Add Element | Delete */}
+            <div className="flex items-center gap-0.5">
               <button
                 type="button"
-                onClick={() => setIsAddPopoverOpen((p) => !p)}
-                className={`px-2 py-1 rounded-lg flex items-center gap-1 font-bold cursor-pointer ${isAddPopoverOpen
-                  ? "bg-white text-black"
-                  : "bg-[#1a1a22] hover:bg-[#24242f] border border-white/15 text-white"
-                  }`}
-                data-testid="ft-add-element"
+                onClick={() => onDuplicateNode(selectedNode.id)}
+                className="px-2 py-1 rounded-lg text-neutral-200 hover:text-white hover:bg-white/10 flex items-center gap-1 cursor-pointer shrink-0"
+                data-testid="ft-duplicate"
               >
-                <Plus size={11} />
-                <span>Add Element</span>
+                <Copy size={11} />
+                <span>Duplicate</span>
               </button>
-            )}
 
-            <button
-              type="button"
-              onClick={() => onDeleteNode(selectedNode.id)}
-              title={
-                selectedDescendantCount > 0
-                  ? `Delete container & ${selectedDescendantCount} child item(s) (Undoable)`
-                  : "Delete element"
-              }
-              className="px-2 py-1 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/15 flex items-center gap-1 cursor-pointer"
-              data-testid="ft-delete"
-            >
-              <Trash2 size={11} />
-              <span>Delete</span>
-            </button>
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateNode(selectedNode.id, { locked: !selectedNode.locked })
+                }
+                className={`px-2 py-1 rounded-lg flex items-center gap-1 cursor-pointer shrink-0 ${
+                  selectedNode.locked
+                    ? "text-amber-300 bg-amber-500/15"
+                    : "text-neutral-200 hover:text-white hover:bg-white/10"
+                }`}
+                data-testid="ft-lock"
+              >
+                {selectedNode.locked ? <Lock size={11} /> : <Unlock size={11} />}
+                <span>{selectedNode.locked ? "Unlock" : "Lock"}</span>
+              </button>
+
+              {isContainerType(selectedNode.type) && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddPopoverOpen((p) => !p)}
+                  className={`px-2 py-1 rounded-lg flex items-center gap-1.5 font-bold cursor-pointer shrink-0 ${
+                    isAddPopoverOpen
+                      ? "bg-white text-black"
+                      : "bg-[#1a1a22] hover:bg-[#24242f] border border-white/15 text-white"
+                  }`}
+                  data-testid="ft-add-element"
+                >
+                  <span
+                    className={`w-4 h-4 rounded-[4px] border flex items-center justify-center shrink-0 ${
+                      isAddPopoverOpen
+                        ? "bg-black/10 border-black/20"
+                        : "bg-white/10 border-white/20"
+                    }`}
+                  >
+                    <Plus size={10} />
+                  </span>
+                  <span>Add Element</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => onDeleteNode(selectedNode.id)}
+                title={
+                  selectedDescendantCount > 0
+                    ? `Delete container & ${selectedDescendantCount} child item(s) (Undoable)`
+                    : "Delete element"
+                }
+                className="px-2 py-1 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/15 flex items-center gap-1 cursor-pointer shrink-0"
+                data-testid="ft-delete"
+              >
+                <Trash2 size={11} />
+                <span>Delete</span>
+              </button>
+            </div>
           </div>
         )}
 
