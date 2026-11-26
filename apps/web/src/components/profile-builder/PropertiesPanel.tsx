@@ -1,15 +1,21 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
+  AlertCircle,
+  Check,
   ChevronDown,
   ChevronRight,
+  Film,
   Image as ImageIcon,
+  Loader2,
   Lock,
   Plus,
   Trash2,
   Unlock,
+  UploadCloud,
 } from "lucide-react";
+import { uploadMediaAsset, validateUploadFile } from "@/lib/uploadAsset";
 import { AVAILABLE_FONTS } from "@/components/editor/editorPresets";
 import { PLATFORMS } from "@/components/links/PlatformIcons";
 import {
@@ -76,6 +82,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   onOpenMediaPicker,
   onAddGalleryImage,
 }) => {
+  const [videoUploading, setVideoUploading] = useState(false);
+  const [videoProgress, setVideoProgress] = useState(0);
+  const [videoStage, setVideoStage] = useState("");
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [videoSuccess, setVideoSuccess] = useState<string | null>(null);
+  const [videoFileMeta, setVideoFileMeta] = useState<{ name: string; sizeBytes: number } | null>(null);
+  const videoFileInputRef = useRef<HTMLInputElement>(null);
+
   // 1. CANVAS LEVEL PROPERTIES
   if (!selectedNode || selectedNode.type === "background") {
     const isBgNode = selectedNode?.type === "background";
@@ -319,17 +333,162 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           )}
 
           {bgType === "video" && (
-            <div>
-              <label className="text-[9px] text-neutral-500 uppercase block mb-1">Video URL</label>
+            <div className="space-y-2.5">
               <input
-                type="text"
-                value={bgVideoUrl}
-                onChange={(e) =>
-                  patchBg({ backgroundVideo: e.target.value }, { bgVideoUrl: e.target.value })
-                }
-                placeholder="https://.../bg.mp4"
-                className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                ref={videoFileInputRef}
+                type="file"
+                accept="video/mp4,video/webm,.mp4,.webm"
+                className="hidden"
+                data-testid="canvas-bg-video-file-input"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setVideoError(null);
+                  setVideoSuccess(null);
+                  setVideoFileMeta({ name: file.name, sizeBytes: file.size });
+
+                  const validationErr = validateUploadFile(file, "video");
+                  if (validationErr) {
+                    setVideoError(validationErr);
+                    if (videoFileInputRef.current) videoFileInputRef.current.value = "";
+                    return;
+                  }
+
+                  setVideoUploading(true);
+                  setVideoProgress(15);
+                  setVideoStage("Validating video...");
+                  try {
+                    const uploaded = await uploadMediaAsset({
+                      file,
+                      targetSlot: "background_video",
+                      kind: "video",
+                      onProgress: (pct, stage) => {
+                        setVideoProgress(pct);
+                        setVideoStage(stage);
+                      },
+                    });
+                    patchBg({ backgroundVideo: uploaded.url }, { bgVideoUrl: uploaded.url });
+                    setVideoProgress(100);
+                    setVideoSuccess(
+                      `Uploaded ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)`
+                    );
+                  } catch (err: unknown) {
+                    setVideoError(
+                      err instanceof Error
+                        ? err.message
+                        : "Video upload failed. Please try again."
+                    );
+                  } finally {
+                    setVideoUploading(false);
+                    if (videoFileInputRef.current) videoFileInputRef.current.value = "";
+                  }
+                }}
               />
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={videoUploading}
+                  onClick={() => videoFileInputRef.current?.click()}
+                  className="flex-1 px-2.5 py-1.5 rounded bg-[#14141b] hover:bg-[#1e1e28] border border-[#2a2a34] text-white text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  data-testid="canvas-bg-video-upload-btn"
+                >
+                  {videoUploading ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <UploadCloud size={12} />
+                  )}
+                  <span>
+                    {videoUploading
+                      ? "Uploading..."
+                      : bgVideoUrl
+                        ? "Replace Video"
+                        : "Upload Video (25MB)"}
+                  </span>
+                </button>
+                {bgVideoUrl && (
+                  <button
+                    type="button"
+                    disabled={videoUploading}
+                    onClick={() => {
+                      patchBg({ backgroundVideo: "" }, { bgVideoUrl: "" });
+                      setVideoFileMeta(null);
+                      setVideoSuccess(null);
+                      setVideoError(null);
+                    }}
+                    className="p-1.5 rounded bg-[#14141b] hover:bg-red-950/40 border border-[#2a2a34] text-neutral-400 hover:text-red-400 cursor-pointer disabled:opacity-50"
+                    title="Remove Video Background"
+                    data-testid="canvas-bg-video-remove-btn"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
+
+              {(videoFileMeta || bgVideoUrl) && (
+                <div className="px-2 py-1.5 rounded bg-[#101016] border border-[#22222c] flex items-center gap-2 text-[10px] text-neutral-300">
+                  <Film size={12} className="text-neutral-400 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-semibold">
+                      {videoFileMeta?.name || bgVideoUrl.split("/").pop() || "Background Video"}
+                    </div>
+                    {videoFileMeta && (
+                      <div className="text-[9px] text-neutral-500">
+                        {(videoFileMeta.sizeBytes / (1024 * 1024)).toFixed(2)} MB · MP4/WebM (audio preserved)
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {videoUploading && (
+                <div className="space-y-1" data-testid="canvas-bg-video-progress">
+                  <div className="flex justify-between text-[9px] text-neutral-400">
+                    <span>{videoStage || "Uploading..."}</span>
+                    <span>{videoProgress}%</span>
+                  </div>
+                  <div className="w-full h-1 bg-[#1e1e26] rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-white transition-all duration-200"
+                      style={{ width: `${videoProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {videoSuccess && (
+                <div
+                  className="px-2 py-1.5 rounded bg-emerald-950/40 border border-emerald-800/50 text-emerald-300 text-[10px] flex items-center gap-1.5"
+                  data-testid="canvas-bg-video-success"
+                >
+                  <Check size={11} className="shrink-0" />
+                  <span className="truncate">{videoSuccess}</span>
+                </div>
+              )}
+
+              {videoError && (
+                <div
+                  className="px-2 py-1.5 rounded bg-red-950/50 border border-red-800/60 text-red-200 text-[10px] flex items-start gap-1.5"
+                  data-testid="canvas-bg-video-error"
+                >
+                  <AlertCircle size={11} className="shrink-0 text-red-400 mt-0.5" />
+                  <span>{videoError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="text-[9px] text-neutral-500 uppercase block mb-1">Video URL</label>
+                <input
+                  type="text"
+                  value={bgVideoUrl}
+                  onChange={(e) =>
+                    patchBg({ backgroundVideo: e.target.value }, { bgVideoUrl: e.target.value })
+                  }
+                  placeholder="https://.../bg.mp4"
+                  className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                  data-testid="canvas-bg-video-url"
+                />
+              </div>
             </div>
           )}
 
@@ -1139,11 +1298,61 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         </SectionGroup>
       )}
 
+      {/* Heart / Global Like Configuration */}
+      {selectedNode.type === "heart-like" && (
+        <SectionGroup title="Heart / Global Like">
+          <div className="space-y-2">
+            <div>
+              <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Optional Label</label>
+              <input
+                type="text"
+                value={selectedNode.config.heartLabel ?? "Like"}
+                onChange={(e) => patchConfig({ heartLabel: e.target.value })}
+                placeholder="Like"
+                className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                data-testid="heart-label-input"
+              />
+            </div>
+            <label className="flex items-center justify-between text-[11px] text-neutral-300 cursor-pointer">
+              <span>Show Global Like Count</span>
+              <input
+                type="checkbox"
+                checked={selectedNode.config.heartShowCount !== false}
+                onChange={(e) => patchConfig({ heartShowCount: e.target.checked })}
+                className="accent-white w-3.5 h-3.5 cursor-pointer"
+                data-testid="heart-show-count-toggle"
+              />
+            </label>
+            <div>
+              <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Heart Accent Color</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={selectedNode.config.heartAccentColor || "#f43f5e"}
+                  onChange={(e) => patchConfig({ heartAccentColor: e.target.value })}
+                  className="w-7 h-7 rounded border border-[#2e2e38] bg-transparent cursor-pointer"
+                />
+                <input
+                  type="text"
+                  value={selectedNode.config.heartAccentColor || "#f43f5e"}
+                  onChange={(e) => patchConfig({ heartAccentColor: e.target.value })}
+                  className="flex-1 bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                />
+              </div>
+            </div>
+            <p className="text-[10px] text-neutral-500 leading-relaxed">
+              All Heart components on this profile share one global Like count and visitor state (max 5).
+            </p>
+          </div>
+        </SectionGroup>
+      )}
+
       {/* Background (Container / Surface) */}
       {(isContainer ||
         selectedNode.type === "music-display" ||
         selectedNode.type === "custom-rpc" ||
-        selectedNode.type === "custom-component") && (
+        selectedNode.type === "custom-component" ||
+        selectedNode.type === "heart-like") && (
         <SectionGroup title="Background">
           <div className="flex items-center gap-2">
             <input

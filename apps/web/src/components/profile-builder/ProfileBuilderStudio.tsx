@@ -17,8 +17,10 @@ import {
   ProfileBuilderDocument,
 } from "./profileBuilderTypes";
 import {
+  MAX_HEART_COMPONENTS,
   MAX_NESTING_DEPTH,
   cloneNodeTree,
+  countHeartNodes,
   createDefaultReferenceDocument,
   createNodeFromRegistry,
   deleteNodeSubtree,
@@ -508,6 +510,14 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       y?: number,
       extra?: Partial<BuilderNode>
     ): string | null => {
+      if (type === "heart-like" && countHeartNodes(doc.nodes) >= MAX_HEART_COMPONENTS) {
+        const msg = "You can add a maximum of 5 Heart components to your profile.";
+        setErrorBanner(msg);
+        showToast(msg);
+        setTimeout(() => setErrorBanner(null), 4000);
+        return null;
+      }
+
       const target = resolveInsertParent(type, explicitParentId);
       if (target.error) {
         setErrorBanner(target.error);
@@ -551,11 +561,22 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     (id: string) => {
       const { nextNodes, clonedRootId } = cloneNodeTree(id, doc.nodes);
       if (!clonedRootId) return;
+      if (countHeartNodes(nextNodes) > MAX_HEART_COMPONENTS) {
+        const msg = "You can add a maximum of 5 Heart components to your profile.";
+        setErrorBanner(msg);
+        showToast(msg);
+        setTimeout(() => setErrorBanner(null), 4000);
+        return;
+      }
       setDoc((prev) => ({ ...prev, nodes: nextNodes }));
       setSelectedId(clonedRootId);
       commitSnapshot(doc.canvas, nextNodes, clonedRootId);
     },
-    [commitSnapshot, doc.canvas, doc.nodes]
+    [commitSnapshot, doc.canvas, doc.nodes, showToast]
+  );
+
+  const isPremium = Boolean(
+    user?.premiumStatus || (user?.nitroStatus ?? 0) > 0 || user?.role === "ADMIN"
   );
 
   const handleDeleteNode = useCallback(
@@ -567,6 +588,14 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         return;
       }
       const nextNodes = deleteNodeSubtree(id, doc.nodes);
+      if (!isPremium && countHeartNodes(nextNodes) < countHeartNodes(doc.nodes)) {
+        const msg =
+          "Deleting the protected Heart component requires Premium. Upgrade to Premium to remove Heart components.";
+        setErrorBanner(msg);
+        showToast(msg);
+        setTimeout(() => setErrorBanner(null), 4500);
+        return;
+      }
       const nextSelected = selectedId === id || !nextNodes.some((n) => n.id === selectedId)
         ? null
         : selectedId;
@@ -577,7 +606,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         showToast(`Deleted "${target.name}" and its nested children (Ctrl+Z to undo).`);
       }
     },
-    [commitSnapshot, doc.canvas, doc.nodes, selectedId, showToast]
+    [commitSnapshot, doc.canvas, doc.nodes, isPremium, selectedId, showToast]
   );
 
   const handleToggleLock = useCallback(

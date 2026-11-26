@@ -752,11 +752,11 @@ export class ImageAssetService {
         throw new UploadServiceError('Invalid audio format. Please upload an MP3, WAV, or OGG file.', 415, 'unsupported_format');
       }
       if (fileBuffer.length > this.MAX_MEDIA_BYTES) {
-        throw new UploadServiceError(
-          `Media file exceeds maximum limit of 25 MB (size: ${(fileBuffer.length / (1024 * 1024)).toFixed(2)} MB).`,
-          413,
-          'size_limit'
-        );
+        const msg =
+          rawSlot === 'background_video'
+            ? 'Video file exceeds the maximum upload limit of 25 MB. Please select a smaller video.'
+            : `Media file exceeds maximum limit of 25 MB (size: ${(fileBuffer.length / (1024 * 1024)).toFixed(2)} MB).`;
+        throw new UploadServiceError(msg, 413, 'size_limit');
       }
       outBuffer = fileBuffer;
       outMimeType = mediaCheck.mimeType;

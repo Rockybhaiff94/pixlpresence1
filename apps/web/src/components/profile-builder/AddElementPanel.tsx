@@ -12,6 +12,7 @@ import {
   CreditCard,
   FileText,
   Gamepad2,
+  Heart,
   Image as ImageIcon,
   Layers,
   LayoutGrid,
@@ -55,6 +56,8 @@ export function getBuilderComponentIcon(
       return Award;
     case "social-group":
       return Share2;
+    case "heart-like":
+      return Heart;
     case "music-display":
       return Music;
     case "custom-rpc":

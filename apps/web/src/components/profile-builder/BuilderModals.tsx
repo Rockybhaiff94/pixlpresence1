@@ -336,7 +336,7 @@ export const BuilderSettingsModal: React.FC<BuilderSettingsModalProps> = ({
           </div>
 
           {/* Autosave */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between pb-3 border-b border-[#1b1b22]">
             <span className="text-neutral-300">Auto-Save Local & Draft Sync</span>
             <input
               type="checkbox"
@@ -344,6 +344,39 @@ export const BuilderSettingsModal: React.FC<BuilderSettingsModalProps> = ({
               onChange={(e) => onUpdatePreferences({ autoSaveEnabled: e.target.checked })}
               className="accent-white w-4 h-4 cursor-pointer"
             />
+          </div>
+
+          {/* Public Profile Entry Screen (guns.lol style) */}
+          <div className="space-y-2.5 pt-1">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-neutral-300 block">Public Entry Screen</span>
+                <span className="text-[10px] text-neutral-500">
+                  Show an interactive &ldquo;Click to Enter&rdquo; landing screen before revealing profile &amp; video
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={Boolean(canvas.entryScreenEnabled)}
+                onChange={(e) => onUpdateCanvas({ entryScreenEnabled: e.target.checked })}
+                className="accent-white w-4 h-4 cursor-pointer"
+                data-testid="setting-toggle-entry-screen"
+              />
+            </div>
+
+            {canvas.entryScreenEnabled && (
+              <div className="space-y-1">
+                <label className="text-[10px] text-neutral-400 block">Entry Prompt Text</label>
+                <input
+                  type="text"
+                  value={canvas.entryScreenText ?? ""}
+                  onChange={(e) => onUpdateCanvas({ entryScreenText: e.target.value })}
+                  placeholder="[ CLICK ANYWHERE TO ENTER PROFILE ]"
+                  className="w-full bg-[#14141a] border border-[#282832] rounded-lg px-2.5 py-1.5 text-white text-[11px] outline-none"
+                  data-testid="setting-entry-screen-text"
+                />
+              </div>
+            )}
           </div>
         </div>
         ) : (
@@ -493,6 +526,48 @@ export const BuilderSettingsModal: React.FC<BuilderSettingsModalProps> = ({
   );
 };
 
+const PreviewEntryGate: React.FC<{
+  enabled: boolean;
+  promptText?: string;
+  username: string;
+  children: React.ReactNode;
+}> = ({ enabled, promptText, username, children }) => {
+  const [entered, setEntered] = useState(false);
+
+  if (!enabled || entered) {
+    return <>{children}</>;
+  }
+
+  return (
+    <div className="relative w-full h-full flex flex-col">
+      {children}
+      <div
+        onClick={() => setEntered(true)}
+        data-testid="preview-entry-screen"
+        className="absolute inset-0 z-50 bg-[#050505]/95 backdrop-blur-md flex flex-col items-center justify-center cursor-pointer p-6 text-center select-none"
+      >
+        <div className="space-y-3 max-w-xs">
+          <span className="text-[10px] text-neutral-500 uppercase tracking-widest block">
+            [ INITIALIZE DIGITAL IDENTITY ]
+          </span>
+          <h2 className="text-xl font-bold tracking-tight text-white">@{username}</h2>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setEntered(true);
+            }}
+            data-testid="preview-enter-profile-btn"
+            className="text-xs text-neutral-200 hover:text-white px-4 py-2 rounded-full border border-white/15 bg-white/[0.05] hover:bg-white/[0.12] transition-colors cursor-pointer"
+          >
+            {promptText?.trim() || "[ CLICK ANYWHERE TO ENTER PROFILE ]"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 interface ProfilePreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -624,7 +699,7 @@ export const ProfilePreviewModal: React.FC<ProfilePreviewModalProps> = ({
       {/* Shared ProfileBuilderRenderer Viewport */}
       <div className="flex-1 overflow-hidden p-3 sm:p-6 flex justify-center bg-[#060608]">
         <div
-          className={`w-full h-full flex flex-col overflow-hidden ${
+          className={`relative w-full h-full flex flex-col overflow-hidden ${
             deviceMode !== "desktop"
               ? "border border-[#2b2b36] rounded-2xl shadow-2xl"
               : "rounded-xl"
@@ -632,12 +707,18 @@ export const ProfilePreviewModal: React.FC<ProfilePreviewModalProps> = ({
           style={{ maxWidth: frameMaxWidth }}
           data-testid="preview-viewport-frame"
         >
-          <ProfileBuilderRenderer
-            document={document}
-            deviceMode={deviceMode}
-            isInteractive={false}
-            liveData={liveData}
-          />
+          <PreviewEntryGate
+            enabled={Boolean(document.canvas.entryScreenEnabled)}
+            promptText={document.canvas.entryScreenText}
+            username={liveData?.username || "profile"}
+          >
+            <ProfileBuilderRenderer
+              document={document}
+              deviceMode={deviceMode}
+              isInteractive={false}
+              liveData={liveData}
+            />
+          </PreviewEntryGate>
         </div>
       </div>
     </div>
@@ -793,10 +874,11 @@ export const MediaUploadModal: React.FC<MediaUploadModalProps> = ({
     abortControllerRef.current = controller;
 
     try {
+      const isVideoSlot = targetSlot === "background_video";
       const uploaded = await uploadMediaAsset({
         file,
         targetSlot,
-        kind: "image",
+        kind: isVideoSlot ? "video" : "image",
         signal: controller.signal,
         onProgress: (pct, stage) => {
           setUploadProgress(pct);
@@ -896,7 +978,11 @@ export const MediaUploadModal: React.FC<MediaUploadModalProps> = ({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif"
+              accept={
+                targetSlot === "background_video"
+                  ? "video/mp4,video/webm,.mp4,.webm"
+                  : "image/png,image/jpeg,image/webp,image/gif"
+              }
               onChange={handleFileChange}
               disabled={uploading}
               className="hidden"
@@ -926,9 +1012,15 @@ export const MediaUploadModal: React.FC<MediaUploadModalProps> = ({
             ) : (
               <>
                 <UploadCloud size={20} className="text-neutral-300 mb-2" />
-                <span className="text-white font-semibold">Upload PNG, JPG, WEBP or GIF</span>
+                <span className="text-white font-semibold">
+                  {targetSlot === "background_video"
+                    ? "Upload MP4 or WebM Video"
+                    : "Upload PNG, JPG, WEBP or GIF"}
+                </span>
                 <span className="text-[10px] text-neutral-500 mt-1">
-                  Preserves animated GIFs · Max 10 MB
+                  {targetSlot === "background_video"
+                    ? "Preserves original audio · Max 25 MB"
+                    : "Preserves animated GIFs · Max 10 MB"}
                 </span>
               </>
             )}

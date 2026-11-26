@@ -8,6 +8,7 @@ import {
   Crown,
   Flame,
   Gamepad2,
+  Heart,
   Image as ImageIcon,
   Music,
   Pause,
@@ -16,6 +17,8 @@ import {
   Shield,
   Sparkles,
   Star,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { PlatformIcon } from "@/components/links/PlatformIcons";
 import { resolvePlatformDef } from "@/components/studio/socialsEngine";
@@ -61,6 +64,13 @@ interface ProfileBuilderRendererProps {
   deviceMode: BuilderDeviceMode;
   isInteractive?: boolean;
   liveData?: ProfileLiveActivityData;
+  likeState?: {
+    count: number;
+    liked: boolean;
+    isLiking?: boolean;
+    onToggle?: () => void;
+  };
+  initialVideoMuted?: boolean;
   selectedId?: string | null;
   onSelectNode?: (nodeId: string | null) => void;
   onQuickAddGalleryImage?: (galleryId: string) => void;
@@ -155,6 +165,8 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
   deviceMode,
   isInteractive = false,
   liveData,
+  likeState,
+  initialVideoMuted = true,
   onSelectNode,
   onQuickAddGalleryImage,
   canvasOverlaySlot,
@@ -164,10 +176,26 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
   const { canvas, nodes } = document;
   const bg = resolveEffectiveBackground(canvas, nodes);
   const publicStageHostRef = useRef<HTMLDivElement>(null);
+  const bgVideoRef = useRef<HTMLVideoElement>(null);
+  const [videoMuted, setVideoMuted] = useState<boolean>(initialVideoMuted);
   const [measuredHostSize, setMeasuredHostSize] = useState<{ width: number; height: number }>({
     width: 1280,
     height: 720,
   });
+
+  useEffect(() => {
+    setVideoMuted(initialVideoMuted);
+    const v = bgVideoRef.current;
+    if (v && !isInteractive) {
+      v.muted = initialVideoMuted;
+      if (!initialVideoMuted) {
+        v.play().catch(() => {
+          v.muted = true;
+          setVideoMuted(true);
+        });
+      }
+    }
+  }, [initialVideoMuted, isInteractive]);
 
   useEffect(() => {
     if (isInteractive) return;
@@ -937,6 +965,72 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
         );
       }
 
+      case "heart-like": {
+        const count = likeState?.count ?? 0;
+        const liked = Boolean(likeState?.liked);
+        const accent = node.config.heartAccentColor || "#f43f5e";
+        const showCount = node.config.heartShowCount !== false;
+        const labelText = node.config.heartLabel?.trim();
+        const bgColor = node.style.backgroundColor || "#111116";
+        const bgOpacity = node.style.backgroundOpacity ?? 0.85;
+        const radius = node.style.borderRadius ?? 9999;
+        const content = (
+          <>
+            <Heart
+              size={14}
+              className="shrink-0 transition-transform"
+              style={{
+                color: liked ? accent : "#e4e4e7",
+                fill: liked ? accent : "none",
+              }}
+            />
+            {showCount && (
+              <span className="font-semibold tracking-tight tabular-nums">
+                {count.toLocaleString()}
+              </span>
+            )}
+            {labelText && !showCount && <span className="truncate">{labelText}</span>}
+          </>
+        );
+
+        const commonStyle: React.CSSProperties = {
+          backgroundColor: liked ? hexToRgbaSafe(accent, 0.2) : hexToRgbaSafe(bgColor, bgOpacity),
+          borderColor: liked ? hexToRgbaSafe(accent, 0.55) : node.style.borderColor || "#2a2a34",
+          borderWidth: `${node.style.borderWidth ?? 1}px`,
+          borderStyle: node.style.borderStyle || "solid",
+          borderRadius: `${radius}px`,
+          color: liked ? "#fda4af" : "#f4f4f5",
+        };
+
+        if (!isInteractive && likeState?.onToggle) {
+          return (
+            <button
+              type="button"
+              onClick={likeState.onToggle}
+              disabled={likeState.isLiking}
+              data-testid={`public-heart-node-${node.id}`}
+              data-heart-liked={liked ? "true" : "false"}
+              data-heart-count={count}
+              style={commonStyle}
+              className="w-full h-full px-3 flex items-center justify-center gap-2 text-xs font-mono backdrop-blur-md transition-all cursor-pointer select-none hover:brightness-110 disabled:opacity-60"
+              title={liked ? "Unlike profile" : "Like profile"}
+            >
+              {content}
+            </button>
+          );
+        }
+
+        return (
+          <div
+            style={commonStyle}
+            data-testid={`builder-heart-node-${node.id}`}
+            className="w-full h-full px-3 flex items-center justify-center gap-2 text-xs font-mono backdrop-blur-md select-none"
+          >
+            {content}
+          </div>
+        );
+      }
+
       default:
         return (
           <div className="w-full h-full border border-dashed border-white/20 flex items-center justify-center text-[10px] font-mono text-neutral-500">
@@ -983,10 +1077,11 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
         )}
         {bg.type === "video" && bg.videoUrl && (
           <video
+            ref={!isInteractive ? bgVideoRef : undefined}
             src={bg.videoUrl}
             autoPlay
             loop
-            muted
+            muted={isInteractive ? true : videoMuted}
             playsInline
             className="w-full h-full object-cover"
             style={{ objectPosition: bg.position }}
@@ -1023,6 +1118,31 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
             {renderBackgroundLayer()}
           </div>
+        )}
+
+        {/* Public Video Sound Activation / Mute Control */}
+        {bg.visible && bg.type === "video" && bg.videoUrl && (
+          <button
+            type="button"
+            onClick={() => {
+              const nextMuted = !videoMuted;
+              setVideoMuted(nextMuted);
+              const v = bgVideoRef.current;
+              if (v) {
+                v.muted = nextMuted;
+                if (!nextMuted) {
+                  v.play().catch(() => {});
+                }
+              }
+            }}
+            data-testid="public-video-sound-toggle"
+            title={videoMuted ? "Enable Video Sound" : "Mute Video Sound"}
+            aria-label={videoMuted ? "Enable Video Sound" : "Mute Video Sound"}
+            className="fixed top-4 right-4 z-[1000] pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/50 hover:bg-black/70 border border-white/15 hover:border-white/30 backdrop-blur-md text-[11px] font-mono text-white transition-all cursor-pointer shadow-lg"
+          >
+            {videoMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+            <span>{videoMuted ? "Sound Off" : "Sound On"}</span>
+          </button>
         )}
 
         <div

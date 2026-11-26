@@ -27,13 +27,14 @@ const EXPECTED_PRIMARY = [
 ];
 
 const EXPECTED_ALL_17 = [
-  // Profile Components (8)
+  // Profile Components (9)
   "profile-image",
   "name-text",
   "subtitle",
   "description",
   "badges-group",
   "social-group",
+  "heart-like",
   "music-display",
   "custom-rpc",
   // Layout & Content (7)
@@ -186,7 +187,7 @@ async function runTests() {
       assert(expandedBox.y >= 0 && expandedBox.y + expandedBox.height <= 900, "Must fit inside viewport");
 
       const expandedButtons = page.locator('[data-testid="dock-expanded-components-list"] > button');
-      assert.strictEqual(await expandedButtons.count(), 17);
+      assert.strictEqual(await expandedButtons.count(), EXPECTED_ALL_17.length);
       for (let i = 0; i < EXPECTED_ALL_17.length; i++) {
         const testId = await expandedButtons.nth(i).getAttribute("data-testid");
         assert.strictEqual(testId, `dock-component-${EXPECTED_ALL_17[i]}`);
@@ -221,7 +222,7 @@ async function runTests() {
       assert(panelText.includes("Custom Components"), "Must show Custom Components item");
       assert.strictEqual(
         await page.locator('[data-testid="builder-add-element-panel"] [data-testid^="library-add-"]').count(),
-        17
+        EXPECTED_ALL_17.length
       );
 
       // Close Elements Panel (X) -> MUST restore State 2 (Expanded Dock), NOT collapse back to Normal Dock

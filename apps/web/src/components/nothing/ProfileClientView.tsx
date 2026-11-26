@@ -196,6 +196,11 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
 
     socket.on("presence_sync", handlePresenceUpdate);
     socket.on("presence_update", handlePresenceUpdate);
+    socket.on("profile_like_updated", (payload: { likesCount?: number }) => {
+      if (isMounted && typeof payload?.likesCount === "number") {
+        setLikes(Math.max(0, payload.likesCount));
+      }
+    });
     socket.on("profile_updated", () => {
       if (isMounted) {
         router.refresh();
@@ -337,6 +342,19 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
       activeConfig.canvas.embeds.length > 0)
   );
 
+  const hasEntryScreen = Boolean(
+    hasActiveEmbeds &&
+      (musicUrl || parsedProfileBuilderDoc?.canvas?.entryScreenEnabled)
+  );
+  const entryPromptText =
+    parsedProfileBuilderDoc?.canvas?.entryScreenText?.trim() ||
+    (musicUrl
+      ? "[ CLICK ANYWHERE TO INITIALIZE AUDIO & PROFILE ]"
+      : "[ CLICK ANYWHERE TO ENTER PROFILE ]");
+  const hasPlacedHeartNodes = Boolean(
+    parsedProfileBuilderDoc?.nodes?.some((n) => n.type === "heart-like" && n.visible)
+  );
+
   return (
     <div
       className="min-h-screen text-[#ededed] font-mono relative overflow-x-hidden flex flex-col justify-between selection:bg-white selection:text-black"
@@ -352,15 +370,16 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
         />
       )}
 
-      {/* Intro Barrier (Click to Enter) with AnimatePresence - Only for customized profiles with audio */}
+      {/* Intro Barrier (Click to Enter) with AnimatePresence - Guns.lol style Entry Screen */}
       <AnimatePresence>
-        {hasActiveEmbeds && !entered && musicUrl && (
+        {hasEntryScreen && !entered && (
           <motion.div
             key="intro-barrier"
             initial={{ opacity: 1 }}
             exit={{ opacity: 0, scale: 1.03 }}
             transition={{ duration: 0.45, ease: "easeOut" }}
             onClick={handleEnterScreen}
+            data-testid="public-entry-screen"
             className="fixed inset-0 z-50 bg-[#050505] flex flex-col items-center justify-center cursor-pointer nt-dot-grid p-6 text-center select-none"
           >
             <motion.div
@@ -382,16 +401,22 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
                 </h2>
               </div>
 
-              <motion.p
-                animate={{ opacity: [0.6, 1, 0.6] }}
+              <motion.button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleEnterScreen();
+                }}
+                animate={{ opacity: [0.65, 1, 0.65] }}
                 transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
-                className="text-xs text-neutral-400 font-sans tracking-wide"
+                data-testid="public-enter-profile-btn"
+                className="text-xs text-neutral-300 hover:text-white font-sans tracking-wide cursor-pointer px-4 py-2 rounded-full border border-white/15 bg-white/[0.04] hover:bg-white/[0.09] transition-colors"
               >
-                [ CLICK ANYWHERE TO INITIALIZE AUDIO & PROFILE ]
-              </motion.p>
+                {entryPromptText}
+              </motion.button>
 
               <div className="pt-4 text-[10px] text-neutral-600">
-                AUDIO STREAM &bull; NOTHING OS ENGINE
+                PIXLS.IN STUDIO &bull; PROFILE ENGINE
               </div>
             </motion.div>
           </motion.div>
@@ -406,6 +431,13 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
               document={parsedProfileBuilderDoc}
               deviceMode={viewportDevice}
               isInteractive={false}
+              initialVideoMuted={!(hasEntryScreen && entered)}
+              likeState={{
+                count: likes,
+                liked: hasLiked,
+                isLiking,
+                onToggle: handleToggleLike,
+              }}
               liveData={{
                 discordId,
                 username,
@@ -420,25 +452,29 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
               }}
               canvasOverlaySlot={
                 <>
-                  <button
-                    onClick={handleToggleLike}
-                    disabled={isLiking}
-                    data-testid="public-profile-like-btn"
-                    className={`pointer-events-auto group flex items-center gap-2 px-3.5 py-2 rounded-full backdrop-blur-md transition-all cursor-pointer shadow-sm text-[13px] font-mono ${
-                      hasLiked
-                        ? "bg-rose-500/20 border border-rose-500/40 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.25)]"
-                        : "bg-black/35 hover:bg-black/55 border border-white/15 hover:border-white/30 text-white/85 hover:text-white"
-                    }`}
-                    title={hasLiked ? "Unlike profile" : "Like profile"}
-                  >
-                    <Heart
-                      size={14}
-                      className={`transition-transform group-hover:scale-110 ${
-                        hasLiked ? "fill-rose-500 text-rose-500" : "text-white/75 group-hover:text-white"
+                  {!hasPlacedHeartNodes ? (
+                    <button
+                      onClick={handleToggleLike}
+                      disabled={isLiking}
+                      data-testid="public-profile-like-btn"
+                      className={`pointer-events-auto group flex items-center gap-2 px-3.5 py-2 rounded-full backdrop-blur-md transition-all cursor-pointer shadow-sm text-[13px] font-mono ${
+                        hasLiked
+                          ? "bg-rose-500/20 border border-rose-500/40 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.25)]"
+                          : "bg-black/35 hover:bg-black/55 border border-white/15 hover:border-white/30 text-white/85 hover:text-white"
                       }`}
-                    />
-                    <span className="font-semibold tracking-tight">{likes.toLocaleString()}</span>
-                  </button>
+                      title={hasLiked ? "Unlike profile" : "Like profile"}
+                    >
+                      <Heart
+                        size={14}
+                        className={`transition-transform group-hover:scale-110 ${
+                          hasLiked ? "fill-rose-500 text-rose-500" : "text-white/75 group-hover:text-white"
+                        }`}
+                      />
+                      <span className="font-semibold tracking-tight">{likes.toLocaleString()}</span>
+                    </button>
+                  ) : (
+                    <span />
+                  )}
 
                   <Link
                     href="/register"

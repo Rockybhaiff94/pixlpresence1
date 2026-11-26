@@ -108,7 +108,7 @@ export function validateUploadFile(
       return "Unsupported video format. Please upload MP4 or WebM.";
     }
     if (file.size > MAX_MEDIA_UPLOAD_BYTES) {
-      return `This video exceeds the maximum 25 MB upload size (${(file.size / (1024 * 1024)).toFixed(2)} MB).`;
+      return "Video file exceeds the maximum upload limit of 25 MB. Please select a smaller video.";
     }
     return null;
   }

@@ -275,7 +275,26 @@ export const PROFILE_BUILDER_REGISTRY: Record<BuilderComponentType, ComponentReg
     canHaveChildren: false,
     preferEmbedParent: true,
   },
+  "heart-like": {
+    type: "heart-like",
+    category: "profile",
+    label: "Heart / Like",
+    shortDesc: "Global synced Like button (max 5)",
+    defaultWidth: 112,
+    defaultHeight: 40,
+    minWidth: 64,
+    minHeight: 32,
+    canHaveChildren: false,
+    allowInRoot: true,
+    preferEmbedParent: false,
+  },
 };
+
+export const MAX_HEART_COMPONENTS = 5;
+
+export function countHeartNodes(nodes: BuilderNode[]): number {
+  return nodes.filter((n) => n.type === "heart-like").length;
+}
 
 export const LIBRARY_CATALOG_ORDER: BuilderComponentType[] = [
   "profile-image",
@@ -284,6 +303,7 @@ export const LIBRARY_CATALOG_ORDER: BuilderComponentType[] = [
   "description",
   "badges-group",
   "social-group",
+  "heart-like",
   "music-display",
   "custom-rpc",
   "embed",
@@ -738,6 +758,19 @@ export function createNodeFromRegistry(
         stickerKey: "sparkles",
         color: "#ffffff",
       };
+      break;
+    case "heart-like":
+      base.config = {
+        heartLabel: "Like",
+        heartAccentColor: "#f43f5e",
+        heartShowCount: true,
+      };
+      base.style.backgroundType = "solid";
+      base.style.backgroundColor = "#111116";
+      base.style.backgroundOpacity = 0.85;
+      base.style.borderWidth = 1;
+      base.style.borderColor = "#2a2a34";
+      base.style.borderRadius = 9999;
       break;
     default:
       break;

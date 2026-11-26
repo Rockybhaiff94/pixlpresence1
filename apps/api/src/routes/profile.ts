@@ -582,67 +582,91 @@ profileRouter.post('/u/:username/like', requireAuth, async (req: any, res) => {
       return res.status(400).json({ error: 'You cannot like your own profile.' });
     }
 
-    // Check if like exists
-    const existing = await prisma.profileLike.findUnique({
-      where: {
-        profileId_userId: {
-          profileId,
-          userId,
+    // Atomic transaction prevents concurrent duplicate likes/unlikes
+    const result = await prisma.$transaction(async (tx) => {
+      const existing = await tx.profileLike.findUnique({
+        where: {
+          profileId_userId: {
+            profileId,
+            userId,
+          },
         },
-      },
-    });
+      });
 
-    if (existing) {
-      // Toggle OFF (Unlike)
-      const [, updatedProfile] = await prisma.$transaction([
-        prisma.profileLike.delete({
+      if (existing) {
+        await tx.profileLike.delete({
           where: {
             profileId_userId: {
               profileId,
               userId,
             },
           },
-        }),
-        prisma.profile.update({
+        });
+        const current = await tx.profile.findUnique({
+          where: { id: profileId },
+          select: { likesCount: true },
+        });
+        const updatedProfile = await tx.profile.update({
           where: { id: profileId },
           data: {
             likesCount: {
-              decrement: targetUser.profile.likesCount > 0 ? 1 : 0,
+              decrement: (current?.likesCount || 0) > 0 ? 1 : 0,
             },
           },
-        }),
-      ]);
+        });
+        return {
+          liked: false,
+          likesCount: Math.max(0, updatedProfile.likesCount),
+        };
+      }
 
-      return res.json({
-        success: true,
-        liked: false,
-        likesCount: Math.max(0, updatedProfile.likesCount),
-      });
-    } else {
-      // Toggle ON (Like)
-      const [, updatedProfile] = await prisma.$transaction([
-        prisma.profileLike.create({
+      try {
+        await tx.profileLike.create({
           data: {
             profileId,
             userId,
           },
-        }),
-        prisma.profile.update({
-          where: { id: profileId },
-          data: {
-            likesCount: {
-              increment: 1,
-            },
-          },
-        }),
-      ]);
+        });
+      } catch (err: any) {
+        if (err?.code === 'P2002') {
+          const current = await tx.profile.findUnique({
+            where: { id: profileId },
+            select: { likesCount: true },
+          });
+          return {
+            liked: true,
+            likesCount: Math.max(0, current?.likesCount || 0),
+          };
+        }
+        throw err;
+      }
 
-      return res.json({
-        success: true,
+      const updatedProfile = await tx.profile.update({
+        where: { id: profileId },
+        data: {
+          likesCount: {
+            increment: 1,
+          },
+        },
+      });
+      return {
         liked: true,
         likesCount: updatedProfile.likesCount,
+      };
+    });
+
+    if (targetUser.username) {
+      io.to(`profile:${targetUser.username.toLowerCase()}`).emit('profile_like_updated', {
+        username: targetUser.username,
+        likesCount: result.likesCount,
       });
     }
+
+    return res.json({
+      success: true,
+      liked: result.liked,
+      likesCount: result.likesCount,
+    });
   } catch (err: any) {
     console.error('[Profile Like Error]:', err);
     res.status(500).json({ error: err.message || 'Failed to toggle like' });
@@ -840,6 +864,29 @@ profileRouter.patch('/me', requireAuth, async (req: any, res) => {
       }
       if (parsedCfg && typeof parsedCfg === 'object') {
         const existingCfg = parseDesignConfigObject(existingProfile?.designConfig);
+        const countHearts = (doc: any) =>
+          Array.isArray(doc?.nodes)
+            ? doc.nodes.filter((n: any) => n && n.type === 'heart-like').length
+            : 0;
+        const incomingDraftHearts = countHearts(parsedCfg.draftProfileBuilder);
+        const incomingPubHearts = countHearts(parsedCfg.profileBuilder);
+        if (incomingDraftHearts > 5 || incomingPubHearts > 5) {
+          return res.status(400).json({
+            error: 'You can add a maximum of 5 Heart components to your profile.',
+          });
+        }
+        if (caps.tier === 'FREE') {
+          const existingDraftHearts = countHearts(existingCfg?.draftProfileBuilder);
+          const existingPubHearts = countHearts(existingCfg?.profileBuilder);
+          if (
+            (existingDraftHearts > 0 && parsedCfg.draftProfileBuilder && incomingDraftHearts < existingDraftHearts) ||
+            (existingPubHearts > 0 && parsedCfg.profileBuilder && incomingPubHearts < existingPubHearts)
+          ) {
+            return res.status(403).json({
+              error: 'Deleting the protected Heart component requires Premium.',
+            });
+          }
+        }
         if (existingCfg.syncPreferences && !parsedCfg.syncPreferences) {
           parsedCfg.syncPreferences = existingCfg.syncPreferences;
         }

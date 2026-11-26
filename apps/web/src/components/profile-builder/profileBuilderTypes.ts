@@ -28,7 +28,8 @@ export type BuilderComponentType =
   | "background"
   | "custom-component"
   | "shape"
-  | "sticker";
+  | "sticker"
+  | "heart-like";
 
 export type BuilderLayoutMode = "absolute" | "flex-col" | "flex-row" | "grid";
 
@@ -190,6 +191,11 @@ export interface BuilderComponentConfig {
   shapeStroke?: string;
   shapeStrokeWidth?: number;
   stickerKey?: string;
+
+  // Heart / Global Like component
+  heartLabel?: string;
+  heartAccentColor?: string;
+  heartShowCount?: boolean;
 }
 
 export interface BuilderNode {
@@ -231,6 +237,8 @@ export interface BuilderCanvasSettings {
   snapEnabled: boolean;
   snapSensitivity: number;
   smartGuidesEnabled: boolean;
+  entryScreenEnabled?: boolean;
+  entryScreenText?: string;
 }
 
 export interface BuilderPreferences {
