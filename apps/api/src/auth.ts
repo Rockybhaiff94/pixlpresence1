@@ -58,6 +58,21 @@ export function resolveDiscordAvatarUrl(discordId: string | null | undefined, av
   return `https://cdn.discordapp.com/avatars/${discordId}/${avatar}.${ext}?size=256`;
 }
 
+export function resolveDiscordBannerUrl(
+  discordId: string | null | undefined,
+  banner: string | null | undefined
+): string | null {
+  if (!banner || banner.trim().length === 0) return null;
+  const trimmed = banner.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/')) {
+    return trimmed;
+  }
+  if (!discordId) return null;
+  const isAnimated = trimmed.startsWith('a_');
+  const ext = isAnimated ? 'gif' : 'png';
+  return `https://cdn.discordapp.com/banners/${discordId}/${trimmed}.${ext}?size=1024`;
+}
+
 if (DISCORD_CLIENT_ID && DISCORD_CLIENT_SECRET) {
   passport.use(
     new DiscordStrategy(
@@ -79,7 +94,7 @@ if (DISCORD_CLIENT_ID && DISCORD_CLIENT_SECRET) {
         const globalName = profile.global_name || null;
         const rawAvatar = profile.avatar || null;
         const avatar = resolveDiscordAvatarUrl(profile.id, rawAvatar);
-        const banner = profile.banner || null;
+        const banner = resolveDiscordBannerUrl(profile.id, profile.banner) || null;
         const nitroStatus = Number(profile.premium_type) || 0;
 
         let user = await prisma.user.findUnique({
@@ -173,8 +188,10 @@ passport.deserializeUser(async (id: string, done) => {
     });
     if (user) {
       user.avatar = resolveDiscordAvatarUrl(user.discordId, user.avatar);
+      user.banner = resolveDiscordBannerUrl(user.discordId, user.banner);
       if (user.profile) {
         user.profile.avatarUrl = resolveDiscordAvatarUrl(user.discordId, user.profile.avatarUrl || user.avatar);
+        user.profile.bannerUrl = resolveDiscordBannerUrl(user.discordId, user.profile.bannerUrl || user.banner);
       }
     }
     done(null, user);
@@ -428,8 +445,10 @@ authRouter.get('/me', async (req: any, res) => {
         });
       }
       user.avatar = resolveDiscordAvatarUrl(user.discordId, user.avatar);
+      user.banner = resolveDiscordBannerUrl(user.discordId, user.banner);
       if (user.profile) {
         user.profile.avatarUrl = resolveDiscordAvatarUrl(user.discordId, user.profile.avatarUrl || user.avatar);
+        user.profile.bannerUrl = resolveDiscordBannerUrl(user.discordId, user.profile.bannerUrl || user.banner);
       }
 
       // Security: Never leak password hash to client

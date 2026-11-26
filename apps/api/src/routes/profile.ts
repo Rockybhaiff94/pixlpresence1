@@ -8,7 +8,7 @@ import { viewRateLimiter } from '../rateLimiter';
 import { presenceManager } from '../services/presenceManager';
 import { getUserCapabilities, validateProfileCapabilities } from '../services/entitlements';
 import { parseDesignConfigObject } from '../services/profileSyncService';
-import { resolveDiscordAvatarUrl } from '../auth';
+import { resolveDiscordAvatarUrl, resolveDiscordBannerUrl } from '../auth';
 import {
   createHistorySnapshotTx,
   getUserHistorySnapshot,
@@ -204,13 +204,40 @@ profileRouter.get('/u/:username', async (req: any, res) => {
       });
     }
 
-    // Omit sensitive data & normalize avatar URLs
+    // Omit sensitive data & normalize avatar + banner URLs (including raw Discord hashes in saved nodes)
     const { email, passwordHash, appToken, ...safeUser } = user as any;
     safeUser.avatar = resolveDiscordAvatarUrl(safeUser.discordId, safeUser.avatar);
+    safeUser.banner = resolveDiscordBannerUrl(safeUser.discordId, safeUser.banner);
     responseProfile.avatarUrl = resolveDiscordAvatarUrl(
       safeUser.discordId,
       responseProfile.avatarUrl || safeUser.avatar
     );
+    responseProfile.bannerUrl = resolveDiscordBannerUrl(
+      safeUser.discordId,
+      responseProfile.bannerUrl || safeUser.banner
+    );
+    if (safeUser.discordId && responseProfile.designConfig) {
+      try {
+        const parsedResCfg =
+          typeof responseProfile.designConfig === 'string'
+            ? JSON.parse(responseProfile.designConfig)
+            : responseProfile.designConfig;
+        const normalizeBannerInDoc = (docObj: any) => {
+          if (!docObj || !Array.isArray(docObj.nodes)) return;
+          for (const n of docObj.nodes) {
+            if (n?.type === 'banner-image' && n?.config?.src) {
+              const resolved = resolveDiscordBannerUrl(safeUser.discordId, n.config.src);
+              if (resolved) n.config.src = resolved;
+            }
+          }
+        };
+        normalizeBannerInDoc(parsedResCfg?.profileBuilder);
+        normalizeBannerInDoc(parsedResCfg?.draftProfileBuilder);
+        responseProfile.designConfig = JSON.stringify(parsedResCfg);
+      } catch {
+        // ignore invalid json
+      }
+    }
     const rawRpc = (user as any).richPresence || null;
     let safeRpc = rawRpc;
     if (rawRpc && rawRpc.showProfileRpc === false) {

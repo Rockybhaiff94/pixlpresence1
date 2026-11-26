@@ -245,6 +245,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
 
   const liveData: ProfileLiveActivityData = useMemo(
     () => ({
+      discordId: user?.discordId || null,
       username: user?.username || null,
       displayName: profile?.displayName || user?.globalName || user?.username || null,
       bio: profile?.bio || null,

@@ -10,6 +10,7 @@ import {
   clearCachedUser,
   apiFetch,
   formatAvatarUrl,
+  formatBannerUrl,
 } from "@/lib/api";
 
 export type AuthStatus =
@@ -118,8 +119,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (res.ok) {
         const data = await res.json();
         data.avatar = formatAvatarUrl(data.avatar, data.discordId);
+        data.banner = formatBannerUrl(data.banner, data.discordId);
         if (data.profile) {
           data.profile.avatarUrl = formatAvatarUrl(data.profile.avatarUrl || data.avatar, data.discordId);
+          data.profile.bannerUrl = formatBannerUrl(data.profile.bannerUrl || data.banner, data.discordId);
         }
 
         setUser(data);
@@ -179,9 +182,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         discordId: updatedUser.discordId || cached?.discordId || null,
       };
       mergedUser.avatar = formatAvatarUrl(mergedUser.avatar, mergedUser.discordId);
+      mergedUser.banner = formatBannerUrl(mergedUser.banner, mergedUser.discordId);
       if (mergedUser.profile) {
         mergedUser.profile.avatarUrl = formatAvatarUrl(
           mergedUser.profile.avatarUrl || mergedUser.avatar,
+          mergedUser.discordId
+        );
+        mergedUser.profile.bannerUrl = formatBannerUrl(
+          mergedUser.profile.bannerUrl || mergedUser.banner,
           mergedUser.discordId
         );
       }

@@ -36,6 +36,23 @@ export function formatAvatarUrl(avatar: string | null | undefined, discordId?: s
   return "https://cdn.discordapp.com/embed/avatars/0.png";
 }
 
+export function formatBannerUrl(
+  banner: string | null | undefined,
+  discordId?: string | null
+): string | null {
+  if (!banner || banner.trim().length === 0) return null;
+  const trimmed = banner.trim();
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("/")) {
+    return trimmed;
+  }
+  if (discordId) {
+    const isAnimated = trimmed.startsWith("a_");
+    const ext = isAnimated ? "gif" : "png";
+    return `https://cdn.discordapp.com/banners/${discordId}/${trimmed}.${ext}?size=1024`;
+  }
+  return null;
+}
+
 export function getStoredToken(): string | null {
   if (typeof window === "undefined") return null;
 

@@ -1,5 +1,5 @@
 import { prisma } from '@discord-rpc/database';
-import { resolveDiscordAvatarUrl } from '../auth';
+import { resolveDiscordAvatarUrl, resolveDiscordBannerUrl } from '../auth';
 import { recordSyncEvent } from '../utils/sync';
 
 export interface ProfileSyncPreferences {
@@ -105,7 +105,7 @@ export async function fetchFreshDiscordIdentity(
       globalName: data.global_name ? String(data.global_name) : null,
       avatarHash,
       avatarUrl,
-      banner: data.banner ? String(data.banner) : null,
+      banner: resolveDiscordBannerUrl(data.id, data.banner),
       email: data.email ? String(data.email) : undefined,
       nitroStatus: typeof data.premium_type === 'number' ? data.premium_type : undefined,
     };

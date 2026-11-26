@@ -407,6 +407,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
               deviceMode={viewportDevice}
               isInteractive={false}
               liveData={{
+                discordId,
                 username,
                 displayName,
                 bio,

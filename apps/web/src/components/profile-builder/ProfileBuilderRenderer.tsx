@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { PlatformIcon } from "@/components/links/PlatformIcons";
 import { resolvePlatformDef } from "@/components/studio/socialsEngine";
+import { formatBannerUrl } from "@/lib/api";
 import {
   BuilderCanvasSettings,
   BuilderComponentConfig,
@@ -35,6 +36,7 @@ import {
 } from "./componentRegistry";
 
 export interface ProfileLiveActivityData {
+  discordId?: string | null;
   username?: string | null;
   displayName?: string | null;
   bio?: string | null;
@@ -438,7 +440,13 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           node.type === "banner-image" &&
           (!node.config.src ||
             node.config.src === "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1200&q=80");
-        const src = (isBannerPlaceholder && liveData?.bannerUrl) ? liveData.bannerUrl : node.config.src;
+        const rawSrc =
+          isBannerPlaceholder && liveData?.bannerUrl ? liveData.bannerUrl : node.config.src;
+        const src =
+          node.type === "banner-image"
+            ? formatBannerUrl(rawSrc, liveData?.discordId) ||
+              (rawSrc && (rawSrc.startsWith("http") || rawSrc.startsWith("/")) ? rawSrc : null)
+            : rawSrc;
         const radius = node.style.borderRadius ?? 10;
         return (
           <div
@@ -1006,12 +1014,19 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
     return (
       <div
         ref={publicStageHostRef}
-        className="w-full h-full min-h-full flex-1 flex items-center justify-center overflow-hidden select-none"
+        className="relative w-full h-full min-h-full flex-1 flex items-center justify-center overflow-hidden select-none"
         style={{ backgroundColor: bg.color || "#060608" }}
         data-testid="public-profile-viewport"
       >
+        {/* Subtle ambient backdrop behind the centered uncropped canvas on wide/tall viewports */}
+        {bg.visible && (bg.type === "image" || bg.type === "gradient") && (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-35 blur-2xl scale-105">
+            {renderBackgroundLayer()}
+          </div>
+        )}
+
         <div
-          className="relative shrink-0 overflow-hidden"
+          className="relative z-10 shrink-0 overflow-hidden"
           style={{
             width: `${renderedWidth}px`,
             height: `${renderedHeight}px`,
