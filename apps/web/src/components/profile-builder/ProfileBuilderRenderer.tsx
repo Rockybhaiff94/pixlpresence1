@@ -166,7 +166,7 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
   isInteractive = false,
   liveData,
   likeState,
-  initialVideoMuted = true,
+  initialVideoMuted = false,
   onSelectNode,
   onQuickAddGalleryImage,
   canvasOverlaySlot,
@@ -186,15 +186,39 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
   useEffect(() => {
     setVideoMuted(initialVideoMuted);
     const v = bgVideoRef.current;
-    if (v && !isInteractive) {
-      v.muted = initialVideoMuted;
-      if (!initialVideoMuted) {
-        v.play().catch(() => {
-          v.muted = true;
-          setVideoMuted(true);
-        });
+    if (!v || isInteractive) return;
+
+    v.muted = initialVideoMuted;
+    if (initialVideoMuted) return;
+
+    let unlockListener: (() => void) | null = null;
+    v.play().catch(() => {
+      // Browser blocked unmuted autoplay before user gesture: keep playing muted and unlock on first interaction
+      v.muted = true;
+      setVideoMuted(true);
+      v.play().catch(() => {});
+
+      unlockListener = () => {
+        if (!bgVideoRef.current) return;
+        bgVideoRef.current.muted = false;
+        setVideoMuted(false);
+        bgVideoRef.current.play().catch(() => {});
+        if (unlockListener) {
+          window.removeEventListener("pointerdown", unlockListener);
+          window.removeEventListener("keydown", unlockListener);
+          unlockListener = null;
+        }
+      };
+      window.addEventListener("pointerdown", unlockListener, { once: true });
+      window.addEventListener("keydown", unlockListener, { once: true });
+    });
+
+    return () => {
+      if (unlockListener) {
+        window.removeEventListener("pointerdown", unlockListener);
+        window.removeEventListener("keydown", unlockListener);
       }
-    }
+    };
   }, [initialVideoMuted, isInteractive]);
 
   useEffect(() => {

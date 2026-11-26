@@ -431,7 +431,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
               document={parsedProfileBuilderDoc}
               deviceMode={viewportDevice}
               isInteractive={false}
-              initialVideoMuted={!(hasEntryScreen && entered)}
+              initialVideoMuted={hasEntryScreen && !entered}
               likeState={{
                 count: likes,
                 liked: hasLiked,
