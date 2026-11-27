@@ -2605,26 +2605,28 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 )}
             </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="color"
-              disabled={isFreeRpcParentLocked}
-              value={
-                selectedNode.style.backgroundColor?.startsWith("#")
-                  ? selectedNode.style.backgroundColor
-                  : "#0b0b0e"
-              }
-              onChange={(e) => patchStyle({ backgroundColor: e.target.value })}
-              className="w-7 h-7 rounded border border-[#2e2e38] bg-transparent cursor-pointer disabled:opacity-40"
-            />
-            <input
-              type="text"
-              disabled={isFreeRpcParentLocked}
-              value={selectedNode.style.backgroundColor || "#0b0b0e"}
-              onChange={(e) => patchStyle({ backgroundColor: e.target.value })}
-              className="flex-1 bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none disabled:opacity-40"
-            />
-          </div>
+          {(selectedNode.style.backgroundType || "solid") === "solid" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                disabled={isFreeRpcParentLocked}
+                value={
+                  selectedNode.style.backgroundColor?.startsWith("#")
+                    ? selectedNode.style.backgroundColor
+                    : "#0b0b0e"
+                }
+                onChange={(e) => patchStyle({ backgroundColor: e.target.value })}
+                className="w-7 h-7 rounded border border-[#2e2e38] bg-transparent cursor-pointer disabled:opacity-40"
+              />
+              <input
+                type="text"
+                disabled={isFreeRpcParentLocked}
+                value={selectedNode.style.backgroundColor || "#0b0b0e"}
+                onChange={(e) => patchStyle({ backgroundColor: e.target.value })}
+                className="flex-1 bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none disabled:opacity-40"
+              />
+            </div>
+          )}
           <div>
             <div className="flex justify-between text-[9px] text-neutral-500 mb-1">
               <span>SURFACE OPACITY</span>

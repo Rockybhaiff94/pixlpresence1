@@ -221,6 +221,63 @@ function buildExpandedStops(layer: BuilderGradientLayer, baseOpacityMultiplier =
   }));
 }
 
+export function compileRampPreviewCss(layer: BuilderGradientLayer): string {
+  const stops: BuilderGradientStop[] =
+    layer.stops && layer.stops.length >= 2
+      ? [...layer.stops].sort((a, b) => a.position - b.position)
+      : [
+          { id: "a", color: "#6366f1", position: 0 },
+          { id: "b", color: "#ec4899", position: 100 },
+        ];
+  const midpoint = Math.max(5, Math.min(95, layer.midpoint ?? 50));
+  const parts: string[] = [];
+  for (let i = 0; i < stops.length; i++) {
+    const cur = stops[i];
+    const p = clampPct(cur.position);
+    parts.push(`${cur.color} ${p}%`);
+    if (i < stops.length - 1 && Math.abs(midpoint - 50) >= 0.5) {
+      const next = stops[i + 1];
+      const pNext = clampPct(next.position);
+      if (pNext > p + 1) {
+        const midPct = Math.round((p + (pNext - p) * (midpoint / 100)) * 10) / 10;
+        parts.push(`${mixColors(cur.color, next.color, 0.5, 1)} ${midPct}%`);
+      }
+    }
+  }
+  return `linear-gradient(90deg, ${parts.join(", ")})`;
+}
+
+export function sampleGradientColorAt(
+  stops: BuilderGradientStop[],
+  position: number
+): string {
+  const sorted = [...stops].sort((a, b) => a.position - b.position);
+  if (sorted.length === 0) return "#ffffff";
+  const target = clampPct(position);
+  if (target <= sorted[0].position) return sorted[0].color;
+  if (target >= sorted[sorted.length - 1].position) return sorted[sorted.length - 1].color;
+
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const a = sorted[i];
+    const b = sorted[i + 1];
+    if (target >= a.position && target <= b.position) {
+      const span = b.position - a.position;
+      const t = span <= 0.001 ? 0 : (target - a.position) / span;
+      const rgbA = parseHexToRgb(a.color);
+      const rgbB = parseHexToRgb(b.color);
+      if (!rgbA || !rgbB) return t < 0.5 ? a.color : b.color;
+      const toHex = (n: number) =>
+        Math.max(0, Math.min(255, Math.round(n)))
+          .toString(16)
+          .padStart(2, "0");
+      return `#${toHex(rgbA[0] + (rgbB[0] - rgbA[0]) * t)}${toHex(
+        rgbA[1] + (rgbB[1] - rgbA[1]) * t
+      )}${toHex(rgbA[2] + (rgbB[2] - rgbA[2]) * t)}`;
+    }
+  }
+  return sorted[0].color;
+}
+
 export function compileSingleGradientCss(
   layer: BuilderGradientLayer,
   opacityMultiplier = 1

@@ -360,11 +360,52 @@ async function run() {
     await premPage.getByTestId("prop-x-input").fill(String(outerOrigX + 10));
     await premPage.waitForTimeout(80);
 
-    // Universal Gradient System on Name Text (layers, multi-stop, midpoint, canvas line controller)
+    // Universal Gradient System on Name Text (single ramp, click-to-add, drag stop, hex/pos/dup/del, midpoint, angle, layers, canvas controller)
     await premPage.getByTestId("text-fill-type-gradient").click();
-    await premPage.waitForSelector('[data-testid="gradient-add-layer-text-fill"]', { timeout: 3000 });
-    await premPage.getByTestId("gradient-add-stop-text-fill").click();
+    await premPage.waitForSelector('[data-testid="gradient-ramp-text-fill"]', { timeout: 3000 });
+
+    // First/last stops must be protected from deletion initially (2 stops)
+    assert.strictEqual(
+      await premPage.getByTestId("gradient-selected-stop-del-text-fill").isDisabled(),
+      true,
+      "First stop must be protected from deletion"
+    );
+
+    // Click on the continuous ramp at ~40% to add an intermediate stop
+    const rampBox = await premPage.getByTestId("gradient-ramp-text-fill").boundingBox();
+    await premPage.mouse.click(rampBox.x + rampBox.width * 0.4, rampBox.y + rampBox.height / 2);
+    await premPage.waitForTimeout(80);
+    assert.strictEqual(
+      await premPage.locator('[data-testid^="gradient-stop-handle-text-fill-"]').count(),
+      3,
+      "Clicking ramp must insert an intermediate stop"
+    );
+    // Intermediate stop CAN be deleted, and editing HEX + numeric position + dragging works
+    assert.strictEqual(
+      await premPage.getByTestId("gradient-selected-stop-del-text-fill").isDisabled(),
+      false,
+      "Intermediate stop must be deletable"
+    );
+    await premPage.getByTestId("gradient-selected-stop-hex-text-fill").fill("#FF4DA6");
+    await premPage.getByTestId("gradient-selected-stop-pos-text-fill").fill("55");
+    await premPage.waitForTimeout(60);
+    const midHandleBox = await premPage.getByTestId("gradient-stop-handle-text-fill-1").boundingBox();
+    await premPage.mouse.move(midHandleBox.x + midHandleBox.width / 2, midHandleBox.y + midHandleBox.height / 2);
+    await premPage.mouse.down();
+    await premPage.mouse.move(midHandleBox.x + midHandleBox.width / 2 + 16, midHandleBox.y + midHandleBox.height / 2, { steps: 3 });
+    await premPage.mouse.up();
+    await premPage.waitForTimeout(60);
+
+    // Duplicate intermediate stop -> 4 stops, then delete one -> 3 stops
+    await premPage.getByTestId("gradient-selected-stop-dup-text-fill").click();
+    await premPage.waitForTimeout(60);
+    assert.strictEqual(await premPage.locator('[data-testid^="gradient-stop-handle-text-fill-"]').count(), 4);
+    await premPage.getByTestId("gradient-selected-stop-del-text-fill").click();
+    await premPage.waitForTimeout(60);
+    assert.strictEqual(await premPage.locator('[data-testid^="gradient-stop-handle-text-fill-"]').count(), 3);
+
     await premPage.getByTestId("gradient-midpoint-text-fill").fill("65");
+    await premPage.getByTestId("gradient-angle-inc-text-fill").click();
     await premPage.getByTestId("gradient-add-layer-text-fill").click();
     await premPage.waitForSelector('[data-testid="gradient-canvas-controller"]', { timeout: 3000 });
     assert.strictEqual(await premPage.getByTestId("gradient-handle-start").count(), 1);
