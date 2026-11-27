@@ -184,7 +184,34 @@ export const BUILTIN_RPC_TEMPLATES: RpcVisualTemplate[] = [
           rpcFieldBinding: "largeImage",
           rpcDataSource: "live",
           useLiveRpc: true,
-          rpcShowSecondaryBadge: true,
+          rpcShowSecondaryBadge: false,
+          rpcImageShape: "square",
+          fit: "cover",
+        },
+      },
+      {
+        type: "rpc-icon",
+        name: "RPC Small Image",
+        x: 68,
+        y: 92,
+        width: 24,
+        height: 24,
+        zIndex: 4,
+        style: {
+          opacity: 1,
+          borderWidth: 2,
+          borderColor: "#111116",
+          borderStyle: "solid",
+          borderRadius: 9999,
+          backgroundType: "solid",
+          backgroundColor: "#18181f",
+        },
+        config: {
+          rpcFieldBinding: "smallImage",
+          rpcDataSource: "live",
+          useLiveRpc: true,
+          rpcShowSecondaryBadge: false,
+          rpcImageShape: "circle",
           fit: "cover",
         },
       },
@@ -1173,6 +1200,47 @@ export function applyRpcTemplateToEmbedNodes(options: {
     ok: true,
     nextNodes: [...retainedNodes, ...reParentedChildren],
   };
+}
+
+/**
+ * Restores a Custom RPC container to the canonical Discord Rich Presence default layout
+ * without altering outer containers, unrelated profile elements, templates, or live Discord state.
+ */
+export function resetRpcEmbedToDefault(options: {
+  nodes: BuilderNode[];
+  embedId: string;
+}): { ok: boolean; error?: string; nextNodes?: BuilderNode[] } {
+  const defaultTemplate = getRpcTemplateById("rpc-tpl-default");
+  const result = applyRpcTemplateToEmbedNodes({
+    nodes: options.nodes,
+    embedId: options.embedId,
+    template: defaultTemplate,
+    isPremiumOrAdmin: true,
+  });
+  if (!result.ok || !result.nextNodes) return result;
+
+  // Ensure default container styling cleanly clears custom background/video/gradients
+  const cleanedNodes = result.nextNodes.map((n) => {
+    if (n.id !== options.embedId) return n;
+    return {
+      ...n,
+      name: "Custom RPC",
+      style: {
+        ...JSON.parse(JSON.stringify(defaultTemplate.parentStyle)),
+      },
+      config: {
+        ...JSON.parse(JSON.stringify(defaultTemplate.parentConfig)),
+        rpcTemplateId: defaultTemplate.id,
+        rpcTemplateName: defaultTemplate.name,
+        rpcTemplateVersion: defaultTemplate.version,
+        rpcCategory: defaultTemplate.category,
+        useLiveRpc: true,
+        rpcAllowEmpty: false,
+      },
+    };
+  });
+
+  return { ok: true, nextNodes: cleanedNodes };
 }
 
 export function serializeRpcEmbedAsTemplate(options: {

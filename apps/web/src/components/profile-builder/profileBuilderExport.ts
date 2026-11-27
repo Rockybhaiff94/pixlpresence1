@@ -1,6 +1,11 @@
 import { ProfileBuilderDocument } from "./profileBuilderTypes";
 import { hexToRgbaSafe } from "./componentRegistry";
 import { resolveEffectiveBackground } from "./ProfileBuilderRenderer";
+import {
+  drawGradientLayersOnCanvas,
+  getGradientDirectionPoints,
+  normalizeGradientLayers,
+} from "./gradientUtils";
 
 function triggerDownload(url: string, filename: string) {
   const a = document.createElement("a");
@@ -57,15 +62,18 @@ export async function exportProfileBuilderPng(
 
   const bg = resolveEffectiveBackground(canvas, nodes);
   if (bg.type === "gradient") {
-    const rad = (bg.gradientAngle * Math.PI) / 180;
-    const grad = ctx.createLinearGradient(0, 0, width * Math.cos(rad), height * Math.sin(rad));
-    grad.addColorStop(0, bg.color);
-    grad.addColorStop(1, bg.gradientTo);
-    ctx.fillStyle = grad;
+    ctx.fillStyle = bg.color || "#060608";
+    ctx.fillRect(0, 0, width, height);
+    drawGradientLayersOnCanvas(ctx, bg.gradients, 0, 0, width, height, {
+      colorA: bg.color,
+      colorB: bg.gradientTo,
+      angle: bg.gradientAngle,
+      opacity: 1,
+    });
   } else {
     ctx.fillStyle = bg.color || "#060608";
+    ctx.fillRect(0, 0, width, height);
   }
-  ctx.fillRect(0, 0, width, height);
 
   if (bg.type === "image" && bg.imageUrl) {
     await drawImageUrl(ctx, bg.imageUrl, 0, 0, width, height, 0, bg.opacity);
@@ -101,11 +109,32 @@ export async function exportProfileBuilderPng(
         const radius = node.style.borderRadius ?? 16;
         ctx.beginPath();
         ctx.roundRect(ax, ay, node.width, node.height, radius);
-        ctx.fillStyle = hexToRgbaSafe(
-          node.style.backgroundColor || "#0b0b0e",
-          node.style.backgroundOpacity ?? 0.92
-        );
-        ctx.fill();
+        ctx.save();
+        ctx.clip();
+        if (node.style.backgroundType === "gradient") {
+          drawGradientLayersOnCanvas(
+            ctx,
+            node.style.backgroundGradients,
+            ax,
+            ay,
+            node.width,
+            node.height,
+            {
+              colorA: node.style.backgroundColor || "#0d0d12",
+              colorB: node.style.backgroundGradientTo || "#1a1a28",
+              angle: node.style.backgroundGradientAngle ?? 135,
+              opacity: node.style.backgroundOpacity ?? 0.92,
+            },
+            node.style.backgroundOpacity ?? 0.92
+          );
+        } else if (node.style.backgroundType !== "transparent") {
+          ctx.fillStyle = hexToRgbaSafe(
+            node.style.backgroundColor || "#0b0b0e",
+            node.style.backgroundOpacity ?? 0.92
+          );
+          ctx.fillRect(ax, ay, node.width, node.height);
+        }
+        ctx.restore();
         if ((node.style.borderWidth ?? 1) > 0) {
           ctx.strokeStyle = node.style.borderColor || "#2c2c35";
           ctx.lineWidth = node.style.borderWidth ?? 1;
@@ -114,19 +143,48 @@ export async function exportProfileBuilderPng(
         ctx.clip();
         await drawSubtree(node.id, ax, ay);
       } else if (
-        (node.type === "banner-image" || node.type === "profile-image" || node.type === "image" || node.type === "rpc-icon") &&
-        (node.config.src || node.config.largeImage)
+        node.type === "banner-image" ||
+        node.type === "profile-image" ||
+        node.type === "image" ||
+        node.type === "rpc-icon"
       ) {
-        await drawImageUrl(
-          ctx,
-          node.config.src || node.config.largeImage || "",
-          ax,
-          ay,
-          node.width,
-          node.height,
-          node.config.avatarShape === "circle" ? node.width / 2 : node.style.borderRadius ?? 10,
-          node.style.opacity ?? 1
-        );
+        const isSmallRpc = node.type === "rpc-icon" && node.config.rpcFieldBinding === "smallImage";
+        const imgUrl = isSmallRpc
+          ? node.config.appIcon || node.config.src || ""
+          : node.config.src || node.config.largeImage || "";
+        const isCircleShape =
+          (node.type === "profile-image" && node.config.avatarShape === "circle") ||
+          (node.type === "rpc-icon" && node.config.rpcImageShape === "circle");
+        const drawW = isCircleShape ? Math.min(node.width, node.height) : node.width;
+        const drawH = isCircleShape ? Math.min(node.width, node.height) : node.height;
+        const drawX = isCircleShape ? ax + (node.width - drawW) / 2 : ax;
+        const drawY = isCircleShape ? ay + (node.height - drawH) / 2 : ay;
+        const drawRadius = isCircleShape
+          ? drawW / 2
+          : node.type === "profile-image" && node.config.avatarShape === "square"
+            ? 0
+            : node.style.borderRadius ?? (node.type === "rpc-icon" ? 12 : 10);
+
+        if (imgUrl) {
+          await drawImageUrl(
+            ctx,
+            imgUrl,
+            drawX,
+            drawY,
+            drawW,
+            drawH,
+            drawRadius,
+            node.style.opacity ?? 1
+          );
+        }
+        if (node.config.imageOverlayEnabled && node.config.imageOverlayGradients?.length) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.roundRect(drawX, drawY, drawW, drawH, drawRadius);
+          ctx.clip();
+          drawGradientLayersOnCanvas(ctx, node.config.imageOverlayGradients, drawX, drawY, drawW, drawH);
+          ctx.restore();
+        }
       } else if (
         node.type === "name-text" ||
         node.type === "subtitle" ||
@@ -137,10 +195,29 @@ export async function exportProfileBuilderPng(
         node.type === "rpc-status" ||
         node.type === "rpc-timestamp"
       ) {
-        ctx.fillStyle = node.config.color || "#ffffff";
         ctx.font = `${node.config.fontWeight || 600} ${node.config.fontSize || 14}px sans-serif`;
         ctx.textBaseline = "top";
         ctx.textAlign = node.config.textAlign || "left";
+        if (node.config.textFillType === "gradient" && node.config.textGradients?.length) {
+          const layers = normalizeGradientLayers(node.config.textGradients);
+          const topLayer = [...layers].reverse().find((l) => l.visible !== false) || layers[0];
+          const pts = getGradientDirectionPoints(topLayer);
+          const textGrad = ctx.createLinearGradient(
+            ax + pts.startX * node.width,
+            ay + pts.startY * node.height,
+            ax + pts.endX * node.width,
+            ay + pts.endY * node.height
+          );
+          for (const stop of topLayer.stops) {
+            textGrad.addColorStop(
+              Math.max(0, Math.min(1, stop.position / 100)),
+              hexToRgbaSafe(stop.color, topLayer.opacity ?? 1)
+            );
+          }
+          ctx.fillStyle = textGrad;
+        } else {
+          ctx.fillStyle = node.config.color || "#ffffff";
+        }
         const tx =
           node.config.textAlign === "center"
             ? ax + node.width / 2

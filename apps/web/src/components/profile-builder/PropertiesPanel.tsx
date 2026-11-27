@@ -11,7 +11,10 @@ import {
   Loader2,
   Lock,
   Plus,
+  Redo2,
+  RotateCcw,
   Trash2,
+  Undo2,
   Unlock,
   UploadCloud,
 } from "lucide-react";
@@ -25,11 +28,14 @@ import {
   BuilderComponentConfig,
   BuilderComponentType,
   BuilderDeviceMode,
+  BuilderGradientLayer,
   BuilderLayoutMode,
   BuilderNode,
   BuilderStyle,
   ProfileBadgeItem,
 } from "./profileBuilderTypes";
+import { GradientLayersEditor } from "./GradientLayersEditor";
+import { normalizeGradientLayers } from "./gradientUtils";
 import {
   PROFILE_BUILDER_REGISTRY,
   createBuilderId,
@@ -53,15 +59,15 @@ interface PropertiesPanelProps {
   isAdmin?: boolean;
   rpcTemplates?: RpcVisualTemplate[];
   onApplyRpcTemplate?: (embedId: string, template: RpcVisualTemplate) => void;
-  onSaveRpcTemplate?: (payload: {
-    embedId: string;
-    name: string;
-    category: string;
-    description?: string;
-    isGlobal?: boolean;
-    isPremiumRequired?: boolean;
-  }) => Promise<boolean>;
-  onDeleteRpcTemplate?: (templateId: string) => Promise<void>;
+  rpcHistoryMap?: Record<string, { snapshots: BuilderNode[][]; index: number }>;
+  onUndoCustomRpc?: (rpcId: string) => void;
+  onRedoCustomRpc?: (rpcId: string) => void;
+  onResetCustomRpc?: (rpcId: string) => void;
+  activeGradientLayerId?: string | null;
+  onSelectGradientLayer?: (layerId: string | null) => void;
+  activeGradientTarget?: "background" | "text" | "image-overlay";
+  onSelectGradientTarget?: (target: "background" | "text" | "image-overlay") => void;
+  onSelect?: (id: string | null) => void;
   onInsertChild?: (
     parentId: string,
     type: BuilderComponentType,
@@ -111,11 +117,17 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   selectedNode,
   isFounder = false,
   isPremiumOrAdmin = false,
-  isAdmin = false,
   rpcTemplates = [],
   onApplyRpcTemplate,
-  onSaveRpcTemplate,
-  onDeleteRpcTemplate,
+  rpcHistoryMap,
+  onUndoCustomRpc,
+  onRedoCustomRpc,
+  onResetCustomRpc,
+  activeGradientLayerId = null,
+  onSelectGradientLayer,
+  activeGradientTarget = "background",
+  onSelectGradientTarget,
+  onSelect,
   onInsertChild,
   onRestrictedFeature,
   onUpdateCanvas,
@@ -136,11 +148,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const containerVideoInputRef = useRef<HTMLInputElement>(null);
 
   const [tplCategoryFilter, setTplCategoryFilter] = useState<string>("all");
-  const [newTplName, setNewTplName] = useState("");
-  const [newTplCategory, setNewTplCategory] = useState("Gaming");
-  const [newTplIsGlobal, setNewTplIsGlobal] = useState(false);
-  const [newTplPremiumOnly, setNewTplPremiumOnly] = useState(true);
-  const [savingTpl, setSavingTpl] = useState(false);
+  const [rpcResetDialogForId, setRpcResetDialogForId] = useState<string | null>(null);
 
   // 1. CANVAS LEVEL PROPERTIES
   if (!selectedNode || selectedNode.type === "background") {
@@ -249,7 +257,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             </select>
           </div>
 
-          {(bgType === "solid" || bgType === "gradient") && (
+          {bgType === "solid" && (
             <div className="flex items-center gap-2">
               <input
                 type="color"
@@ -271,32 +279,43 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           )}
 
           {bgType === "gradient" && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={bgGradientTo.startsWith("#") ? bgGradientTo : "#16161d"}
-                  onChange={(e) =>
-                    patchBg(
-                      { backgroundGradientTo: e.target.value },
-                      { bgGradientTo: e.target.value }
-                    )
+            <GradientLayersEditor
+              scopeKey="canvas-bg"
+              layers={isBgNode ? selectedNode.config.bgGradients || canvas.backgroundGradients : canvas.backgroundGradients}
+              legacyFallback={{
+                colorA: bgColor,
+                colorB: bgGradientTo,
+                angle: canvas.backgroundGradientAngle,
+                opacity: 1,
+              }}
+              selectedLayerId={activeGradientLayerId}
+              onSelectLayer={(lid) => {
+                onSelectGradientTarget?.("background");
+                onSelectGradientLayer?.(lid);
+              }}
+              onChangeLayers={(nextLayers: BuilderGradientLayer[]) => {
+                onSelectGradientTarget?.("background");
+                const primary = nextLayers[0];
+                patchBg(
+                  {
+                    backgroundType: "gradient",
+                    backgroundGradients: nextLayers,
+                    backgroundColor: primary?.stops?.[0]?.color || bgColor,
+                    backgroundGradientTo:
+                      primary?.stops?.[primary.stops.length - 1]?.color || bgGradientTo,
+                    backgroundGradientAngle: primary?.angle ?? 135,
+                  },
+                  {
+                    bgType: "gradient",
+                    bgGradients: nextLayers,
+                    bgColor: primary?.stops?.[0]?.color || bgColor,
+                    bgGradientTo:
+                      primary?.stops?.[primary.stops.length - 1]?.color || bgGradientTo,
+                    bgGradientAngle: primary?.angle ?? 135,
                   }
-                  className="w-8 h-8 rounded border border-[#2e2e38] bg-transparent cursor-pointer"
-                />
-                <input
-                  type="text"
-                  value={bgGradientTo}
-                  onChange={(e) =>
-                    patchBg(
-                      { backgroundGradientTo: e.target.value },
-                      { bgGradientTo: e.target.value }
-                    )
-                  }
-                  className="flex-1 bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
-                />
-              </div>
-            </div>
+                );
+              }}
+            />
           )}
 
           {(bgType === "image" || bgType === "gif") && (
@@ -663,9 +682,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               disabled={transformDimensionLocked}
               value={Math.round(selectedNode.width)}
               onChange={(e) => {
-                const nextW = safeNum(e.target.value, selectedNode.width, 20, 4096);
+                const minDim = selectedNode.type === "rpc-icon" ? 12 : 20;
+                const nextW = safeNum(e.target.value, selectedNode.width, minDim, 4096);
                 if (selectedNode.aspectRatioLocked && selectedNode.width > 0) {
-                  const nextH = Math.max(20, Math.round((nextW * selectedNode.height) / selectedNode.width));
+                  const nextH = Math.max(minDim, Math.round((nextW * selectedNode.height) / selectedNode.width));
                   onUpdateNode(selectedNode.id, { width: nextW, height: nextH });
                 } else {
                   onUpdateNode(selectedNode.id, { width: nextW });
@@ -682,9 +702,11 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               disabled={transformDimensionLocked}
               value={Math.round(selectedNode.height)}
               onChange={(e) => {
-                const nextH = safeNum(e.target.value, selectedNode.height, 8, 4096);
+                const minH = selectedNode.type === "rpc-icon" ? 12 : 8;
+                const minW = selectedNode.type === "rpc-icon" ? 12 : 20;
+                const nextH = safeNum(e.target.value, selectedNode.height, minH, 4096);
                 if (selectedNode.aspectRatioLocked && selectedNode.height > 0) {
-                  const nextW = Math.max(20, Math.round((nextH * selectedNode.width) / selectedNode.height));
+                  const nextW = Math.max(minW, Math.round((nextH * selectedNode.width) / selectedNode.height));
                   onUpdateNode(selectedNode.id, { width: nextW, height: nextH });
                 } else {
                   onUpdateNode(selectedNode.id, { height: nextH });
@@ -962,6 +984,52 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               </div>
             </div>
           )}
+
+          <div className="pt-2 border-t border-[#1e1e26] space-y-2">
+            <label className="flex items-center justify-between text-[10px] text-neutral-300 cursor-pointer">
+              <span>Image Gradient Overlay</span>
+              <input
+                type="checkbox"
+                checked={Boolean(selectedNode.config.imageOverlayEnabled)}
+                onChange={(e) => {
+                  const enabled = e.target.checked;
+                  onSelectGradientTarget?.("image-overlay");
+                  if (enabled && (!selectedNode.config.imageOverlayGradients || selectedNode.config.imageOverlayGradients.length === 0)) {
+                    const seeded = normalizeGradientLayers(undefined, {
+                      colorA: "#000000",
+                      colorB: "#ec4899",
+                      angle: 180,
+                      opacity: 0.45,
+                    });
+                    onSelectGradientLayer?.(seeded[0]?.id ?? null);
+                    patchConfig({ imageOverlayEnabled: true, imageOverlayGradients: seeded });
+                  } else {
+                    patchConfig({ imageOverlayEnabled: enabled });
+                  }
+                }}
+                className="accent-white cursor-pointer"
+                data-testid="media-image-overlay-toggle"
+              />
+            </label>
+            {selectedNode.config.imageOverlayEnabled && (
+              <GradientLayersEditor
+                scopeKey="image-overlay"
+                layers={selectedNode.config.imageOverlayGradients}
+                legacyFallback={{ colorA: "#000000", colorB: "#ec4899", angle: 180, opacity: 0.45 }}
+                selectedLayerId={
+                  activeGradientTarget === "image-overlay" ? activeGradientLayerId ?? null : null
+                }
+                onSelectLayer={(id) => {
+                  onSelectGradientTarget?.("image-overlay");
+                  onSelectGradientLayer?.(id);
+                }}
+                onChangeLayers={(nextLayers) => {
+                  onSelectGradientTarget?.("image-overlay");
+                  patchConfig({ imageOverlayEnabled: true, imageOverlayGradients: nextLayers });
+                }}
+              />
+            )}
+          </div>
         </SectionGroup>
       )}
 
@@ -1021,21 +1089,83 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="color"
-              value={
-                selectedNode.config.color?.startsWith("#") ? selectedNode.config.color : "#ffffff"
-              }
-              onChange={(e) => patchConfig({ color: e.target.value })}
-              className="w-7 h-7 rounded border border-[#2e2e38] bg-transparent cursor-pointer"
-            />
-            <input
-              type="text"
-              value={selectedNode.config.color || "#ffffff"}
-              onChange={(e) => patchConfig({ color: e.target.value })}
-              className="flex-1 bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
-            />
+          <div className="space-y-2">
+            <div>
+              <label className="text-[9px] text-neutral-500 uppercase block mb-1">Text Fill</label>
+              <div className="grid grid-cols-2 gap-1">
+                {(["solid", "gradient"] as const).map((fillMode) => (
+                  <button
+                    key={fillMode}
+                    type="button"
+                    onClick={() => {
+                      if (fillMode === "gradient") {
+                        const existing = normalizeGradientLayers(selectedNode.config.textGradients, {
+                          colorA: selectedNode.config.color || "#ffffff",
+                          colorB: "#93c5fd",
+                          angle: 90,
+                          opacity: 1,
+                        });
+                        onSelectGradientTarget?.("text");
+                        onSelectGradientLayer?.(existing[0]?.id ?? null);
+                        patchConfig({ textFillType: "gradient", textGradients: existing });
+                      } else {
+                        onSelectGradientTarget?.("background");
+                        patchConfig({ textFillType: "solid" });
+                      }
+                    }}
+                    className={`py-1 rounded border text-[10px] capitalize cursor-pointer ${
+                      (selectedNode.config.textFillType || "solid") === fillMode
+                        ? "bg-white text-black border-white font-bold"
+                        : "bg-[#121217] border-[#24242d] text-neutral-400"
+                    }`}
+                    data-testid={`text-fill-type-${fillMode}`}
+                  >
+                    {fillMode}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {(selectedNode.config.textFillType || "solid") === "gradient" ? (
+              <GradientLayersEditor
+                scopeKey="text-fill"
+                layers={selectedNode.config.textGradients}
+                legacyFallback={{
+                  colorA: selectedNode.config.color || "#ffffff",
+                  colorB: "#93c5fd",
+                  angle: 90,
+                  opacity: 1,
+                }}
+                selectedLayerId={
+                  activeGradientTarget === "text" ? activeGradientLayerId ?? null : null
+                }
+                onSelectLayer={(id) => {
+                  onSelectGradientTarget?.("text");
+                  onSelectGradientLayer?.(id);
+                }}
+                onChangeLayers={(nextLayers) => {
+                  onSelectGradientTarget?.("text");
+                  patchConfig({ textFillType: "gradient", textGradients: nextLayers });
+                }}
+              />
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={
+                    selectedNode.config.color?.startsWith("#") ? selectedNode.config.color : "#ffffff"
+                  }
+                  onChange={(e) => patchConfig({ color: e.target.value })}
+                  className="w-7 h-7 rounded border border-[#2e2e38] bg-transparent cursor-pointer"
+                />
+                <input
+                  type="text"
+                  value={selectedNode.config.color || "#ffffff"}
+                  onChange={(e) => patchConfig({ color: e.target.value })}
+                  className="flex-1 bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                />
+              </div>
+            )}
           </div>
 
           {selectedNode.type === "name-text" && (
@@ -1204,11 +1334,87 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       )}
 
       {/* Unified Custom RPC Parent Container Controls */}
-      {isRpcParent && (
+      {isRpcParent && (() => {
+        const rpcHistory = rpcHistoryMap?.[selectedNode.id];
+        const canUndoRpc = Boolean(rpcHistory && rpcHistory.index > 0);
+        const canRedoRpc = Boolean(rpcHistory && rpcHistory.index < rpcHistory.snapshots.length - 1);
+        const rpcIconChildren = nodes.filter(
+          (n) => n.parentId === selectedNode.id && n.type === "rpc-icon"
+        );
+        const largeIconChild =
+          rpcIconChildren.find((n) => n.config.rpcFieldBinding !== "smallImage") || null;
+        const smallIconChild =
+          rpcIconChildren.find((n) => n.config.rpcFieldBinding === "smallImage") || null;
+        return (
         <SectionGroup title="Custom RPC">
           <div className="space-y-2.5">
             <div className="px-2 py-1.5 rounded bg-[#111118] border border-[#23232f] text-[9px] text-neutral-400 leading-relaxed">
               Website presentation container only. Visual themes and layout never alter your actual Discord Rich Presence.
+            </div>
+
+            {/* Isolated Custom RPC History & Reset Controls */}
+            <div className="p-2 rounded-lg bg-[#0d0d12] border border-[#22222c] space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-semibold uppercase tracking-wider text-neutral-400">
+                  Custom RPC History
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={!canUndoRpc || isFreeRpcParentLocked}
+                    onClick={() => onUndoCustomRpc?.(selectedNode.id)}
+                    className="px-2 py-1 rounded bg-[#15151d] hover:bg-[#1e1e28] border border-[#282834] text-neutral-200 text-[9px] font-semibold cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed"
+                    title="Undo Custom RPC change"
+                    data-testid="rpc-undo-btn"
+                  >
+                    Undo
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canRedoRpc || isFreeRpcParentLocked}
+                    onClick={() => onRedoCustomRpc?.(selectedNode.id)}
+                    className="px-2 py-1 rounded bg-[#15151d] hover:bg-[#1e1e28] border border-[#282834] text-neutral-200 text-[9px] font-semibold cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed"
+                    title="Redo Custom RPC change"
+                    data-testid="rpc-redo-btn"
+                  >
+                    Redo
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isFreeRpcParentLocked}
+                    onClick={() => setRpcResetDialogForId(selectedNode.id)}
+                    className="px-2 py-1 rounded bg-red-950/40 hover:bg-red-950/70 border border-red-800/50 text-red-200 text-[9px] font-semibold cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed"
+                    title="Reset Custom RPC to default Discord layout"
+                    data-testid="rpc-reset-btn"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+              {(largeIconChild || smallIconChild) && onSelect && (
+                <div className="grid grid-cols-2 gap-1 pt-1 border-t border-[#1b1b24]">
+                  {largeIconChild && (
+                    <button
+                      type="button"
+                      onClick={() => onSelect(largeIconChild.id)}
+                      className="py-1 px-1.5 rounded bg-[#14141c] hover:bg-[#1c1c28] border border-[#272733] text-[9px] text-neutral-300 truncate cursor-pointer"
+                      data-testid="rpc-quick-select-large-image"
+                    >
+                      Edit Main Image
+                    </button>
+                  )}
+                  {smallIconChild && (
+                    <button
+                      type="button"
+                      onClick={() => onSelect(smallIconChild.id)}
+                      className="py-1 px-1.5 rounded bg-[#14141c] hover:bg-[#1c1c28] border border-[#272733] text-[9px] text-neutral-300 truncate cursor-pointer"
+                      data-testid="rpc-quick-select-small-image"
+                    >
+                      Edit Small Image
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {isFreeRpcParentLocked && (
@@ -1395,10 +1601,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   .map((tpl) => {
                     const lockedTpl = !isPremiumOrAdmin && tpl.isPremiumRequired;
                     const isActiveTpl = selectedNode.config.rpcTemplateId === tpl.id;
-                    const canDeleteTpl =
-                      onDeleteRpcTemplate &&
-                      !tpl.id.startsWith("rpc-tpl-") &&
-                      (isAdmin || !tpl.isGlobal);
                     return (
                       <div
                         key={tpl.id}
@@ -1425,16 +1627,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                         <div className="flex items-center justify-between gap-1">
                           <span className="text-[9px] text-neutral-500 truncate">{tpl.category}</span>
                           <div className="flex items-center gap-1">
-                            {canDeleteTpl && (
-                              <button
-                                type="button"
-                                onClick={() => void onDeleteRpcTemplate(tpl.id)}
-                                className="p-1 rounded text-neutral-500 hover:text-red-400 cursor-pointer"
-                                title="Delete saved template"
-                              >
-                                <Trash2 size={10} />
-                              </button>
-                            )}
                             <button
                               type="button"
                               onClick={() => onApplyRpcTemplate?.(selectedNode.id, tpl)}
@@ -1453,82 +1645,11 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                     );
                   })}
               </div>
-
-              {onSaveRpcTemplate && isPremiumOrAdmin && (
-                <div className="pt-2 border-t border-[#1b1b24] space-y-1.5">
-                  <div className="text-[9px] text-neutral-400 uppercase font-semibold">
-                    {isAdmin ? "Save / Publish Official Template" : "Save Custom RPC Template"}
-                  </div>
-                  <input
-                    type="text"
-                    value={newTplName}
-                    onChange={(e) => setNewTplName(e.target.value)}
-                    placeholder="Template name..."
-                    className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
-                    data-testid="rpc-save-tpl-name"
-                  />
-                  <input
-                    type="text"
-                    value={newTplCategory}
-                    onChange={(e) => setNewTplCategory(e.target.value)}
-                    placeholder="Category (e.g. VALORANT, Minecraft)"
-                    className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
-                    data-testid="rpc-save-tpl-category"
-                  />
-                  {isAdmin && (
-                    <div className="space-y-1 pt-0.5">
-                      <label className="flex items-center justify-between text-[9px] text-neutral-300 cursor-pointer">
-                        <span>Publish Official Global Template</span>
-                        <input
-                          type="checkbox"
-                          checked={newTplIsGlobal}
-                          onChange={(e) => setNewTplIsGlobal(e.target.checked)}
-                          className="accent-white cursor-pointer"
-                          data-testid="rpc-save-tpl-global"
-                        />
-                      </label>
-                      <label className="flex items-center justify-between text-[9px] text-neutral-300 cursor-pointer">
-                        <span>Require Premium Tier</span>
-                        <input
-                          type="checkbox"
-                          checked={newTplPremiumOnly}
-                          onChange={(e) => setNewTplPremiumOnly(e.target.checked)}
-                          className="accent-white cursor-pointer"
-                          data-testid="rpc-save-tpl-premium"
-                        />
-                      </label>
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    disabled={savingTpl || !newTplName.trim()}
-                    onClick={async () => {
-                      setSavingTpl(true);
-                      const ok = await onSaveRpcTemplate({
-                        embedId: selectedNode.id,
-                        name: newTplName,
-                        category: newTplCategory || "Custom",
-                        isGlobal: isAdmin ? newTplIsGlobal : false,
-                        isPremiumRequired: isAdmin ? newTplPremiumOnly : true,
-                      });
-                      setSavingTpl(false);
-                      if (ok) setNewTplName("");
-                    }}
-                    className="w-full py-1.5 rounded bg-white hover:bg-neutral-200 text-black font-bold text-[10px] cursor-pointer disabled:opacity-40"
-                    data-testid="rpc-save-template-btn"
-                  >
-                    {savingTpl
-                      ? "Saving..."
-                      : isAdmin && newTplIsGlobal
-                        ? "Publish Official Template"
-                        : "Save As Template"}
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         </SectionGroup>
-      )}
+        );
+      })()}
 
       {/* Rich Presence Child Element Inspector */}
       {isRpcChild && (
@@ -1548,6 +1669,49 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             </div>
           ) : (
             <div className="space-y-2.5">
+              {selectedNode.parentId && (() => {
+                const owningEmbed = nodes.find((n) => n.id === selectedNode.parentId);
+                if (!owningEmbed || owningEmbed.type !== "custom-rpc") return null;
+                const rpcHistory = rpcHistoryMap?.[owningEmbed.id];
+                const canUndoRpc = Boolean(rpcHistory && rpcHistory.index > 0);
+                const canRedoRpc = Boolean(rpcHistory && rpcHistory.index < rpcHistory.snapshots.length - 1);
+                return (
+                  <div className="flex items-center justify-between gap-1 p-1.5 rounded bg-[#0d0d12] border border-[#22222c]">
+                    <span className="text-[9px] text-neutral-400 uppercase font-semibold">
+                      RPC History
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={!canUndoRpc}
+                        onClick={() => onUndoCustomRpc?.(owningEmbed.id)}
+                        className="px-2 py-0.5 rounded bg-[#15151d] hover:bg-[#1e1e28] border border-[#282834] text-neutral-200 text-[9px] font-semibold cursor-pointer disabled:opacity-35"
+                        data-testid="rpc-undo-btn"
+                      >
+                        Undo
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canRedoRpc}
+                        onClick={() => onRedoCustomRpc?.(owningEmbed.id)}
+                        className="px-2 py-0.5 rounded bg-[#15151d] hover:bg-[#1e1e28] border border-[#282834] text-neutral-200 text-[9px] font-semibold cursor-pointer disabled:opacity-35"
+                        data-testid="rpc-redo-btn"
+                      >
+                        Redo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRpcResetDialogForId(owningEmbed.id)}
+                        className="px-2 py-0.5 rounded bg-red-950/40 hover:bg-red-950/70 border border-red-800/50 text-red-200 text-[9px] font-semibold cursor-pointer"
+                        data-testid="rpc-reset-btn"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div>
                 <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Data Source</label>
                 <div className="grid grid-cols-2 gap-1">
@@ -1568,12 +1732,24 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 </div>
               </div>
 
-              {selectedNode.type === "rpc-icon" && (
+              {selectedNode.type === "rpc-icon" && (() => {
+                const isSmallBinding = selectedNode.config.rpcFieldBinding === "smallImage";
+                const iconShape =
+                  selectedNode.config.rpcImageShape ||
+                  ((selectedNode.style.borderRadius ?? 0) >= 999 ? "circle" : "square");
+                const cornerRadius =
+                  typeof selectedNode.style.borderRadius === "number" &&
+                  selectedNode.style.borderRadius < 999
+                    ? selectedNode.style.borderRadius
+                    : isSmallBinding
+                      ? 6
+                      : 12;
+                return (
                 <div className="space-y-2">
                   <div>
                     <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Image Binding</label>
                     <select
-                      value={selectedNode.config.rpcFieldBinding === "smallImage" ? "smallImage" : "largeImage"}
+                      value={isSmallBinding ? "smallImage" : "largeImage"}
                       onChange={(e) =>
                         patchConfig({
                           rpcFieldBinding: e.target.value as "largeImage" | "smallImage",
@@ -1587,18 +1763,98 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                       <option value="smallImage">Small Activity Image (smallImage)</option>
                     </select>
                   </div>
+
+                  <div>
+                    <label className="text-[9px] text-neutral-500 uppercase block mb-1">Image Shape</label>
+                    <div className="grid grid-cols-2 gap-1">
+                      {(["square", "circle"] as const).map((shp) => (
+                        <button
+                          key={shp}
+                          type="button"
+                          onClick={() => {
+                            if (shp === "circle") {
+                              onUpdateNode(selectedNode.id, {
+                                aspectRatioLocked: true,
+                                config: { ...selectedNode.config, rpcImageShape: "circle" },
+                                style: { ...selectedNode.style, borderRadius: 9999 },
+                              });
+                            } else {
+                              onUpdateNode(selectedNode.id, {
+                                config: { ...selectedNode.config, rpcImageShape: "square" },
+                                style: { ...selectedNode.style, borderRadius: cornerRadius },
+                              });
+                            }
+                          }}
+                          className={`py-1 rounded border text-[10px] capitalize cursor-pointer ${
+                            iconShape === shp
+                              ? "bg-white text-black border-white font-bold"
+                              : "bg-[#121217] border-[#24242d] text-neutral-400"
+                          }`}
+                          data-testid={`rpc-icon-shape-${shp}`}
+                        >
+                          {shp === "circle" ? "Circle" : "Square"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {iconShape === "square" && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[9px] text-neutral-400">
+                        <span>CORNER RADIUS (PX)</span>
+                        <span>{cornerRadius}px</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min={0}
+                          max={200}
+                          value={cornerRadius}
+                          onChange={(e) => {
+                            const rad = safeNum(e.target.value, 0, 0, 200);
+                            onUpdateNode(selectedNode.id, {
+                              config: { ...selectedNode.config, rpcImageShape: "square" },
+                              style: { ...selectedNode.style, borderRadius: rad },
+                            });
+                          }}
+                          className="flex-1 accent-white"
+                          data-testid="rpc-icon-corner-radius-slider"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          max={200}
+                          value={cornerRadius}
+                          onChange={(e) => {
+                            const rad = safeNum(e.target.value, 0, 0, 200);
+                            onUpdateNode(selectedNode.id, {
+                              config: { ...selectedNode.config, rpcImageShape: "square" },
+                              style: { ...selectedNode.style, borderRadius: rad },
+                            });
+                          }}
+                          className="w-12 bg-[#121217] border border-[#24242d] rounded px-1.5 py-0.5 text-[10px] text-white outline-none text-right"
+                          data-testid="rpc-icon-corner-radius-input"
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   <button
                     type="button"
                     onClick={() =>
                       onOpenMediaPicker(
                         (url) =>
                           patchConfig(
-                            selectedNode.config.rpcFieldBinding === "smallImage"
+                            isSmallBinding
                               ? { appIcon: url, rpcDataSource: "custom" }
                               : { largeImage: url, rpcDataSource: "custom" }
                           ),
-                        "Upload Custom Game Icon / GIF",
-                        selectedNode.config.largeImage || "",
+                        isSmallBinding
+                          ? "Upload Small Activity Image / GIF"
+                          : "Upload Custom Game Icon / GIF",
+                        isSmallBinding
+                          ? selectedNode.config.appIcon || selectedNode.config.src || ""
+                          : selectedNode.config.largeImage || selectedNode.config.src || "",
                         "rpc_icon"
                       )
                     }
@@ -1606,7 +1862,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   >
                     Upload / Pick Thumbnail or GIF
                   </button>
-                  {selectedNode.config.rpcFieldBinding !== "smallImage" && (
+                  {!isSmallBinding && (
                     <label className="flex items-center justify-between text-[10px] text-neutral-300 cursor-pointer">
                       <span>Show Secondary Small Badge</span>
                       <input
@@ -1617,8 +1873,72 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                       />
                     </label>
                   )}
+
+                  <div className="pt-2 border-t border-[#1e1e26] space-y-2">
+                    <label className="flex items-center justify-between text-[10px] text-neutral-300 cursor-pointer">
+                      <span>Image Gradient Overlay</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(selectedNode.config.imageOverlayEnabled)}
+                        onChange={(e) => {
+                          const enabled = e.target.checked;
+                          onSelectGradientTarget?.("image-overlay");
+                          if (
+                            enabled &&
+                            (!selectedNode.config.imageOverlayGradients ||
+                              selectedNode.config.imageOverlayGradients.length === 0)
+                          ) {
+                            const seeded = normalizeGradientLayers(undefined, {
+                              colorA: "#000000",
+                              colorB: "#ec4899",
+                              angle: 180,
+                              opacity: 0.45,
+                            });
+                            onSelectGradientLayer?.(seeded[0]?.id ?? null);
+                            patchConfig({
+                              imageOverlayEnabled: true,
+                              imageOverlayGradients: seeded,
+                            });
+                          } else {
+                            patchConfig({ imageOverlayEnabled: enabled });
+                          }
+                        }}
+                        className="accent-white cursor-pointer"
+                        data-testid="rpc-icon-overlay-toggle"
+                      />
+                    </label>
+                    {selectedNode.config.imageOverlayEnabled && (
+                      <GradientLayersEditor
+                        scopeKey="image-overlay"
+                        layers={selectedNode.config.imageOverlayGradients}
+                        legacyFallback={{
+                          colorA: "#000000",
+                          colorB: "#ec4899",
+                          angle: 180,
+                          opacity: 0.45,
+                        }}
+                        selectedLayerId={
+                          activeGradientTarget === "image-overlay"
+                            ? activeGradientLayerId ?? null
+                            : null
+                        }
+                        onSelectLayer={(id) => {
+                          onSelectGradientTarget?.("image-overlay");
+                          onSelectGradientLayer?.(id);
+                        }}
+                        onChangeLayers={(nextLayers) => {
+                          onSelectGradientTarget?.("image-overlay");
+                          patchConfig({
+                            imageOverlayEnabled: true,
+                            imageOverlayGradients: nextLayers,
+                          });
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
-              )}
+                );
+              })()}
 
               {selectedNode.type === "rpc-achievement" && (
                 <div className="space-y-2">
@@ -1679,25 +1999,86 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                     placeholder="Custom website fallback / override text"
                     className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
                   />
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Font Size</label>
-                      <input
-                        type="number"
-                        value={selectedNode.config.fontSize ?? 12}
-                        onChange={(e) => patchConfig({ fontSize: safeNum(e.target.value, 12, 8, 64) })}
-                        className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
-                      />
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Font Size</label>
+                        <input
+                          type="number"
+                          value={selectedNode.config.fontSize ?? 12}
+                          onChange={(e) => patchConfig({ fontSize: safeNum(e.target.value, 12, 8, 64) })}
+                          className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Text Fill</label>
+                        <div className="grid grid-cols-2 gap-1">
+                          {(["solid", "gradient"] as const).map((fillMode) => (
+                            <button
+                              key={fillMode}
+                              type="button"
+                              onClick={() => {
+                                if (fillMode === "gradient") {
+                                  const existing = normalizeGradientLayers(
+                                    selectedNode.config.textGradients,
+                                    {
+                                      colorA: selectedNode.config.color || "#ffffff",
+                                      colorB: "#93c5fd",
+                                      angle: 90,
+                                      opacity: 1,
+                                    }
+                                  );
+                                  onSelectGradientTarget?.("text");
+                                  onSelectGradientLayer?.(existing[0]?.id ?? null);
+                                  patchConfig({ textFillType: "gradient", textGradients: existing });
+                                } else {
+                                  onSelectGradientTarget?.("background");
+                                  patchConfig({ textFillType: "solid" });
+                                }
+                              }}
+                              className={`py-1 rounded border text-[9px] capitalize cursor-pointer ${
+                                (selectedNode.config.textFillType || "solid") === fillMode
+                                  ? "bg-white text-black border-white font-bold"
+                                  : "bg-[#121217] border-[#24242d] text-neutral-400"
+                              }`}
+                              data-testid={`rpc-text-fill-type-${fillMode}`}
+                            >
+                              {fillMode}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Color</label>
+                    {(selectedNode.config.textFillType || "solid") === "gradient" ? (
+                      <GradientLayersEditor
+                        scopeKey="text-fill"
+                        layers={selectedNode.config.textGradients}
+                        legacyFallback={{
+                          colorA: selectedNode.config.color || "#ffffff",
+                          colorB: "#93c5fd",
+                          angle: 90,
+                          opacity: 1,
+                        }}
+                        selectedLayerId={
+                          activeGradientTarget === "text" ? activeGradientLayerId ?? null : null
+                        }
+                        onSelectLayer={(id) => {
+                          onSelectGradientTarget?.("text");
+                          onSelectGradientLayer?.(id);
+                        }}
+                        onChangeLayers={(nextLayers) => {
+                          onSelectGradientTarget?.("text");
+                          patchConfig({ textFillType: "gradient", textGradients: nextLayers });
+                        }}
+                      />
+                    ) : (
                       <input
                         type="color"
                         value={selectedNode.config.color?.startsWith("#") ? selectedNode.config.color : "#ffffff"}
                         onChange={(e) => patchConfig({ color: e.target.value })}
                         className="w-full h-7 rounded border border-[#2e2e38] bg-transparent cursor-pointer"
                       />
-                    </div>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -2030,70 +2411,87 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         selectedNode.type === "music-display" ||
         selectedNode.type === "custom-rpc" ||
         selectedNode.type === "custom-component" ||
-        selectedNode.type === "heart-like") && (
+        selectedNode.type === "heart-like" ||
+        selectedNode.type === "claim-profile" ||
+        selectedNode.type === "shape") && (
         <SectionGroup title="Background">
-          {isContainer && (
-            <div className="space-y-2 pb-1">
-              <div className="grid grid-cols-4 gap-1">
-                {(["solid", "gradient", "image", "video"] as const).map((bgMode) => {
-                  const lockedBgMode =
-                    !isPremiumOrAdmin && (isRpcParent || bgMode === "video");
-                  return (
-                    <button
-                      key={bgMode}
-                      type="button"
-                      onClick={() => {
-                        if (lockedBgMode) {
-                          onRestrictedFeature?.(
-                            "Custom container backgrounds, GIFs, gradients, and videos require Premium."
-                          );
-                          return;
-                        }
-                        patchStyle({ backgroundType: bgMode });
-                      }}
-                      className={`py-1 rounded border text-[9px] capitalize ${
-                        (selectedNode.style.backgroundType || "solid") === bgMode
-                          ? "bg-white text-black border-white font-bold"
-                          : lockedBgMode
-                            ? "bg-[#101014] border-[#202028] text-neutral-600 cursor-not-allowed"
-                            : "bg-[#121217] border-[#24242d] text-neutral-400 cursor-pointer"
-                      }`}
-                      data-testid={`container-bg-mode-${bgMode}`}
-                    >
-                      {bgMode === "image" ? "Img/GIF" : bgMode}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {selectedNode.style.backgroundType === "gradient" && (
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Gradient To</label>
-                    <input
-                      type="color"
-                      disabled={isFreeRpcParentLocked}
-                      value={selectedNode.style.backgroundGradientTo || "#1a1a28"}
-                      onChange={(e) => patchStyle({ backgroundGradientTo: e.target.value })}
-                      className="w-full h-7 rounded border border-[#2e2e38] bg-transparent cursor-pointer"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Angle</label>
-                    <input
-                      type="number"
-                      disabled={isFreeRpcParentLocked}
-                      value={selectedNode.style.backgroundGradientAngle ?? 135}
-                      onChange={(e) =>
-                        patchStyle({ backgroundGradientAngle: safeNum(e.target.value, 135, 0, 360) })
+          <div className="space-y-2 pb-1">
+            <div className={isContainer ? "grid grid-cols-4 gap-1" : "grid grid-cols-2 gap-1"}>
+              {(isContainer
+                ? (["solid", "gradient", "image", "video"] as const)
+                : (["solid", "gradient"] as const)
+              ).map((bgMode) => {
+                const lockedBgMode =
+                  !isPremiumOrAdmin && (isRpcParent || bgMode === "video");
+                return (
+                  <button
+                    key={bgMode}
+                    type="button"
+                    onClick={() => {
+                      if (lockedBgMode) {
+                        onRestrictedFeature?.(
+                          "Custom container backgrounds, GIFs, gradients, and videos require Premium."
+                        );
+                        return;
                       }
-                      className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
-                    />
-                  </div>
-                </div>
-              )}
+                      if (bgMode === "gradient") {
+                        const existing = normalizeGradientLayers(
+                          selectedNode.style.backgroundGradients,
+                          {
+                            colorA: selectedNode.style.backgroundColor || "#0b0b12",
+                            colorB: selectedNode.style.backgroundGradientTo || "#1a1a28",
+                            angle: selectedNode.style.backgroundGradientAngle ?? 135,
+                            opacity: 1,
+                          }
+                        );
+                        onSelectGradientTarget?.("background");
+                        onSelectGradientLayer?.(existing[0]?.id ?? null);
+                        patchStyle({ backgroundType: "gradient", backgroundGradients: existing });
+                      } else {
+                        patchStyle({ backgroundType: bgMode });
+                      }
+                    }}
+                    className={`py-1 rounded border text-[9px] capitalize ${
+                      (selectedNode.style.backgroundType || "solid") === bgMode
+                        ? "bg-white text-black border-white font-bold"
+                        : lockedBgMode
+                          ? "bg-[#101014] border-[#202028] text-neutral-600 cursor-not-allowed"
+                          : "bg-[#121217] border-[#24242d] text-neutral-400 cursor-pointer"
+                    }`}
+                    data-testid={`container-bg-mode-${bgMode}`}
+                  >
+                    {bgMode === "image" ? "Img/GIF" : bgMode}
+                  </button>
+                );
+              })}
+            </div>
 
-              {selectedNode.style.backgroundType === "image" && (
+            {selectedNode.style.backgroundType === "gradient" && (
+              <GradientLayersEditor
+                scopeKey="node-bg"
+                layers={selectedNode.style.backgroundGradients}
+                legacyFallback={{
+                  colorA: selectedNode.style.backgroundColor || "#0b0b12",
+                  colorB: selectedNode.style.backgroundGradientTo || "#1a1a28",
+                  angle: selectedNode.style.backgroundGradientAngle ?? 135,
+                  opacity: 1,
+                }}
+                selectedLayerId={
+                  activeGradientTarget === "background" ? activeGradientLayerId ?? null : null
+                }
+                onSelectLayer={(id) => {
+                  onSelectGradientTarget?.("background");
+                  onSelectGradientLayer?.(id);
+                }}
+                onChangeLayers={(nextLayers) => {
+                  onSelectGradientTarget?.("background");
+                  patchStyle({ backgroundType: "gradient", backgroundGradients: nextLayers });
+                }}
+                disabled={isFreeRpcParentLocked}
+              />
+            )}
+
+            {isContainer && selectedNode.style.backgroundType === "image" && (
                 <div className="space-y-1.5">
                   <button
                     type="button"
@@ -2122,7 +2520,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 </div>
               )}
 
-              {selectedNode.style.backgroundType === "video" && (
+              {isContainer && selectedNode.style.backgroundType === "video" && (
                 <div className="space-y-1.5">
                   <input
                     ref={containerVideoInputRef}
@@ -2200,13 +2598,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                       className="accent-white cursor-pointer"
                     />
                   </label>
-                  {containerVideoError && (
-                    <div className="text-[9px] text-red-400">{containerVideoError}</div>
-                  )}
-                </div>
-              )}
+                    {containerVideoError && (
+                      <div className="text-[9px] text-red-400">{containerVideoError}</div>
+                    )}
+                  </div>
+                )}
             </div>
-          )}
 
           <div className="flex items-center gap-2">
             <input
@@ -2360,6 +2757,42 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           })}
         </div>
       </SectionGroup>
+
+      {rpcResetDialogForId && (
+        <div
+          className="fixed inset-0 z-[120] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+          data-testid="rpc-reset-confirm-dialog"
+        >
+          <div className="w-full max-w-sm rounded-xl bg-[#0e0e14] border border-[#262632] p-4 shadow-2xl space-y-3">
+            <div className="text-xs font-bold text-white">Reset Custom RPC Layout?</div>
+            <p className="text-[11px] text-neutral-400 leading-relaxed">
+              This will restore this Custom RPC container and its child elements (Main Image, Small Image, Title, Details, State, Timestamp, Achievement, and Buttons) to the default Discord structure. Other elements on your profile will not be touched, and you can undo this action inside Custom RPC History.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setRpcResetDialogForId(null)}
+                className="px-3 py-1.5 rounded-lg bg-[#16161f] hover:bg-[#1f1f2b] border border-[#2a2a36] text-[11px] font-semibold text-neutral-200 cursor-pointer"
+                data-testid="rpc-reset-cancel-btn"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const targetId = rpcResetDialogForId;
+                  setRpcResetDialogForId(null);
+                  onResetCustomRpc?.(targetId);
+                }}
+                className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-[11px] font-bold text-white cursor-pointer"
+                data-testid="rpc-reset-confirm-btn"
+              >
+                Confirm Reset
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

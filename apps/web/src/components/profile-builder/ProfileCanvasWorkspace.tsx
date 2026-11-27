@@ -18,11 +18,18 @@ import {
 } from "lucide-react";
 import { calculateSmartSnap } from "@/components/studio/smartAlignment";
 import {
+  BuilderCanvasSettings,
   BuilderComponentType,
   BuilderDeviceMode,
+  BuilderGradientLayer,
   BuilderNode,
   ProfileBuilderDocument,
 } from "./profileBuilderTypes";
+import {
+  angleFromNormalizedVector,
+  getGradientDirectionPoints,
+  normalizeGradientLayers,
+} from "./gradientUtils";
 import {
   LIBRARY_CATALOG_ORDER,
   PROFILE_BUILDER_REGISTRY,
@@ -74,6 +81,10 @@ interface ProfileCanvasWorkspaceProps {
   ) => void;
   onQuickAddGalleryImage: (galleryId: string) => void;
   onOpenLivePreview?: () => void;
+  onUpdateCanvas?: (updates: Partial<BuilderCanvasSettings>) => void;
+  activeGradientLayerId?: string | null;
+  onSelectGradientLayer?: (layerId: string | null) => void;
+  activeGradientTarget?: "background" | "text" | "image-overlay";
 }
 
 export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
@@ -94,6 +105,10 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
   onDropComponent,
   onQuickAddGalleryImage,
   onOpenLivePreview,
+  onUpdateCanvas,
+  activeGradientLayerId,
+  onSelectGradientLayer,
+  activeGradientTarget = "background",
 }) => {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const stageWrapperRef = useRef<HTMLDivElement>(null);
@@ -101,9 +116,20 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
 
   const [workspaceSize, setWorkspaceSize] = useState({ width: 800, height: 600 });
   const [toolbarSize, setToolbarSize] = useState({ width: 0, height: 34 });
-  const [toolbarDragOffset, setToolbarDragOffset] = useState({ x: 0, y: 0 });
-  const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
-  const toolbarDragStartRef = useRef({ pointerX: 0, pointerY: 0, baseX: 0, baseY: 0 });
+  const [gradientDrag, setGradientDrag] = useState<{
+    mode: "start" | "end" | "move";
+    field: "canvas" | "styleBg" | "text" | "imageOverlay";
+    nodeId?: string;
+    layerId: string;
+    rect: { x: number; y: number; width: number; height: number };
+    layers: BuilderGradientLayer[];
+    origStartX: number;
+    origStartY: number;
+    origEndX: number;
+    origEndY: number;
+    pointerX: number;
+    pointerY: number;
+  } | null>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanMode, setIsPanMode] = useState(false);
   const [spacePressed, setSpacePressed] = useState(false);
@@ -127,9 +153,6 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
   if (selectedId !== prevSelectedId) {
     setPrevSelectedId(selectedId);
     if (isAddPopoverOpen) setIsAddPopoverOpen(false);
-    if (toolbarDragOffset.x !== 0 || toolbarDragOffset.y !== 0) {
-      setToolbarDragOffset({ x: 0, y: 0 });
-    }
   }
 
   const measureWorkspace = useCallback(() => {
@@ -630,17 +653,107 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
   }, [selectedId, selectedType, selectedLocked, isAddPopoverOpen]);
 
   useEffect(() => {
-    if (!isDraggingToolbar) return;
-    const onMove = (e: PointerEvent) => {
-      const start = toolbarDragStartRef.current;
-      setToolbarDragOffset({
-        x: Math.round(start.baseX + (e.clientX - start.pointerX)),
-        y: Math.round(start.baseY + (e.clientY - start.pointerY)),
+    if (!gradientDrag) return;
+    const clampNorm = (v: number) => Math.max(-0.5, Math.min(1.5, Math.round(v * 1000) / 1000));
+    const applyLayers = (nextLayers: BuilderGradientLayer[], commitCanvas: boolean) => {
+      if (gradientDrag.field === "canvas") {
+        const bgNode = doc.nodes.find((n) => n.type === "background");
+        if (bgNode) {
+          onUpdateNode(
+            bgNode.id,
+            { config: { ...bgNode.config, bgGradients: nextLayers } },
+            { skipHistory: true }
+          );
+        }
+        if (commitCanvas) {
+          onUpdateCanvas?.({ backgroundGradients: nextLayers });
+        }
+      } else if (gradientDrag.nodeId) {
+        const targetNode = doc.nodes.find((n) => n.id === gradientDrag.nodeId);
+        if (!targetNode) return;
+        if (gradientDrag.field === "text") {
+          onUpdateNode(
+            targetNode.id,
+            { config: { ...targetNode.config, textFillType: "gradient", textGradients: nextLayers } },
+            { skipHistory: true }
+          );
+        } else if (gradientDrag.field === "imageOverlay") {
+          onUpdateNode(
+            targetNode.id,
+            {
+              config: {
+                ...targetNode.config,
+                imageOverlayEnabled: true,
+                imageOverlayGradients: nextLayers,
+              },
+            },
+            { skipHistory: true }
+          );
+        } else {
+          onUpdateNode(
+            targetNode.id,
+            {
+              style: {
+                ...targetNode.style,
+                backgroundType: "gradient",
+                backgroundGradients: nextLayers,
+              },
+            },
+            { skipHistory: true }
+          );
+        }
+      }
+    };
+
+    const computeNextLayers = (clientX: number, clientY: number) => {
+      const dx = (clientX - gradientDrag.pointerX) / zoom;
+      const dy = (clientY - gradientDrag.pointerY) / zoom;
+      const nxDelta = dx / Math.max(1, gradientDrag.rect.width);
+      const nyDelta = dy / Math.max(1, gradientDrag.rect.height);
+
+      return gradientDrag.layers.map((layer) => {
+        if (layer.id !== gradientDrag.layerId) return layer;
+        let startX = gradientDrag.origStartX;
+        let startY = gradientDrag.origStartY;
+        let endX = gradientDrag.origEndX;
+        let endY = gradientDrag.origEndY;
+
+        if (gradientDrag.mode === "start") {
+          startX = clampNorm(gradientDrag.origStartX + nxDelta);
+          startY = clampNorm(gradientDrag.origStartY + nyDelta);
+        } else if (gradientDrag.mode === "end") {
+          endX = clampNorm(gradientDrag.origEndX + nxDelta);
+          endY = clampNorm(gradientDrag.origEndY + nyDelta);
+        } else {
+          startX = clampNorm(gradientDrag.origStartX + nxDelta);
+          startY = clampNorm(gradientDrag.origStartY + nyDelta);
+          endX = clampNorm(gradientDrag.origEndX + nxDelta);
+          endY = clampNorm(gradientDrag.origEndY + nyDelta);
+        }
+
+        const angle = angleFromNormalizedVector(endX - startX, endY - startY, layer.angle);
+        return { ...layer, startX, startY, endX, endY, angle };
       });
     };
-    const onUp = () => {
-      setIsDraggingToolbar(false);
+
+    const onMove = (e: PointerEvent) => {
+      const nextLayers = computeNextLayers(e.clientX, e.clientY);
+      applyLayers(nextLayers, false);
     };
+
+    const onUp = (e: PointerEvent) => {
+      const finalLayers = computeNextLayers(e.clientX, e.clientY);
+      applyLayers(finalLayers, true);
+      if (gradientDrag.field !== "canvas") {
+        onCommitHistory();
+      }
+      setGradientDrag(null);
+      suppressNextDeselectRef.current = true;
+      setTimeout(() => {
+        suppressNextDeselectRef.current = false;
+      }, 120);
+    };
+
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
@@ -649,9 +762,9 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
-  }, [isDraggingToolbar]);
+  }, [doc.nodes, gradientDrag, onCommitHistory, onUpdateCanvas, onUpdateNode, zoom]);
 
-  // Dynamic Contextual Toolbar Geometry (centered above element, draggable via handle, clamped inside workspace)
+  // Dynamic Contextual Toolbar Geometry (centered above element, anchored cleanly to selected element)
   const computeToolbarGeom = () => {
     if (!selectedNode || !selectedNode.visible || selectedNode.type === "background") return null;
     const abs = getAbsoluteNodeRect(selectedNode, doc.nodes);
@@ -696,8 +809,8 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
       baseTop = eTop + 8;
     }
 
-    const left = clampX(baseLeft + toolbarDragOffset.x);
-    const top = clampY(baseTop + toolbarDragOffset.y);
+    const left = clampX(baseLeft);
+    const top = clampY(baseTop);
 
     const menuW = 224;
     const menuH = Math.min(310, Math.max(180, workspaceSize.height - pad * 2));
@@ -930,6 +1043,225 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
                 data-testid="builder-snap-guide-y"
               />
             )}
+
+            {/* Editor-only Universal Gradient Direction Controller (simple line + 2 endpoints) */}
+            {(() => {
+              const bgNode = doc.nodes.find((n) => n.type === "background");
+              let ctx: {
+                field: "canvas" | "styleBg" | "text" | "imageOverlay";
+                nodeId?: string;
+                rect: { x: number; y: number; width: number; height: number };
+                layers: BuilderGradientLayer[];
+              } | null = null;
+
+              if (!selectedNode || selectedNode.type === "background") {
+                const effBgType = bgNode?.style.backgroundType ?? doc.canvas.backgroundType;
+                if (effBgType === "gradient") {
+                  ctx = {
+                    field: "canvas",
+                    rect: { x: 0, y: 0, width: effectiveCanvasWidth, height: effectiveCanvasHeight },
+                    layers: normalizeGradientLayers(
+                      bgNode?.config.bgGradients ?? doc.canvas.backgroundGradients,
+                      {
+                        colorA:
+                          bgNode?.style.backgroundColor || doc.canvas.backgroundColor || "#09090b",
+                        colorB:
+                          bgNode?.style.backgroundGradientTo ||
+                          doc.canvas.backgroundGradientTo ||
+                          "#1a1a28",
+                        angle:
+                          bgNode?.style.backgroundGradientAngle ??
+                          doc.canvas.backgroundGradientAngle ??
+                          135,
+                        opacity: 1,
+                      }
+                    ),
+                  };
+                }
+              } else if (selectedNode.visible) {
+                const hasTextGrad = selectedNode.config.textFillType === "gradient";
+                const hasOverlayGrad = Boolean(selectedNode.config.imageOverlayEnabled);
+                const hasStyleBgGrad = selectedNode.style.backgroundType === "gradient";
+                const abs = getAbsoluteNodeRect(selectedNode, doc.nodes);
+
+                if (
+                  (activeGradientTarget === "text" || (!hasStyleBgGrad && !hasOverlayGrad)) &&
+                  hasTextGrad
+                ) {
+                  ctx = {
+                    field: "text",
+                    nodeId: selectedNode.id,
+                    rect: abs,
+                    layers: normalizeGradientLayers(selectedNode.config.textGradients, {
+                      colorA: selectedNode.config.color || "#ffffff",
+                      colorB: "#93c5fd",
+                      angle: 90,
+                      opacity: 1,
+                    }),
+                  };
+                } else if (
+                  (activeGradientTarget === "image-overlay" || (!hasStyleBgGrad && !hasTextGrad)) &&
+                  hasOverlayGrad
+                ) {
+                  ctx = {
+                    field: "imageOverlay",
+                    nodeId: selectedNode.id,
+                    rect: abs,
+                    layers: normalizeGradientLayers(selectedNode.config.imageOverlayGradients, {
+                      colorA: "#000000",
+                      colorB: "#ec4899",
+                      angle: 180,
+                      opacity: 0.45,
+                    }),
+                  };
+                } else if (hasStyleBgGrad) {
+                  ctx = {
+                    field: "styleBg",
+                    nodeId: selectedNode.id,
+                    rect: abs,
+                    layers: normalizeGradientLayers(selectedNode.style.backgroundGradients, {
+                      colorA: selectedNode.style.backgroundColor || "#0b0b12",
+                      colorB: selectedNode.style.backgroundGradientTo || "#1a1a28",
+                      angle: selectedNode.style.backgroundGradientAngle ?? 135,
+                      opacity: 1,
+                    }),
+                  };
+                }
+              }
+
+              if (!ctx || ctx.layers.length === 0) return null;
+              const selectedLayer =
+                ctx.layers.find((l) => l.id === activeGradientLayerId) || ctx.layers[0];
+              const startGradientDrag = (
+                e: React.PointerEvent,
+                mode: "start" | "end" | "move",
+                layer: BuilderGradientLayer
+              ) => {
+                if (e.button !== 0 || layer.locked) return;
+                e.stopPropagation();
+                e.preventDefault();
+                const pts = getGradientDirectionPoints(layer);
+                setGradientDrag({
+                  mode,
+                  field: ctx!.field,
+                  nodeId: ctx!.nodeId,
+                  layerId: layer.id,
+                  rect: ctx!.rect,
+                  layers: ctx!.layers,
+                  origStartX: pts.startX,
+                  origStartY: pts.startY,
+                  origEndX: pts.endX,
+                  origEndY: pts.endY,
+                  pointerX: e.clientX,
+                  pointerY: e.clientY,
+                });
+              };
+
+              return (
+                <svg
+                  className="absolute inset-0 pointer-events-none z-[60] overflow-visible"
+                  width={effectiveCanvasWidth}
+                  height={effectiveCanvasHeight}
+                  viewBox={`0 0 ${effectiveCanvasWidth} ${effectiveCanvasHeight}`}
+                  data-testid="gradient-canvas-controller"
+                >
+                  {ctx.layers.map((layer, idx) => {
+                    if (layer.visible === false || layer.id === selectedLayer.id) return null;
+                    const pts = getGradientDirectionPoints(layer);
+                    const sx = ctx!.rect.x + pts.startX * ctx!.rect.width;
+                    const sy = ctx!.rect.y + pts.startY * ctx!.rect.height;
+                    const ex = ctx!.rect.x + pts.endX * ctx!.rect.width;
+                    const ey = ctx!.rect.y + pts.endY * ctx!.rect.height;
+                    return (
+                      <line
+                        key={layer.id}
+                        x1={sx}
+                        y1={sy}
+                        x2={ex}
+                        y2={ey}
+                        stroke="rgba(255,255,255,0.35)"
+                        strokeWidth={2}
+                        strokeDasharray="4 4"
+                        style={{ pointerEvents: "all", cursor: "pointer" }}
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          onSelectGradientLayer?.(layer.id);
+                        }}
+                        data-testid={`gradient-inactive-line-${idx}`}
+                      />
+                    );
+                  })}
+
+                  {selectedLayer &&
+                    selectedLayer.visible !== false &&
+                    !selectedLayer.locked && (() => {
+                      const pts = getGradientDirectionPoints(selectedLayer);
+                      const sx = ctx!.rect.x + pts.startX * ctx!.rect.width;
+                      const sy = ctx!.rect.y + pts.startY * ctx!.rect.height;
+                      const ex = ctx!.rect.x + pts.endX * ctx!.rect.width;
+                      const ey = ctx!.rect.y + pts.endY * ctx!.rect.height;
+                      const startColor = selectedLayer.stops[0]?.color || "#ffffff";
+                      const endColor =
+                        selectedLayer.stops[selectedLayer.stops.length - 1]?.color || "#ffffff";
+                      return (
+                        <g>
+                          <line
+                            x1={sx}
+                            y1={sy}
+                            x2={ex}
+                            y2={ey}
+                            stroke="rgba(0,0,0,0.65)"
+                            strokeWidth={3.5}
+                            style={{ pointerEvents: "none" }}
+                          />
+                          <line
+                            x1={sx}
+                            y1={sy}
+                            x2={ex}
+                            y2={ey}
+                            stroke="#ffffff"
+                            strokeWidth={1.75}
+                            style={{ pointerEvents: "none" }}
+                          />
+                          <line
+                            x1={sx}
+                            y1={sy}
+                            x2={ex}
+                            y2={ey}
+                            stroke="transparent"
+                            strokeWidth={14}
+                            style={{ pointerEvents: "all", cursor: "move" }}
+                            onPointerDown={(e) => startGradientDrag(e, "move", selectedLayer)}
+                            data-testid="gradient-line-move"
+                          />
+                          <circle
+                            cx={sx}
+                            cy={sy}
+                            r={6}
+                            fill={startColor}
+                            stroke="#ffffff"
+                            strokeWidth={2}
+                            style={{ pointerEvents: "all", cursor: "grab" }}
+                            onPointerDown={(e) => startGradientDrag(e, "start", selectedLayer)}
+                            data-testid="gradient-handle-start"
+                          />
+                          <circle
+                            cx={ex}
+                            cy={ey}
+                            r={6}
+                            fill={endColor}
+                            stroke="#ffffff"
+                            strokeWidth={2}
+                            style={{ pointerEvents: "all", cursor: "grab" }}
+                            onPointerDown={(e) => startGradientDrag(e, "end", selectedLayer)}
+                            data-testid="gradient-handle-end"
+                          />
+                        </g>
+                      );
+                    })()}
+                </svg>
+              );
+            })()}
           </ProfileBuilderRenderer>
         </div>
 
@@ -949,25 +1281,34 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
             data-testid="builder-floating-toolbar"
             data-placement={toolbarGeom.placement}
           >
-            {/* Dedicated Six-Dot Drag Handle (Left) */}
+            {/* Dedicated Six-Dot Drag Handle (Moves Selected Element While Anchoring Toolbar) */}
             <button
               type="button"
               onPointerDown={(e) => {
-                if (e.button !== 0) return;
+                if (e.button !== 0 || isPanMode || spacePressed) return;
                 e.stopPropagation();
                 e.preventDefault();
-                toolbarDragStartRef.current = {
-                  pointerX: e.clientX,
-                  pointerY: e.clientY,
-                  baseX: toolbarDragOffset.x,
-                  baseY: toolbarDragOffset.y,
-                };
-                setIsDraggingToolbar(true);
+                if (!selectedNode || selectedNode.locked || isAncestorLocked(selectedNode)) return;
+                if (
+                  !isPremiumOrAdmin &&
+                  isNodeRestrictedRpcForFree(selectedNode, doc.nodes, isPremiumOrAdmin)
+                ) {
+                  return;
+                }
+                didMutateRef.current = false;
+                setIsDragging(true);
+                setDragStart({ x: e.clientX, y: e.clientY });
+                setInitialNode({ ...selectedNode });
               }}
-              title="Drag toolbar"
-              aria-label="Drag floating toolbar"
-              className={`p-1 pr-1.5 mr-0.5 border-r border-white/10 text-neutral-400 hover:text-white flex items-center justify-center shrink-0 ${isDraggingToolbar ? "cursor-grabbing text-white" : "cursor-grab"
-                }`}
+              title="Move selected element"
+              aria-label="Move selected element"
+              className={`p-1 pr-1.5 mr-0.5 border-r border-white/10 text-neutral-400 hover:text-white flex items-center justify-center shrink-0 ${
+                selectedNode?.locked || isAncestorLocked(selectedNode)
+                  ? "cursor-not-allowed opacity-40"
+                  : isDragging
+                    ? "cursor-grabbing text-white"
+                    : "cursor-grab"
+              }`}
               data-testid="ft-drag-handle"
             >
               <GripVertical size={12} />

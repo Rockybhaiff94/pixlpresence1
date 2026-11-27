@@ -57,6 +57,14 @@ interface SecondaryDockPanelSystemProps {
     isPremiumRequired?: boolean;
   }) => Promise<boolean>;
   onDeleteRpcTemplate?: (templateId: string) => Promise<void>;
+  rpcHistoryMap?: Record<string, { snapshots: BuilderNode[][]; index: number }>;
+  onUndoCustomRpc?: (rpcId: string) => void;
+  onRedoCustomRpc?: (rpcId: string) => void;
+  onResetCustomRpc?: (rpcId: string) => void;
+  activeGradientLayerId?: string | null;
+  onSelectGradientLayer?: (layerId: string | null) => void;
+  activeGradientTarget?: "background" | "text" | "image-overlay";
+  onSelectGradientTarget?: (target: "background" | "text" | "image-overlay") => void;
   onInsertChild?: (
     parentId: string,
     type: BuilderComponentType,
@@ -134,6 +142,14 @@ export const SecondaryDockPanelSystem: React.FC<SecondaryDockPanelSystemProps> =
   onApplyRpcTemplate,
   onSaveRpcTemplate,
   onDeleteRpcTemplate,
+  rpcHistoryMap,
+  onUndoCustomRpc,
+  onRedoCustomRpc,
+  onResetCustomRpc,
+  activeGradientLayerId = null,
+  onSelectGradientLayer,
+  activeGradientTarget = "background",
+  onSelectGradientTarget,
   onInsertChild,
   onRestrictedFeature,
   onSelect,
@@ -933,9 +949,16 @@ return (
         isAdmin={isAdmin}
         rpcTemplates={rpcTemplates}
         onApplyRpcTemplate={onApplyRpcTemplate}
-        onSaveRpcTemplate={onSaveRpcTemplate}
-        onDeleteRpcTemplate={onDeleteRpcTemplate}
+        rpcHistoryMap={rpcHistoryMap}
+        onUndoCustomRpc={onUndoCustomRpc}
+        onRedoCustomRpc={onRedoCustomRpc}
+        onResetCustomRpc={onResetCustomRpc}
+        activeGradientLayerId={activeGradientLayerId}
+        onSelectGradientLayer={onSelectGradientLayer}
+        activeGradientTarget={activeGradientTarget}
+        onSelectGradientTarget={onSelectGradientTarget}
         onInsertChild={onInsertChild}
+        onSelect={onSelect}
         onRestrictedFeature={onRestrictedFeature}
         onUpdateCanvas={onUpdateCanvas}
         onUpdateNode={onUpdateNode}

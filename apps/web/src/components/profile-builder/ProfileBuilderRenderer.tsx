@@ -30,6 +30,7 @@ import {
   BuilderCanvasSettings,
   BuilderComponentConfig,
   BuilderDeviceMode,
+  BuilderGradientLayer,
   BuilderNode,
   ProfileBadgeItem,
   ProfileBuilderDocument,
@@ -40,6 +41,7 @@ import {
   isContainerType,
   sanitizeExternalUrl,
 } from "./componentRegistry";
+import { compileGradientLayersCss, compileTextGradientStyle } from "./gradientUtils";
 
 export interface ProfileLiveActivityData {
   discordId?: string | null;
@@ -132,6 +134,7 @@ export function resolveEffectiveBackground(
   color: string;
   gradientTo: string;
   gradientAngle: number;
+  gradients?: BuilderGradientLayer[];
   imageUrl: string;
   videoUrl: string;
   position: string;
@@ -156,6 +159,7 @@ export function resolveEffectiveBackground(
       color: bgNode.config.bgColor || canvas.backgroundColor,
       gradientTo: bgNode.config.bgGradientTo || canvas.backgroundGradientTo,
       gradientAngle: bgNode.config.bgGradientAngle ?? canvas.backgroundGradientAngle,
+      gradients: bgNode.config.bgGradients || canvas.backgroundGradients,
       imageUrl:
         bgNode.config.bgImageUrl !== undefined
           ? bgNode.config.bgImageUrl
@@ -179,6 +183,7 @@ export function resolveEffectiveBackground(
     color: canvas.backgroundColor,
     gradientTo: canvas.backgroundGradientTo,
     gradientAngle: canvas.backgroundGradientAngle,
+    gradients: canvas.backgroundGradients,
     imageUrl: canvas.backgroundImage,
     videoUrl: sanitizeVideoRef(canvas.backgroundVideo),
     position: canvas.backgroundPosition || "center center",
@@ -356,15 +361,22 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
             : node.responsive.galleryColumns?.desktop ?? node.config.galleryColumns ?? 3
         : 1;
 
+      const gradientBgImage =
+        node.style.backgroundType === "gradient"
+          ? compileGradientLayersCss(
+              node.style.backgroundGradients,
+              {
+                colorA: node.style.backgroundColor || "#0d0d12",
+                colorB: node.style.backgroundGradientTo || "#1a1a28",
+                angle: node.style.backgroundGradientAngle ?? 135,
+                opacity: node.style.backgroundOpacity ?? 0.92,
+              },
+              node.style.backgroundOpacity ?? 0.92
+            )
+          : undefined;
       const bgFill =
-        node.style.backgroundType === "gradient" && node.style.backgroundGradientTo
-          ? `linear-gradient(${node.style.backgroundGradientAngle ?? 135}deg, ${hexToRgbaSafe(
-              node.style.backgroundColor || "#0d0d12",
-              node.style.backgroundOpacity ?? 0.92
-            )}, ${hexToRgbaSafe(
-              node.style.backgroundGradientTo,
-              node.style.backgroundOpacity ?? 0.92
-            )})`
+        node.style.backgroundType === "gradient"
+          ? gradientBgImage || "transparent"
           : node.style.backgroundType === "transparent"
             ? "transparent"
             : hexToRgbaSafe(
@@ -588,9 +600,17 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               (rawSrc && (rawSrc.startsWith("http") || rawSrc.startsWith("/")) ? rawSrc : null)
             : rawSrc;
         const radius = node.style.borderRadius ?? 10;
+        const imgOverlayCss = node.config.imageOverlayEnabled
+          ? compileGradientLayersCss(node.config.imageOverlayGradients, {
+              colorA: "#6366f1",
+              colorB: "#ec4899",
+              angle: 135,
+              opacity: 0.45,
+            })
+          : undefined;
         return (
           <div
-            className="w-full h-full overflow-hidden bg-[#111116]"
+            className="w-full h-full overflow-hidden bg-[#111116] relative"
             style={{
               borderRadius: `${radius}px`,
               borderWidth: `${node.style.borderWidth ?? 0}px`,
@@ -615,6 +635,13 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
                 <span>No Image</span>
               </div>
             )}
+            {imgOverlayCss && (
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{ backgroundImage: imgOverlayCss }}
+                data-testid={`image-gradient-overlay-${node.id}`}
+              />
+            )}
           </div>
         );
       }
@@ -631,10 +658,18 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
             : node.config.avatarShape === "square"
               ? "0px"
               : `${node.style.borderRadius ?? 14}px`;
+        const avatarOverlayCss = node.config.imageOverlayEnabled
+          ? compileGradientLayersCss(node.config.imageOverlayGradients, {
+              colorA: "#6366f1",
+              colorB: "#ec4899",
+              angle: 135,
+              opacity: 0.45,
+            })
+          : undefined;
         return (
           <div className="relative w-full h-full">
             <div
-              className="w-full h-full overflow-hidden bg-[#131318]"
+              className="w-full h-full overflow-hidden bg-[#131318] relative"
               style={{
                 borderRadius: shapeRadius,
                 borderWidth: `${node.style.borderWidth ?? 2}px`,
@@ -661,6 +696,13 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
                   PFP
                 </div>
               )}
+              {avatarOverlayCss && (
+                <div
+                  className="absolute inset-0 pointer-events-none"
+                  style={{ backgroundImage: avatarOverlayCss }}
+                  data-testid={`image-gradient-overlay-${node.id}`}
+                />
+              )}
             </div>
             {node.config.showStatusDot && (
               <span
@@ -678,6 +720,10 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           (deviceMode === "tablet" && node.responsive.fontSizeOverride?.tablet) ||
           node.config.fontSize ||
           22;
+        const nameTextGrad =
+          node.config.textFillType === "gradient"
+            ? compileTextGradientStyle(node.config.textGradients, node.config.color || "#ffffff")
+            : null;
         return (
           <div
             className="w-full h-full flex items-center gap-1.5 overflow-hidden select-none"
@@ -696,7 +742,11 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               lineHeight: node.config.lineHeight ?? 1.15,
             }}
           >
-            <span className="truncate">
+            <span
+              className="truncate"
+              style={nameTextGrad || undefined}
+              data-text-gradient={nameTextGrad ? "true" : undefined}
+            >
               {node.config.text && node.config.text !== "PIXEL USER"
                 ? node.config.text
                 : liveData?.displayName || liveData?.username || node.config.text || "PIXEL USER"}
@@ -714,6 +764,10 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           (deviceMode === "tablet" && node.responsive.fontSizeOverride?.tablet) ||
           node.config.fontSize ||
           12;
+        const subTextGrad =
+          node.config.textFillType === "gradient"
+            ? compileTextGradientStyle(node.config.textGradients, node.config.color || "#a1a1aa")
+            : null;
         return (
           <div
             className="w-full h-full flex items-center justify-between gap-2 overflow-hidden select-none"
@@ -727,7 +781,7 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               textAlign: node.config.textAlign || "left",
             }}
           >
-            <span className="truncate flex-1">
+            <span className="truncate flex-1" style={subTextGrad || undefined}>
               {node.config.text && !node.config.text.startsWith("@pixeluser")
                 ? node.config.text
                 : liveData?.username
@@ -755,6 +809,10 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           node.config.fontSize ||
           12;
         const overflowMode = node.config.overflowBehavior || "wrap";
+        const descTextGrad =
+          node.config.textFillType === "gradient"
+            ? compileTextGradientStyle(node.config.textGradients, node.config.color || "#d4d4d8")
+            : null;
         return (
           <div
             className={`w-full h-full select-none ${overflowMode === "ellipsis" ? "truncate" : "overflow-hidden"}`}
@@ -770,7 +828,9 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               wordBreak: "break-word",
             }}
           >
-            {node.config.text || liveData?.bio || "Profile bio description."}
+            <span style={descTextGrad || undefined}>
+              {node.config.text || liveData?.bio || "Profile bio description."}
+            </span>
           </div>
         );
       }
@@ -828,12 +888,26 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           ? liveData?.musicArtist || node.config.artist
           : node.config.artist;
         const accent = node.config.accentColor || "#22c55e";
+        const musicGrad =
+          node.style.backgroundType === "gradient"
+            ? compileGradientLayersCss(
+                node.style.backgroundGradients,
+                {
+                  colorA: node.style.backgroundColor || "#111116",
+                  colorB: node.style.backgroundGradientTo || "#1a1a28",
+                  angle: node.style.backgroundGradientAngle ?? 135,
+                  opacity: node.style.backgroundOpacity ?? 1,
+                },
+                node.style.backgroundOpacity ?? 1
+              )
+            : undefined;
 
         return (
           <div
             className="w-full h-full p-2.5 flex flex-col justify-between overflow-hidden select-none font-mono"
             style={{
               backgroundColor: node.style.backgroundColor || "#111116",
+              backgroundImage: musicGrad,
               borderColor: node.style.borderColor || "#272730",
               borderWidth: `${node.style.borderWidth ?? 1}px`,
               borderStyle: "solid",
@@ -1020,11 +1094,25 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
       }
 
       case "custom-component": {
+        const modGrad =
+          node.style.backgroundType === "gradient"
+            ? compileGradientLayersCss(
+                node.style.backgroundGradients,
+                {
+                  colorA: node.style.backgroundColor || "#121217",
+                  colorB: node.style.backgroundGradientTo || "#1a1a28",
+                  angle: node.style.backgroundGradientAngle ?? 135,
+                  opacity: node.style.backgroundOpacity ?? 1,
+                },
+                node.style.backgroundOpacity ?? 1
+              )
+            : undefined;
         return (
           <div
             className="w-full h-full p-2.5 flex flex-col justify-between font-mono select-none overflow-hidden"
             style={{
               backgroundColor: node.style.backgroundColor || "#121217",
+              backgroundImage: modGrad,
               borderColor: node.style.borderColor || "#262630",
               borderWidth: `${node.style.borderWidth ?? 1}px`,
               borderStyle: "solid",
@@ -1052,11 +1140,25 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
       }
 
       case "shape": {
+        const shapeGrad =
+          node.style.backgroundType === "gradient"
+            ? compileGradientLayersCss(
+                node.style.backgroundGradients,
+                {
+                  colorA: node.style.backgroundColor || node.config.shapeFill || "#1a1a22",
+                  colorB: node.style.backgroundGradientTo || "#6366f1",
+                  angle: node.style.backgroundGradientAngle ?? 135,
+                  opacity: node.style.backgroundOpacity ?? 1,
+                },
+                node.style.backgroundOpacity ?? 1
+              )
+            : undefined;
         return (
           <div
             className="w-full h-full"
             style={{
-              backgroundColor: node.config.shapeFill || "#1a1a22",
+              backgroundColor: node.style.backgroundColor || node.config.shapeFill || "#1a1a22",
+              backgroundImage: shapeGrad,
               borderColor: node.config.shapeStroke || "#ffffff",
               borderWidth: `${node.config.shapeStrokeWidth ?? 1}px`,
               borderStyle: "solid",
@@ -1105,8 +1207,22 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           </>
         );
 
+        const heartGrad =
+          node.style.backgroundType === "gradient"
+            ? compileGradientLayersCss(
+                node.style.backgroundGradients,
+                {
+                  colorA: bgColor,
+                  colorB: node.style.backgroundGradientTo || accent,
+                  angle: node.style.backgroundGradientAngle ?? 135,
+                  opacity: bgOpacity,
+                },
+                bgOpacity
+              )
+            : undefined;
         const commonStyle: React.CSSProperties = {
           backgroundColor: liked ? hexToRgbaSafe(accent, 0.2) : hexToRgbaSafe(bgColor, bgOpacity),
+          backgroundImage: liked ? undefined : heartGrad,
           borderColor: liked ? hexToRgbaSafe(accent, 0.55) : node.style.borderColor || "#2a2a34",
           borderWidth: `${node.style.borderWidth ?? 1}px`,
           borderStyle: node.style.borderStyle || "solid",
@@ -1154,8 +1270,22 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
         const bgColor = node.style.backgroundColor || "#0b0b0f";
         const bgOpacity = node.style.backgroundOpacity ?? 0.65;
         const radius = node.style.borderRadius ?? 8;
+        const claimGrad =
+          node.style.backgroundType === "gradient"
+            ? compileGradientLayersCss(
+                node.style.backgroundGradients,
+                {
+                  colorA: bgColor,
+                  colorB: node.style.backgroundGradientTo || "#262634",
+                  angle: node.style.backgroundGradientAngle ?? 135,
+                  opacity: bgOpacity,
+                },
+                bgOpacity
+              )
+            : undefined;
         const claimStyle: React.CSSProperties = {
           backgroundColor: hexToRgbaSafe(bgColor, bgOpacity),
+          backgroundImage: claimGrad,
           borderColor: node.style.borderColor || "#2e2e38",
           borderWidth: `${node.style.borderWidth ?? 1}px`,
           borderStyle: node.style.borderStyle || "solid",
@@ -1210,47 +1340,90 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
 
         if (node.type === "rpc-icon") {
           const isSmallBinding = node.config.rpcFieldBinding === "smallImage";
-          const largeSrc = activeLive
-            ? (isSmallBinding
-                ? activeLive.smallImage || activeLive.largeImage
-                : activeLive.largeImage) ||
-              node.config.largeImage ||
-              node.config.src
+          const hasExplicitSmallSibling =
+            !isSmallBinding &&
+            Boolean(
+              node.parentId &&
+                nodes.some(
+                  (sib) =>
+                    sib.id !== node.id &&
+                    sib.parentId === node.parentId &&
+                    sib.visible !== false &&
+                    sib.type === "rpc-icon" &&
+                    sib.config?.rpcFieldBinding === "smallImage"
+                )
+            );
+          const resolvedSrc = activeLive
+            ? isSmallBinding
+              ? activeLive.smallImage ||
+                (node.config.rpcDataSource === "custom" ? node.config.appIcon || node.config.src : "")
+              : activeLive.largeImage || node.config.largeImage || node.config.src
             : isOfflineLive && !isInteractive
               ? ""
               : isSmallBinding
-                ? node.config.appIcon || node.config.src || node.config.largeImage
-                : node.config.largeImage || node.config.src;
-          const smallSrc = isSmallBinding
-            ? ""
-            : activeLive
-              ? activeLive.smallImage || node.config.appIcon
-              : isOfflineLive && !isInteractive
-                ? ""
-                : node.config.appIcon;
-          const radius = node.style.borderRadius ?? 12;
-          const iconMinDim = Math.max(24, Math.min(node.width, node.height));
+                ? node.config.appIcon || node.config.src || ""
+                : node.config.largeImage || node.config.src || "";
+          const smallSrc =
+            isSmallBinding || hasExplicitSmallSibling
+              ? ""
+              : activeLive
+                ? activeLive.smallImage || node.config.appIcon
+                : isOfflineLive && !isInteractive
+                  ? ""
+                  : node.config.appIcon;
+          const shape: "square" | "circle" =
+            node.config.rpcImageShape === "circle" || node.config.rpcImageShape === "square"
+              ? node.config.rpcImageShape
+              : (node.style.borderRadius ?? 12) >= 999
+                ? "circle"
+                : "square";
+          const isCircle = shape === "circle";
+          const radius = isCircle ? 9999 : node.style.borderRadius ?? 12;
+          const iconMinDim = Math.max(12, Math.min(node.width, node.height));
           const smallBadgeSize = Math.round(Math.max(14, Math.min(48, iconMinDim * 0.34)));
           const smallBadgeOffset = -Math.max(2, Math.round(smallBadgeSize * 0.14));
+          const iconOverlayCss = node.config.imageOverlayEnabled
+            ? compileGradientLayersCss(node.config.imageOverlayGradients, {
+                colorA: "#6366f1",
+                colorB: "#ec4899",
+                angle: 135,
+                opacity: 0.45,
+              })
+            : undefined;
+          const iconBgGrad =
+            node.style.backgroundType === "gradient"
+              ? compileGradientLayersCss(node.style.backgroundGradients, {
+                  colorA: node.style.backgroundColor || "#17171f",
+                  colorB: node.style.backgroundGradientTo || "#262635",
+                  angle: node.style.backgroundGradientAngle ?? 135,
+                  opacity: node.style.backgroundOpacity ?? 1,
+                })
+              : undefined;
 
           return (
             <div
-              className="w-full h-full relative overflow-visible select-none"
+              className="w-full h-full relative overflow-visible select-none flex items-center justify-center"
               data-testid={`rpc-child-${node.type}`}
+              data-rpc-binding={isSmallBinding ? "smallImage" : "largeImage"}
+              data-rpc-shape={shape}
             >
               <div
-                className="w-full h-full overflow-hidden flex items-center justify-center bg-[#17171f]"
+                className="overflow-hidden flex items-center justify-center bg-[#17171f] relative"
+                data-testid={`rpc-icon-frame-${node.id}`}
                 style={{
-                  borderRadius: `${radius}px`,
+                  width: isCircle ? `${iconMinDim}px` : "100%",
+                  height: isCircle ? `${iconMinDim}px` : "100%",
+                  borderRadius: isCircle ? "9999px" : `${radius}px`,
                   borderWidth: `${node.style.borderWidth ?? 1}px`,
                   borderStyle: node.style.borderStyle || "solid",
                   borderColor: node.style.borderColor || "#2a2a35",
                   backgroundColor: node.style.backgroundColor || "#17171f",
+                  backgroundImage: iconBgGrad,
                 }}
               >
-                {largeSrc ? (
+                {resolvedSrc ? (
                   <img
-                    src={largeSrc}
+                    src={resolvedSrc}
                     alt={activeLive?.appName || node.name}
                     className="w-full h-full pointer-events-none"
                     style={{
@@ -1261,12 +1434,19 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
                   />
                 ) : (
                   <Gamepad2
-                    size={Math.max(14, Math.round(iconMinDim * 0.42))}
+                    size={Math.max(10, Math.round(iconMinDim * 0.42))}
                     className="text-neutral-500"
                   />
                 )}
+                {iconOverlayCss && (
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    style={{ backgroundImage: iconOverlayCss }}
+                    data-testid={`image-gradient-overlay-${node.id}`}
+                  />
+                )}
               </div>
-              {!isSmallBinding && node.config.rpcShowSecondaryBadge !== false && smallSrc && (
+              {!isSmallBinding && !hasExplicitSmallSibling && node.config.rpcShowSecondaryBadge !== false && smallSrc && (
                 <div
                   className="absolute rounded-full border-2 border-[#111116] bg-[#18181f] overflow-hidden shadow-md"
                   style={{
@@ -1336,6 +1516,11 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           const fs = node.config.fontSize ?? 10;
           const wrap = shouldWrapText(fs);
 
+          const statusTextGrad =
+            node.config.textFillType === "gradient"
+              ? compileTextGradientStyle(node.config.textGradients, node.config.color || "#a1a1aa")
+              : null;
+
           return (
             <div
               className="w-full h-full flex items-center gap-1.5 overflow-hidden select-none uppercase tracking-wider"
@@ -1359,7 +1544,7 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               />
               <span
                 className={wrap ? "break-words leading-tight" : "truncate"}
-                style={{ textAlign: node.config.textAlign || "left" }}
+                style={{ textAlign: node.config.textAlign || "left", ...(statusTextGrad || {}) }}
               >
                 {statusLabel}
               </span>
@@ -1375,6 +1560,10 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               : node.config.text || node.config.appName || "Active Application";
           const fs = node.config.fontSize ?? 15;
           const wrap = shouldWrapText(fs);
+          const titleTextGrad =
+            node.config.textFillType === "gradient"
+              ? compileTextGradientStyle(node.config.textGradients, node.config.color || "#ffffff")
+              : null;
           return (
             <div
               className="w-full h-full flex items-center overflow-hidden select-none"
@@ -1389,7 +1578,10 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
             >
               <span
                 className={`w-full ${wrap ? "break-words whitespace-normal" : "truncate"}`}
-                style={{ textAlign: node.config.textAlign || "left" }}
+                style={{
+                  textAlign: node.config.textAlign || "left",
+                  ...(titleTextGrad || {}),
+                }}
               >
                 {textVal}
               </span>
@@ -1407,6 +1599,10 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               : node.config.text || node.config.details || "";
           const fs = node.config.fontSize ?? 12;
           const wrap = shouldWrapText(fs);
+          const detailsTextGrad =
+            node.config.textFillType === "gradient"
+              ? compileTextGradientStyle(node.config.textGradients, node.config.color || "#d4d4d8")
+              : null;
           return (
             <div
               className="w-full h-full flex items-center overflow-hidden select-none"
@@ -1421,7 +1617,7 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
             >
               <span
                 className={`w-full ${wrap ? "break-words whitespace-normal" : "truncate"}`}
-                style={{ textAlign: node.config.textAlign || "left" }}
+                style={{ textAlign: node.config.textAlign || "left", ...(detailsTextGrad || {}) }}
               >
                 {textVal}
               </span>
@@ -1447,6 +1643,10 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           const textVal = baseState ? `${baseState}${partyText}` : partyText.trim();
           const fs = node.config.fontSize ?? 11;
           const wrap = shouldWrapText(fs);
+          const stateTextGrad =
+            node.config.textFillType === "gradient"
+              ? compileTextGradientStyle(node.config.textGradients, node.config.color || "#a1a1aa")
+              : null;
           return (
             <div
               className="w-full h-full flex items-center overflow-hidden select-none"
@@ -1461,7 +1661,7 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
             >
               <span
                 className={`w-full ${wrap ? "break-words whitespace-normal" : "truncate"}`}
-                style={{ textAlign: node.config.textAlign || "left" }}
+                style={{ textAlign: node.config.textAlign || "left", ...(stateTextGrad || {}) }}
               >
                 {textVal}
               </span>
@@ -1669,7 +1869,12 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           filter: bg.blur > 0 ? `blur(${bg.blur}px)` : undefined,
           background:
             bg.type === "gradient"
-              ? `linear-gradient(${bg.gradientAngle}deg, ${bg.color}, ${bg.gradientTo})`
+              ? compileGradientLayersCss(bg.gradients, {
+                  colorA: bg.color,
+                  colorB: bg.gradientTo,
+                  angle: bg.gradientAngle,
+                  opacity: 1,
+                }) || bg.color
               : bg.color,
         }}
       >

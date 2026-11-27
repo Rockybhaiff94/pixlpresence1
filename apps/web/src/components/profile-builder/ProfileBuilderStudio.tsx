@@ -39,6 +39,7 @@ import {
   applyRpcTemplateToEmbedNodes,
   isNodeRestrictedRpcForFree,
   isRpcChildType,
+  resetRpcEmbedToDefault,
   serializeRpcEmbedAsTemplate,
 } from "./rpcTemplates";
 import { exportProfileBuilderJson, exportProfileBuilderPng } from "./profileBuilderExport";
@@ -67,6 +68,52 @@ import {
 } from "./secondaryDockTypes";
 
 const DRAFT_STORAGE_KEY = "pixel_profile_builder_draft_v2";
+
+export type GradientSurfaceTarget = "background" | "text" | "image-overlay";
+
+interface RpcLocalHistoryState {
+  snapshots: BuilderNode[][];
+  index: number;
+}
+
+function collectRpcSubtreeIds(nodes: BuilderNode[], rpcId: string): Set<string> {
+  const result = new Set<string>([rpcId]);
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const n of nodes) {
+      if (n.parentId && result.has(n.parentId) && !result.has(n.id)) {
+        result.add(n.id);
+        expanded = true;
+      }
+    }
+  }
+  return result;
+}
+
+function extractRpcSubtreeSnapshot(nodes: BuilderNode[], rpcId: string): BuilderNode[] {
+  const ids = collectRpcSubtreeIds(nodes, rpcId);
+  return JSON.parse(
+    JSON.stringify(
+      nodes
+        .filter((n) => ids.has(n.id))
+        .sort((a, b) => a.id.localeCompare(b.id))
+    )
+  );
+}
+
+function buildInitialRpcHistories(nodes: BuilderNode[]): Record<string, RpcLocalHistoryState> {
+  const map: Record<string, RpcLocalHistoryState> = {};
+  for (const n of nodes) {
+    if (n.type === "custom-rpc" || n.type === "custom-rpc-embed") {
+      map[n.id] = {
+        snapshots: [extractRpcSubtreeSnapshot(nodes, n.id)],
+        index: 0,
+      };
+    }
+  }
+  return map;
+}
 
 interface ProfileBuilderStudioProps {
   children?: React.ReactNode; // Untouched StudioFloatingDock passed from customize page
@@ -130,6 +177,12 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     },
   ]);
   const [historyIdx, setHistoryIdx] = useState(0);
+  const [rpcHistoryMap, setRpcHistoryMap] = useState<Record<string, RpcLocalHistoryState>>(() =>
+    buildInitialRpcHistories(doc.nodes)
+  );
+  const [activeGradientLayerId, setActiveGradientLayerId] = useState<string | null>(null);
+  const [activeGradientTarget, setActiveGradientTarget] =
+    useState<GradientSurfaceTarget>("background");
   const isDirtyRef = useRef(false);
   const hasHydratedRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -238,6 +291,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           },
         ]);
         setHistoryIdx(0);
+        setRpcHistoryMap(buildInitialRpcHistories(normalized.nodes));
       } catch {
         // Ignore corrupted draft and keep safe starter document
       }
@@ -380,6 +434,31 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     [liveRpc, profile, user]
   );
 
+  const syncRpcHistoriesFromNodes = useCallback((nextNodes: BuilderNode[]) => {
+    setRpcHistoryMap((prev) => {
+      let changed = false;
+      const nextMap: Record<string, RpcLocalHistoryState> = { ...prev };
+      for (const n of nextNodes) {
+        if (n.type !== "custom-rpc" && n.type !== "custom-rpc-embed") continue;
+        const snap = extractRpcSubtreeSnapshot(nextNodes, n.id);
+        const snapJson = JSON.stringify(snap);
+        const existing = nextMap[n.id];
+        if (!existing) {
+          nextMap[n.id] = { snapshots: [snap], index: 0 };
+          changed = true;
+        } else {
+          const curJson = JSON.stringify(existing.snapshots[existing.index] || []);
+          if (curJson !== snapJson) {
+            const sliced = [...existing.snapshots.slice(0, existing.index + 1), snap].slice(-30);
+            nextMap[n.id] = { snapshots: sliced, index: sliced.length - 1 };
+            changed = true;
+          }
+        }
+      }
+      return changed ? nextMap : prev;
+    });
+  }, []);
+
   const commitSnapshot = useCallback(
     (nextCanvas: BuilderCanvasSettings, nextNodes: BuilderNode[], nextSelectedId: string | null) => {
       const snap: BuilderHistorySnapshot = {
@@ -389,11 +468,101 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       };
       setHistory((prev) => [...prev.slice(0, historyIdx + 1), snap].slice(-40));
       setHistoryIdx((prev) => Math.min(prev + 1, 39));
+      syncRpcHistoriesFromNodes(nextNodes);
       isDirtyRef.current = true;
       setIsDirty(true);
       setSaveStatus("unsaved");
     },
-    [historyIdx]
+    [historyIdx, syncRpcHistoriesFromNodes]
+  );
+
+  const handleUndoCustomRpc = useCallback(
+    (rpcId: string) => {
+      const entry = rpcHistoryMap[rpcId];
+      if (!entry || entry.index <= 0) return;
+      const prevIdx = entry.index - 1;
+      const targetSubtree: BuilderNode[] = JSON.parse(JSON.stringify(entry.snapshots[prevIdx]));
+      setDoc((prev) => {
+        const curSubtreeIds = collectRpcSubtreeIds(prev.nodes, rpcId);
+        const existingParentId =
+          prev.nodes.find((n) => n.id === rpcId)?.parentId ?? null;
+        const preservedOuter = prev.nodes.filter((n) => !curSubtreeIds.has(n.id));
+        const restoredSubtree = targetSubtree.map((n) =>
+          n.id === rpcId ? { ...n, parentId: existingParentId } : n
+        );
+        return {
+          ...prev,
+          nodes: [...preservedOuter, ...restoredSubtree],
+          metadata: { ...prev.metadata, updatedAt: new Date().toISOString() },
+        };
+      });
+      setRpcHistoryMap((prev) => {
+        const cur = prev[rpcId];
+        if (!cur) return prev;
+        return { ...prev, [rpcId]: { ...cur, index: prevIdx } };
+      });
+      setSelectedId((curSel) =>
+        curSel && targetSubtree.some((n) => n.id === curSel) ? curSel : rpcId
+      );
+      isDirtyRef.current = true;
+      setIsDirty(true);
+      setSaveStatus("unsaved");
+    },
+    [rpcHistoryMap]
+  );
+
+  const handleRedoCustomRpc = useCallback(
+    (rpcId: string) => {
+      const entry = rpcHistoryMap[rpcId];
+      if (!entry || entry.index >= entry.snapshots.length - 1) return;
+      const nextIdx = entry.index + 1;
+      const targetSubtree: BuilderNode[] = JSON.parse(JSON.stringify(entry.snapshots[nextIdx]));
+      setDoc((prev) => {
+        const curSubtreeIds = collectRpcSubtreeIds(prev.nodes, rpcId);
+        const existingParentId =
+          prev.nodes.find((n) => n.id === rpcId)?.parentId ?? null;
+        const preservedOuter = prev.nodes.filter((n) => !curSubtreeIds.has(n.id));
+        const restoredSubtree = targetSubtree.map((n) =>
+          n.id === rpcId ? { ...n, parentId: existingParentId } : n
+        );
+        return {
+          ...prev,
+          nodes: [...preservedOuter, ...restoredSubtree],
+          metadata: { ...prev.metadata, updatedAt: new Date().toISOString() },
+        };
+      });
+      setRpcHistoryMap((prev) => {
+        const cur = prev[rpcId];
+        if (!cur) return prev;
+        return { ...prev, [rpcId]: { ...cur, index: nextIdx } };
+      });
+      setSelectedId((curSel) =>
+        curSel && targetSubtree.some((n) => n.id === curSel) ? curSel : rpcId
+      );
+      isDirtyRef.current = true;
+      setIsDirty(true);
+      setSaveStatus("unsaved");
+    },
+    [rpcHistoryMap]
+  );
+
+  const handleResetCustomRpc = useCallback(
+    (rpcId: string) => {
+      const res = resetRpcEmbedToDefault({ nodes: doc.nodes, embedId: rpcId });
+      if (!res.ok || !res.nextNodes) {
+        showToast(res.error || "Unable to reset Custom RPC.");
+        return;
+      }
+      setDoc((prev) => ({
+        ...prev,
+        nodes: res.nextNodes!,
+        metadata: { ...prev.metadata, updatedAt: new Date().toISOString() },
+      }));
+      setSelectedId(rpcId);
+      commitSnapshot(doc.canvas, res.nextNodes, rpcId);
+      showToast("Restored Custom RPC to default Discord layout");
+    },
+    [commitSnapshot, doc.canvas, doc.nodes, showToast]
   );
 
   const handleUndo = useCallback(() => {
@@ -470,6 +639,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           updates.backgroundColor !== undefined ||
           updates.backgroundGradientTo !== undefined ||
           updates.backgroundGradientAngle !== undefined ||
+          updates.backgroundGradients !== undefined ||
           updates.backgroundImage !== undefined ||
           updates.backgroundVideo !== undefined ||
           updates.backgroundPosition !== undefined ||
@@ -489,6 +659,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
                 ...(updates.backgroundColor !== undefined ? { bgColor: updates.backgroundColor } : {}),
                 ...(updates.backgroundGradientTo !== undefined ? { bgGradientTo: updates.backgroundGradientTo } : {}),
                 ...(updates.backgroundGradientAngle !== undefined ? { bgGradientAngle: updates.backgroundGradientAngle } : {}),
+                ...(updates.backgroundGradients !== undefined ? { bgGradients: updates.backgroundGradients } : {}),
                 ...(updates.backgroundImage !== undefined ? { bgImageUrl: updates.backgroundImage } : {}),
                 ...(updates.backgroundVideo !== undefined ? { bgVideoUrl: updates.backgroundVideo } : {}),
                 ...(updates.backgroundPosition !== undefined ? { bgPosition: updates.backgroundPosition } : {}),
@@ -1513,6 +1684,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     setDoc(resetDoc);
     setDockAddedIds([]);
     setSelectedId("embed-profile-root");
+    setRpcHistoryMap(buildInitialRpcHistories(resetDoc.nodes));
     commitSnapshot(resetDoc.canvas, resetDoc.nodes, "embed-profile-root");
     setIsResetModalOpen(false);
     showToast("Reset design to default. Click Save Draft when ready to save.");
@@ -1574,6 +1746,38 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       setErrorBanner("Export failed. Cross-origin assets may block raster PNG export.");
     }
   };
+
+  const handleSelectNode = useCallback(
+    (id: string | null) => {
+      setSelectedId(id);
+      setActiveGradientLayerId(null);
+      const nextNode = id ? doc.nodes.find((n) => n.id === id) : null;
+      if (
+        nextNode &&
+        (nextNode.type === "name-text" ||
+          nextNode.type === "subtitle" ||
+          nextNode.type === "description" ||
+          nextNode.type === "rpc-title" ||
+          nextNode.type === "rpc-details" ||
+          nextNode.type === "rpc-state" ||
+          nextNode.type === "rpc-status" ||
+          nextNode.type === "rpc-timestamp")
+      ) {
+        setActiveGradientTarget("text");
+      } else if (
+        nextNode &&
+        (nextNode.type === "image" ||
+          nextNode.type === "profile-image" ||
+          nextNode.type === "banner-image" ||
+          (nextNode.type === "rpc-icon" && nextNode.config?.imageOverlayEnabled))
+      ) {
+        setActiveGradientTarget("image-overlay");
+      } else {
+        setActiveGradientTarget("background");
+      }
+    },
+    [doc.nodes]
+  );
 
   const selectedNode = doc.nodes.find((n) => n.id === selectedId) || null;
   const activeEmbedNode =
@@ -1725,7 +1929,11 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
             liveData={liveData}
             zoom={zoom}
             onZoomChange={setZoom}
-            onSelect={setSelectedId}
+            onSelect={handleSelectNode}
+            onUpdateCanvas={handleUpdateCanvas}
+            activeGradientLayerId={activeGradientLayerId}
+            onSelectGradientLayer={setActiveGradientLayerId}
+            activeGradientTarget={activeGradientTarget}
             onUpdateNode={handleUpdateNode}
             onReplaceNodes={handleReplaceNodes}
             onCommitHistory={handleCommitHistory}
@@ -1768,11 +1976,19 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           onApplyRpcTemplate={handleApplyRpcTemplate}
           onSaveRpcTemplate={handleSaveRpcTemplate}
           onDeleteRpcTemplate={handleDeleteRpcTemplate}
+          rpcHistoryMap={rpcHistoryMap}
+          onUndoCustomRpc={handleUndoCustomRpc}
+          onRedoCustomRpc={handleRedoCustomRpc}
+          onResetCustomRpc={handleResetCustomRpc}
+          activeGradientLayerId={activeGradientLayerId}
+          onSelectGradientLayer={setActiveGradientLayerId}
+          activeGradientTarget={activeGradientTarget}
+          onSelectGradientTarget={setActiveGradientTarget}
           onInsertChild={(parentId, type, extra) => {
             insertComponent(type, parentId, undefined, undefined, extra);
           }}
           onRestrictedFeature={reportRestrictedFeature}
-          onSelect={setSelectedId}
+          onSelect={handleSelectNode}
           onUpdateCanvas={handleUpdateCanvas}
           onUpdateNode={handleUpdateNode}
           onOpenMediaPicker={(cb, title, init, targetSlot) =>

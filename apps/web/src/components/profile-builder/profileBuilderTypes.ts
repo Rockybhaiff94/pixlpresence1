@@ -44,11 +44,34 @@ export type BuilderComponentType =
 
 export type BuilderLayoutMode = "absolute" | "flex-col" | "flex-row" | "grid";
 
+export interface BuilderGradientStop {
+  id: string;
+  color: string;
+  position: number; // 0-100
+}
+
+export interface BuilderGradientLayer {
+  id: string;
+  name: string;
+  type?: "linear";
+  stops: BuilderGradientStop[];
+  midpoint?: number; // 5-95 (%) transition shift between stops
+  opacity: number; // 0-1
+  angle: number; // 0-360 deg
+  startX?: number; // normalized [0..1] start handle X
+  startY?: number; // normalized [0..1] start handle Y
+  endX?: number; // normalized [0..1] end handle X
+  endY?: number; // normalized [0..1] end handle Y
+  visible: boolean;
+  locked: boolean;
+}
+
 export interface BuilderStyle {
   backgroundType?: "solid" | "gradient" | "image" | "video" | "transparent";
   backgroundColor?: string;
   backgroundGradientTo?: string;
   backgroundGradientAngle?: number;
+  backgroundGradients?: BuilderGradientLayer[];
   backgroundImage?: string;
   backgroundVideo?: string;
   backgroundVideoMuted?: boolean;
@@ -135,8 +158,11 @@ export interface BuilderComponentConfig {
   fit?: "cover" | "contain" | "fill";
   objectPosition?: string;
   avatarShape?: "circle" | "rounded" | "square";
+  rpcImageShape?: "square" | "circle";
   showStatusDot?: boolean;
   statusColor?: string;
+  imageOverlayEnabled?: boolean;
+  imageOverlayGradients?: BuilderGradientLayer[];
 
   // Text-based components (Name, Subtitle, Description)
   text?: string;
@@ -144,6 +170,8 @@ export interface BuilderComponentConfig {
   fontSize?: number;
   fontWeight?: number;
   color?: string;
+  textFillType?: "solid" | "gradient";
+  textGradients?: BuilderGradientLayer[];
   textAlign?: "left" | "center" | "right";
   letterSpacing?: number;
   lineHeight?: number;
@@ -231,6 +259,7 @@ export interface BuilderComponentConfig {
   bgColor?: string;
   bgGradientTo?: string;
   bgGradientAngle?: number;
+  bgGradients?: BuilderGradientLayer[];
   bgImageUrl?: string;
   bgVideoUrl?: string;
   bgPosition?: string;
@@ -283,6 +312,7 @@ export interface BuilderCanvasSettings {
   backgroundColor: string;
   backgroundGradientTo: string;
   backgroundGradientAngle: number;
+  backgroundGradients?: BuilderGradientLayer[];
   backgroundImage: string;
   backgroundVideo: string;
   backgroundPosition: string;

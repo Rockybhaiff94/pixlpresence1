@@ -114,6 +114,7 @@ const DEFAULT_FREE_RPC_TEMPLATES: Record<string, PermittedRpcTemplateRule> = {
       { type: "rpc-status", x: 16, y: 12, width: 220, height: 20 },
       { type: "rpc-timestamp", x: 244, y: 12, width: 120, height: 20 },
       { type: "rpc-icon", x: 16, y: 40, width: 72, height: 72 },
+      { type: "rpc-icon", x: 68, y: 92, width: 24, height: 24 },
       { type: "rpc-title", x: 100, y: 42, width: 264, height: 24 },
       { type: "rpc-details", x: 100, y: 68, width: 264, height: 20 },
       { type: "rpc-state", x: 100, y: 90, width: 264, height: 20 },

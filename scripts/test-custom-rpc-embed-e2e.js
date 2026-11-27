@@ -245,9 +245,11 @@ async function run() {
     );
 
     // Verify structured child nodes exist inside unified Custom RPC (node-rpc -> rpc-*)
+    // Default Discord RPC includes TWO independent rpc-icon nodes: largeImage + smallImage!
     for (const childType of ["rpc-status", "rpc-icon", "rpc-title", "rpc-details", "rpc-state", "rpc-timestamp", "rpc-achievement", "rpc-buttons"]) {
       const cnt = await premPage.locator(`[data-parent-id="${embedRawId}"][data-node-type="${childType}"]`).count();
-      assert.strictEqual(cnt, 1, `Expected 1 ${childType} child inside unified custom-rpc`);
+      const expectedCnt = childType === "rpc-icon" ? 2 : 1;
+      assert.strictEqual(cnt, expectedCnt, `Expected ${expectedCnt} ${childType} child inside unified custom-rpc, got ${cnt}`);
     }
 
     // Open Properties Panel -> Select Parent Embed edge (not center child) & test Stretching + Bug A/C/D checks!
@@ -294,6 +296,128 @@ async function run() {
     );
     await premPage.getByTestId("prop-width-input").fill("72");
     await premPage.waitForTimeout(80);
+
+    // Test Independent Small RPC Image Resizing, Positioning, Shape & Corner Radius
+    const smallIconChild = premPage.locator(`[data-parent-id="${embedRawId}"][data-node-type="rpc-icon"]`).nth(1);
+    await smallIconChild.click({ force: true });
+    await premPage.waitForSelector('[data-testid="rpc-icon-binding-select"]', { timeout: 3000 });
+    assert.strictEqual(
+      await premPage.getByTestId("rpc-icon-binding-select").inputValue(),
+      "smallImage",
+      "Second rpc-icon must bind independently to smallImage"
+    );
+    await premPage.getByTestId("prop-width-input").fill("36");
+    await premPage.getByTestId("prop-height-input").fill("36");
+    await premPage.getByTestId("prop-x-input").fill("76");
+    await premPage.getByTestId("prop-y-input").fill("104");
+    await premPage.waitForTimeout(100);
+    assert.strictEqual(await smallIconChild.evaluate((el) => parseInt(el.style.width, 10)), 36);
+    assert.strictEqual(await smallIconChild.evaluate((el) => parseInt(el.style.height, 10)), 36);
+    assert.strictEqual(await smallIconChild.evaluate((el) => parseInt(el.style.left, 10)), 76);
+    assert.strictEqual(await iconChild.evaluate((el) => parseInt(el.style.width, 10)), 72, "Resizing Small Image must NOT alter Main Image");
+
+    // Shape switching (Square with live corner radius <-> True Circle)
+    await premPage.getByTestId("rpc-icon-shape-square").click();
+    await premPage.waitForSelector('[data-testid="rpc-icon-corner-radius-input"]', { timeout: 3000 });
+    await premPage.getByTestId("rpc-icon-corner-radius-input").fill("0");
+    await premPage.waitForTimeout(80);
+    assert.strictEqual(
+      await smallIconChild.locator('[data-testid^="rpc-icon-frame-"]').evaluate((el) => el.style.borderRadius),
+      "0px",
+      "Square shape with corner radius 0 must render sharp 0px corners"
+    );
+    await premPage.getByTestId("rpc-icon-shape-circle").click();
+    await premPage.waitForTimeout(80);
+    assert.strictEqual(
+      await smallIconChild.locator('[data-testid^="rpc-icon-frame-"]').evaluate((el) => el.style.borderRadius),
+      "9999px",
+      "Circle shape must enforce circular borderRadius without square clipping"
+    );
+    await premPage.getByTestId("prop-width-input").fill("24");
+    await premPage.getByTestId("prop-height-input").fill("24");
+    await premPage.waitForTimeout(80);
+
+    // Floating Toolbar drag handle moves selected element cleanly instead of drifting independently
+    const smallBeforeLeft = await smallIconChild.evaluate((el) => parseInt(el.style.left, 10));
+    const ftHandleBox = await premPage.getByTestId("ft-drag-handle").boundingBox();
+    await premPage.mouse.move(ftHandleBox.x + ftHandleBox.width / 2, ftHandleBox.y + ftHandleBox.height / 2);
+    await premPage.mouse.down();
+    await premPage.mouse.move(ftHandleBox.x + ftHandleBox.width / 2 + 24, ftHandleBox.y + ftHandleBox.height / 2, { steps: 4 });
+    await premPage.mouse.up();
+    await premPage.waitForTimeout(120);
+    const smallAfterLeft = await smallIconChild.evaluate((el) => parseInt(el.style.left, 10));
+    assert(smallAfterLeft > smallBeforeLeft, `Dragging ft-drag-handle must move selected element (${smallAfterLeft} > ${smallBeforeLeft})`);
+
+    // Isolated Custom RPC Undo/Redo & Reset confirmation (must never touch outer elements)
+    const outerNameNode = premPage.locator('[data-node-type="name-text"]').first();
+    const outerNameId = (await outerNameNode.getAttribute("data-testid")).replace("canvas-node-", "");
+    await premPage.getByTestId("unified-tab-layers").click();
+    await premPage.waitForSelector(`[data-testid="layer-row-${outerNameId}"]`, { timeout: 3000 });
+    await premPage.getByTestId(`layer-row-${outerNameId}`).click();
+    await premPage.getByTestId("unified-tab-properties").click();
+    await premPage.waitForSelector('[data-testid="text-fill-type-gradient"]', { timeout: 3000 });
+    const outerOrigX = await outerNameNode.evaluate((el) => parseInt(el.style.left, 10));
+    await premPage.getByTestId("prop-x-input").fill(String(outerOrigX + 10));
+    await premPage.waitForTimeout(80);
+
+    // Universal Gradient System on Name Text (layers, multi-stop, midpoint, canvas line controller)
+    await premPage.getByTestId("text-fill-type-gradient").click();
+    await premPage.waitForSelector('[data-testid="gradient-add-layer-text-fill"]', { timeout: 3000 });
+    await premPage.getByTestId("gradient-add-stop-text-fill").click();
+    await premPage.getByTestId("gradient-midpoint-text-fill").fill("65");
+    await premPage.getByTestId("gradient-add-layer-text-fill").click();
+    await premPage.waitForSelector('[data-testid="gradient-canvas-controller"]', { timeout: 3000 });
+    assert.strictEqual(await premPage.getByTestId("gradient-handle-start").count(), 1);
+    assert.strictEqual(await premPage.getByTestId("gradient-handle-end").count(), 1);
+    assert.strictEqual(await premPage.getByTestId("gradient-inactive-line-0").count(), 1);
+    const endHandleBox = await premPage.getByTestId("gradient-handle-end").boundingBox();
+    await premPage.mouse.move(endHandleBox.x + endHandleBox.width / 2, endHandleBox.y + endHandleBox.height / 2);
+    await premPage.mouse.down();
+    await premPage.mouse.move(endHandleBox.x + 15, endHandleBox.y - 10, { steps: 3 });
+    await premPage.mouse.up();
+    await premPage.waitForTimeout(100);
+    const hasGradientClip = await outerNameNode.locator("span").first().evaluate((el) => {
+      const s = window.getComputedStyle(el);
+      return (
+        s.webkitBackgroundClip === "text" ||
+        s.backgroundClip === "text" ||
+        (el.style.backgroundImage || "").includes("gradient")
+      );
+    });
+    assert(hasGradientClip, "Gradient text fill must apply background-clip: text on text span");
+
+    // Select Custom RPC parent -> verify Isolated Undo/Redo & Reset Dialog
+    await premPage.getByTestId("unified-tab-layers").click();
+    await premPage.waitForSelector(`[data-testid="layer-row-${embedRawId}"]`, { timeout: 3000 });
+    await premPage.getByTestId(`layer-row-${embedRawId}`).click();
+    await premPage.getByTestId("unified-tab-properties").click();
+    await premPage.waitForSelector('[data-testid="rpc-undo-btn"]', { timeout: 3000 });
+    await premPage.getByTestId("rpc-undo-btn").click();
+    await premPage.waitForTimeout(100);
+    assert.strictEqual(
+      await outerNameNode.evaluate((el) => parseInt(el.style.left, 10)),
+      outerOrigX + 10,
+      "Custom RPC Undo must NOT revert unrelated Name element outside Custom RPC"
+    );
+    await premPage.getByTestId("rpc-redo-btn").click();
+    await premPage.waitForTimeout(100);
+
+    // Reset Custom RPC -> Cancel -> Confirm -> Undo Reset
+    await premPage.getByTestId("rpc-reset-btn").click();
+    await premPage.waitForSelector('[data-testid="rpc-reset-confirm-dialog"]', { timeout: 3000 });
+    await premPage.getByTestId("rpc-reset-cancel-btn").click();
+    assert.strictEqual(await premPage.locator('[data-testid="rpc-reset-confirm-dialog"]').count(), 0);
+    await premPage.getByTestId("rpc-reset-btn").click();
+    await premPage.waitForSelector('[data-testid="rpc-reset-confirm-btn"]', { timeout: 3000 });
+    await premPage.getByTestId("rpc-reset-confirm-btn").click();
+    await premPage.waitForTimeout(150);
+    assert.strictEqual(
+      await outerNameNode.evaluate((el) => parseInt(el.style.left, 10)),
+      outerOrigX + 10,
+      "Reset Custom RPC must NEVER disturb unrelated profile elements"
+    );
+    await premPage.getByTestId("rpc-undo-btn").click();
+    await premPage.waitForTimeout(100);
 
     // Zoom in and test free horizontal corner drag on Custom RPC parent (without forced aspect ratio lock)
     await premPage.getByTestId("unified-panel-close").click();
@@ -400,13 +524,36 @@ async function run() {
     await premPage.getByTestId("ft-delete").click();
     await premPage.waitForTimeout(120);
 
-    // Test F (Personal Save Template): Save current embed as Premium user template
+    // Test F (UI Template-Saving Controls Removed, Backend API + Apply Preserved)
     await rpcEmbedNode.click({ position: { x: 6, y: 6 }, force: true });
-    await premPage.waitForSelector('[data-testid="rpc-save-tpl-name"]', { timeout: 4000 });
-    await premPage.getByTestId("rpc-save-tpl-name").fill("Prem Theme Alpha");
-    await premPage.getByTestId("rpc-save-tpl-category").fill("Custom");
-    await premPage.getByTestId("rpc-save-template-btn").click();
-    await premPage.waitForTimeout(450);
+    if (!(await premPage.getByTestId("rpc-undo-btn").isVisible().catch(() => false))) {
+      await premPage.getByTestId("secondary-dock-btn-properties").click();
+    }
+    await premPage.waitForSelector('[data-testid="rpc-undo-btn"]', { timeout: 4000 });
+    assert.strictEqual(
+      await premPage.locator('[data-testid="rpc-save-tpl-name"]').count(),
+      0,
+      "Save-as-Template input must be removed from Custom RPC Properties Panel"
+    );
+    assert.strictEqual(
+      await premPage.locator('[data-testid="rpc-save-template-btn"]').count(),
+      0,
+      "Save-as-Template button must be removed from Custom RPC Properties Panel"
+    );
+    const apiPersonalTpl = await apiJson(tokenPremium, "/api/rpc/templates", "POST", {
+      name: "Prem Theme Alpha",
+      category: "Custom",
+      isGlobal: false,
+      config: {
+        templateType: "rpc-embed-v2",
+        parentWidth: 460,
+        parentHeight: 204,
+        parentStyle: { backgroundType: "solid", backgroundColor: "#141622" },
+        children: [{ type: "rpc-title", x: 140, y: 52, width: 290, height: 24 }],
+      },
+    });
+    assert.strictEqual(apiPersonalTpl.status, 200, "Backend template creation API must stay intact");
+    createdTemplateIds.push(apiPersonalTpl.data.id);
 
     // Save & Publish Profile (wait for actual HTTP 200 responses before reload!)
     const saveDraftResp = premPage.waitForResponse(
