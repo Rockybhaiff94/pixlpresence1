@@ -34,7 +34,7 @@ import {
   ProfileBuilderRenderer,
   ProfileLiveActivityData,
 } from "./ProfileBuilderRenderer";
-import { applyProportionalContainerCornerScale } from "./boundaryConstraints";
+import { applyContainerResize, clampNodeToParent } from "./boundaryConstraints";
 import { getBuilderComponentIcon } from "./AddElementPanel";
 import { RPC_CHILD_COMPONENT_TYPES, isNodeRestrictedRpcForFree } from "./rpcTemplates";
 
@@ -61,7 +61,11 @@ interface ProfileCanvasWorkspaceProps {
   onCommitHistory: () => void;
   onDuplicateNode: (id: string) => void;
   onDeleteNode: (id: string) => void;
-  onInsertChild: (parentId: string, type: BuilderComponentType) => void;
+  onInsertChild: (
+    parentId: string,
+    type: BuilderComponentType,
+    extra?: Partial<BuilderNode>
+  ) => void;
   onDropComponent: (
     type: BuilderComponentType,
     targetParentId: string | null,
@@ -383,9 +387,14 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
           activeHandle === "sw";
         const isContainer = isContainerType(initialNode.type);
 
+        let nextX = initialNode.x;
+        let nextY = initialNode.y;
+        let nextW = initialNode.width;
+        let nextH = initialNode.height;
+
         if (
           isCorner &&
-          (isContainer || e.shiftKey || initialNode.aspectRatioLocked) &&
+          (e.shiftKey || initialNode.aspectRatioLocked) &&
           initialNode.width > 0 &&
           initialNode.height > 0
         ) {
@@ -420,74 +429,63 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
             Math.abs(ratioW - 1) >= Math.abs(ratioH - 1) ? ratioW : ratioH;
           const clampedScale = Math.max(minScale, Math.min(maxScale, desiredScale));
 
-          const newW = Math.max(minW, Math.round(initialNode.width * clampedScale));
-          const newH = Math.max(minH, Math.round(initialNode.height * clampedScale));
-          const newX = activeHandle.includes("w") ? anchorRight - newW : initialNode.x;
-          const newY = activeHandle.includes("n") ? anchorBottom - newH : initialNode.y;
-
-          didMutateRef.current = true;
-          if (isContainer && initialNodes && onReplaceNodes) {
-            const scaledNodes = applyProportionalContainerCornerScale(
-              initialNodes,
-              initialNode.id,
-              {
-                x: Math.round(newX),
-                y: Math.round(newY),
-                width: Math.round(newW),
-                height: Math.round(newH),
-              }
-            );
-            onReplaceNodes(scaledNodes, { skipHistory: true });
-          } else {
-            onUpdateNode(
-              selectedNode.id,
-              {
-                x: Math.round(newX),
-                y: Math.round(newY),
-                width: Math.round(newW),
-                height: Math.round(newH),
-              },
-              { skipHistory: true }
-            );
-          }
+          nextW = Math.max(minW, Math.round(initialNode.width * clampedScale));
+          nextH = Math.max(minH, Math.round(initialNode.height * clampedScale));
+          nextX = activeHandle.includes("w") ? anchorRight - nextW : initialNode.x;
+          nextY = activeHandle.includes("n") ? anchorBottom - nextH : initialNode.y;
         } else {
-          // Edge handles (n, e, s, w) and unlocked leaf corners keep existing non-scaling resize behavior
-          let { x, y, width, height } = initialNode;
-
-          if (activeHandle.includes("e")) width = Math.max(minW, initialNode.width + deltaX);
-          if (activeHandle.includes("s")) height = Math.max(minH, initialNode.height + deltaY);
+          if (activeHandle.includes("e")) nextW = Math.max(minW, initialNode.width + deltaX);
+          if (activeHandle.includes("s")) nextH = Math.max(minH, initialNode.height + deltaY);
           if (activeHandle.includes("w")) {
             const nw = Math.max(minW, initialNode.width - deltaX);
-            x = initialNode.x + (initialNode.width - nw);
-            width = nw;
+            nextX = initialNode.x + (initialNode.width - nw);
+            nextW = nw;
           }
           if (activeHandle.includes("n")) {
             const nh = Math.max(minH, initialNode.height - deltaY);
-            y = initialNode.y + (initialNode.height - nh);
-            height = nh;
+            nextY = initialNode.y + (initialNode.height - nh);
+            nextH = nh;
           }
 
           if (parentNode) {
-            if (x < 0) {
-              width = Math.max(minW, initialNode.x + initialNode.width);
-              x = 0;
+            if (nextX < 0) {
+              nextW = Math.max(minW, initialNode.x + initialNode.width);
+              nextX = 0;
             }
-            if (y < 0) {
-              height = Math.max(minH, initialNode.y + initialNode.height);
-              y = 0;
+            if (nextY < 0) {
+              nextH = Math.max(minH, initialNode.y + initialNode.height);
+              nextY = 0;
             }
-            width = Math.min(width, Math.max(minW, parentNode.width - x));
-            height = Math.min(height, Math.max(minH, parentNode.height - y));
+            nextW = Math.min(nextW, Math.max(minW, parentNode.width - nextX));
+            nextH = Math.min(nextH, Math.max(minH, parentNode.height - nextY));
           }
+        }
 
-          didMutateRef.current = true;
+        didMutateRef.current = true;
+        if (isContainer && initialNodes && onReplaceNodes) {
+          const resizedNodes = applyContainerResize(
+            initialNodes,
+            initialNode.id,
+            {
+              x: Math.round(nextX),
+              y: Math.round(nextY),
+              width: Math.round(nextW),
+              height: Math.round(nextH),
+            },
+            {
+              forceProportional: isCorner && e.shiftKey,
+              lockCustomRpcChildren: !isPremiumOrAdmin,
+            }
+          );
+          onReplaceNodes(resizedNodes, { skipHistory: true });
+        } else {
           onUpdateNode(
             selectedNode.id,
             {
-              x: Math.round(x),
-              y: Math.round(y),
-              width: Math.round(width),
-              height: Math.round(height),
+              x: Math.round(nextX),
+              y: Math.round(nextY),
+              width: Math.round(nextW),
+              height: Math.round(nextH),
             },
             { skipHistory: true }
           );
@@ -529,6 +527,60 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
       setTimeout(() => {
         suppressNextDeselectRef.current = false;
       }, 150);
+
+      // Level 1 auto-nesting when dragging a root Custom RPC directly inside Profile Parent Embed
+      if (
+        isDragging &&
+        selectedNode &&
+        selectedNode.parentId === null &&
+        selectedNode.type === "custom-rpc" &&
+        onReplaceNodes
+      ) {
+        const cx = selectedNode.x + selectedNode.width / 2;
+        const cy = selectedNode.y + selectedNode.height / 2;
+        const embedTargets = doc.nodes
+          .filter(
+            (n) =>
+              n.id !== selectedNode.id &&
+              n.visible &&
+              (n.type === "embed" || n.type === "nested-embed" || n.type === "group-section")
+          )
+          .sort((a, b) => b.zIndex - a.zIndex);
+
+        const matchedContainer = embedTargets.find((target) => {
+          const abs = getAbsoluteNodeRect(target, doc.nodes);
+          return cx >= abs.x && cx <= abs.x + abs.width && cy >= abs.y && cy <= abs.y + abs.height;
+        });
+
+        if (matchedContainer) {
+          const targetAbs = getAbsoluteNodeRect(matchedContainer, doc.nodes);
+          const localCandidate: BuilderNode = {
+            ...selectedNode,
+            parentId: matchedContainer.id,
+            x: Math.round(selectedNode.x - targetAbs.x),
+            y: Math.round(selectedNode.y - targetAbs.y),
+          };
+          const clamped = clampNodeToParent(localCandidate, matchedContainer);
+          const sibMaxZ = doc.nodes
+            .filter((n) => n.parentId === matchedContainer.id)
+            .reduce((m, s) => Math.max(m, s.zIndex), 0);
+          const reparentedNodes = doc.nodes.map((n) =>
+            n.id === selectedNode.id
+              ? { ...localCandidate, ...clamped, zIndex: sibMaxZ + 1 }
+              : n
+          );
+          onReplaceNodes(reparentedNodes, { skipHistory: false });
+          setIsDragging(false);
+          setIsPanning(false);
+          setActiveHandle(null);
+          setInitialNode(null);
+          setInitialNodes(null);
+          setGuideX(null);
+          setGuideY(null);
+          return;
+        }
+      }
+
       onCommitHistory();
     }
     setIsDragging(false);
@@ -538,7 +590,7 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
     setInitialNodes(null);
     setGuideX(null);
     setGuideY(null);
-  }, [onCommitHistory]);
+  }, [doc.nodes, isDragging, onCommitHistory, onReplaceNodes, selectedNode]);
 
   useEffect(() => {
     if (isDragging || activeHandle || isPanning) {
@@ -678,7 +730,8 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
     const containerLocked = isAncestorLocked(node);
     const isRpcChildFreeLocked =
       !isPremiumOrAdmin && isNodeRestrictedRpcForFree(node, doc.nodes, isPremiumOrAdmin);
-    const isRpcParentResizeLocked = !isPremiumOrAdmin && node.type === "custom-rpc-embed";
+    const isRpcParentResizeLocked =
+      !isPremiumOrAdmin && (node.type === "custom-rpc" || node.type === "custom-rpc-embed");
     const locked = node.locked || containerLocked || isRpcChildFreeLocked;
     const isContainer = isContainerType(node.type);
 
@@ -913,9 +966,8 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
               }}
               title="Drag toolbar"
               aria-label="Drag floating toolbar"
-              className={`p-1 pr-1.5 mr-0.5 border-r border-white/10 text-neutral-400 hover:text-white flex items-center justify-center shrink-0 ${
-                isDraggingToolbar ? "cursor-grabbing text-white" : "cursor-grab"
-              }`}
+              className={`p-1 pr-1.5 mr-0.5 border-r border-white/10 text-neutral-400 hover:text-white flex items-center justify-center shrink-0 ${isDraggingToolbar ? "cursor-grabbing text-white" : "cursor-grab"
+                }`}
               data-testid="ft-drag-handle"
             >
               <GripVertical size={12} />
@@ -929,7 +981,8 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
                   !isPremiumOrAdmin &&
                   isNodeRestrictedRpcForFree(selectedNode, doc.nodes, isPremiumOrAdmin);
                 const rpcParentAddLocked =
-                  !isPremiumOrAdmin && selectedNode.type === "custom-rpc-embed";
+                  !isPremiumOrAdmin &&
+                  (selectedNode.type === "custom-rpc" || selectedNode.type === "custom-rpc-embed");
                 const duplicateBlocked =
                   rpcChildLocked ||
                   (!isPremiumOrAdmin &&
@@ -954,11 +1007,10 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
                       }
                       aria-label="Duplicate"
                       aria-disabled={duplicateBlocked}
-                      className={`p-1.5 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
-                        duplicateBlocked
-                          ? "text-neutral-600 cursor-not-allowed opacity-50"
-                          : "text-neutral-200 hover:text-white hover:bg-white/10 cursor-pointer"
-                      }`}
+                      className={`p-1.5 rounded-lg flex items-center justify-center shrink-0 transition-colors ${duplicateBlocked
+                        ? "text-neutral-600 cursor-not-allowed opacity-50"
+                        : "text-neutral-200 hover:text-white hover:bg-white/10 cursor-pointer"
+                        }`}
                       data-testid="ft-duplicate"
                     >
                       <Copy size={12} />
@@ -971,11 +1023,10 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
                       }
                       title={selectedNode.locked ? "Unlock" : "Lock"}
                       aria-label={selectedNode.locked ? "Unlock" : "Lock"}
-                      className={`p-1.5 rounded-lg flex items-center justify-center cursor-pointer shrink-0 transition-colors ${
-                        selectedNode.locked
-                          ? "text-amber-300 bg-amber-500/15"
-                          : "text-neutral-200 hover:text-white hover:bg-white/10"
-                      }`}
+                      className={`p-1.5 rounded-lg flex items-center justify-center cursor-pointer shrink-0 transition-colors ${selectedNode.locked
+                        ? "text-amber-300 bg-amber-500/15"
+                        : "text-neutral-200 hover:text-white hover:bg-white/10"
+                        }`}
                       data-testid="ft-lock"
                     >
                       {selectedNode.locked ? <Lock size={12} /> : <Unlock size={12} />}
@@ -987,19 +1038,17 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
                         onClick={() => setIsAddPopoverOpen((p) => !p)}
                         title="Add Element"
                         aria-label="Add Element"
-                        className={`p-1 rounded-lg flex items-center justify-center cursor-pointer shrink-0 transition-colors ${
-                          isAddPopoverOpen
-                            ? "bg-white text-black"
-                            : "text-white hover:bg-white/10"
-                        }`}
+                        className={`p-1 rounded-lg flex items-center justify-center cursor-pointer shrink-0 transition-colors ${isAddPopoverOpen
+                          ? "bg-white text-black"
+                          : "text-white hover:bg-white/10"
+                          }`}
                         data-testid="ft-add-element"
                       >
                         <span
-                          className={`w-5 h-5 rounded-[5px] border flex items-center justify-center shrink-0 ${
-                            isAddPopoverOpen
-                              ? "bg-black/10 border-black/25"
-                              : "bg-white/10 border-white/20"
-                          }`}
+                          className={`w-5 h-5 rounded-[5px] border flex items-center justify-center shrink-0 ${isAddPopoverOpen
+                            ? "bg-black/10 border-black/25"
+                            : "bg-white/10 border-white/20"
+                            }`}
                         >
                           <Plus size={11} />
                         </span>
@@ -1018,11 +1067,10 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
                       }
                       aria-label="Delete"
                       aria-disabled={deleteBlocked}
-                      className={`p-1.5 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
-                        deleteBlocked
-                          ? "text-neutral-600 cursor-not-allowed opacity-50"
-                          : "text-red-400 hover:text-red-300 hover:bg-red-500/15 cursor-pointer"
-                      }`}
+                      className={`p-1.5 rounded-lg flex items-center justify-center shrink-0 transition-colors ${deleteBlocked
+                        ? "text-neutral-600 cursor-not-allowed opacity-50"
+                        : "text-red-400 hover:text-red-300 hover:bg-red-500/15 cursor-pointer"
+                        }`}
                       data-testid="ft-delete"
                     >
                       <Trash2 size={12} />
@@ -1054,7 +1102,7 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
               <div className="px-2 py-1 mb-1 border-b border-[#1f1f28] text-[10px] text-neutral-400 uppercase font-bold">
                 Add to {selectedNode.name}
               </div>
-              {selectedNode.type === "custom-rpc-embed" && (
+              {(selectedNode.type === "custom-rpc" || selectedNode.type === "custom-rpc-embed") && (
                 <div className="mb-1 pb-1 border-b border-[#1f1f28] space-y-0.5">
                   <div className="px-2 py-0.5 text-[9px] text-neutral-500 uppercase font-semibold">
                     Rich Presence Children
@@ -1078,9 +1126,54 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
                       </button>
                     );
                   })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onInsertChild(selectedNode.id, "rpc-icon", {
+                        name: "RPC Small Image",
+                        width: 32,
+                        height: 32,
+                        style: {
+                          opacity: 1,
+                          backgroundType: "solid",
+                          backgroundColor: "#17171f",
+                          borderWidth: 1,
+                          borderColor: "#2a2a35",
+                          borderRadius: 9999,
+                        },
+                        responsive: {
+                          hiddenOn: [],
+                          widthMode: "fixed",
+                          scaleMode: "proportional",
+                        },
+                        config: {
+                          rpcFieldBinding: "smallImage",
+                          rpcDataSource: "live",
+                          useLiveRpc: true,
+                          rpcShowSecondaryBadge: false,
+                          fit: "cover",
+                        },
+                      });
+                      setIsAddPopoverOpen(false);
+                    }}
+                    className="w-full px-2 py-1.5 rounded-lg hover:bg-white/10 text-left flex items-center gap-2 text-[11px] text-white cursor-pointer"
+                    data-testid="ft-add-opt-small-image"
+                  >
+                    <Plus size={12} className="text-neutral-300 shrink-0" />
+                    <span className="truncate">RPC Small Image</span>
+                  </button>
                 </div>
               )}
-              {LIBRARY_CATALOG_ORDER.filter((t) => t !== "background" && t !== "embed").map(
+              {LIBRARY_CATALOG_ORDER.filter(
+                (t) =>
+                  t !== "background" &&
+                  t !== "embed" &&
+                  !(
+                    (selectedNode.type === "custom-rpc" ||
+                      selectedNode.type === "custom-rpc-embed") &&
+                    (t === "custom-rpc" || t === "custom-rpc-embed")
+                  )
+              ).map(
                 (type) => {
                   const meta = PROFILE_BUILDER_REGISTRY[type];
                   const Icon = getBuilderComponentIcon(type);

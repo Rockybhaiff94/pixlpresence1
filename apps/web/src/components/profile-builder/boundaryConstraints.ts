@@ -4,6 +4,7 @@ import { PROFILE_BUILDER_REGISTRY, isContainerType } from "./componentRegistry";
 /**
  * Clamps a child node's position and dimensions strictly inside its parent's
  * local coordinate bounds `[0, parent.width] × [0, parent.height]`.
+ * Preserves aspect ratio when `node.aspectRatioLocked` is enabled and parent shrinks smaller than child.
  */
 export function clampNodeToParent(
   node: BuilderNode,
@@ -16,15 +17,28 @@ export function clampNodeToParent(
   const maxParentW = Math.max(0, parent.width);
   const maxParentH = Math.max(0, parent.height);
 
-  // Preserve child dimensions unless the parent itself is smaller than the child
-  const clampedW =
-    node.width > maxParentW
-      ? Math.max(Math.min(minW, maxParentW), maxParentW)
-      : Math.max(minW, node.width);
-  const clampedH =
-    node.height > maxParentH
-      ? Math.max(Math.min(minH, maxParentH), maxParentH)
-      : Math.max(minH, node.height);
+  let clampedW: number;
+  let clampedH: number;
+
+  if (
+    node.aspectRatioLocked &&
+    node.width > 0 &&
+    node.height > 0 &&
+    (node.width > maxParentW || node.height > maxParentH)
+  ) {
+    const fitRatio = Math.min(maxParentW / node.width, maxParentH / node.height);
+    clampedW = Math.max(1, Math.round(node.width * fitRatio));
+    clampedH = Math.max(1, Math.round(node.height * fitRatio));
+  } else {
+    clampedW =
+      node.width > maxParentW
+        ? Math.max(Math.min(minW, maxParentW), maxParentW)
+        : Math.max(Math.min(minW, maxParentW), node.width);
+    clampedH =
+      node.height > maxParentH
+        ? Math.max(Math.min(minH, maxParentH), maxParentH)
+        : Math.max(Math.min(minH, maxParentH), node.height);
+  }
 
   const maxX = Math.max(0, maxParentW - clampedW);
   const maxY = Math.max(0, maxParentH - clampedH);
@@ -39,7 +53,7 @@ export function clampNodeToParent(
 
 /**
  * Recursively constrains all descendants of `parentId` inside the parent's
- * current dimensions without stretching children when the parent expands.
+ * current dimensions without stretching fixed-size children when the parent expands.
  */
 export function constrainDescendantsToParent(
   parentId: string,
@@ -117,7 +131,7 @@ function scaleConfigProps(
 ): BuilderNode["config"] {
   return {
     ...config,
-    ...(config.fontSize !== undefined ? { fontSize: scaleInt(config.fontSize, factor, 6) } : {}),
+    ...(config.fontSize !== undefined ? { fontSize: scaleInt(config.fontSize, factor, 8) } : {}),
     ...(config.letterSpacing !== undefined
       ? { letterSpacing: Math.round(config.letterSpacing * factor * 100) / 100 }
       : {}),
@@ -131,104 +145,193 @@ function scaleConfigProps(
   };
 }
 
+function resizeSingleChildFromSnapshot(
+  initChild: BuilderNode,
+  initParent: BuilderNode,
+  nextParent: BuilderNode,
+  forceProportional: boolean
+): BuilderNode {
+  const reg = PROFILE_BUILDER_REGISTRY[initChild.type];
+  const minW = reg?.minWidth ?? 16;
+  const minH = reg?.minHeight ?? 12;
+
+  const scaleX = nextParent.width / Math.max(1, initParent.width);
+  const scaleY = nextParent.height / Math.max(1, initParent.height);
+  const uniformScale = Math.min(scaleX, scaleY);
+
+  const scaleMode = forceProportional
+    ? "proportional"
+    : initChild.responsive?.scaleMode || "fixed";
+
+  let nextX = initChild.x;
+  let nextY = initChild.y;
+  let nextW = initChild.width;
+  let nextH = initChild.height;
+  let nextStyle = initChild.style;
+  let nextConfig = initChild.config;
+  let nextResp = initChild.responsive;
+
+  if (scaleMode === "proportional") {
+    nextX = Math.round(initChild.x * scaleX);
+    nextY = Math.round(initChild.y * scaleY);
+    if (initChild.aspectRatioLocked) {
+      nextW = Math.max(minW, Math.round(initChild.width * uniformScale));
+      nextH = Math.max(minH, Math.round(initChild.height * uniformScale));
+    } else {
+      nextW = Math.max(minW, Math.round(initChild.width * scaleX));
+      nextH = Math.max(minH, Math.round(initChild.height * scaleY));
+    }
+    const fontScale = initChild.aspectRatioLocked ? uniformScale : Math.min(scaleX, scaleY);
+    nextStyle = scaleStyleProps(initChild.style, fontScale);
+    nextConfig = scaleConfigProps(initChild.config, fontScale);
+    if (initChild.responsive) {
+      nextResp = {
+        ...initChild.responsive,
+        ...(initChild.responsive.paddingOverride
+          ? {
+              paddingOverride: {
+                ...(initChild.responsive.paddingOverride.tablet !== undefined
+                  ? { tablet: scaleInt(initChild.responsive.paddingOverride.tablet, fontScale, 0) }
+                  : {}),
+                ...(initChild.responsive.paddingOverride.mobile !== undefined
+                  ? { mobile: scaleInt(initChild.responsive.paddingOverride.mobile, fontScale, 0) }
+                  : {}),
+              },
+            }
+          : {}),
+        ...(initChild.responsive.fontSizeOverride
+          ? {
+              fontSizeOverride: {
+                ...(initChild.responsive.fontSizeOverride.tablet !== undefined
+                  ? { tablet: scaleInt(initChild.responsive.fontSizeOverride.tablet, fontScale, 8) }
+                  : {}),
+                ...(initChild.responsive.fontSizeOverride.mobile !== undefined
+                  ? { mobile: scaleInt(initChild.responsive.fontSizeOverride.mobile, fontScale, 8) }
+                  : {}),
+              },
+            }
+          : {}),
+      };
+    }
+  } else if (scaleMode === "anchor") {
+    const anchors = initChild.responsive?.anchors || { left: true, top: true };
+    const rightMargin = initParent.width - (initChild.x + initChild.width);
+    const bottomMargin = initParent.height - (initChild.y + initChild.height);
+
+    if (anchors.left && anchors.right) {
+      nextX = initChild.x;
+      nextW = Math.max(minW, Math.round(nextParent.width - initChild.x - rightMargin));
+    } else if (anchors.right && !anchors.left) {
+      nextW = initChild.width;
+      nextX = Math.round(nextParent.width - rightMargin - nextW);
+    }
+
+    if (anchors.top && anchors.bottom) {
+      nextY = initChild.y;
+      nextH = Math.max(minH, Math.round(nextParent.height - initChild.y - bottomMargin));
+    } else if (anchors.bottom && !anchors.top) {
+      nextH = initChild.height;
+      nextY = Math.round(nextParent.height - bottomMargin - nextH);
+    }
+  }
+
+  const candidate: BuilderNode = {
+    ...initChild,
+    x: nextX,
+    y: nextY,
+    width: nextW,
+    height: nextH,
+    style: nextStyle,
+    config: nextConfig,
+    responsive: nextResp,
+  };
+  const clamped = clampNodeToParent(candidate, nextParent);
+  return { ...candidate, ...clamped };
+}
+
 /**
- * Applies a proportional affine coordinate transformation to a container and all its
- * descendants relative to an initial `initialNodes` snapshot (preventing drift).
+ * Predictable, zero-drift container resize relative to `initialNodes`.
+ * Respects each child's own `responsive.scaleMode` ("fixed" | "anchor" | "proportional"),
+ * supports multi-level nested containers, and guarantees every descendant stays inside its parent bounds.
  */
-export function applyProportionalContainerCornerScale(
+export function applyContainerResize(
   initialNodes: BuilderNode[],
   containerId: string,
-  targetRect: { x: number; y: number; width: number; height: number }
+  targetRect: { x: number; y: number; width: number; height: number },
+  options?: { forceProportional?: boolean; lockCustomRpcChildren?: boolean }
 ): BuilderNode[] {
   const initParent = initialNodes.find((n) => n.id === containerId);
   if (!initParent || initParent.width <= 0 || initParent.height <= 0) {
     return initialNodes;
   }
 
-  const scaleX = targetRect.width / initParent.width;
-  const scaleY = targetRect.height / initParent.height;
-  const uniformScale = (scaleX + scaleY) / 2;
+  const forceProportional = Boolean(
+    options?.forceProportional || initParent.config?.rpcContainerResizeMode === "proportional"
+  );
 
-  // Collect all descendants of containerId via BFS
-  const descendantIds = new Set<string>();
+  const initMap = new Map<string, BuilderNode>();
+  initialNodes.forEach((n) => initMap.set(n.id, n));
+
+  const nextMap = new Map<string, BuilderNode>(initMap);
+
+  const outerParent = initParent.parentId ? nextMap.get(initParent.parentId) || null : null;
+  let updatedContainer: BuilderNode = {
+    ...initParent,
+    x: Math.round(targetRect.x),
+    y: Math.round(targetRect.y),
+    width: Math.round(targetRect.width),
+    height: Math.round(targetRect.height),
+  };
+  if (outerParent) {
+    const clampedOuter = clampNodeToParent(updatedContainer, outerParent);
+    updatedContainer = { ...updatedContainer, ...clampedOuter };
+  }
+  nextMap.set(containerId, updatedContainer);
+
+  // Breadth-first traversal ensures nested child containers (Level 2) adapt cleanly when Level 1 or 2 resizes
   const queue: string[] = [containerId];
+  const visited = new Set<string>([containerId]);
+
   while (queue.length > 0) {
-    const pid = queue.shift()!;
-    for (const candidate of initialNodes) {
-      if (candidate.parentId === pid && !descendantIds.has(candidate.id)) {
-        descendantIds.add(candidate.id);
-        if (isContainerType(candidate.type)) {
-          queue.push(candidate.id);
-        }
+    const curPid = queue.shift()!;
+    const initP = initMap.get(curPid);
+    const nextP = nextMap.get(curPid);
+    if (!initP || !nextP) continue;
+
+    for (const node of initialNodes) {
+      if (node.parentId !== curPid) continue;
+      const isLockedFreeRpc = Boolean(
+        options?.lockCustomRpcChildren &&
+          (node.type === "custom-rpc" || node.type === "custom-rpc-embed")
+      );
+      const resizedChild = isLockedFreeRpc
+        ? { ...node, ...clampNodeToParent(node, nextP) }
+        : resizeSingleChildFromSnapshot(
+            node,
+            initP,
+            nextP,
+            curPid === containerId ? forceProportional : false
+          );
+      nextMap.set(node.id, resizedChild);
+      if (!isLockedFreeRpc && isContainerType(node.type) && !visited.has(node.id)) {
+        visited.add(node.id);
+        queue.push(node.id);
       }
     }
   }
 
-  return initialNodes.map((node) => {
-    if (node.id === containerId) {
-      return {
-        ...node,
-        x: Math.round(targetRect.x),
-        y: Math.round(targetRect.y),
-        width: Math.round(targetRect.width),
-        height: Math.round(targetRect.height),
-        style: scaleStyleProps(node.style, uniformScale),
-      };
-    }
+  return initialNodes.map((n) => nextMap.get(n.id) || n);
+}
 
-    if (descendantIds.has(node.id)) {
-      const scaledW = Math.max(4, Math.round(node.width * scaleX));
-      const scaledH = Math.max(4, Math.round(node.height * scaleY));
-      const nextResp = node.responsive
-        ? {
-            ...node.responsive,
-            ...(node.responsive.paddingOverride
-              ? {
-                  paddingOverride: {
-                    ...(node.responsive.paddingOverride.tablet !== undefined
-                      ? {
-                          tablet: scaleInt(node.responsive.paddingOverride.tablet, uniformScale, 0),
-                        }
-                      : {}),
-                    ...(node.responsive.paddingOverride.mobile !== undefined
-                      ? {
-                          mobile: scaleInt(node.responsive.paddingOverride.mobile, uniformScale, 0),
-                        }
-                      : {}),
-                  },
-                }
-              : {}),
-            ...(node.responsive.fontSizeOverride
-              ? {
-                  fontSizeOverride: {
-                    ...(node.responsive.fontSizeOverride.tablet !== undefined
-                      ? {
-                          tablet: scaleInt(node.responsive.fontSizeOverride.tablet, uniformScale, 6),
-                        }
-                      : {}),
-                    ...(node.responsive.fontSizeOverride.mobile !== undefined
-                      ? {
-                          mobile: scaleInt(node.responsive.fontSizeOverride.mobile, uniformScale, 6),
-                        }
-                      : {}),
-                  },
-                }
-              : {}),
-          }
-        : node.responsive;
-
-      return {
-        ...node,
-        x: Math.round(node.x * scaleX),
-        y: Math.round(node.y * scaleY),
-        width: scaledW,
-        height: scaledH,
-        style: scaleStyleProps(node.style, uniformScale),
-        config: scaleConfigProps(node.config, uniformScale),
-        responsive: nextResp,
-      };
-    }
-
-    return node;
+/**
+ * Backward-compatible alias for proportional corner resize callers.
+ */
+export function applyProportionalContainerCornerScale(
+  initialNodes: BuilderNode[],
+  containerId: string,
+  targetRect: { x: number; y: number; width: number; height: number }
+): BuilderNode[] {
+  return applyContainerResize(initialNodes, containerId, targetRect, {
+    forceProportional: true,
   });
 }

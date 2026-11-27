@@ -499,11 +499,13 @@ async function run() {
       const cBefore = await nameChild.boundingBox();
       const handleBox = await page.getByTestId(`builder-handle-${handleId}`).boundingBox();
       await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+      await page.keyboard.down("Shift");
       await page.mouse.down();
       await page.mouse.move(handleBox.x + handleBox.width / 2 + dx, handleBox.y + handleBox.height / 2 + dy, {
         steps: 6,
       });
       await page.mouse.up();
+      await page.keyboard.up("Shift");
       await page.waitForTimeout(120);
       const pAfter = await rootEmbed.boundingBox();
       const cAfter = await nameChild.boundingBox();
@@ -524,7 +526,10 @@ async function run() {
     };
 
     await verifyCornerResize("se", 60, 50, (b, a) => {
-      assert.ok(Math.abs(a.x - b.x) < 3 && Math.abs(a.y - b.y) < 3, "SE drag anchors top-left corner");
+      assert.ok(
+        Math.abs(a.x - b.x) < 3 && Math.abs(a.y - b.y) < 3,
+        `SE drag anchors top-left corner (before=${JSON.stringify(b)}, after=${JSON.stringify(a)})`
+      );
       assert.ok(a.width > b.width + 20, "SE expands towards pointer");
     });
     await verifyCornerResize("nw", -50, -40, (b, a) => {

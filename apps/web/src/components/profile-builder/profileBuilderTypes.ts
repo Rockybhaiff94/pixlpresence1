@@ -21,6 +21,7 @@ export type BuilderComponentType =
   | "separator"
   | "music-display"
   | "custom-rpc"
+  /** @deprecated Legacy alias automatically migrated to "custom-rpc" on load */
   | "custom-rpc-embed"
   | "rpc-icon"
   | "rpc-title"
@@ -72,9 +73,20 @@ export interface BuilderStyle {
   overflow?: "visible" | "hidden" | "auto";
 }
 
+export type BuilderChildScaleMode = "fixed" | "proportional" | "anchor";
+
+export interface BuilderAnchorConfig {
+  left?: boolean;
+  right?: boolean;
+  top?: boolean;
+  bottom?: boolean;
+}
+
 export interface BuilderResponsiveRule {
   hiddenOn?: BuilderDeviceMode[];
   widthMode?: "fixed" | "percent" | "auto";
+  scaleMode?: BuilderChildScaleMode;
+  anchors?: BuilderAnchorConfig;
   percentWidth?: number;
   minWidth?: number;
   maxWidth?: number;
@@ -195,6 +207,8 @@ export interface BuilderComponentConfig {
   rpcAchievementLabel?: string;
   rpcCustomLabel?: string;
   rpcShowSecondaryBadge?: boolean;
+  rpcAllowEmpty?: boolean;
+  rpcContainerResizeMode?: "responsive" | "proportional" | "fixed";
   rpcButtons?: Array<{ id: string; label: string; url: string; variant?: "primary" | "ghost" }>;
 
   // Social Media Group

@@ -134,6 +134,19 @@ const DEFAULT_FREE_RPC_TEMPLATES: Record<string, PermittedRpcTemplateRule> = {
       { type: "rpc-state", x: 90, y: 78, width: 236, height: 18 },
     ],
   },
+  "rpc-tpl-compact": {
+    id: "rpc-tpl-compact",
+    parentWidth: 328,
+    parentHeight: 94,
+    children: [
+      { type: "rpc-status", x: 12, y: 8, width: 190, height: 16 },
+      { type: "rpc-timestamp", x: 210, y: 8, width: 106, height: 16 },
+      { type: "rpc-icon", x: 12, y: 30, width: 52, height: 52 },
+      { type: "rpc-title", x: 74, y: 30, width: 242, height: 18 },
+      { type: "rpc-details", x: 74, y: 49, width: 242, height: 16 },
+      { type: "rpc-state", x: 74, y: 67, width: 242, height: 16 },
+    ],
+  },
 };
 
 function validateRpcEmbedDocForFree(
@@ -143,7 +156,9 @@ function validateRpcEmbedDocForFree(
   if (!doc || !Array.isArray(doc.nodes)) return { valid: true };
   const nodes: any[] = doc.nodes;
 
-  const rpcEmbeds = nodes.filter((n) => n && n.type === "custom-rpc-embed");
+  const rpcEmbeds = nodes.filter(
+    (n) => n && (n.type === "custom-rpc" || n.type === "custom-rpc-embed")
+  );
   const rpcEmbedIds = new Set(rpcEmbeds.map((e) => e.id));
 
   for (const node of nodes) {
@@ -161,7 +176,7 @@ function validateRpcEmbedDocForFree(
       };
     }
 
-    // Loose rpc-* nodes outside a permitted custom-rpc-embed are Premium only
+    // Loose rpc-* nodes outside a permitted custom-rpc are Premium only
     if (typeof node.type === "string" && node.type.startsWith("rpc-") && !rpcEmbedIds.has(node.parentId)) {
       return {
         valid: false,
@@ -171,20 +186,32 @@ function validateRpcEmbedDocForFree(
   }
 
   for (const embed of rpcEmbeds) {
+    const children = nodes.filter((n) => n && n.parentId === embed.id);
+    const hasCustomBg =
+      (embed.style?.backgroundType &&
+        embed.style.backgroundType !== "solid" &&
+        embed.style.backgroundType !== "transparent") ||
+      Boolean(embed.style?.backgroundImage) ||
+      Boolean(embed.style?.backgroundVideo);
+
+    if (hasCustomBg) {
+      return {
+        valid: false,
+        error: "Custom Rich Presence container backgrounds, images, GIFs, and videos require Premium.",
+      };
+    }
+
+    // Grandfather legacy pre-migration childless custom-rpc nodes that do not carry a templateId
+    if (embed.type === "custom-rpc" && !embed.config?.rpcTemplateId && !embed.config?.rpcAllowEmpty && children.length === 0) {
+      continue;
+    }
+
     const tplId = typeof embed.config?.rpcTemplateId === "string" ? embed.config.rpcTemplateId : "rpc-tpl-default";
     const rule = permittedMap[tplId];
     if (!rule) {
       return {
         valid: false,
         error: "Custom or premium Rich Presence templates require a Premium subscription.",
-      };
-    }
-
-    const bgType = embed.style?.backgroundType || "solid";
-    if (bgType === "image" || bgType === "video" || bgType === "gradient" || embed.style?.backgroundImage || embed.style?.backgroundVideo) {
-      return {
-        valid: false,
-        error: "Custom Rich Presence container backgrounds, images, GIFs, and videos require Premium.",
       };
     }
 
@@ -195,11 +222,10 @@ function validateRpcEmbedDocForFree(
     ) {
       return {
         valid: false,
-        error: "Resizing or stretching the Rich Presence Embed container requires Premium.",
+        error: "Resizing or stretching the Custom RPC container requires Premium.",
       };
     }
 
-    const children = nodes.filter((n) => n && n.parentId === embed.id);
     if (Array.isArray(rule.children)) {
       if (children.length !== rule.children.length) {
         return {
@@ -221,7 +247,7 @@ function validateRpcEmbedDocForFree(
         if (!match) {
           return {
             valid: false,
-            error: "Customizing, moving, or resizing child elements inside the Rich Presence Embed requires Premium.",
+            error: "Customizing, moving, or resizing child elements inside Custom RPC requires Premium.",
           };
         }
       }

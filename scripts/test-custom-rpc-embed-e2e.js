@@ -31,7 +31,7 @@ async function waitForUrl(url, timeoutMs = 45000) {
     try {
       const res = await fetch(url);
       if (res.ok) return;
-    } catch {}
+    } catch { }
     await new Promise((r) => setTimeout(r, 400));
   }
   throw new Error(`Server at ${url} did not become ready within ${timeoutMs}ms`);
@@ -215,30 +215,108 @@ async function run() {
     await premPage.goto(`${WEB_URL}/customize`, { waitUntil: "networkidle" });
     await premPage.waitForSelector('[data-testid="builder-canvas-surface"]', { timeout: 15000 });
 
-    // Open Elements Panel and insert Custom RPC Embed
+    // Open Elements Panel: verify ONLY ONE unified Custom RPC exists (no duplicate custom-rpc-embed)
     await premPage.getByTestId("dock-more-toggle").click();
     await premPage.waitForSelector('[data-testid="dock-open-elements-panel"]', { timeout: 4000 });
     await premPage.getByTestId("dock-open-elements-panel").click();
-    await premPage.waitForSelector('[data-testid="library-add-custom-rpc-embed"]', { timeout: 4000 });
-    await premPage.getByTestId("library-add-custom-rpc-embed").click();
-    await premPage.waitForSelector('[data-node-type="custom-rpc-embed"]', { timeout: 5000 });
+    await premPage.waitForSelector('[data-testid="library-add-custom-rpc"]', { timeout: 4000 });
+    assert.strictEqual(
+      await premPage.locator('[data-testid="library-add-custom-rpc-embed"]').count(),
+      0,
+      "Duplicate Custom RPC Embed entry must NOT exist in Elements panel"
+    );
+    await premPage.getByTestId("library-add-custom-rpc").click();
+    await premPage.waitForTimeout(150);
     await premPage.getByTestId("elements-panel-close").click();
+    await premPage.waitForSelector('[data-testid="dock-more-toggle"]', { timeout: 3000 });
+    await premPage.getByTestId("dock-more-toggle").click();
 
-    const rpcEmbedNode = premPage.locator('[data-node-type="custom-rpc-embed"]').first();
+    // Default starter profile already has node-rpc-1 inside embed-profile-root; clicking Custom RPC adds a 2nd unified custom-rpc!
+    const allCustomRpcs = premPage.locator('[data-node-type="custom-rpc"]');
+    const rpcCount = await allCustomRpcs.count();
+    assert(rpcCount >= 2, `Expected newly inserted Custom RPC plus default node-rpc-1, got ${rpcCount}`);
+    const rpcEmbedNode = allCustomRpcs.last();
     const rpcEmbedId = await rpcEmbedNode.getAttribute("data-testid");
     const embedRawId = rpcEmbedId.replace("canvas-node-", "");
+    assert.strictEqual(
+      await rpcEmbedNode.getAttribute("data-parent-id"),
+      "embed-profile-root",
+      "Unified Custom RPC inserted with embed active must nest cleanly inside Profile Parent Embed (Level 1 -> Level 2)"
+    );
 
-    // Verify structured child nodes exist inside Custom RPC Embed
+    // Verify structured child nodes exist inside unified Custom RPC (node-rpc -> rpc-*)
     for (const childType of ["rpc-status", "rpc-icon", "rpc-title", "rpc-details", "rpc-state", "rpc-timestamp", "rpc-achievement", "rpc-buttons"]) {
       const cnt = await premPage.locator(`[data-parent-id="${embedRawId}"][data-node-type="${childType}"]`).count();
-      assert.strictEqual(cnt, 1, `Expected 1 ${childType} child inside custom-rpc-embed`);
+      assert.strictEqual(cnt, 1, `Expected 1 ${childType} child inside unified custom-rpc`);
     }
 
-    // Open Properties Panel -> Select Parent Embed edge (not center child) & Resize/Set Video Background
+    // Open Properties Panel -> Select Parent Embed edge (not center child) & test Stretching + Bug A/C/D checks!
     await rpcEmbedNode.click({ position: { x: 6, y: 6 }, force: true });
     await premPage.getByTestId("secondary-dock-btn-properties").click();
     await premPage.waitForSelector('[data-testid="container-bg-mode-video"]', { timeout: 5000 });
 
+    const iconChild = premPage.locator(`[data-parent-id="${embedRawId}"][data-node-type="rpc-icon"]`).first();
+    const iconInitW = await iconChild.evaluate((el) => parseInt(el.style.width, 10));
+    const iconInitH = await iconChild.evaluate((el) => parseInt(el.style.height, 10));
+
+    // Stretch parent container wider & taller -> fixed main icon stays fixed-size (Bug A!), anchored title expands (Bug C!), scroll stays 0 (Bug D!)
+    await premPage.getByTestId("prop-width-input").fill("520");
+    await premPage.getByTestId("prop-height-input").fill("220");
+    await premPage.waitForTimeout(120);
+
+    const iconAfterStretchW = await iconChild.evaluate((el) => parseInt(el.style.width, 10));
+    const iconAfterStretchH = await iconChild.evaluate((el) => parseInt(el.style.height, 10));
+    assert.strictEqual(iconAfterStretchW, iconInitW, `Bug A regression: fixed main icon width must stay ${iconInitW}, got ${iconAfterStretchW}`);
+    assert.strictEqual(iconAfterStretchH, iconInitH, `Bug A regression: fixed main icon height must stay ${iconInitH}, got ${iconAfterStretchH}`);
+
+    const containerScroll = await premPage.locator(`[data-testid="builder-container-${embedRawId}"]`).evaluate((el) => ({
+      top: el.scrollTop,
+      left: el.scrollLeft,
+    }));
+    assert.strictEqual(containerScroll.top, 0, "Inner container scrollTop must stay 0");
+    assert.strictEqual(containerScroll.left, 0, "Inner container scrollLeft must stay 0");
+
+    // Set final dimensions 460x204 for persistence verification
+    await premPage.getByTestId("prop-y-input").fill("40");
+    await premPage.getByTestId("prop-width-input").fill("460");
+    await premPage.getByTestId("prop-height-input").fill("204");
+    await premPage.waitForTimeout(100);
+
+    // Test Bug B: Small image & icon proportional scaling + Zoom resize accuracy
+    await iconChild.click({ force: true });
+    await premPage.waitForSelector('[data-testid="prop-width-input"]', { timeout: 3000 });
+    await premPage.getByTestId("prop-width-input").fill("120");
+    await premPage.waitForTimeout(100);
+    assert.strictEqual(
+      await iconChild.evaluate((el) => parseInt(el.style.width, 10)),
+      120,
+      "Main icon should resize when directly edited"
+    );
+    await premPage.getByTestId("prop-width-input").fill("72");
+    await premPage.waitForTimeout(80);
+
+    // Zoom in and test free horizontal corner drag on Custom RPC parent (without forced aspect ratio lock)
+    await premPage.getByTestId("unified-panel-close").click();
+    await premPage.getByTestId("secondary-unified-panel").waitFor({ state: "detached", timeout: 3000 });
+    await premPage.getByTestId("zoom-in-btn").click();
+    await rpcEmbedNode.click({ position: { x: 6, y: 6 }, force: true });
+    await premPage.waitForSelector('[data-testid="builder-container-outline"]', { timeout: 3000 });
+    await premPage.waitForSelector('[data-testid="builder-handle-se"]', { timeout: 3000 });
+    await premPage.getByTestId("builder-handle-se").scrollIntoViewIfNeeded();
+    const seHandle = await premPage.getByTestId("builder-handle-se").boundingBox();
+    const preZoomW = await rpcEmbedNode.evaluate((el) => parseInt(el.style.width, 10));
+    await premPage.mouse.move(seHandle.x + seHandle.width / 2, seHandle.y + seHandle.height / 2);
+    await premPage.mouse.down();
+    await premPage.mouse.move(seHandle.x + seHandle.width / 2 + 40, seHandle.y + seHandle.height / 2, { steps: 5 });
+    await premPage.mouse.up();
+    await premPage.waitForTimeout(100);
+    const postZoomW = await rpcEmbedNode.evaluate((el) => parseInt(el.style.width, 10));
+    assert(postZoomW > preZoomW, `Horizontal corner drag at zoomed scale must stretch width (${postZoomW} > ${preZoomW})`);
+    await premPage.getByTestId("zoom-fit-btn").click();
+    await premPage.getByTestId("secondary-dock-btn-properties").click();
+
+    // Restore 460x204 exact target dimensions for persistence check
+    await premPage.waitForSelector('[data-testid="prop-width-input"]', { timeout: 3000 });
     await premPage.getByTestId("prop-width-input").fill("460");
     await premPage.getByTestId("prop-height-input").fill("204");
     await premPage.waitForTimeout(100);
@@ -252,20 +330,24 @@ async function run() {
     assert.strictEqual(
       await premPage.locator(`[data-testid="container-bg-video-${embedRawId}"]`).count(),
       1,
-      "Container <video> layer must render inside Custom RPC Embed"
+      "Container <video> layer must render inside unified Custom RPC"
     );
 
-    // Test B: Select a child element (rpc-title), move/resize it, verify clamping
+    // Test B: Select a child element (rpc-title), move/resize it, verify clamping & outer parent clamping
     const titleChild = premPage.locator(`[data-parent-id="${embedRawId}"][data-node-type="rpc-title"]`).first();
     const origChildTestId = await titleChild.getAttribute("data-testid");
     await titleChild.click({ force: true });
     await premPage.waitForSelector('[data-testid="prop-x-input"]', { timeout: 4000 });
-    await premPage.getByTestId("prop-x-input").fill("120");
-    await premPage.getByTestId("prop-y-input").fill("52");
+    await premPage.getByTestId("prop-x-input").fill("9999");
+    await premPage.getByTestId("prop-x-input").press("Enter");
+    const clampedChildX = Number(await premPage.getByTestId("prop-x-input").inputValue());
+    assert(clampedChildX < 460 && clampedChildX > 0, `Child X (${clampedChildX}) must clamp strictly inside Custom RPC (460px)`);
     await premPage.getByTestId("prop-width-input").fill("290");
+    await premPage.getByTestId("prop-x-input").fill("140");
+    await premPage.getByTestId("prop-y-input").fill("52");
     await premPage.waitForTimeout(100);
 
-    // Verify Test B: Duplicate child inside Custom RPC Embed and delete duplicate
+    // Verify Test B: Duplicate child inside unified Custom RPC and delete duplicate
     await premPage.getByTestId("ft-duplicate").click();
     await premPage.waitForTimeout(120);
     assert.strictEqual(
@@ -280,6 +362,43 @@ async function run() {
       1,
       "Premium user must be able to delete duplicated RPC child element"
     );
+
+    // Also test canvas drag-into-embed: add an independent root Custom RPC from Modal and drag it into Profile Parent Embed!
+    if (await premPage.getByTestId("unified-panel-close").isVisible()) {
+      await premPage.getByTestId("unified-panel-close").click();
+      await premPage.getByTestId("secondary-unified-panel").waitFor({ state: "detached", timeout: 3000 });
+    }
+    await premPage.getByTestId("secondary-dock-btn-add-elements").click();
+    await premPage.waitForSelector('[data-testid="modal-add-custom-rpc"]', { timeout: 4000 });
+    assert.strictEqual(
+      await premPage.locator('[data-testid="modal-add-custom-rpc-embed"]').count(),
+      0,
+      "Duplicate Custom RPC Embed must NOT exist in Add Elements modal"
+    );
+    await premPage.getByTestId("modal-add-custom-rpc").click();
+    await premPage.waitForTimeout(150);
+    const rootRpcCandidate = premPage.locator('[data-node-type="custom-rpc"][data-parent-id=""]').first();
+    assert.strictEqual(await rootRpcCandidate.count(), 1, "Independent Add Elements modal must place Custom RPC at root");
+    const rootRpcRawId = (await rootRpcCandidate.getAttribute("data-testid")).replace("canvas-node-", "");
+    const rootRpcBox = await rootRpcCandidate.boundingBox();
+    const outerEmbedBox = await premPage.getByTestId("canvas-node-embed-profile-root").boundingBox();
+    await rootRpcCandidate.click({ position: { x: 8, y: 8 } });
+    await premPage.mouse.move(rootRpcBox.x + 8, rootRpcBox.y + 8);
+    await premPage.mouse.down();
+    const dropScreenX = outerEmbedBox.x + outerEmbedBox.width * 0.5 - rootRpcBox.width / 2 + 8;
+    const dropScreenY = outerEmbedBox.y + outerEmbedBox.height * 0.5 - rootRpcBox.height / 2 + 8;
+    await premPage.mouse.move(dropScreenX, dropScreenY, { steps: 8 });
+    await premPage.mouse.up();
+    await premPage.waitForTimeout(200);
+    assert.strictEqual(
+      await premPage.locator(`[data-testid="canvas-node-${rootRpcRawId}"]`).getAttribute("data-parent-id"),
+      "embed-profile-root",
+      "Dragging root Custom RPC into Profile Parent Embed must nest it inside embed-profile-root"
+    );
+    // Clean up extra nested test node so live public test targets cleanly one card
+    await premPage.locator(`[data-testid="canvas-node-${rootRpcRawId}"]`).click({ position: { x: 6, y: 6 }, force: true });
+    await premPage.getByTestId("ft-delete").click();
+    await premPage.waitForTimeout(120);
 
     // Test F (Personal Save Template): Save current embed as Premium user template
     await rpcEmbedNode.click({ position: { x: 6, y: 6 }, force: true });
@@ -312,7 +431,7 @@ async function run() {
     const reloadedW = await premPage.locator(`[data-testid="canvas-node-${embedRawId}"]`).evaluate((el) => el.style.width);
     const reloadedChildX = await premPage.locator(`[data-testid="${origChildTestId}"]`).evaluate((el) => el.style.left);
     assert.strictEqual(reloadedW, "460px", `Expected persisted width 460px, got ${reloadedW}`);
-    assert.strictEqual(reloadedChildX, "120px", `Expected persisted child left 120px, got ${reloadedChildX}`);
+    assert.strictEqual(reloadedChildX, "140px", `Expected persisted child left 140px, got ${reloadedChildX}`);
 
     // Verify Test E: Real Discord RichPresence DB row was NEVER modified by website customization
     const dbRpcAfterCustom = await prisma.richPresence.findUnique({ where: { userId: userPremium.id } });
@@ -349,9 +468,9 @@ async function run() {
     }
 
     await pubPage.waitForSelector('[data-testid="rpc-child-rpc-title"]', { timeout: 10000 });
-    const valTitle = await pubPage.getByTestId("rpc-child-rpc-title").innerText();
-    const valDetails = await pubPage.getByTestId("rpc-child-rpc-details").innerText();
-    const valState = await pubPage.getByTestId("rpc-child-rpc-state").innerText();
+    const valTitle = await pubPage.getByTestId("rpc-child-rpc-title").last().innerText();
+    const valDetails = await pubPage.getByTestId("rpc-child-rpc-details").last().innerText();
+    const valState = await pubPage.getByTestId("rpc-child-rpc-state").last().innerText();
     assert.ok(valTitle.includes("VALORANT"), `Expected VALORANT on public profile, got "${valTitle}"`);
     assert.ok(valDetails.includes("Competitive"), `Expected details, got "${valDetails}"`);
     assert.ok(valState.includes("(3 of 5)"), `Expected party size in state, got "${valState}"`);
@@ -394,8 +513,8 @@ async function run() {
       { timeout: 10000 }
     );
 
-    const mcPublicTitle = await pubPage.getByTestId("rpc-child-rpc-title").innerText();
-    const mcStudioTitle = await premPage.getByTestId("rpc-child-rpc-title").first().innerText();
+    const mcPublicTitle = await pubPage.getByTestId("rpc-child-rpc-title").last().innerText();
+    const mcStudioTitle = await premPage.getByTestId("rpc-child-rpc-title").last().innerText();
     assert.ok(mcPublicTitle.includes("Minecraft"), `Public profile must switch to Minecraft, got "${mcPublicTitle}"`);
     assert.ok(mcStudioTitle.includes("Minecraft"), `Studio canvas must switch to Minecraft, got "${mcStudioTitle}"`);
 
@@ -406,7 +525,7 @@ async function run() {
     );
     assert.strictEqual(
       await premPage.locator(`[data-testid="${origChildTestId}"]`).evaluate((el) => el.style.left),
-      "120px"
+      "140px"
     );
 
     // Switch live activity -> Offline (must clear stale game, NOT keep Minecraft!)
@@ -424,7 +543,7 @@ async function run() {
       null,
       { timeout: 10000 }
     );
-    const offlineTitle = await pubPage.getByTestId("rpc-child-rpc-title").innerText();
+    const offlineTitle = await pubPage.getByTestId("rpc-child-rpc-title").last().innerText();
     assert.ok(!offlineTitle.includes("Minecraft"), `Offline state must clear stale Minecraft activity, got "${offlineTitle}"`);
 
     await premCtx.close();
@@ -438,14 +557,16 @@ async function run() {
     await freePage.goto(`${WEB_URL}/customize`, { waitUntil: "networkidle" });
     await freePage.waitForSelector('[data-testid="builder-canvas-surface"]', { timeout: 15000 });
 
-    // Free user CAN add default Custom RPC Embed
+    // Free user CAN add default unified Custom RPC
     await freePage.getByTestId("dock-more-toggle").click();
     await freePage.getByTestId("dock-open-elements-panel").click();
-    await freePage.getByTestId("library-add-custom-rpc-embed").click();
-    await freePage.waitForSelector('[data-node-type="custom-rpc-embed"]', { timeout: 5000 });
+    await freePage.getByTestId("library-add-custom-rpc").click();
+    await freePage.waitForTimeout(150);
     await freePage.getByTestId("elements-panel-close").click();
+    await freePage.waitForSelector('[data-testid="dock-more-toggle"]', { timeout: 3000 });
+    await freePage.getByTestId("dock-more-toggle").click();
 
-    const freeRpcEmbed = freePage.locator('[data-node-type="custom-rpc-embed"]').first();
+    const freeRpcEmbed = freePage.locator('[data-node-type="custom-rpc"]').last();
     const freeEmbedRawId = (await freeRpcEmbed.getAttribute("data-testid")).replace("canvas-node-", "");
     await freeRpcEmbed.click({ position: { x: 6, y: 6 }, force: true });
     await freePage.getByTestId("secondary-dock-btn-properties").click();
@@ -564,6 +685,130 @@ async function run() {
     const adminDel = await apiJson(tokenAdmin, `/api/rpc/templates/${globalTplId}`, "DELETE");
     assert.strictEqual(adminDel.status, 200);
 
+    // =========================================================================
+    // LEGACY MIGRATION (custom-rpc-embed + childless custom-rpc)
+    // =========================================================================
+    console.log("[5/5] Verifying idempotent legacy Custom RPC migration (custom-rpc-embed & childless custom-rpc)...");
+    const legacyParentId = `legacy-parent-${suffix}`;
+    const legacyEmbedId = `legacy-rpc-embed-${suffix}`;
+    const legacyTitleId = `legacy-rpc-title-${suffix}`;
+    const legacyLeafId = `legacy-rpc-leaf-${suffix}`;
+    const legacyDoc = {
+      version: "2.0",
+      canvas: { width: 1920, height: 1080, backgroundColor: "#0a0a10", gridSize: 8 },
+      preferences: {
+        snapEnabled: true,
+        snapToGrid: true,
+        snapToElements: true,
+        smartGuides: true,
+        showGrid: false,
+        showComponentOutlines: true,
+        defaultInsertTarget: "embed",
+      },
+      metadata: {
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        defaultElementsInitialized: true,
+      },
+      rootIds: [legacyParentId],
+      nodes: [
+        {
+          id: legacyParentId,
+          type: "embed",
+          name: "Profile Card",
+          x: 0,
+          y: 0,
+          width: 420,
+          height: 680,
+          zIndex: 1,
+          parentId: null,
+          childIds: [legacyEmbedId, legacyLeafId],
+          layoutMode: "absolute",
+          visible: true,
+          locked: false,
+          style: { backgroundColor: "#0d0f18", borderRadius: 20 },
+          config: {},
+        },
+        {
+          id: legacyEmbedId,
+          type: "custom-rpc-embed",
+          name: "Legacy Custom RPC Embed",
+          x: 16,
+          y: 20,
+          width: 380,
+          height: 168,
+          zIndex: 2,
+          parentId: legacyParentId,
+          childIds: [legacyTitleId],
+          layoutMode: "absolute",
+          visible: true,
+          locked: false,
+          style: { backgroundType: "solid", backgroundColor: "#141622", borderRadius: 16 },
+          config: { rpcTemplateId: "rpc-tpl-valorant" },
+        },
+        {
+          id: legacyTitleId,
+          type: "rpc-title",
+          name: "Legacy Activity Title",
+          x: 112,
+          y: 44,
+          width: 240,
+          height: 24,
+          zIndex: 3,
+          parentId: legacyEmbedId,
+          childIds: [],
+          layoutMode: "absolute",
+          visible: true,
+          locked: false,
+          style: { textColor: "#ffffff", fontSize: 16, fontWeight: "700" },
+          config: { rpcFieldBinding: "title" },
+        },
+        {
+          id: legacyLeafId,
+          type: "custom-rpc",
+          name: "Legacy Leaf RPC",
+          x: 16,
+          y: 220,
+          width: 320,
+          height: 92,
+          zIndex: 4,
+          parentId: legacyParentId,
+          childIds: [],
+          layoutMode: "absolute",
+          visible: true,
+          locked: false,
+          style: { backgroundColor: "#141824", borderRadius: 14 },
+          config: { text: "Legacy Status" },
+        },
+      ],
+    };
+    const premCfgNow = await apiJson(tokenPremium, "/api/profile/me", "GET");
+    const migPatch = await apiJson(tokenPremium, "/api/profile/me", "PATCH", {
+      designConfig: { ...(premCfgNow.data?.designConfig || {}), draftProfileBuilder: legacyDoc },
+    });
+    assert.strictEqual(migPatch.status, 200, `Legacy migration doc save failed: ${migPatch.status}`);
+
+    const migCtx = await createAuthedContext(browser, tokenPremium);
+    const migPage = await migCtx.newPage();
+    await migPage.goto(`${WEB_URL}/customize`, { waitUntil: "networkidle" });
+    await migPage.waitForSelector('[data-testid="builder-canvas-surface"]', { timeout: 15000 });
+
+    assert.strictEqual(
+      await migPage.locator('[data-node-type="custom-rpc-embed"]').count(),
+      0,
+      "Legacy custom-rpc-embed nodes must migrate cleanly into unified custom-rpc"
+    );
+    const migratedEmbed = migPage.locator(`[data-testid="canvas-node-${legacyEmbedId}"]`);
+    const migratedLeaf = migPage.locator(`[data-testid="canvas-node-${legacyLeafId}"]`);
+    assert.strictEqual(await migratedEmbed.getAttribute("data-node-type"), "custom-rpc");
+    assert.strictEqual(await migratedLeaf.getAttribute("data-node-type"), "custom-rpc");
+    assert.strictEqual(await migratedLeaf.evaluate((el) => el.style.top), "220px");
+    assert.ok(
+      (await migratedLeaf.locator('[data-node-type^="rpc-"]').count()) > 0,
+      "Legacy childless custom-rpc must auto-populate modular rpc-* child nodes on migration"
+    );
+    await migCtx.close();
+
     console.log("ALL CUSTOM RICH PRESENCE EMBED E2E TESTS (A-F) PASSED!");
   } catch (err) {
     console.error("[Custom RPC E2E Error] API Logs:\n", apiLogs);
@@ -578,17 +823,17 @@ async function run() {
           proc.kill("SIGKILL");
         }
       } catch {
-        try { proc.kill(); } catch {}
+        try { proc.kill(); } catch { }
       }
     };
-    if (browser) await browser.close().catch(() => {});
+    if (browser) await browser.close().catch(() => { });
     killTree(apiProc);
     killTree(webProc);
     for (const tid of createdTemplateIds) {
-      await prisma.activityTemplate.deleteMany({ where: { id: tid } }).catch(() => {});
+      await prisma.activityTemplate.deleteMany({ where: { id: tid } }).catch(() => { });
     }
-    await prisma.activityTemplate.deleteMany({ where: { userId: { in: [userFree.id, userPremium.id, userAdmin.id] } } }).catch(() => {});
-    await prisma.user.deleteMany({ where: { id: { in: [userFree.id, userPremium.id, userAdmin.id] } } }).catch(() => {});
+    await prisma.activityTemplate.deleteMany({ where: { userId: { in: [userFree.id, userPremium.id, userAdmin.id] } } }).catch(() => { });
+    await prisma.user.deleteMany({ where: { id: { in: [userFree.id, userPremium.id, userAdmin.id] } } }).catch(() => { });
     await prisma.$disconnect();
   }
 }

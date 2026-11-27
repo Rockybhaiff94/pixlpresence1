@@ -897,9 +897,13 @@ profileRouter.patch('/me', requireAuth, async (req: any, res) => {
       if (!caps.allowCustomRpcLayout && parsedCfg && typeof parsedCfg === 'object') {
         const hasCustomRpcEmbed =
           (Array.isArray(parsedCfg.draftProfileBuilder?.nodes) &&
-            parsedCfg.draftProfileBuilder.nodes.some((n: any) => n?.type === 'custom-rpc-embed')) ||
+            parsedCfg.draftProfileBuilder.nodes.some(
+              (n: any) => n?.type === 'custom-rpc' || n?.type === 'custom-rpc-embed'
+            )) ||
           (Array.isArray(parsedCfg.profileBuilder?.nodes) &&
-            parsedCfg.profileBuilder.nodes.some((n: any) => n?.type === 'custom-rpc-embed'));
+            parsedCfg.profileBuilder.nodes.some(
+              (n: any) => n?.type === 'custom-rpc' || n?.type === 'custom-rpc-embed'
+            ));
         if (hasCustomRpcEmbed) {
           const globalTemplates = await prisma.activityTemplate.findMany({
             where: { isGlobal: true },
@@ -1016,7 +1020,7 @@ profileRouter.patch('/me', requireAuth, async (req: any, res) => {
       }
 
       return { profile: updatedProfile, historySnapshot: snapshotRecord };
-    });
+    }, { maxWait: 10000, timeout: 15000 });
 
     await recordSyncEvent('profile.updated', req.user.id, data, profile.profileVersion);
 

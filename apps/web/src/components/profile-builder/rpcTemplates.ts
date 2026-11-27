@@ -1,6 +1,7 @@
 import {
   BuilderComponentType,
   BuilderNode,
+  BuilderResponsiveRule,
   BuilderStyle,
 } from "./profileBuilderTypes";
 
@@ -18,7 +19,40 @@ export const RPC_CHILD_COMPONENT_TYPES: readonly BuilderComponentType[] = [
 export const FREE_PERMITTED_RPC_TEMPLATE_IDS = new Set([
   "rpc-tpl-default",
   "rpc-tpl-minimal",
+  "rpc-tpl-compact",
 ]);
+
+export function getDefaultResponsiveForRpcChild(
+  type: BuilderComponentType,
+  childX: number,
+  childWidth: number,
+  parentWidth: number
+): Partial<BuilderResponsiveRule> {
+  switch (type) {
+    case "rpc-icon":
+      return { scaleMode: "fixed", anchors: { left: true, top: true } };
+    case "rpc-status":
+      return { scaleMode: "anchor", anchors: { left: true, top: true } };
+    case "rpc-timestamp":
+      return { scaleMode: "anchor", anchors: { right: true, top: true } };
+    case "rpc-title":
+    case "rpc-details":
+    case "rpc-state":
+      return { scaleMode: "anchor", anchors: { left: true, right: true, top: true } };
+    case "rpc-achievement":
+      return {
+        scaleMode: "anchor",
+        anchors:
+          childWidth >= Math.max(200, parentWidth - childX - 48)
+            ? { left: true, right: true, bottom: true }
+            : { left: true, bottom: true },
+      };
+    case "rpc-buttons":
+      return { scaleMode: "anchor", anchors: { right: true, bottom: true } };
+    default:
+      return { scaleMode: "fixed" };
+  }
+}
 
 export interface RpcTemplateChildBlueprint {
   type: BuilderComponentType;
@@ -29,6 +63,7 @@ export interface RpcTemplateChildBlueprint {
   height: number;
   zIndex: number;
   style?: BuilderStyle;
+  responsive?: Partial<BuilderResponsiveRule>;
   config?: BuilderNode["config"];
 }
 
@@ -778,6 +813,169 @@ export const BUILTIN_RPC_TEMPLATES: RpcVisualTemplate[] = [
       },
     ],
   },
+  {
+    id: "rpc-tpl-compact",
+    name: "Compact Inline Card",
+    category: "Minimal",
+    description: "Compact Discord presence container sized for nested profile cards (Free & Premium).",
+    version: "1.0.0",
+    isGlobal: true,
+    isOfficial: true,
+    isPremiumRequired: false,
+    accentColor: "#38bdf8",
+    parentWidth: 328,
+    parentHeight: 94,
+    parentStyle: {
+      opacity: 1,
+      backgroundType: "solid",
+      backgroundColor: "#111116",
+      backgroundOpacity: 0.94,
+      borderWidth: 1,
+      borderColor: "#272730",
+      borderStyle: "solid",
+      borderRadius: 12,
+      blur: 10,
+      padding: 0,
+      gap: 0,
+      layoutMode: "absolute",
+      overflow: "hidden",
+    },
+    parentConfig: {
+      useLiveRpc: true,
+      rpcEmptyText: "No active Discord RPC session",
+      rpcOfflineText: "Offline · No active session",
+      rpcSkinPreset: "minimal",
+      rpcCategory: "Minimal",
+      accentColor: "#38bdf8",
+    },
+    children: [
+      {
+        type: "rpc-status",
+        name: "RPC Status",
+        x: 12,
+        y: 8,
+        width: 190,
+        height: 16,
+        zIndex: 2,
+        config: {
+          rpcFieldBinding: "status",
+          rpcDataSource: "live",
+          useLiveRpc: true,
+          statusIndicator: "online",
+          fontFamily: "JetBrains Mono, monospace",
+          fontSize: 9,
+          fontWeight: 700,
+          color: "#a1a1aa",
+          accentColor: "#22c55e",
+        },
+      },
+      {
+        type: "rpc-timestamp",
+        name: "RPC Timer",
+        x: 210,
+        y: 8,
+        width: 106,
+        height: 16,
+        zIndex: 2,
+        config: {
+          rpcFieldBinding: "timestamp",
+          rpcDataSource: "live",
+          useLiveRpc: true,
+          startTimestampText: "00:00 elapsed",
+          fontFamily: "JetBrains Mono, monospace",
+          fontSize: 9,
+          fontWeight: 600,
+          color: "#a1a1aa",
+          textAlign: "right",
+        },
+      },
+      {
+        type: "rpc-icon",
+        name: "RPC Game Icon",
+        x: 12,
+        y: 30,
+        width: 52,
+        height: 52,
+        zIndex: 3,
+        style: {
+          opacity: 1,
+          borderWidth: 1,
+          borderColor: "#2a2a35",
+          borderStyle: "solid",
+          borderRadius: 10,
+          backgroundType: "solid",
+          backgroundColor: "#181820",
+        },
+        config: {
+          rpcFieldBinding: "largeImage",
+          rpcDataSource: "live",
+          useLiveRpc: true,
+          rpcShowSecondaryBadge: true,
+          fit: "cover",
+        },
+      },
+      {
+        type: "rpc-title",
+        name: "RPC Game Title",
+        x: 74,
+        y: 30,
+        width: 242,
+        height: 18,
+        zIndex: 3,
+        config: {
+          rpcFieldBinding: "appName",
+          rpcDataSource: "live",
+          useLiveRpc: true,
+          appName: "Visual Studio Code",
+          fontFamily: "Space Grotesk, sans-serif",
+          fontSize: 12,
+          fontWeight: 700,
+          color: "#ffffff",
+          textAlign: "left",
+        },
+      },
+      {
+        type: "rpc-details",
+        name: "RPC Details",
+        x: 74,
+        y: 49,
+        width: 242,
+        height: 16,
+        zIndex: 3,
+        config: {
+          rpcFieldBinding: "details",
+          rpcDataSource: "live",
+          useLiveRpc: true,
+          details: "Editing pixlpresence1-web",
+          fontFamily: "Inter, sans-serif",
+          fontSize: 10,
+          fontWeight: 500,
+          color: "#d4d4d8",
+          textAlign: "left",
+        },
+      },
+      {
+        type: "rpc-state",
+        name: "RPC State & Party",
+        x: 74,
+        y: 67,
+        width: 242,
+        height: 16,
+        zIndex: 3,
+        config: {
+          rpcFieldBinding: "state",
+          rpcDataSource: "live",
+          useLiveRpc: true,
+          state: "Pixel.gg Studio",
+          fontFamily: "JetBrains Mono, monospace",
+          fontSize: 9,
+          fontWeight: 500,
+          color: "#a1a1aa",
+          textAlign: "left",
+        },
+      },
+    ],
+  },
 ];
 
 let uidCounter = 0;
@@ -806,6 +1004,7 @@ export function buildRpcEmbedSubtree(options: {
   y: number;
   zIndex: number;
   template?: RpcVisualTemplate;
+  fixedParentId?: string;
   seed?: {
     appName?: string | null;
     details?: string | null;
@@ -813,12 +1012,12 @@ export function buildRpcEmbedSubtree(options: {
   };
 }): { parentNode: BuilderNode; childNodes: BuilderNode[] } {
   const tpl = options.template || BUILTIN_RPC_TEMPLATES[0];
-  const embedId = nextRpcUid("node-rpc-embed");
+  const embedId = options.fixedParentId || nextRpcUid("node-rpc");
 
   const parentNode: BuilderNode = {
     id: embedId,
-    type: "custom-rpc-embed",
-    name: tpl.name ? `RPC (${tpl.name})` : "Custom RPC Embed",
+    type: "custom-rpc",
+    name: tpl.name ? `Custom RPC (${tpl.name})` : "Custom RPC",
     parentId: options.parentId,
     x: Math.round(options.x),
     y: Math.round(options.y),
@@ -837,6 +1036,7 @@ export function buildRpcEmbedSubtree(options: {
     responsive: {
       hiddenOn: [],
       widthMode: "fixed",
+      scaleMode: "fixed",
     },
     config: {
       ...(tpl.parentConfig ? JSON.parse(JSON.stringify(tpl.parentConfig)) : {}),
@@ -866,7 +1066,12 @@ export function buildRpcEmbedSubtree(options: {
     locked: false,
     aspectRatioLocked: child.type === "rpc-icon",
     style: child.style ? JSON.parse(JSON.stringify(child.style)) : { opacity: 1 },
-    responsive: { hiddenOn: [], widthMode: "fixed" },
+    responsive: {
+      hiddenOn: [],
+      widthMode: "fixed",
+      ...getDefaultResponsiveForRpcChild(child.type, child.x, child.width, tpl.parentWidth),
+      ...(child.responsive ? JSON.parse(JSON.stringify(child.responsive)) : {}),
+    },
     config: child.config ? JSON.parse(JSON.stringify(child.config)) : {},
   }));
 
@@ -887,9 +1092,11 @@ export function applyRpcTemplateToEmbedNodes(options: {
     };
   }
 
-  const target = nodes.find((n) => n.id === embedId && n.type === "custom-rpc-embed");
+  const target = nodes.find(
+    (n) => n.id === embedId && (n.type === "custom-rpc" || n.type === "custom-rpc-embed")
+  );
   if (!target) {
-    return { ok: false, error: "Custom Rich Presence container not found." };
+    return { ok: false, error: "Custom RPC container not found." };
   }
 
   // Delete direct and nested children inside target embedId cleanly before inserting independent cloned copy
@@ -913,11 +1120,26 @@ export function applyRpcTemplateToEmbedNodes(options: {
   });
 
   // Preserve target node ID & container hierarchy, cloning style/size/config & creating fresh child IDs
+  const outerParent = target.parentId ? nodes.find((n) => n.id === target.parentId) : null;
+  let clampedParentX = target.x;
+  let clampedParentY = target.y;
+  let clampedParentW = built.parentNode.width;
+  let clampedParentH = built.parentNode.height;
+  if (outerParent) {
+    clampedParentW = Math.min(clampedParentW, Math.max(120, outerParent.width));
+    clampedParentH = Math.min(clampedParentH, Math.max(72, outerParent.height));
+    clampedParentX = Math.max(0, Math.min(outerParent.width - clampedParentW, target.x));
+    clampedParentY = Math.max(0, Math.min(outerParent.height - clampedParentH, target.y));
+  }
+
   const updatedParent: BuilderNode = {
     ...target,
-    name: template.name ? `RPC (${template.name})` : target.name,
-    width: built.parentNode.width,
-    height: built.parentNode.height,
+    type: "custom-rpc",
+    name: template.name ? `Custom RPC (${template.name})` : target.name,
+    x: Math.round(clampedParentX),
+    y: Math.round(clampedParentY),
+    width: Math.round(clampedParentW),
+    height: Math.round(clampedParentH),
     style: built.parentNode.style,
     config: {
       ...built.parentNode.config,
@@ -928,10 +1150,20 @@ export function applyRpcTemplateToEmbedNodes(options: {
     },
   };
 
-  const reParentedChildren = built.childNodes.map((ch) => ({
-    ...ch,
-    parentId: target.id,
-  }));
+  const reParentedChildren = built.childNodes.map((ch) => {
+    const cw = Math.min(ch.width, updatedParent.width);
+    const chH = Math.min(ch.height, updatedParent.height);
+    const cx = Math.max(0, Math.min(updatedParent.width - cw, ch.x));
+    const cy = Math.max(0, Math.min(updatedParent.height - chH, ch.y));
+    return {
+      ...ch,
+      x: Math.round(cx),
+      y: Math.round(cy),
+      width: Math.round(cw),
+      height: Math.round(chH),
+      parentId: target.id,
+    };
+  });
 
   const retainedNodes = nodes
     .filter((n) => !toRemove.has(n.id))
@@ -965,6 +1197,7 @@ export function serializeRpcEmbedAsTemplate(options: {
       height: Math.round(child.height),
       zIndex: child.zIndex,
       style: JSON.parse(JSON.stringify(child.style || {})),
+      responsive: child.responsive ? JSON.parse(JSON.stringify(child.responsive)) : undefined,
       config: JSON.parse(JSON.stringify(child.config || {})),
     }));
 
@@ -1000,7 +1233,7 @@ export function isNodeRestrictedRpcForFree(
     visited.add(cursor);
     const parent = nodes.find((n) => n.id === cursor);
     if (!parent) break;
-    if (parent.type === "custom-rpc-embed") return true;
+    if (parent.type === "custom-rpc" || parent.type === "custom-rpc-embed") return true;
     cursor = parent.parentId;
   }
   return false;

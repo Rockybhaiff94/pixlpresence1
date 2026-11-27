@@ -19,7 +19,9 @@ import { uploadMediaAsset, validateUploadFile } from "@/lib/uploadAsset";
 import { AVAILABLE_FONTS } from "@/components/editor/editorPresets";
 import { PLATFORMS } from "@/components/links/PlatformIcons";
 import {
+  BuilderAnchorConfig,
   BuilderCanvasSettings,
+  BuilderChildScaleMode,
   BuilderComponentConfig,
   BuilderComponentType,
   BuilderDeviceMode,
@@ -60,7 +62,11 @@ interface PropertiesPanelProps {
     isPremiumRequired?: boolean;
   }) => Promise<boolean>;
   onDeleteRpcTemplate?: (templateId: string) => Promise<void>;
-  onInsertChild?: (parentId: string, type: BuilderComponentType) => void;
+  onInsertChild?: (
+    parentId: string,
+    type: BuilderComponentType,
+    extra?: Partial<BuilderNode>
+  ) => void;
   onRestrictedFeature?: (reason: string) => void;
   onUpdateCanvas: (updates: Partial<BuilderCanvasSettings>) => void;
   onUpdateNode: (
@@ -616,7 +622,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   };
 
   const isContainer = isContainerType(selectedNode.type);
-  const isRpcParent = selectedNode.type === "custom-rpc-embed";
+  const isRpcParent =
+    selectedNode.type === "custom-rpc" || selectedNode.type === "custom-rpc-embed";
   const isRpcChild = isRpcChildType(selectedNode.type);
   const isFreeRpcChildLocked =
     !isPremiumOrAdmin && (isRpcChild || isNodeRestrictedRpcForFree(selectedNode, nodes, isPremiumOrAdmin));
@@ -1196,9 +1203,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         </SectionGroup>
       )}
 
-      {/* Custom Rich Presence Parent Embed Controls */}
+      {/* Unified Custom RPC Parent Container Controls */}
       {isRpcParent && (
-        <SectionGroup title="Rich Presence Embed">
+        <SectionGroup title="Custom RPC">
           <div className="space-y-2.5">
             <div className="px-2 py-1.5 rounded bg-[#111118] border border-[#23232f] text-[9px] text-neutral-400 leading-relaxed">
               Website presentation container only. Visual themes and layout never alter your actual Discord Rich Presence.
@@ -1242,6 +1249,53 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               />
             </div>
 
+            <div>
+              <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Container Resize Behavior</label>
+              <select
+                disabled={isFreeRpcParentLocked}
+                value={selectedNode.config.rpcContainerResizeMode || "responsive"}
+                onChange={(e) =>
+                  patchConfig({
+                    rpcContainerResizeMode: e.target.value as BuilderComponentConfig["rpcContainerResizeMode"],
+                  })
+                }
+                className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none disabled:opacity-40"
+                data-testid="rpc-container-resize-mode"
+              >
+                <option value="responsive">Smart Anchors (Respect Child Modes)</option>
+                <option value="proportional">Proportional Corner Scale</option>
+                <option value="fixed">Keep Children Fixed</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5 pt-1 border-t border-[#1b1b24]">
+              <div className="text-[9px] text-neutral-500 uppercase">Static / Fallback RPC Content</div>
+              <input
+                type="text"
+                disabled={isFreeRpcParentLocked}
+                value={selectedNode.config.appName || ""}
+                onChange={(e) => patchConfig({ appName: e.target.value })}
+                placeholder="Fallback Application Title"
+                className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none disabled:opacity-40"
+              />
+              <input
+                type="text"
+                disabled={isFreeRpcParentLocked}
+                value={selectedNode.config.details || ""}
+                onChange={(e) => patchConfig({ details: e.target.value })}
+                placeholder="Fallback Details"
+                className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none disabled:opacity-40"
+              />
+              <input
+                type="text"
+                disabled={isFreeRpcParentLocked}
+                value={selectedNode.config.state || ""}
+                onChange={(e) => patchConfig({ state: e.target.value })}
+                placeholder="Fallback State"
+                className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none disabled:opacity-40"
+              />
+            </div>
+
             {onInsertChild && (
               <div className="space-y-1">
                 <div className="text-[9px] text-neutral-500 uppercase">Add RPC Child Element</div>
@@ -1267,6 +1321,48 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                       + {PROFILE_BUILDER_REGISTRY[childType].label.replace(/^RPC\s+/, "")}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isPremiumOrAdmin) {
+                        onRestrictedFeature?.("Adding custom Rich Presence children requires Premium.");
+                        return;
+                      }
+                      onInsertChild(selectedNode.id, "rpc-icon", {
+                        name: "RPC Small Image",
+                        width: 32,
+                        height: 32,
+                        style: {
+                          opacity: 1,
+                          backgroundType: "solid",
+                          backgroundColor: "#17171f",
+                          borderWidth: 1,
+                          borderColor: "#2a2a35",
+                          borderRadius: 9999,
+                        },
+                        responsive: {
+                          hiddenOn: [],
+                          widthMode: "fixed",
+                          scaleMode: "proportional",
+                        },
+                        config: {
+                          rpcFieldBinding: "smallImage",
+                          rpcDataSource: "live",
+                          useLiveRpc: true,
+                          rpcShowSecondaryBadge: false,
+                          fit: "cover",
+                        },
+                      });
+                    }}
+                    className={`px-2 py-1 rounded border text-[9px] text-left truncate transition-colors ${
+                      isPremiumOrAdmin
+                        ? "bg-[#13131a] hover:bg-[#1c1c26] border-[#262632] text-neutral-200 cursor-pointer"
+                        : "bg-[#101015] border-[#20202a] text-neutral-600 cursor-not-allowed"
+                    }`}
+                    data-testid="rpc-quick-add-small-image"
+                  >
+                    + Small Image
+                  </button>
                 </div>
               </div>
             )}
@@ -1474,11 +1570,33 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
               {selectedNode.type === "rpc-icon" && (
                 <div className="space-y-2">
+                  <div>
+                    <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Image Binding</label>
+                    <select
+                      value={selectedNode.config.rpcFieldBinding === "smallImage" ? "smallImage" : "largeImage"}
+                      onChange={(e) =>
+                        patchConfig({
+                          rpcFieldBinding: e.target.value as "largeImage" | "smallImage",
+                          ...(e.target.value === "smallImage" ? { rpcShowSecondaryBadge: false } : {}),
+                        })
+                      }
+                      className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                      data-testid="rpc-icon-binding-select"
+                    >
+                      <option value="largeImage">Main Game Icon (largeImage)</option>
+                      <option value="smallImage">Small Activity Image (smallImage)</option>
+                    </select>
+                  </div>
                   <button
                     type="button"
                     onClick={() =>
                       onOpenMediaPicker(
-                        (url) => patchConfig({ largeImage: url, rpcDataSource: "custom" }),
+                        (url) =>
+                          patchConfig(
+                            selectedNode.config.rpcFieldBinding === "smallImage"
+                              ? { appIcon: url, rpcDataSource: "custom" }
+                              : { largeImage: url, rpcDataSource: "custom" }
+                          ),
                         "Upload Custom Game Icon / GIF",
                         selectedNode.config.largeImage || "",
                         "rpc_icon"
@@ -1488,15 +1606,17 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   >
                     Upload / Pick Thumbnail or GIF
                   </button>
-                  <label className="flex items-center justify-between text-[10px] text-neutral-300 cursor-pointer">
-                    <span>Show Secondary Small Badge</span>
-                    <input
-                      type="checkbox"
-                      checked={selectedNode.config.rpcShowSecondaryBadge !== false}
-                      onChange={(e) => patchConfig({ rpcShowSecondaryBadge: e.target.checked })}
-                      className="accent-white cursor-pointer"
-                    />
-                  </label>
+                  {selectedNode.config.rpcFieldBinding !== "smallImage" && (
+                    <label className="flex items-center justify-between text-[10px] text-neutral-300 cursor-pointer">
+                      <span>Show Secondary Small Badge</span>
+                      <input
+                        type="checkbox"
+                        checked={selectedNode.config.rpcShowSecondaryBadge !== false}
+                        onChange={(e) => patchConfig({ rpcShowSecondaryBadge: e.target.checked })}
+                        className="accent-white cursor-pointer"
+                      />
+                    </label>
+                  )}
                 </div>
               )}
 
@@ -1579,8 +1699,91 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                       />
                     </div>
                   </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Align</label>
+                      <select
+                        value={selectedNode.config.textAlign || (selectedNode.type === "rpc-timestamp" ? "right" : "left")}
+                        onChange={(e) =>
+                          patchConfig({
+                            textAlign: e.target.value as BuilderComponentConfig["textAlign"],
+                          })
+                        }
+                        className="w-full bg-[#121217] border border-[#24242d] rounded px-1.5 py-1 text-white outline-none"
+                      >
+                        <option value="left">Left</option>
+                        <option value="center">Center</option>
+                        <option value="right">Right</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Overflow</label>
+                      <select
+                        value={selectedNode.config.overflowBehavior || "ellipsis"}
+                        onChange={(e) =>
+                          patchConfig({
+                            overflowBehavior: e.target.value as BuilderComponentConfig["overflowBehavior"],
+                          })
+                        }
+                        className="w-full bg-[#121217] border border-[#24242d] rounded px-1.5 py-1 text-white outline-none"
+                      >
+                        <option value="ellipsis">Ellipsis</option>
+                        <option value="wrap">Wrap Text</option>
+                        <option value="clip">Clip</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
               )}
+
+              {/* Child Scaling & Responsive Pinning */}
+              <div className="pt-2 border-t border-[#1b1b24] space-y-1.5">
+                <label className="text-[9px] text-neutral-500 uppercase block">Parent Resize Behavior</label>
+                <select
+                  value={selectedNode.responsive?.scaleMode || "fixed"}
+                  onChange={(e) =>
+                    patchResponsive({
+                      scaleMode: e.target.value as BuilderChildScaleMode,
+                    })
+                  }
+                  className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                  data-testid="rpc-child-scale-mode"
+                >
+                  <option value="fixed">Fixed Size</option>
+                  <option value="proportional">Proportional Scale</option>
+                  <option value="anchor">Responsive Anchor</option>
+                </select>
+                {selectedNode.responsive?.scaleMode === "anchor" && (
+                  <div className="grid grid-cols-4 gap-1 pt-0.5">
+                    {(["left", "right", "top", "bottom"] as Array<keyof BuilderAnchorConfig>).map(
+                      (edge) => {
+                        const active = Boolean(selectedNode.responsive?.anchors?.[edge]);
+                        return (
+                          <button
+                            key={edge}
+                            type="button"
+                            onClick={() =>
+                              patchResponsive({
+                                anchors: {
+                                  ...(selectedNode.responsive?.anchors || {}),
+                                  [edge]: !active,
+                                },
+                              })
+                            }
+                            className={`py-1 rounded border text-[9px] capitalize cursor-pointer ${
+                              active
+                                ? "bg-white text-black border-white font-bold"
+                                : "bg-[#121217] border-[#24242d] text-neutral-400"
+                            }`}
+                          >
+                            {edge}
+                          </button>
+                        );
+                      }
+                    )}
+                  </div>
+                )}
+              </div>
 
               {selectedNode.type === "rpc-buttons" && (
                 <div className="space-y-2">
@@ -1650,45 +1853,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         </SectionGroup>
       )}
 
-      {/* Custom RPC Editor */}
-      {selectedNode.type === "custom-rpc" && (
-        <SectionGroup title="Discord Rich Presence">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-neutral-400">Use Live RPC When Online</span>
-              <input
-                type="checkbox"
-                checked={selectedNode.config.useLiveRpc !== false}
-                onChange={(e) => patchConfig({ useLiveRpc: e.target.checked })}
-                className="accent-white cursor-pointer"
-              />
-            </div>
-            <input
-              type="text"
-              value={selectedNode.config.appName || ""}
-              onChange={(e) => patchConfig({ appName: e.target.value })}
-              placeholder="Application title"
-              className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
-            />
-            <input
-              type="text"
-              value={selectedNode.config.details || ""}
-              onChange={(e) => patchConfig({ details: e.target.value })}
-              placeholder="Details"
-              className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
-            />
-            <input
-              type="text"
-              value={selectedNode.config.state || ""}
-              onChange={(e) => patchConfig({ state: e.target.value })}
-              placeholder="State"
-              className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
-            />
-          </div>
-        </SectionGroup>
-      )}
-
-      {/* Social Media Group Editor */}
+  {/* Social Media Group Editor */}
       {selectedNode.type === "social-group" && (
         <SectionGroup title="Social Links">
           <div className="space-y-2">
@@ -2107,6 +2272,27 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
             />
           </div>
+        </div>
+        <div className="flex items-center gap-2 pt-1">
+          <input
+            type="color"
+            disabled={isFreeRpcParentLocked || isFreeRpcChildLocked}
+            value={
+              selectedNode.style.borderColor?.startsWith("#")
+                ? selectedNode.style.borderColor
+                : "#272730"
+            }
+            onChange={(e) => patchStyle({ borderColor: e.target.value })}
+            className="w-7 h-7 rounded border border-[#2e2e38] bg-transparent cursor-pointer disabled:opacity-40"
+          />
+          <input
+            type="text"
+            disabled={isFreeRpcParentLocked || isFreeRpcChildLocked}
+            value={selectedNode.style.borderColor || "#272730"}
+            onChange={(e) => patchStyle({ borderColor: e.target.value })}
+            placeholder="#272730"
+            className="flex-1 bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none disabled:opacity-40"
+          />
         </div>
       </SectionGroup>
 

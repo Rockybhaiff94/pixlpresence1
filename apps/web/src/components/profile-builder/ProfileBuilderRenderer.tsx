@@ -523,8 +523,16 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
         <div
           className="w-full h-full relative"
           style={containerSurfaceStyle}
+          onScroll={(e) => {
+            if (layoutMode === "absolute") {
+              if (e.currentTarget.scrollTop !== 0) e.currentTarget.scrollTop = 0;
+              if (e.currentTarget.scrollLeft !== 0) e.currentTarget.scrollLeft = 0;
+            }
+          }}
           data-testid={`builder-container-${node.id}`}
-          data-rpc-embed={node.type === "custom-rpc-embed" ? "true" : undefined}
+          data-rpc-embed={
+            node.type === "custom-rpc" || node.type === "custom-rpc-embed" ? "true" : undefined
+          }
         >
           {renderContainerVideoBg()}
           {childrenNodes.length === 0 && (
@@ -1201,17 +1209,29 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
         const isOfflineLive = Boolean(useLive && (!live || live.status === "offline" || !live.hasActivity));
 
         if (node.type === "rpc-icon") {
+          const isSmallBinding = node.config.rpcFieldBinding === "smallImage";
           const largeSrc = activeLive
-            ? activeLive.largeImage || node.config.largeImage || node.config.src
+            ? (isSmallBinding
+                ? activeLive.smallImage || activeLive.largeImage
+                : activeLive.largeImage) ||
+              node.config.largeImage ||
+              node.config.src
             : isOfflineLive && !isInteractive
               ? ""
-              : node.config.largeImage || node.config.src;
-          const smallSrc = activeLive
-            ? activeLive.smallImage || node.config.appIcon
-            : isOfflineLive && !isInteractive
-              ? ""
-              : node.config.appIcon;
+              : isSmallBinding
+                ? node.config.appIcon || node.config.src || node.config.largeImage
+                : node.config.largeImage || node.config.src;
+          const smallSrc = isSmallBinding
+            ? ""
+            : activeLive
+              ? activeLive.smallImage || node.config.appIcon
+              : isOfflineLive && !isInteractive
+                ? ""
+                : node.config.appIcon;
           const radius = node.style.borderRadius ?? 12;
+          const iconMinDim = Math.max(24, Math.min(node.width, node.height));
+          const smallBadgeSize = Math.round(Math.max(14, Math.min(48, iconMinDim * 0.34)));
+          const smallBadgeOffset = -Math.max(2, Math.round(smallBadgeSize * 0.14));
 
           return (
             <div
@@ -1232,15 +1252,31 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
                   <img
                     src={largeSrc}
                     alt={activeLive?.appName || node.name}
-                    className="w-full h-full object-cover pointer-events-none"
+                    className="w-full h-full pointer-events-none"
+                    style={{
+                      objectFit: node.config.fit || "cover",
+                      objectPosition: node.config.objectPosition || "center",
+                    }}
                     draggable={false}
                   />
                 ) : (
-                  <Gamepad2 size={Math.max(18, Math.round(Math.min(node.width, node.height) * 0.42))} className="text-neutral-500" />
+                  <Gamepad2
+                    size={Math.max(14, Math.round(iconMinDim * 0.42))}
+                    className="text-neutral-500"
+                  />
                 )}
               </div>
-              {node.config.rpcShowSecondaryBadge !== false && smallSrc && (
-                <div className="absolute -right-1 -bottom-1 w-6 h-6 rounded-full border-2 border-[#111116] bg-[#18181f] overflow-hidden shadow-md">
+              {!isSmallBinding && node.config.rpcShowSecondaryBadge !== false && smallSrc && (
+                <div
+                  className="absolute rounded-full border-2 border-[#111116] bg-[#18181f] overflow-hidden shadow-md"
+                  style={{
+                    width: `${smallBadgeSize}px`,
+                    height: `${smallBadgeSize}px`,
+                    right: `${smallBadgeOffset}px`,
+                    bottom: `${smallBadgeOffset}px`,
+                  }}
+                  data-testid="rpc-small-image-badge"
+                >
                   <img
                     src={smallSrc}
                     alt="Badge"
@@ -1252,6 +1288,12 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
             </div>
           );
         }
+
+        const shouldWrapText = (fs: number) =>
+          node.config.overflowBehavior === "wrap" ||
+          (node.config.overflowBehavior !== "clip" &&
+            node.config.overflowBehavior !== "ellipsis" &&
+            node.height >= Math.round(fs * 2.2));
 
         if (node.type === "rpc-status") {
           const rawType = activeLive?.type ?? activeLive?.activityType ?? 0;
@@ -1291,23 +1333,36 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
                 : useLive
                   ? "#71717a"
                   : node.config.accentColor || "#22c55e";
+          const fs = node.config.fontSize ?? 10;
+          const wrap = shouldWrapText(fs);
 
           return (
             <div
-              className="w-full h-full flex items-center gap-1.5 overflow-hidden select-none uppercase tracking-wider truncate"
+              className="w-full h-full flex items-center gap-1.5 overflow-hidden select-none uppercase tracking-wider"
               data-testid={`rpc-child-${node.type}`}
               style={{
                 fontFamily: node.config.fontFamily || "JetBrains Mono, monospace",
-                fontSize: `${node.config.fontSize ?? 10}px`,
+                fontSize: `${fs}px`,
                 fontWeight: node.config.fontWeight ?? 700,
                 color: node.config.color || "#a1a1aa",
+                justifyContent:
+                  node.config.textAlign === "center"
+                    ? "center"
+                    : node.config.textAlign === "right"
+                      ? "flex-end"
+                      : "flex-start",
               }}
             >
               <span
                 className="w-1.5 h-1.5 rounded-full shrink-0"
                 style={{ backgroundColor: dotColor }}
               />
-              <span className="truncate">{statusLabel}</span>
+              <span
+                className={wrap ? "break-words leading-tight" : "truncate"}
+                style={{ textAlign: node.config.textAlign || "left" }}
+              >
+                {statusLabel}
+              </span>
             </div>
           );
         }
@@ -1318,24 +1373,26 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
             : isOfflineLive
               ? parentEmbed?.config?.rpcOfflineText || (isInteractive ? "Offline · No Active Game" : "Offline")
               : node.config.text || node.config.appName || "Active Application";
+          const fs = node.config.fontSize ?? 15;
+          const wrap = shouldWrapText(fs);
           return (
             <div
-              className="w-full h-full flex items-center overflow-hidden truncate select-none"
+              className="w-full h-full flex items-center overflow-hidden select-none"
               data-testid={`rpc-child-${node.type}`}
               style={{
                 fontFamily: node.config.fontFamily || "Space Grotesk, sans-serif",
-                fontSize: `${node.config.fontSize ?? 15}px`,
+                fontSize: `${fs}px`,
                 fontWeight: node.config.fontWeight ?? 700,
+                lineHeight: node.config.lineHeight ?? 1.2,
                 color: isOfflineLive && !isInteractive ? "#71717a" : node.config.color || "#ffffff",
-                justifyContent:
-                  node.config.textAlign === "center"
-                    ? "center"
-                    : node.config.textAlign === "right"
-                      ? "flex-end"
-                      : "flex-start",
               }}
             >
-              <span className="truncate">{textVal}</span>
+              <span
+                className={`w-full ${wrap ? "break-words whitespace-normal" : "truncate"}`}
+                style={{ textAlign: node.config.textAlign || "left" }}
+              >
+                {textVal}
+              </span>
             </div>
           );
         }
@@ -1348,24 +1405,26 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
                 ? "Discord is disconnected or idle"
                 : ""
               : node.config.text || node.config.details || "";
+          const fs = node.config.fontSize ?? 12;
+          const wrap = shouldWrapText(fs);
           return (
             <div
-              className="w-full h-full flex items-center overflow-hidden truncate select-none"
+              className="w-full h-full flex items-center overflow-hidden select-none"
               data-testid={`rpc-child-${node.type}`}
               style={{
                 fontFamily: node.config.fontFamily || "Inter, sans-serif",
-                fontSize: `${node.config.fontSize ?? 12}px`,
+                fontSize: `${fs}px`,
                 fontWeight: node.config.fontWeight ?? 500,
+                lineHeight: node.config.lineHeight ?? 1.25,
                 color: node.config.color || "#d4d4d8",
-                justifyContent:
-                  node.config.textAlign === "center"
-                    ? "center"
-                    : node.config.textAlign === "right"
-                      ? "flex-end"
-                      : "flex-start",
               }}
             >
-              <span className="truncate">{textVal}</span>
+              <span
+                className={`w-full ${wrap ? "break-words whitespace-normal" : "truncate"}`}
+                style={{ textAlign: node.config.textAlign || "left" }}
+              >
+                {textVal}
+              </span>
             </div>
           );
         }
@@ -1386,24 +1445,26 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
                 : ""
               : node.config.text || node.config.state || "";
           const textVal = baseState ? `${baseState}${partyText}` : partyText.trim();
+          const fs = node.config.fontSize ?? 11;
+          const wrap = shouldWrapText(fs);
           return (
             <div
-              className="w-full h-full flex items-center overflow-hidden truncate select-none"
+              className="w-full h-full flex items-center overflow-hidden select-none"
               data-testid={`rpc-child-${node.type}`}
               style={{
                 fontFamily: node.config.fontFamily || "JetBrains Mono, monospace",
-                fontSize: `${node.config.fontSize ?? 11}px`,
+                fontSize: `${fs}px`,
                 fontWeight: node.config.fontWeight ?? 500,
+                lineHeight: node.config.lineHeight ?? 1.25,
                 color: node.config.color || "#a1a1aa",
-                justifyContent:
-                  node.config.textAlign === "center"
-                    ? "center"
-                    : node.config.textAlign === "right"
-                      ? "flex-end"
-                      : "flex-start",
               }}
             >
-              <span className="truncate">{textVal}</span>
+              <span
+                className={`w-full ${wrap ? "break-words whitespace-normal" : "truncate"}`}
+                style={{ textAlign: node.config.textAlign || "left" }}
+              >
+                {textVal}
+              </span>
             </div>
           );
         }

@@ -95,6 +95,7 @@ export async function exportProfileBuilderPng(
         node.type === "nested-embed" ||
         node.type === "image-gallery" ||
         node.type === "group-section" ||
+        node.type === "custom-rpc" ||
         node.type === "custom-rpc-embed"
       ) {
         const radius = node.style.borderRadius ?? 16;
@@ -113,12 +114,12 @@ export async function exportProfileBuilderPng(
         ctx.clip();
         await drawSubtree(node.id, ax, ay);
       } else if (
-        (node.type === "banner-image" || node.type === "profile-image" || node.type === "image") &&
-        node.config.src
+        (node.type === "banner-image" || node.type === "profile-image" || node.type === "image" || node.type === "rpc-icon") &&
+        (node.config.src || node.config.largeImage)
       ) {
         await drawImageUrl(
           ctx,
-          node.config.src,
+          node.config.src || node.config.largeImage || "",
           ax,
           ay,
           node.width,
@@ -126,7 +127,16 @@ export async function exportProfileBuilderPng(
           node.config.avatarShape === "circle" ? node.width / 2 : node.style.borderRadius ?? 10,
           node.style.opacity ?? 1
         );
-      } else if (node.type === "name-text" || node.type === "subtitle" || node.type === "description") {
+      } else if (
+        node.type === "name-text" ||
+        node.type === "subtitle" ||
+        node.type === "description" ||
+        node.type === "rpc-title" ||
+        node.type === "rpc-details" ||
+        node.type === "rpc-state" ||
+        node.type === "rpc-status" ||
+        node.type === "rpc-timestamp"
+      ) {
         ctx.fillStyle = node.config.color || "#ffffff";
         ctx.font = `${node.config.fontWeight || 600} ${node.config.fontSize || 14}px sans-serif`;
         ctx.textBaseline = "top";
@@ -137,7 +147,15 @@ export async function exportProfileBuilderPng(
             : node.config.textAlign === "right"
               ? ax + node.width
               : ax;
-        ctx.fillText(node.config.text || "", tx, ay);
+        const txt =
+          node.config.text ||
+          node.config.appName ||
+          node.config.details ||
+          node.config.state ||
+          node.config.startTimestampText ||
+          node.config.rpcCustomLabel ||
+          "";
+        ctx.fillText(txt, tx, ay);
       } else if (node.type === "separator") {
         ctx.beginPath();
         ctx.strokeStyle = node.config.separatorColor || "#272730";
@@ -145,7 +163,7 @@ export async function exportProfileBuilderPng(
         ctx.moveTo(ax, ay + node.height / 2);
         ctx.lineTo(ax + node.width, ay + node.height / 2);
         ctx.stroke();
-      } else if (node.type === "music-display" || node.type === "custom-rpc" || node.type === "custom-component") {
+      } else if (node.type === "music-display" || node.type === "custom-component") {
         ctx.beginPath();
         ctx.roundRect(ax, ay, node.width, node.height, node.style.borderRadius ?? 12);
         ctx.fillStyle = node.style.backgroundColor || "#111116";
@@ -159,9 +177,7 @@ export async function exportProfileBuilderPng(
         ctx.fillText(
           node.type === "music-display"
             ? node.config.trackName || "Music Display"
-            : node.type === "custom-rpc"
-              ? node.config.appName || "Custom RPC"
-              : node.config.customTitle || node.name,
+            : node.config.customTitle || node.name,
           ax + 12,
           ay + 12
         );

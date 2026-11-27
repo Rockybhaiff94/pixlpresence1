@@ -57,7 +57,11 @@ interface SecondaryDockPanelSystemProps {
     isPremiumRequired?: boolean;
   }) => Promise<boolean>;
   onDeleteRpcTemplate?: (templateId: string) => Promise<void>;
-  onInsertChild?: (parentId: string, type: BuilderComponentType) => void;
+  onInsertChild?: (
+    parentId: string,
+    type: BuilderComponentType,
+    extra?: Partial<BuilderNode>
+  ) => void;
   onRestrictedFeature?: (reason: string) => void;
   onSelect: (id: string | null) => void;
   onUpdateCanvas: (updates: Partial<BuilderCanvasSettings>) => void;

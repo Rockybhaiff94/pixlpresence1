@@ -7,7 +7,9 @@ import {
 import {
   RpcVisualTemplate,
   buildRpcEmbedSubtree,
+  getDefaultResponsiveForRpcChild,
   getRpcTemplateById,
+  isRpcChildType,
 } from "./rpcTemplates";
 
 export const MAX_NESTING_DEPTH = 4;
@@ -17,6 +19,7 @@ export const CONTAINER_COMPONENT_TYPES: ReadonlySet<BuilderComponentType> = new 
   "nested-embed",
   "image-gallery",
   "group-section",
+  "custom-rpc",
   "custom-rpc-embed",
 ]);
 
@@ -138,26 +141,27 @@ export const PROFILE_BUILDER_REGISTRY: Record<BuilderComponentType, ComponentReg
     type: "custom-rpc",
     category: "profile",
     label: "Custom RPC",
-    shortDesc: "Compact Discord Rich Presence activity display",
-    defaultWidth: 324,
-    defaultHeight: 92,
-    minWidth: 180,
-    minHeight: 68,
-    canHaveChildren: false,
+    shortDesc: "Unified Discord Rich Presence container with modular child elements",
+    defaultWidth: 380,
+    defaultHeight: 168,
+    minWidth: 220,
+    minHeight: 84,
+    canHaveChildren: true,
+    allowInRoot: true,
     preferEmbedParent: true,
   },
   "custom-rpc-embed": {
     type: "custom-rpc-embed",
     category: "profile",
-    label: "Custom RPC Embed",
-    shortDesc: "Modular Discord Rich Presence container with child elements",
+    label: "Custom RPC",
+    shortDesc: "Legacy alias migrated automatically to unified Custom RPC",
     defaultWidth: 380,
     defaultHeight: 168,
-    minWidth: 240,
-    minHeight: 96,
+    minWidth: 220,
+    minHeight: 84,
     canHaveChildren: true,
     allowInRoot: true,
-    preferEmbedParent: false,
+    preferEmbedParent: true,
   },
   "rpc-icon": {
     type: "rpc-icon",
@@ -443,7 +447,6 @@ export const LIBRARY_CATALOG_ORDER: BuilderComponentType[] = [
   "claim-profile",
   "music-display",
   "custom-rpc",
-  "custom-rpc-embed",
   "embed",
   "nested-embed",
   "banner-image",
@@ -810,23 +813,35 @@ export function createNodeFromRegistry(
       base.style.borderRadius = 12;
       break;
     case "custom-rpc":
+    case "custom-rpc-embed":
+      base.name = "Custom RPC";
+      base.style.backgroundType = "solid";
+      base.style.backgroundColor = "#111116";
+      base.style.backgroundOpacity = 0.94;
+      base.style.borderWidth = 1;
+      base.style.borderColor = "#272730";
+      base.style.borderRadius = 14;
+      base.style.blur = 14;
+      base.style.padding = 0;
+      base.style.gap = 0;
+      base.style.overflow = "hidden";
       base.config = {
+        rpcTemplateId: "rpc-tpl-default",
+        rpcTemplateName: "Default Rich Presence",
+        rpcTemplateVersion: "1.0.0",
+        rpcCategory: "Standard",
+        rpcSkinPreset: "default",
         appName: seed?.appName || "Visual Studio Code",
         details: seed?.details || "Editing pixlpresence1-web",
         state: seed?.state || "Workspace · Pixel.gg",
         statusIndicator: "online",
-        largeImage:
-          "https://pixlpresence1-web.vercel.app/server-icon.png",
+        largeImage: "https://pixlpresence1-web.vercel.app/server-icon.png",
         startTimestampText: "01:42 elapsed",
         useLiveRpc: true,
-        rpcEmptyText: "No active Discord RPC session",
-        accentColor: "#d71920",
+        rpcEmptyText: "Discord is currently offline or idle",
+        rpcOfflineText: "Offline · No active session",
+        accentColor: "#ffffff",
       };
-      base.style.backgroundType = "solid";
-      base.style.backgroundColor = "#111116";
-      base.style.borderWidth = 1;
-      base.style.borderColor = "#24242d";
-      base.style.borderRadius = 12;
       break;
     case "social-group":
       base.config = {
@@ -921,30 +936,6 @@ export function createNodeFromRegistry(
       base.style.borderWidth = 1;
       base.style.borderColor = "#2e2e38";
       base.style.borderRadius = 8;
-      break;
-    case "custom-rpc-embed":
-      base.name = "Custom RPC Embed";
-      base.style.backgroundType = "solid";
-      base.style.backgroundColor = "#111116";
-      base.style.backgroundOpacity = 0.94;
-      base.style.borderWidth = 1;
-      base.style.borderColor = "#272730";
-      base.style.borderRadius = 14;
-      base.style.blur = 14;
-      base.style.padding = 0;
-      base.style.gap = 0;
-      base.style.overflow = "hidden";
-      base.config = {
-        rpcTemplateId: "rpc-tpl-default",
-        rpcTemplateName: "Default Rich Presence",
-        rpcTemplateVersion: "1.0.0",
-        rpcCategory: "Standard",
-        rpcSkinPreset: "default",
-        useLiveRpc: true,
-        rpcEmptyText: "Discord is currently offline or idle",
-        rpcOfflineText: "Offline · No active session",
-        accentColor: "#ffffff",
-      };
       break;
     case "rpc-icon":
       base.aspectRatioLocked = true;
@@ -1064,7 +1055,7 @@ export function createNodeTreeFromRegistry(
     rpcTemplate?: RpcVisualTemplate;
   }
 ): { rootNode: BuilderNode; childNodes: BuilderNode[] } {
-  if (type === "custom-rpc-embed") {
+  if (type === "custom-rpc" || type === "custom-rpc-embed") {
     const template = options.rpcTemplate || getRpcTemplateById("rpc-tpl-default");
     const nonBgSiblings = options.nodes.filter(
       (n) => (n.parentId || null) === (options.parentId || null) && n.type !== "background"
@@ -1076,10 +1067,26 @@ export function createNodeTreeFromRegistry(
 
     const defaultX = parent
       ? Math.max(8, Math.round((containerW - template.parentWidth) / 2))
-      : Math.round(Math.max(40, Math.min(containerW - template.parentWidth - 40, (containerW - template.parentWidth) / 2 + (nonBgSiblings.length % 4) * 24)));
+      : Math.round(
+          Math.max(
+            40,
+            Math.min(
+              containerW - template.parentWidth - 40,
+              (containerW - template.parentWidth) / 2 + (nonBgSiblings.length % 4) * 24
+            )
+          )
+        );
     const defaultY = parent
       ? Math.max(8, Math.min(containerH - template.parentHeight - 8, 24 + (nonBgSiblings.length % 3) * 24))
-      : Math.round(Math.max(40, Math.min(containerH - template.parentHeight - 40, (containerH - template.parentHeight) / 2 + (nonBgSiblings.length % 4) * 24)));
+      : Math.round(
+          Math.max(
+            40,
+            Math.min(
+              containerH - template.parentHeight - 40,
+              (containerH - template.parentHeight) / 2 + (nonBgSiblings.length % 4) * 24
+            )
+          )
+        );
 
     const { parentNode, childNodes } = buildRpcEmbedSubtree({
       parentId: options.parentId,
@@ -1089,6 +1096,24 @@ export function createNodeTreeFromRegistry(
       template,
       seed: options.seed,
     });
+
+    if (parent) {
+      const clampedW = Math.min(parentNode.width, Math.max(120, parent.width));
+      const clampedH = Math.min(parentNode.height, Math.max(72, parent.height));
+      const maxX = Math.max(0, parent.width - clampedW);
+      const maxY = Math.max(0, parent.height - clampedH);
+      parentNode.width = Math.round(clampedW);
+      parentNode.height = Math.round(clampedH);
+      parentNode.x = Math.round(Math.max(0, Math.min(maxX, parentNode.x)));
+      parentNode.y = Math.round(Math.max(0, Math.min(maxY, parentNode.y)));
+      for (const c of childNodes) {
+        c.width = Math.min(c.width, parentNode.width);
+        c.height = Math.min(c.height, parentNode.height);
+        c.x = Math.max(0, Math.min(Math.max(0, parentNode.width - c.width), c.x));
+        c.y = Math.max(0, Math.min(Math.max(0, parentNode.height - c.height), c.y));
+      }
+    }
+
     return { rootNode: parentNode, childNodes };
   }
 
@@ -1434,38 +1459,24 @@ export function createDefaultReferenceDocument(seed?: {
         accentColor: "#22c55e",
       },
     },
-    {
-      id: "node-rpc-1",
-      type: "custom-rpc",
-      name: "Custom RPC",
-      parentId: embedId,
-      x: 368,
-      y: 310,
-      width: 328,
-      height: 94,
-      zIndex: 9,
-      visible: true,
-      locked: false,
-      style: {
-        opacity: 1,
-        backgroundType: "solid",
-        backgroundColor: "#111116",
-        borderWidth: 1,
-        borderColor: "#272730",
-        borderRadius: 12,
-      },
-      responsive: { hiddenOn: [], widthMode: "fixed" },
-      config: {
-        appName: "Visual Studio Code",
-        details: "Editing pixlpresence1-web",
-        state: "Pixel.gg Studio",
-        statusIndicator: "online",
-        largeImage: "https://pixlpresence1-web.vercel.app/server-icon.png",
-        useLiveRpc: true,
-        rpcEmptyText: "No active Discord RPC session",
-        accentColor: "#38bdf8",
-      },
-    },
+    ...((): BuilderNode[] => {
+      const compactTpl = getRpcTemplateById("rpc-tpl-compact");
+      const { parentNode, childNodes } = buildRpcEmbedSubtree({
+        parentId: embedId,
+        x: 368,
+        y: 310,
+        zIndex: 9,
+        template: compactTpl,
+        fixedParentId: "node-rpc-1",
+        seed: {
+          appName: "Visual Studio Code",
+          details: "Editing pixlpresence1-web",
+          state: "Pixel.gg Studio",
+        },
+      });
+      parentNode.name = "Custom RPC";
+      return [parentNode, ...childNodes];
+    })(),
     {
       id: "node-social-1",
       type: "social-group",
@@ -1900,10 +1911,126 @@ export function hydrateDocumentIdentity(
   return { ...doc, nodes: nextNodes };
 }
 
+export function normalizeProfileBuilderDocument(
+  doc: ProfileBuilderDocument
+): ProfileBuilderDocument {
+  if (!doc || !Array.isArray(doc.nodes)) return doc;
+  let changed = false;
+  let nextNodes = doc.nodes.map((node) => {
+    if (node.type === "custom-rpc-embed") {
+      changed = true;
+      return {
+        ...node,
+        type: "custom-rpc" as BuilderComponentType,
+        name: node.name === "Custom RPC Embed" ? "Custom RPC" : node.name,
+        style: {
+          ...node.style,
+          layoutMode: node.style?.layoutMode || "absolute",
+          overflow: node.style?.overflow || "hidden",
+        },
+      };
+    }
+    return node;
+  });
+
+  // Idempotently upgrade legacy childless custom-rpc nodes into modular containers preserving dimensions/style/content
+  const appendedChildren: BuilderNode[] = [];
+  nextNodes = nextNodes.map((node) => {
+    if (node.type !== "custom-rpc") return node;
+    const hasChildren =
+      nextNodes.some((n) => n.parentId === node.id) ||
+      appendedChildren.some((n) => n.parentId === node.id);
+    if (hasChildren || node.config?.rpcAllowEmpty || node.config?.rpcTemplateId) {
+      return node;
+    }
+
+    changed = true;
+    const compactTpl = getRpcTemplateById("rpc-tpl-compact");
+    const built = buildRpcEmbedSubtree({
+      parentId: node.parentId,
+      x: node.x,
+      y: node.y,
+      zIndex: node.zIndex,
+      template: compactTpl,
+      fixedParentId: node.id,
+      seed: {
+        appName: node.config?.appName,
+        details: node.config?.details,
+        state: node.config?.state,
+      },
+    });
+    const scaleX = Math.max(0.5, node.width / Math.max(1, compactTpl.parentWidth));
+    const scaleY = Math.max(0.5, node.height / Math.max(1, compactTpl.parentHeight));
+    const isExactCompact =
+      Math.abs(node.width - compactTpl.parentWidth) <= 2 &&
+      Math.abs(node.height - compactTpl.parentHeight) <= 2;
+
+    for (const ch of built.childNodes) {
+      const scaledW = Math.min(node.width, Math.max(16, Math.round(ch.width * scaleX)));
+      const scaledH = Math.min(node.height, Math.max(12, Math.round(ch.height * scaleY)));
+      const sx = Math.max(0, Math.min(node.width - scaledW, Math.round(ch.x * scaleX)));
+      const sy = Math.max(0, Math.min(node.height - scaledH, Math.round(ch.y * scaleY)));
+      const upgradedConfig =
+        ch.type === "rpc-icon" && node.config?.largeImage
+          ? { ...ch.config, largeImage: node.config.largeImage }
+          : ch.config;
+      appendedChildren.push({
+        ...ch,
+        parentId: node.id,
+        x: sx,
+        y: sy,
+        width: scaledW,
+        height: scaledH,
+        config: upgradedConfig,
+      });
+    }
+
+    return {
+      ...node,
+      style: {
+        ...built.parentNode.style,
+        ...node.style,
+        layoutMode: "absolute",
+        overflow: node.style?.overflow || "hidden",
+      },
+      config: {
+        ...built.parentNode.config,
+        ...node.config,
+        rpcTemplateId: isExactCompact ? "rpc-tpl-compact" : "rpc-tpl-compact-custom",
+      },
+    };
+  });
+
+  if (appendedChildren.length > 0) {
+    nextNodes = [...nextNodes, ...appendedChildren];
+  }
+
+  const nodeById = new Map<string, BuilderNode>();
+  nextNodes.forEach((n) => nodeById.set(n.id, n));
+  nextNodes = nextNodes.map((n) => {
+    if (!isRpcChildType(n.type)) return n;
+    if (n.responsive?.scaleMode) return n;
+    const parent = n.parentId ? nodeById.get(n.parentId) : null;
+    if (!parent) return n;
+    changed = true;
+    return {
+      ...n,
+      responsive: {
+        ...n.responsive,
+        ...getDefaultResponsiveForRpcChild(n.type, n.x, n.width, parent.width),
+      },
+    };
+  });
+
+  if (!changed) return doc;
+  return { ...doc, nodes: nextNodes };
+}
+
 export function ensureDefaultSystemElements(
-  doc: ProfileBuilderDocument,
+  rawDoc: ProfileBuilderDocument,
   isPremiumOrAdmin: boolean
 ): ProfileBuilderDocument {
+  const doc = normalizeProfileBuilderDocument(rawDoc);
   const cw = Math.max(320, doc.canvas.width || 1920);
   const ch = Math.max(320, doc.canvas.height || 1080);
 

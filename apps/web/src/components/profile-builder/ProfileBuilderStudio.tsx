@@ -55,6 +55,7 @@ import {
 import { DockBridgePanel } from "./DockBridgePanel";
 import { ProfileLiveActivityData } from "./ProfileBuilderRenderer";
 import {
+  applyContainerResize,
   clampNodeToParent,
   constrainDescendantsToParent,
 } from "./boundaryConstraints";
@@ -549,14 +550,14 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           return;
         }
         if (
-          currentTarget.type === "custom-rpc-embed" &&
+          (currentTarget.type === "custom-rpc" || currentTarget.type === "custom-rpc-embed") &&
           (updates.width !== undefined ||
             updates.height !== undefined ||
             updates.rotation !== undefined ||
             updates.style !== undefined)
         ) {
           reportRestrictedFeature(
-            "Resizing, stretching, or customizing the background/style of Custom RPC Embed requires Premium."
+            "Resizing, stretching, or customizing the background/style of Custom RPC requires Premium."
           );
           return;
         }
@@ -574,12 +575,22 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           }
         }
 
-        let nextNodes = prev.nodes.map((n) => (n.id === id ? merged : n));
+        let nextNodes: BuilderNode[];
         if (
           isContainerType(merged.type) &&
           (updates.width !== undefined || updates.height !== undefined)
         ) {
-          nextNodes = constrainDescendantsToParent(id, nextNodes);
+          const baseReplaced = prev.nodes.map((n) => (n.id === id ? { ...merged, width: target.width, height: target.height } : n));
+          nextNodes = applyContainerResize(baseReplaced, id, {
+            x: merged.x,
+            y: merged.y,
+            width: merged.width,
+            height: merged.height,
+          }, {
+            lockCustomRpcChildren: !isPremium,
+          });
+        } else {
+          nextNodes = prev.nodes.map((n) => (n.id === id ? merged : n));
         }
 
         if (!options?.skipHistory) {
@@ -602,15 +613,14 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
   const handleReplaceNodes = useCallback(
     (nextNodes: BuilderNode[], options?: { skipHistory?: boolean }) => {
       if (!isPremium) {
-        const prevRpc = doc.nodes.find((n) => n.type === "custom-rpc-embed");
-        const nextRpc = prevRpc ? nextNodes.find((n) => n.id === prevRpc.id) : null;
-        if (
-          prevRpc &&
-          nextRpc &&
-          (prevRpc.width !== nextRpc.width || prevRpc.height !== nextRpc.height)
-        ) {
+        const changedRpc = doc.nodes.some((prevRpc) => {
+          if (prevRpc.type !== "custom-rpc" && prevRpc.type !== "custom-rpc-embed") return false;
+          const nextRpc = nextNodes.find((n) => n.id === prevRpc.id);
+          return nextRpc && (prevRpc.width !== nextRpc.width || prevRpc.height !== nextRpc.height);
+        });
+        if (changedRpc) {
           reportRestrictedFeature(
-            "Resizing or scaling Custom RPC Embed requires Premium."
+            "Resizing or scaling Custom RPC requires Premium."
           );
           return;
         }
@@ -631,10 +641,8 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
 
   const resolveInsertParent = useCallback(
     (type: BuilderComponentType, explicitParentId?: string | null): { parentId: string | null; error?: string } => {
-      if (type === "embed" || type === "background" || type === "custom-rpc-embed") {
-        if (type !== "custom-rpc-embed" || explicitParentId === undefined || explicitParentId === null) {
-          return { parentId: null };
-        }
+      if (type === "embed" || type === "background") {
+        return { parentId: null };
       }
 
       if (explicitParentId !== undefined) {
@@ -642,6 +650,12 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         const explicitNode = doc.nodes.find((n) => n.id === explicitParentId);
         if (!explicitNode || !isContainerType(explicitNode.type)) {
           return { parentId: null, error: "Selected drop target is not a container." };
+        }
+        if (
+          (type === "custom-rpc" || type === "custom-rpc-embed") &&
+          (explicitNode.type === "custom-rpc" || explicitNode.type === "custom-rpc-embed")
+        ) {
+          return { parentId: explicitNode.parentId };
         }
         if (getNestingDepth(explicitParentId, doc.nodes) >= MAX_NESTING_DEPTH) {
           return {
@@ -654,6 +668,12 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
 
       const selectedNode = selectedId ? doc.nodes.find((n) => n.id === selectedId) : null;
       if (selectedNode && isContainerType(selectedNode.type)) {
+        if (
+          (type === "custom-rpc" || type === "custom-rpc-embed") &&
+          (selectedNode.type === "custom-rpc" || selectedNode.type === "custom-rpc-embed")
+        ) {
+          return { parentId: selectedNode.parentId };
+        }
         if (getNestingDepth(selectedNode.id, doc.nodes) >= MAX_NESTING_DEPTH) {
           return {
             parentId: selectedNode.parentId,
@@ -664,6 +684,14 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       }
 
       if (selectedNode?.parentId && doc.preferences.defaultInsertTarget !== "canvas") {
+        const parentOfSel = doc.nodes.find((n) => n.id === selectedNode.parentId);
+        if (
+          (type === "custom-rpc" || type === "custom-rpc-embed") &&
+          parentOfSel &&
+          (parentOfSel.type === "custom-rpc" || parentOfSel.type === "custom-rpc-embed")
+        ) {
+          return { parentId: parentOfSel.parentId };
+        }
         return { parentId: selectedNode.parentId };
       }
 
@@ -722,9 +750,12 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
 
       if (target.parentId) {
         const targetContainer = doc.nodes.find((n) => n.id === target.parentId);
-        if (!isPremium && targetContainer?.type === "custom-rpc-embed") {
+        if (
+          !isPremium &&
+          (targetContainer?.type === "custom-rpc" || targetContainer?.type === "custom-rpc-embed")
+        ) {
           reportRestrictedFeature(
-            "Adding or customizing elements inside Custom RPC Embed requires Premium."
+            "Adding or customizing elements inside Custom RPC requires Premium."
           );
           return null;
         }
@@ -948,8 +979,17 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         if (!targetContainer || !isContainerType(targetContainer.type)) {
           return { ok: false, error: "Destination cannot contain child elements." };
         }
-        if (!isPremium && targetContainer.type === "custom-rpc-embed") {
-          return { ok: false, error: "Moving elements into Custom RPC Embed requires Premium." };
+        if (
+          !isPremium &&
+          (targetContainer.type === "custom-rpc" || targetContainer.type === "custom-rpc-embed")
+        ) {
+          return { ok: false, error: "Moving elements into Custom RPC requires Premium." };
+        }
+        if (
+          (dragged.type === "custom-rpc" || dragged.type === "custom-rpc-embed") &&
+          (targetContainer.type === "custom-rpc" || targetContainer.type === "custom-rpc-embed")
+        ) {
+          return { ok: false, error: "Custom RPC cannot be nested inside another Custom RPC." };
         }
         if (wouldCreateCycle(dragged.id, newParentId, doc.nodes)) {
           return { ok: false, error: "Invalid circular drop: parent cannot move into descendant." };
@@ -960,7 +1000,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       }
 
       const parentChanged = (dragged.parentId || null) !== newParentId;
-      const updatedDragged: BuilderNode = parentChanged
+      let updatedDragged: BuilderNode = parentChanged
         ? {
           ...dragged,
           parentId: newParentId,
@@ -968,6 +1008,12 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           y: newParentId ? 20 : 120,
         }
         : dragged;
+      if (parentChanged && newParentId) {
+        const destContainer = doc.nodes.find((n) => n.id === newParentId);
+        if (destContainer) {
+          updatedDragged = { ...updatedDragged, ...clampNodeToParent(updatedDragged, destContainer) };
+        }
+      }
 
       // Sort destination non-background siblings frontmost-first (descending zIndex) matching Layers tree UI
       const destSiblings = doc.nodes
@@ -1066,7 +1112,9 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         return false;
       }
       const embedNode = doc.nodes.find(
-        (n) => n.id === payload.embedId && n.type === "custom-rpc-embed"
+        (n) =>
+          n.id === payload.embedId &&
+          (n.type === "custom-rpc" || n.type === "custom-rpc-embed")
       );
       if (!embedNode) return false;
       const serialized = serializeRpcEmbedAsTemplate({
@@ -1152,8 +1200,17 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         if (!targetParent || !isContainerType(targetParent.type)) {
           return { ok: false, error: "Destination cannot contain child elements." };
         }
-        if (!isPremium && targetParent.type === "custom-rpc-embed") {
-          return { ok: false, error: "Adding elements to Custom RPC Embed requires Premium." };
+        if (
+          !isPremium &&
+          (targetParent.type === "custom-rpc" || targetParent.type === "custom-rpc-embed")
+        ) {
+          return { ok: false, error: "Adding elements to Custom RPC requires Premium." };
+        }
+        if (
+          (node.type === "custom-rpc" || node.type === "custom-rpc-embed") &&
+          (targetParent.type === "custom-rpc" || targetParent.type === "custom-rpc-embed")
+        ) {
+          return { ok: false, error: "Custom RPC cannot be nested inside another Custom RPC." };
         }
         if (wouldCreateCycle(nodeId, newParentId, doc.nodes)) {
           return { ok: false, error: "Invalid circular drop: parent cannot move into descendant." };
@@ -1163,17 +1220,21 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         }
       }
       const nextSibs = doc.nodes.filter((n) => (n.parentId || null) === newParentId).length;
-      const nextNodes = doc.nodes.map((n) =>
-        n.id === nodeId
-          ? {
-            ...n,
-            parentId: newParentId,
-            x: newParentId ? 20 : 120,
-            y: newParentId ? 20 : 120,
-            zIndex: nextSibs + 1,
-          }
-          : n
-      );
+      const targetContainer = newParentId ? doc.nodes.find((n) => n.id === newParentId) : null;
+      const nextNodes = doc.nodes.map((n) => {
+        if (n.id !== nodeId) return n;
+        const candidate: BuilderNode = {
+          ...n,
+          parentId: newParentId,
+          x: newParentId ? 20 : 120,
+          y: newParentId ? 20 : 120,
+          zIndex: nextSibs + 1,
+        };
+        if (targetContainer) {
+          return { ...candidate, ...clampNodeToParent(candidate, targetContainer) };
+        }
+        return candidate;
+      });
       setDoc((prev) => ({ ...prev, nodes: nextNodes }));
       commitSnapshot(doc.canvas, nextNodes, selectedId);
       return { ok: true };
@@ -1670,7 +1731,9 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
             onCommitHistory={handleCommitHistory}
             onDuplicateNode={handleDuplicateNode}
             onDeleteNode={handleDeleteNode}
-            onInsertChild={(parentId, type) => insertComponent(type, parentId)}
+            onInsertChild={(parentId, type, extra) => {
+              insertComponent(type, parentId, undefined, undefined, extra);
+            }}
             onDropComponent={(type, targetParentId, x, y) =>
               insertComponent(type, targetParentId, x, y)
             }
@@ -1705,7 +1768,9 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           onApplyRpcTemplate={handleApplyRpcTemplate}
           onSaveRpcTemplate={handleSaveRpcTemplate}
           onDeleteRpcTemplate={handleDeleteRpcTemplate}
-          onInsertChild={(parentId, type) => insertComponent(type, parentId)}
+          onInsertChild={(parentId, type, extra) => {
+            insertComponent(type, parentId, undefined, undefined, extra);
+          }}
           onRestrictedFeature={reportRestrictedFeature}
           onSelect={setSelectedId}
           onUpdateCanvas={handleUpdateCanvas}
