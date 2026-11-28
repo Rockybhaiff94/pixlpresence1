@@ -249,29 +249,20 @@ const standaloneBundle = `/**
 
     async function resolveAsset(appId, input) {
         if (!input || !String(input).trim()) return undefined;
-        const apiBase = config.apiUrl.replace(/\\/+$/, '');
         let raw = String(input).trim();
         if (raw.startsWith('/') && !raw.startsWith('//')) {
-            raw = apiBase + raw;
-        } else if (/^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?(\\/uploads\\/.*)/i.test(raw)) {
-            const m = raw.match(/^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?(\\/uploads\\/.*)/i);
-            if (m && m[3]) raw = apiBase + m[3];
+            raw = config.apiUrl.replace(/\\/+$/, '') + raw;
         }
         if (raw.startsWith('mp:') || raw.startsWith('spotify:') || raw.startsWith('twitch:')) return raw;
         const isDiscordCdn = /^https?:\\/\\/(cdn|media)\\.discordapp\\.(com|net)\\//i.test(raw);
         const anim = /(\\ba_[a-f0-9]{8,}\\b|\\.gif|\\.webp|format=gif|tenor\\.com|giphy\\.com)/i.test(raw);
         const proxyTarget = 'https://wsrv.nl/' + (anim ? 'avatar.gif' : 'avatar.png') + '?url=' + encodeURIComponent(raw) + (anim ? '&n=-1' : '');
-        const mediaProxyTarget = /^https:\\/\\//i.test(apiBase) && !raw.includes('/api/rpc/media-proxy')
-            ? apiBase + '/api/rpc/media-proxy?url=' + encodeURIComponent(raw)
-            : null;
         const primaryTarget = isDiscordCdn ? proxyTarget : raw;
         const key = appId + ':' + primaryTarget;
         if (assetCache.has(key)) return assetCache.get(key);
         const utils = window.Vencord?.Webpack?.Common?.ApplicationAssetUtils || window.Vencord?.Webpack?.findByProps?.('fetchAssetIds');
-        const candidates = isDiscordCdn ? [proxyTarget] : [primaryTarget, proxyTarget];
-        if (mediaProxyTarget) candidates.push(mediaProxyTarget);
         if (utils && typeof utils.fetchAssetIds === 'function') {
-            for (const candidate of candidates) {
+            for (const candidate of (isDiscordCdn ? [proxyTarget] : [primaryTarget, proxyTarget])) {
                 try {
                     const res = await utils.fetchAssetIds(appId, [candidate]);
                     if (Array.isArray(res) && res[0] && !/^https?:\\/\\//i.test(res[0])) {
@@ -281,7 +272,6 @@ const standaloneBundle = `/**
                 } catch (_) {}
             }
         }
-        console.warn('[PixelsRPC] Failed to resolve Discord asset for:', raw);
         return undefined;
     }
 

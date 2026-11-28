@@ -87,10 +87,9 @@ export async function resolveAssetForDiscord(params: {
     cache: Map<string, string>;
     fetchAssetIds?: (appId: string, keys: string[]) => Promise<string[]>;
     getAssetImage?: (appId: string, assetId: string, size?: [number, number]) => string;
-    mediaProxyBaseUrl?: string | null;
     onDiagnostic?: DiagnosticLogger;
 }): Promise<string | undefined> {
-    const { appId, assetInput, slot, cache, fetchAssetIds, getAssetImage, mediaProxyBaseUrl, onDiagnostic } = params;
+    const { appId, assetInput, slot, cache, fetchAssetIds, getAssetImage, onDiagnostic } = params;
     if (!assetInput || !assetInput.trim()) return undefined;
 
     const raw = assetInput.trim();
@@ -112,7 +111,7 @@ export async function resolveAssetForDiscord(params: {
             resolvedFormat: raw.slice(0, 18),
             durationMs: 0
         });
-        return /^\d{15,22}$/.test(raw) ? raw : undefined;
+        return raw;
     }
 
     if (category === "app_asset_key") {
@@ -152,7 +151,7 @@ export async function resolveAssetForDiscord(params: {
                 durationMs: Date.now() - startedAt
             });
         }
-        return /^\d{15,22}$/.test(raw) ? raw : undefined;
+        return raw;
     }
 
     // Category 3: Public External HTTP/HTTPS URL -> resolve to mp:external/... via Discord
@@ -210,19 +209,6 @@ export async function resolveAssetForDiscord(params: {
             resolved = await tryResolveTarget(proxyTarget);
         }
 
-        // Third-tier fallback: Pixel.gg public /api/rpc/media-proxy if HTTPS base URL is available
-        if (
-            !resolved &&
-            mediaProxyBaseUrl &&
-            /^https:\/\/.+/i.test(mediaProxyBaseUrl.trim()) &&
-            /^https?:\/\//i.test(prepared.originalUrl) &&
-            !prepared.originalUrl.includes("/api/rpc/media-proxy")
-        ) {
-            const cleanBase = mediaProxyBaseUrl.trim().replace(/\/+$/, "");
-            const mediaProxyTarget = `${cleanBase}/api/rpc/media-proxy?url=${encodeURIComponent(prepared.originalUrl)}`;
-            resolved = await tryResolveTarget(mediaProxyTarget);
-        }
-
         if (resolved) {
             cache.set(cacheKey, resolved);
 
@@ -247,14 +233,6 @@ export async function resolveAssetForDiscord(params: {
             });
             return resolved;
         }
-
-        onDiagnostic?.("Asset resolution failed", {
-            slot,
-            category,
-            host: getSafeUrlHost(prepared.target),
-            error: "All asset resolution candidates returned empty or raw URL",
-            durationMs: Date.now() - startedAt
-        });
     } catch (err: any) {
         onDiagnostic?.("Asset resolution failed", {
             slot,

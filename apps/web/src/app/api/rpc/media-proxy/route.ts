@@ -28,13 +28,10 @@ export async function GET(request: NextRequest) {
     if (
       host === "localhost" ||
       host === "127.0.0.1" ||
-      host === "0.0.0.0" ||
       host === "::1" ||
-      host.endsWith(".local") ||
-      host.endsWith(".internal") ||
       host.startsWith("10.") ||
       host.startsWith("192.168.") ||
-      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host) ||
+      host.startsWith("172.16.") ||
       host.startsWith("169.254.")
     ) {
       return NextResponse.json({ error: "Prohibited host" }, { status: 403 });

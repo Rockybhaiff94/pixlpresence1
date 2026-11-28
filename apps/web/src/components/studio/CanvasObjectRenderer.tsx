@@ -1593,7 +1593,7 @@ export function CanvasObjectRenderer({
       }
 
       case "rpc": {
-        if (config.discordRpc?.showProfileRpc === false && !isInteractive) return null;
+        if (!config.discordRpc?.showProfileRpc && !isInteractive) return null;
         const isCornerScalingActive = Boolean(resizingEmbed && resizingEmbed.isCornerScaling && resizingEmbed.scaleFactor);
         const activeScale = isCornerScalingActive ? (resizingEmbed?.scaleFactor ?? 1) : 1;
 

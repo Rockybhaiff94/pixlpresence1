@@ -563,15 +563,10 @@ rpcRouter.post('/device/heartbeat', requireAuth, async (req: any, res) => {
       select: { updatedAt: true },
     });
 
-    const needsPresenceSync = updated.username
-      ? !presenceManager.hasFreshDiscordPresence(updated.username)
-      : false;
-
     res.json({
       success: true,
       runtime: updated,
       latestRevision: latestRpc?.updatedAt ? new Date(latestRpc.updatedAt).getTime() : 0,
-      needsPresenceSync,
       serverTime: new Date().toISOString(),
     });
   } catch (err) {

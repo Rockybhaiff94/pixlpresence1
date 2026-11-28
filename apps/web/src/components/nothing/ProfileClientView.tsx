@@ -168,12 +168,6 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
   const lastUpdatedRef = useRef<number>(0);
 
   useEffect(() => {
-    if (discordPresence && lastUpdatedRef.current === 0) {
-      setLivePresence(discordPresence);
-    }
-  }, [discordPresence]);
-
-  useEffect(() => {
     let isMounted = true;
     const socketUrl = getApiBaseUrl();
     const socket = io(socketUrl, {
@@ -185,29 +179,16 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
     const handlePresenceUpdate = (data: any) => {
       if (!isMounted || !data) return;
 
-      // Prevent race conditions: Prioritize timestamp so backend restarts (resetting sequence -> 1) are never dropped.
-      if (typeof data.updatedAt === "number") {
-        if (data.updatedAt < lastUpdatedRef.current) {
-          return;
-        }
-        if (
-          data.updatedAt === lastUpdatedRef.current &&
-          data.sequence !== undefined &&
-          data.sequence < lastSequenceRef.current
-        ) {
-          return;
-        }
-        lastUpdatedRef.current = data.updatedAt;
-        if (data.sequence !== undefined) {
-          lastSequenceRef.current = data.sequence;
-        }
-      } else {
-        if (data.sequence !== undefined && data.sequence < lastSequenceRef.current) {
-          return;
-        }
-        lastSequenceRef.current = data.sequence || lastSequenceRef.current;
-        lastUpdatedRef.current = Date.now();
+      // Prevent race conditions: Ignore outdated presence packets
+      if (data.sequence !== undefined && data.sequence < lastSequenceRef.current) {
+        return;
       }
+      if (data.updatedAt !== undefined && data.updatedAt < lastUpdatedRef.current) {
+        return;
+      }
+
+      lastSequenceRef.current = data.sequence || lastSequenceRef.current;
+      lastUpdatedRef.current = data.updatedAt || Date.now();
 
       if (data.hasActivity && data.activity && (data.status !== "offline" || data.activitySource === "custom")) {
         setLivePresence((prev: any) => ({
@@ -224,8 +205,6 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
         // User closed game, went offline, or is idle without activity
         setLivePresence({
           status: data.status || "offline",
-          activitySource: data.activitySource || "none",
-          rpcPriority: data.rpcPriority,
           hasActivity: false,
           appName: null,
           details: null,

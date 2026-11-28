@@ -26,7 +26,6 @@ export type PublishingStatus =
 export interface DeviceRuntimeState {
   deviceId: string;
   userId: string;
-  username?: string;
   deviceName: string;
   pluginVersion: string;
   connectionState: ConnectionState;
@@ -254,7 +253,6 @@ class RpcSyncHub {
     const publishingStatus: PublishingStatus = payload.publishingStatus || (discordAvailable ? 'active' : 'failed');
 
     const updated = this.recordDeviceActivity(deviceId, userId, deviceRecord.deviceName || 'Discord Client', {
-      username: deviceRecord.user.username,
       pluginVersion: payload.pluginVersion || '1.1.0',
       connectionState,
       discordAvailable,
