@@ -1,17 +1,6 @@
 import { prisma } from '@discord-rpc/database';
 import { io } from '../index';
 import { formatRichPresenceField } from '../utils/rpcFormat';
-import { resolveDiscordAvatarUrl } from '../auth';
-
-function parseActivityTypeNum(rawType: unknown): number {
-  if (typeof rawType === 'number' && Number.isFinite(rawType)) return rawType;
-  const s = String(rawType || '').trim().toLowerCase();
-  if (s === '1' || s === 'streaming') return 1;
-  if (s === '2' || s === 'listening') return 2;
-  if (s === '3' || s === 'watching') return 3;
-  if (s === '5' || s === 'competing') return 5;
-  return 0;
-}
 
 export interface LiveActivity {
   name: string;
@@ -210,15 +199,12 @@ class PresenceManager {
     const existing = this.presenceByUsername.get(key);
     const now = update.timestamp || Date.now();
 
-    // Prevent race conditions: Ignore demonstrably older packets using timestamps or per-user client sequence.
-    // Allow clientSequence reset if timestamp advances >= 5s (e.g. plugin/Discord restart).
+    // Prevent race conditions: Ignore demonstrably older packets using timestamps or per-user client sequence
     if (existing) {
       if (update.timestamp && existing.updatedAt > update.timestamp) {
         return existing;
       }
-      const isSessionReset = Boolean(update.timestamp && update.timestamp - existing.updatedAt >= 5000);
       if (
-        !isSessionReset &&
         update.sequence !== undefined &&
         existing.clientSequence !== undefined &&
         existing.clientSequence > update.sequence
@@ -533,8 +519,6 @@ class PresenceManager {
     id: string;
     username: string;
     discordId?: string | null;
-    avatar?: string | null;
-    profile?: { avatarUrl?: string | null } | null;
     richPresence?: any;
   }): Promise<LivePresence> {
     const key = user.username.trim().toLowerCase();
@@ -546,19 +530,6 @@ class PresenceManager {
     const dbRpc = user.richPresence || (await prisma.richPresence.findUnique({
       where: { userId: user.id },
     }));
-
-    let avatarSource = user.avatar || user.profile?.avatarUrl || null;
-    if (dbRpc && dbRpc.useProfileAvatar !== false && !avatarSource) {
-      const userWithAvatar = await prisma.user.findUnique({
-        where: { id: user.id },
-        select: { avatar: true, profile: { select: { avatarUrl: true } } },
-      }).catch(() => null);
-      avatarSource = userWithAvatar?.avatar || userWithAvatar?.profile?.avatarUrl || null;
-    }
-    const resolvedDynamicAvatar =
-      dbRpc && dbRpc.useProfileAvatar !== false
-        ? resolveDiscordAvatarUrl(user.discordId, avatarSource)
-        : null;
 
     const buildDbFallbackPresence = (statusOverride?: 'online' | 'idle' | 'dnd' | 'offline'): LivePresence | null => {
       if (!dbRpc || dbRpc.showProfileRpc === false || dbRpc.enableDiscordRpc === false) {
@@ -609,16 +580,13 @@ class PresenceManager {
       const dbActivity: LiveActivity = {
         name: dbRpc.appName || 'Active Application',
         appName: dbRpc.appName || 'Active Application',
-        type: parseActivityTypeNum(dbRpc.activityType),
+        type: typeof dbRpc.activityType === 'number' ? dbRpc.activityType : 0,
         details: formattedDetails || null,
         state: formattedState || null,
-        largeImage:
-          customCfg.largeImageEnabled !== false
-            ? ((dbRpc.useProfileAvatar !== false ? resolvedDynamicAvatar : null) || dbRpc.largeImage || null)
-            : null,
-        largeImageText: customCfg.largeImageEnabled !== false ? (dbRpc.largeImageText || null) : null,
-        smallImage: customCfg.smallImageEnabled !== false ? (dbRpc.smallImage || null) : null,
-        smallImageText: customCfg.smallImageEnabled !== false ? (dbRpc.smallImageText || null) : null,
+        largeImage: dbRpc.largeImage || null,
+        largeImageText: dbRpc.largeImageText || null,
+        smallImage: dbRpc.smallImage || null,
+        smallImageText: dbRpc.smallImageText || null,
         streamUrl: dbRpc.streamUrl || null,
         timestamps: (startTime !== null || endTime !== null) ? { start: startTime, end: endTime } : null,
         startTimestamp: startTime !== null ? new Date(startTime).toISOString() : null,

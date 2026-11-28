@@ -47,8 +47,8 @@ export function resolveDiscordAvatarUrl(discordId: string | null | undefined, av
     }
   }
 
-  // Already an absolute HTTP/HTTPS URL or valid root-relative upload path
-  if (avatar.startsWith('http://') || avatar.startsWith('https://') || (avatar.startsWith('/') && !avatar.startsWith('//'))) {
+  // Already an absolute HTTP/HTTPS URL
+  if (avatar.startsWith('http://') || avatar.startsWith('https://')) {
     return avatar;
   }
 

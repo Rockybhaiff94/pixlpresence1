@@ -49,6 +49,17 @@ export const io = new Server(server, {
 rpcSyncHub.initialize(io);
 
 io.on('connection', (socket) => {
+  // PixelsRPC Vencord plugin will emit 'authenticate' with user's App Token
+  socket.on('authenticate', async (token) => {
+    const user = await prisma.user.findUnique({ where: { appToken: token } });
+    if (user) {
+      socket.join(`user_${user.id}`);
+      socket.emit('authenticated', true);
+    } else {
+      socket.emit('authenticated', false);
+    }
+  });
+
   // Public profile client subscribes to real-time Discord presence updates
   socket.on('subscribe_profile', async (payload: { username?: string; discordId?: string }) => {
     if (payload?.username) {

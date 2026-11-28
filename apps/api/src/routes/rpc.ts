@@ -629,13 +629,7 @@ rpcRouter.get('/me', requireAuth, async (req: any, res) => {
     responseData.username = currentUser.username;
     responseData.userAvatar = resolvedAvatar;
     responseData.revision = rpc.updatedAt ? new Date(rpc.updatedAt).getTime() : Date.now();
-    const rTMode = String(responseData.timestampMode ?? 'now').toLowerCase();
-    if (rTMode === 'now' || rTMode === '1' || rTMode === 'none' || rTMode === '0') {
-      responseData.startTimestamp = null;
-      responseData.endTimestamp = null;
-    }
 
-    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.json(responseData);
   } catch (err) {
     console.error('[RPC Me Error]:', err);
@@ -842,15 +836,7 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
         activity: {
           name: fullPayload.appName || 'Active Application',
           appName: fullPayload.appName || 'Active Application',
-          type: (() => {
-            const s = String(fullPayload.activityType || '').trim().toLowerCase();
-            if (typeof fullPayload.activityType === 'number') return fullPayload.activityType;
-            if (s === '1' || s === 'streaming') return 1;
-            if (s === '2' || s === 'listening') return 2;
-            if (s === '3' || s === 'watching') return 3;
-            if (s === '5' || s === 'competing') return 5;
-            return 0;
-          })(),
+          type: typeof fullPayload.activityType === 'number' ? fullPayload.activityType : 0,
           details: formattedDetails || null,
           state: formattedState || null,
           largeImage: fullPayload.largeImageEnabled !== false ? (fullPayload.largeImage || null) : null,

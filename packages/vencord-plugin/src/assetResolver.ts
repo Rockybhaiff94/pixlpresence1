@@ -87,10 +87,9 @@ export async function resolveAssetForDiscord(params: {
     cache: Map<string, string>;
     fetchAssetIds?: (appId: string, keys: string[]) => Promise<string[]>;
     getAssetImage?: (appId: string, assetId: string, size?: [number, number]) => string;
-    mediaProxyBaseUrl?: string | null;
     onDiagnostic?: DiagnosticLogger;
 }): Promise<string | undefined> {
-    const { appId, assetInput, slot, cache, fetchAssetIds, getAssetImage, mediaProxyBaseUrl, onDiagnostic } = params;
+    const { appId, assetInput, slot, cache, fetchAssetIds, getAssetImage, onDiagnostic } = params;
     if (!assetInput || !assetInput.trim()) return undefined;
 
     const raw = assetInput.trim();
@@ -112,7 +111,7 @@ export async function resolveAssetForDiscord(params: {
             resolvedFormat: raw.slice(0, 18),
             durationMs: 0
         });
-        return /^\d{15,22}$/.test(raw) ? raw : undefined;
+        return raw;
     }
 
     if (category === "app_asset_key") {
@@ -152,7 +151,7 @@ export async function resolveAssetForDiscord(params: {
                 durationMs: Date.now() - startedAt
             });
         }
-        return /^\d{15,22}$/.test(raw) ? raw : undefined;
+        return raw;
     }
 
     // Category 3: Public External HTTP/HTTPS URL -> resolve to mp:external/... via Discord
@@ -183,76 +182,36 @@ export async function resolveAssetForDiscord(params: {
         method: "fetchAssetIds_external_url"
     });
 
-    const tryResolveTarget = async (candidateTarget: string): Promise<string | undefined> => {
-        if (typeof fetchAssetIds !== "function") return undefined;
-        try {
-            const resolvedList = await fetchAssetIds(appId, [candidateTarget]);
+    try {
+        if (typeof fetchAssetIds === "function") {
+            const resolvedList = await fetchAssetIds(appId, [prepared.target]);
             if (Array.isArray(resolvedList) && resolvedList[0]) {
                 const resolved = resolvedList[0];
-                if (!/^https?:\/\//i.test(resolved)) {
-                    return resolved;
+                // Only cache valid external media-proxy or asset IDs; never cache failures or raw URLs
+                cache.set(cacheKey, resolved);
+
+                let renderedPreviewUrl: string | undefined;
+                try {
+                    if (typeof getAssetImage === "function") {
+                        renderedPreviewUrl = getAssetImage(appId, resolved, [128, 128]);
+                    }
+                } catch {
+                    // ignore optional preview check error
                 }
+
+                onDiagnostic?.("Asset resolution completed", {
+                    slot,
+                    category,
+                    method: "fetchAssetIds_external_url",
+                    host: getSafeUrlHost(prepared.target),
+                    isMpExternal: resolved.startsWith("mp:external/"),
+                    resolvedEnd: resolved.slice(-32),
+                    renderedPreviewUrl,
+                    durationMs: Date.now() - startedAt
+                });
+                return resolved;
             }
-        } catch {
-            // caller handles fallback
         }
-        return undefined;
-    };
-
-    try {
-        let resolved = await tryResolveTarget(prepared.target);
-
-        if (!resolved && !prepared.isDiscordCdn && /^https?:\/\//i.test(prepared.originalUrl)) {
-            const filename = prepared.isAnimatedHint ? "avatar.gif" : "avatar.png";
-            const suffix = prepared.isAnimatedHint ? "&n=-1" : "";
-            const proxyTarget = `https://wsrv.nl/${filename}?url=${encodeURIComponent(prepared.originalUrl)}${suffix}`;
-            resolved = await tryResolveTarget(proxyTarget);
-        }
-
-        if (
-            !resolved &&
-            mediaProxyBaseUrl &&
-            /^https:\/\/.+/i.test(mediaProxyBaseUrl.trim()) &&
-            /^https?:\/\//i.test(prepared.originalUrl) &&
-            !prepared.originalUrl.includes("/api/rpc/media-proxy")
-        ) {
-            const cleanBase = mediaProxyBaseUrl.trim().replace(/\/+$/, "");
-            const mediaProxyTarget = `${cleanBase}/api/rpc/media-proxy?url=${encodeURIComponent(prepared.originalUrl)}`;
-            resolved = await tryResolveTarget(mediaProxyTarget);
-        }
-
-        if (resolved) {
-            cache.set(cacheKey, resolved);
-
-            let renderedPreviewUrl: string | undefined;
-            try {
-                if (typeof getAssetImage === "function") {
-                    renderedPreviewUrl = getAssetImage(appId, resolved, [128, 128]);
-                }
-            } catch {
-                // ignore optional preview check error
-            }
-
-            onDiagnostic?.("Asset resolution completed", {
-                slot,
-                category,
-                method: "fetchAssetIds_external_url",
-                host: getSafeUrlHost(prepared.target),
-                isMpExternal: resolved.startsWith("mp:external/"),
-                resolvedEnd: resolved.slice(-32),
-                renderedPreviewUrl,
-                durationMs: Date.now() - startedAt
-            });
-            return resolved;
-        }
-
-        onDiagnostic?.("Asset resolution failed", {
-            slot,
-            category,
-            host: getSafeUrlHost(prepared.target),
-            error: "All asset resolution candidates returned empty or raw URL",
-            durationMs: Date.now() - startedAt
-        });
     } catch (err: any) {
         // Do NOT cache transient fetchAssetIds errors
         onDiagnostic?.("Asset resolution failed", {
@@ -264,6 +223,6 @@ export async function resolveAssetForDiscord(params: {
         });
     }
 
-    // Never return raw HTTP(S) URLs to Discord LOCAL_ACTIVITY_UPDATE (causes '?' broken icons)
-    return undefined;
+    // Do not fabricate fake mp: identifiers; return prepared target URL as safe fallback
+    return prepared.target;
 }

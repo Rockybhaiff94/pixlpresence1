@@ -1093,14 +1093,11 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
 
       case "custom-rpc": {
         const live = liveData?.discordPresence;
-        const liveHasContent = Boolean(live && (live.hasActivity || live.appName || live.name || live.details));
         const activeLive =
-          node.config.useLiveRpc !== false &&
-          liveHasContent &&
-          (live?.status !== "offline" || (live as any)?.source === "database")
+          node.config.useLiveRpc && live && (live.hasActivity || live.appName || live.details)
             ? live
             : null;
-        const appName = activeLive ? activeLive.appName || activeLive.name : node.config.appName;
+        const appName = activeLive ? activeLive.appName : node.config.appName;
         const details = activeLive ? activeLive.details : node.config.details;
         const state = activeLive ? activeLive.state : node.config.state;
         const image = activeLive
@@ -1598,12 +1595,11 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           node.config.rpcDataSource !== "custom" &&
           node.config.useLiveRpc !== false &&
           parentEmbed?.config?.useLiveRpc !== false;
-        const liveHasContent = Boolean(live && (live.hasActivity || live.appName || live.name || live.details));
         const liveIsOnline = Boolean(
-          liveHasContent && (live?.status !== "offline" || (live as any)?.source === "database")
+          live && live.status !== "offline" && (live.hasActivity || live.appName || live.name || live.details)
         );
         const activeLive = useLive && liveIsOnline ? live : null;
-        const isOfflineLive = Boolean(useLive && !liveIsOnline);
+        const isOfflineLive = Boolean(useLive && (!live || live.status === "offline" || !live.hasActivity));
 
         if (node.type === "rpc-icon") {
           const isSmallBinding = node.config.rpcFieldBinding === "smallImage";
