@@ -185,7 +185,7 @@ app.use(
     },
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Cookie', 'X-App-Token', 'X-Api-Token'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Cookie', 'X-App-Token', 'X-Api-Token', 'Cache-Control', 'Pragma'],
     exposedHeaders: ['Set-Cookie', 'Retry-After'],
   })
 );

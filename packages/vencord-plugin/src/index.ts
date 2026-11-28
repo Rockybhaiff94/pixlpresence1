@@ -1009,8 +1009,7 @@ export async function fetchAndSync(): Promise<void> {
             cache: "no-store",
             headers: {
                 Authorization: `Bearer ${token}`,
-                Accept: "application/json",
-                "Cache-Control": "no-cache"
+                Accept: "application/json"
             },
             signal: activeAbortController.signal
         });
@@ -1095,7 +1094,7 @@ function SettingsAboutWrapper() {
     const [, setTick] = React.useState(0);
 
     React.useEffect(() => {
-        onStateChangeCallback = () => setTick(t => t + 1);
+        onStateChangeCallback = () => setTick((t: number) => t + 1);
         return () => {
             onStateChangeCallback = null;
         };
