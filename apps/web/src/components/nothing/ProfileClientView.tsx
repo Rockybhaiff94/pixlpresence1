@@ -190,15 +190,13 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
       lastSequenceRef.current = data.sequence || lastSequenceRef.current;
       lastUpdatedRef.current = data.updatedAt || Date.now();
 
-      if (data.hasActivity && data.activity && (data.status !== "offline" || data.activitySource === "custom")) {
+      if (data.hasActivity && data.activity && data.status !== "offline") {
         setLivePresence((prev: any) => ({
           ...data.activity,
           streaks: data.activity.streaks ?? prev?.streaks ?? discordPresence?.streaks,
           statistics: data.activity.statistics ?? prev?.statistics ?? discordPresence?.statistics,
           statusLabels: data.activity.statusLabels ?? prev?.statusLabels ?? discordPresence?.statusLabels,
           status: data.status,
-          activitySource: data.activitySource,
-          rpcPriority: data.rpcPriority,
           hasActivity: true,
         }));
       } else {

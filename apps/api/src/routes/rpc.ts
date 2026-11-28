@@ -744,11 +744,6 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
     if (rawData.streaks !== undefined) updatedCustomConfig.streaks = Array.isArray(rawData.streaks) ? rawData.streaks : [];
     if (rawData.statistics !== undefined) updatedCustomConfig.statistics = Array.isArray(rawData.statistics) ? rawData.statistics : [];
     if (rawData.statusLabels !== undefined) updatedCustomConfig.statusLabels = Array.isArray(rawData.statusLabels) ? rawData.statusLabels : [];
-    if (rawData.rpcPriority === 'custom' || rawData.rpcPriority === 'discord') {
-      updatedCustomConfig.rpcPriority = rawData.rpcPriority;
-    } else if (!updatedCustomConfig.rpcPriority) {
-      updatedCustomConfig.rpcPriority = 'discord';
-    }
 
     data.customConfig = JSON.stringify(updatedCustomConfig);
 
@@ -826,51 +821,48 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
       fullPayload.statistics
     );
 
-    const customRpcEnabled = rpcRecord.showProfileRpc !== false;
-    const hasCustomContent = Boolean(fullPayload.appName || formattedDetails || formattedState);
-    const customActivityPayload: LiveActivity | null =
-      customRpcEnabled && hasCustomContent
-        ? {
-            name: fullPayload.appName || 'Active Application',
-            appName: fullPayload.appName || 'Active Application',
-            type: typeof fullPayload.activityType === 'number' ? fullPayload.activityType : 0,
-            details: formattedDetails || null,
-            state: formattedState || null,
-            largeImage: fullPayload.largeImageEnabled !== false ? (fullPayload.largeImage || null) : null,
-            smallImage: fullPayload.smallImageEnabled !== false ? (fullPayload.smallImage || null) : null,
-            largeImageText: fullPayload.largeImageEnabled !== false ? (fullPayload.largeImageText || null) : null,
-            smallImageText: fullPayload.smallImageEnabled !== false ? (fullPayload.smallImageText || null) : null,
-            streamUrl: fullPayload.streamUrl || null,
-            startTimestamp:
-              fullPayload.timestampMode === 'none' || fullPayload.timestampMode === '0'
-                ? null
-                : fullPayload.startTimestamp
-                ? new Date(fullPayload.startTimestamp).toISOString()
-                : new Date().toISOString(),
-            endTimestamp: fullPayload.endTimestamp ? new Date(fullPayload.endTimestamp).toISOString() : null,
-            party:
-              fullPayload.partySize && fullPayload.partyMax
-                ? { size: [fullPayload.partySize, fullPayload.partyMax] }
-                : null,
-            buttons: [
-              ...(fullPayload.button1Enabled !== false && fullPayload.button1Label && fullPayload.button1Url
-                ? [{ label: fullPayload.button1Label, url: fullPayload.button1Url }]
-                : []),
-              ...(fullPayload.button2Enabled !== false && fullPayload.button2Label && fullPayload.button2Url
-                ? [{ label: fullPayload.button2Label, url: fullPayload.button2Url }]
-                : []),
-            ],
-          }
-        : null;
+    const customRpcActive =
+      rpcRecord.showProfileRpc !== false &&
+      rpcRecord.enableDiscordRpc !== false &&
+      Boolean(fullPayload.appName || formattedDetails || formattedState);
 
-    presenceManager.syncCustomRpcUpdate({
-      username: currentUser.username,
-      userId: currentUser.id,
-      discordId: currentUser.discordId,
-      showProfileRpc: customRpcEnabled,
-      rpcPriority: updatedCustomConfig.rpcPriority === 'custom' ? 'custom' : 'discord',
-      customActivity: customActivityPayload,
-    });
+    if (customRpcActive) {
+      presenceManager.updatePresence({
+        username: currentUser.username,
+        userId: currentUser.id,
+        discordId: currentUser.discordId,
+        status: 'online',
+        hasActivity: true,
+        activity: {
+          name: fullPayload.appName || 'Active Application',
+          appName: fullPayload.appName || 'Active Application',
+          type: typeof fullPayload.activityType === 'number' ? fullPayload.activityType : 0,
+          details: formattedDetails || null,
+          state: formattedState || null,
+          largeImage: fullPayload.largeImageEnabled !== false ? (fullPayload.largeImage || null) : null,
+          smallImage: fullPayload.smallImageEnabled !== false ? (fullPayload.smallImage || null) : null,
+          largeImageText: fullPayload.largeImageEnabled !== false ? (fullPayload.largeImageText || null) : null,
+          smallImageText: fullPayload.smallImageEnabled !== false ? (fullPayload.smallImageText || null) : null,
+          streamUrl: fullPayload.streamUrl || null,
+          startTimestamp: fullPayload.timestampMode === 'none' || fullPayload.timestampMode === '0'
+            ? null
+            : (fullPayload.startTimestamp ? new Date(fullPayload.startTimestamp).toISOString() : new Date().toISOString()),
+          endTimestamp: fullPayload.endTimestamp ? new Date(fullPayload.endTimestamp).toISOString() : null,
+          party: (fullPayload.partySize && fullPayload.partyMax) ? { size: [fullPayload.partySize, fullPayload.partyMax] } : null,
+          buttons: [
+            ...(fullPayload.button1Enabled !== false && fullPayload.button1Label && fullPayload.button1Url
+              ? [{ label: fullPayload.button1Label, url: fullPayload.button1Url }]
+              : []),
+            ...(fullPayload.button2Enabled !== false && fullPayload.button2Label && fullPayload.button2Url
+              ? [{ label: fullPayload.button2Label, url: fullPayload.button2Url }]
+              : []),
+          ],
+        },
+        source: 'database',
+      });
+    } else {
+      presenceManager.clearDatabasePresence(currentUser.username, currentUser.discordId);
+    }
 
     res.json(fullPayload);
   } catch (err) {

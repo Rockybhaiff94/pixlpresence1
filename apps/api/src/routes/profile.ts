@@ -270,19 +270,26 @@ profileRouter.get('/u/:username', async (req: any, res) => {
         ...livePresence.activity,
         status: livePresence.status,
         hasActivity: true,
-        activitySource: livePresence.activitySource,
-        rpcPriority: livePresence.rpcPriority,
-        ...(livePresence.activitySource === 'custom' ? (rpcExtras || {}) : {}),
+        ...(rpcExtras || {}),
       };
-    } else if (livePresence.status !== 'offline') {
-      safeRpc = {
-        status: livePresence.status,
-        hasActivity: false,
-        activitySource: 'none',
-        rpcPriority: livePresence.rpcPriority,
-      };
-    } else {
-      safeRpc = null;
+    } else if (livePresence.status === 'offline' || !livePresence.hasActivity) {
+      // If user is offline or has no live activity, do NOT serve a stale game snapshot
+      if (rawRpc && rawRpc.showProfileRpc !== false && rawRpc.enableDiscordRpc === false) {
+        // Only retain custom manual presence if explicitly configured as static custom presence
+        safeRpc = {
+          ...rawRpc,
+          status: livePresence.status !== 'offline' ? livePresence.status : 'online',
+          hasActivity: true,
+          ...(rpcExtras || {}),
+        };
+      } else if (livePresence.status !== 'offline') {
+        safeRpc = {
+          status: livePresence.status,
+          hasActivity: false,
+        };
+      } else {
+        safeRpc = null;
+      }
     }
 
     res.json({
