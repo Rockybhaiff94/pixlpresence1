@@ -1132,6 +1132,18 @@ rpcRouter.post('/upload', requireAuth, uploadRateLimiter, parseUploadMultipart, 
 
     slot = typeof rawTargetSlot === 'string' && rawTargetSlot.trim() ? rawTargetSlot.trim() : 'studio_asset';
 
+    if (slot === 'custom_badge') {
+      const { canUploadCustomBadges } = await import('../services/entitlements');
+      if (!canUploadCustomBadges(req.user)) {
+        return res.status(403).json({
+          error: 'Custom badge uploads require Pixel.gg Premium or an authorized staff role.',
+          code: 'PREMIUM_REQUIRED',
+          category: 'authorization',
+          requestId,
+        });
+      }
+    }
+
     // Process and save through ImageAssetService (Sharp pipeline, animated GIF preservation, persistent storage upload)
     const savedAsset = await ImageAssetService.processAndSaveAsset({
       userId: req.user.id,

@@ -164,10 +164,14 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     onApply: (url: string) => void;
   } | null>(null);
   const [badgeInventory, setBadgeInventory] = useState<BadgeInventoryItem[]>([]);
+  const [storeBadgeInventory, setStoreBadgeInventory] = useState<BadgeInventoryItem[]>([]);
+  const [customBadgeInventory, setCustomBadgeInventory] = useState<BadgeInventoryItem[]>([]);
+  const [canUploadCustomBadges, setCanUploadCustomBadges] = useState(false);
   const [badgeInventoryLoading, setBadgeInventoryLoading] = useState(false);
   const [badgeModalState, setBadgeModalState] = useState<{
     open: boolean;
     title: string;
+    mode?: "name-badge" | "decoration-badge";
     selectedBadgeId?: string | null;
     onSelect: (badge: BadgeInventoryItem) => void;
   } | null>(null);
@@ -439,6 +443,9 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       .then((payload) => {
         if (!active || !payload || !Array.isArray(payload.badges)) return;
         setBadgeInventory(payload.badges as BadgeInventoryItem[]);
+        setStoreBadgeInventory(Array.isArray(payload.storeBadges) ? (payload.storeBadges as BadgeInventoryItem[]) : []);
+        setCustomBadgeInventory(Array.isArray(payload.customBadges) ? (payload.customBadges as BadgeInventoryItem[]) : []);
+        setCanUploadCustomBadges(Boolean(payload.canUploadCustomBadges));
       })
       .catch(() => {})
       .finally(() => {
@@ -1035,6 +1042,11 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     },
     [commitSnapshot, doc.canvas, doc.nodes, isPremium, reportRestrictedFeature, showToast]
   );
+
+  const docRef = useRef(doc);
+  docRef.current = doc;
+  const insertComponentRef = useRef(insertComponent);
+  insertComponentRef.current = insertComponent;
 
   const handleDeleteNode = useCallback(
     (id: string) => {
@@ -2054,6 +2066,27 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           }
           badgeInventory={badgeInventory}
           onOpenBadgePicker={(opts) => setBadgeModalState({ open: true, ...opts })}
+          onAddDecorationBadge={(badge, anchorNode) => {
+            const latestDoc = docRef.current || doc;
+            const existingBadgeNodes = latestDoc.nodes.filter((n) => n.type === "profile-badge");
+            const offsetIdx = existingBadgeNodes.length;
+            const baseX = anchorNode ? anchorNode.x + (offsetIdx % 4) * 52 : 36 + (offsetIdx % 4) * 52;
+            const baseY = anchorNode ? anchorNode.y + Math.floor(offsetIdx / 4) * 52 : 240 + Math.floor(offsetIdx / 4) * 52;
+            insertComponentRef.current("profile-badge", null, baseX, baseY, {
+              name: badge.name,
+              config: {
+                badgeId: badge.id,
+                badgeSource: badge.source || "official",
+                badgeCustomImageUrl: badge.imageUrl,
+                badgeCustomAssetId: badge.assetId,
+                badgeCustomName: badge.name,
+                badgeIsAnimated: badge.isAnimated,
+                badgeDisplayMode: "icon",
+                badgeColorMode: "original",
+                badgeColor: badge.defaultColor || "#ffffff",
+              },
+            });
+          }}
           onAddGalleryImage={(galleryId, url) =>
             insertComponent("image", galleryId, undefined, undefined, {
               config: { src: url || "", fit: "cover" },
@@ -2155,10 +2188,20 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         <BadgePickerModal
           isOpen={badgeModalState.open}
           title={badgeModalState.title}
+          mode={badgeModalState.mode || "name-badge"}
           badges={badgeInventory}
+          storeBadges={storeBadgeInventory}
+          customBadges={customBadgeInventory}
+          canUploadCustomBadges={canUploadCustomBadges}
+          placedBadgeIds={doc.nodes
+            .filter((n) => n.type === "profile-badge" && typeof n.config?.badgeId === "string")
+            .map((n) => String(n.config.badgeId))}
           loading={badgeInventoryLoading}
           selectedBadgeId={badgeModalState.selectedBadgeId}
           onSelectBadge={badgeModalState.onSelect}
+          onCustomBadgeUploaded={(newBadge) => {
+            setCustomBadgeInventory((prev) => [newBadge, ...prev.filter((b) => b.id !== newBadge.id)]);
+          }}
           onClose={() => setBadgeModalState(null)}
         />
       )}

@@ -82,9 +82,11 @@ interface SecondaryDockPanelSystemProps {
   badgeInventory?: import("./badgeCatalog").BadgeInventoryItem[];
   onOpenBadgePicker?: (options: {
     title: string;
+    mode?: "name-badge" | "decoration-badge";
     selectedBadgeId?: string | null;
     onSelect: (badge: import("./badgeCatalog").BadgeInventoryItem) => void;
   }) => void;
+  onAddDecorationBadge?: (badge: import("./badgeCatalog").BadgeInventoryItem, anchorNode?: BuilderNode | null) => void;
   onAddGalleryImage: (galleryId: string, url?: string) => void;
   onRenameNode: (id: string, name: string) => void;
   onToggleVisibility: (id: string) => void;
@@ -164,6 +166,7 @@ export const SecondaryDockPanelSystem: React.FC<SecondaryDockPanelSystemProps> =
   onOpenMediaPicker,
   badgeInventory,
   onOpenBadgePicker,
+  onAddDecorationBadge,
   onAddGalleryImage,
   onRenameNode,
   onToggleVisibility,
@@ -973,6 +976,8 @@ return (
         onOpenMediaPicker={onOpenMediaPicker}
         badgeInventory={badgeInventory}
         onOpenBadgePicker={onOpenBadgePicker}
+        onAddDecorationBadge={onAddDecorationBadge}
+        onDeleteNode={onDeleteNode}
         onAddGalleryImage={onAddGalleryImage}
       />
     </div>

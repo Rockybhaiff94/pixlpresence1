@@ -896,13 +896,27 @@ import { resolveUserBadgeInventory } from '../services/badgeInventory';
 
 accountRouter.get('/badges', requireAuth, async (req: any, res) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-    });
+    const [user, customAssets] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: req.user.id },
+      }),
+      prisma.uploadedAsset.findMany({
+        where: { userId: req.user.id, targetSlot: 'custom_badge' },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+        select: {
+          id: true,
+          fileName: true,
+          originalUrl: true,
+          processedUrl: true,
+          isAnimated: true,
+        },
+      }),
+    ]);
 
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    res.json(resolveUserBadgeInventory(user));
+    res.json(resolveUserBadgeInventory(user, customAssets));
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to retrieve badges' });
   }

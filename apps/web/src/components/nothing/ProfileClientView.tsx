@@ -5,10 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Disc,
+  Eye,
   Heart,
 } from "lucide-react";
 import { io } from "socket.io-client";
 import { getApiBaseUrl, apiFetch } from "@/lib/api";
+import { formatCompactViews } from "@/lib/numberFormat";
 import { motion, AnimatePresence } from "framer-motion";
 import { ProfileDesignConfig, DEFAULT_DESIGN_CONFIG } from "@/types/studio";
 import { StudioProfilePreview } from "@/components/studio/StudioProfilePreview";
@@ -100,10 +102,30 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
     };
   }, []);
 
-  // Database-backed Like state
+  // Database-backed Like & Views state
   const [likes, setLikes] = useState<number>(likesCount);
   const [hasLiked, setHasLiked] = useState<boolean>(false);
   const [isLiking, setIsLiking] = useState<boolean>(false);
+  const [liveViews, setLiveViews] = useState<number>(views);
+
+  useEffect(() => {
+    setLiveViews(views);
+  }, [views]);
+
+  useEffect(() => {
+    const onViewsUpdated = (e: Event) => {
+      const detail = (e as CustomEvent<{ username?: string; views?: number }>).detail;
+      if (
+        detail &&
+        typeof detail.views === "number" &&
+        (!detail.username || detail.username.toLowerCase() === username.toLowerCase())
+      ) {
+        setLiveViews(detail.views);
+      }
+    };
+    window.addEventListener("pixel:profile-views-updated", onViewsUpdated);
+    return () => window.removeEventListener("pixel:profile-views-updated", onViewsUpdated);
+  }, [username]);
 
   useEffect(() => {
     let active = true;
@@ -460,7 +482,44 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
       {/* Main Profile Layout — Rendered via Profile Builder V2, Legacy Studio Engine, or Clean Blank Slate */}
       <div className="w-full min-h-screen flex-1 flex flex-col items-center justify-between relative z-10">
         {effectiveProfileBuilderDoc ? (
-          <div className="w-full h-screen min-h-screen overflow-hidden flex flex-col">
+          <div className="w-full h-screen min-h-screen overflow-hidden flex flex-col relative">
+            {/* Public Profile Header Metrics (separate from Studio/Canvas View Counter & Heart nodes) */}
+            <div
+              className="fixed top-4 right-4 z-30 flex items-center gap-2 pointer-events-auto"
+              data-testid="public-header-metrics"
+            >
+              <div
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full backdrop-blur-md bg-black/35 border border-white/10 text-white/85 text-[11px] font-mono shadow-sm select-none"
+                title={`${liveViews.toLocaleString()} profile views`}
+                data-testid="public-header-views-btn"
+                data-raw-views={liveViews}
+              >
+                <Eye size={12} className="text-white/75 shrink-0" />
+                <span className="font-semibold tracking-tight tabular-nums">
+                  {formatCompactViews(liveViews)}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleToggleLike}
+                disabled={isLiking}
+                data-testid="public-header-like-btn"
+                className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-full backdrop-blur-md transition-all cursor-pointer shadow-sm text-[11px] font-mono ${
+                  hasLiked
+                    ? "bg-rose-500/20 border border-rose-500/40 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.25)]"
+                    : "bg-black/35 hover:bg-black/55 border border-white/10 hover:border-white/25 text-white/85 hover:text-white"
+                }`}
+                title={hasLiked ? "Unlike profile" : "Like profile"}
+              >
+                <Heart
+                  size={12}
+                  className={`transition-transform group-hover:scale-110 ${
+                    hasLiked ? "fill-rose-500 text-rose-500" : "text-white/75 group-hover:text-white"
+                  }`}
+                />
+                <span className="font-semibold tracking-tight tabular-nums">{likes.toLocaleString()}</span>
+              </button>
+            </div>
             <ProfileBuilderRenderer
               document={effectiveProfileBuilderDoc}
               deviceMode={viewportDevice}
@@ -483,7 +542,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
                 musicUrl,
                 musicTitle,
                 musicArtist,
-                views,
+                views: liveViews,
                 discordPresence: livePresence,
               }}
             />

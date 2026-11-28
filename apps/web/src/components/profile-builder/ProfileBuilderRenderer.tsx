@@ -1443,6 +1443,8 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
 
       case "profile-badge": {
         const badgeMeta = findBadgeMeta(node.config.badgeId || "early_supporter");
+        const customImageUrl = node.config.badgeCustomImageUrl;
+        const badgeDisplayTitle = node.config.badgeCustomName || badgeMeta?.name || "Profile Badge";
         const displayMode = node.config.badgeDisplayMode || "icon";
         const colorMode = node.config.badgeColorMode || "original";
         const effectiveColor =
@@ -1488,9 +1490,10 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
                 ? `0 0 ${glowIntensity}px ${hexToRgbaSafe(glowColor, 0.5)}`
                 : undefined,
             }}
-            title={badgeMeta?.name || "Profile Badge"}
+            title={badgeDisplayTitle}
             data-testid={`profile-badge-node-${node.id}`}
-            data-badge-id={badgeMeta?.id || ""}
+            data-badge-id={node.config.badgeId || badgeMeta?.id || ""}
+            data-badge-source={node.config.badgeSource || "official"}
             data-badge-mode={displayMode}
           >
             <span
@@ -1501,7 +1504,17 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
                   : undefined,
               }}
             >
-              {renderBadgeGlyph(badgeMeta?.icon || "Award", iconSize, effectiveColor)}
+              {customImageUrl ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={customImageUrl}
+                  alt={badgeDisplayTitle}
+                  style={{ width: `${iconSize}px`, height: `${iconSize}px` }}
+                  className="object-contain rounded-sm"
+                />
+              ) : (
+                renderBadgeGlyph(badgeMeta?.icon || "Award", iconSize, effectiveColor)
+              )}
             </span>
             {displayMode === "icon-name" && (
               <span
@@ -1511,7 +1524,7 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
                   color: effectiveColor,
                 }}
               >
-                {badgeMeta?.name || "Badge"}
+                {badgeDisplayTitle}
               </span>
             )}
           </div>

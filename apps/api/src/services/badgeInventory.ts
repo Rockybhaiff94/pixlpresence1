@@ -1,3 +1,5 @@
+import { canUploadCustomBadges } from "./entitlements";
+
 export interface OfficialBadgeDef {
   id: string;
   name: string;
@@ -6,7 +8,10 @@ export interface OfficialBadgeDef {
   rarity: "Legendary" | "Epic" | "Rare" | "Uncommon";
   icon: string;
   defaultColor: string;
-  source?: "official" | "store";
+  source?: "official" | "store" | "custom";
+  imageUrl?: string;
+  assetId?: string;
+  isAnimated?: boolean;
 }
 
 export const OFFICIAL_BADGES: OfficialBadgeDef[] = [
@@ -67,13 +72,27 @@ export function getUserOwnedBadgeIds(user: {
   return Array.from(new Set(ownedBadgeIds));
 }
 
-export function resolveUserBadgeInventory(user: {
-  badges?: string | null;
-  premiumStatus?: boolean;
-  role?: string;
-}) {
+export interface CustomBadgeAssetRecord {
+  id: string;
+  fileName?: string | null;
+  originalUrl: string;
+  processedUrl?: string | null;
+  isAnimated?: boolean;
+}
+
+export function resolveUserBadgeInventory(
+  user: {
+    id?: string;
+    badges?: string | null;
+    premiumStatus?: boolean;
+    nitroStatus?: number;
+    role?: string;
+  },
+  customAssets: CustomBadgeAssetRecord[] = []
+) {
   const ownedIds = getUserOwnedBadgeIds(user);
   const ownedSet = new Set(ownedIds);
+  const customEntitled = canUploadCustomBadges(user);
 
   const badges = OFFICIAL_BADGES.map((b) => ({
     ...b,
@@ -81,8 +100,29 @@ export function resolveUserBadgeInventory(user: {
     owned: ownedSet.has(b.id),
   }));
 
+  // Store / Purchased badges: future integration point; never fabricate fake store items
+  const storeBadges: Array<OfficialBadgeDef & { owned: boolean }> = [];
+
+  const customBadges = customAssets.map((asset) => ({
+    id: `custom:${asset.id}`,
+    assetId: asset.id,
+    name: asset.fileName ? asset.fileName.replace(/\.[^.]+$/, "") : "Custom Badge",
+    description: asset.isAnimated ? "Animated GIF custom badge" : "Custom uploaded badge",
+    category: "Custom",
+    rarity: "Epic" as const,
+    icon: "Image",
+    defaultColor: "#ffffff",
+    source: "custom" as const,
+    imageUrl: asset.processedUrl || asset.originalUrl,
+    isAnimated: Boolean(asset.isAnimated),
+    owned: customEntitled,
+  }));
+
   return {
     badges,
+    storeBadges,
+    customBadges,
+    canUploadCustomBadges: customEntitled,
     ownedBadgeIds: ownedIds,
     totalCount: badges.length,
     ownedCount: badges.filter((b) => b.owned).length,
@@ -92,13 +132,19 @@ export function resolveUserBadgeInventory(user: {
 export function validateBadgeOwnershipInDoc(
   doc: any,
   ownedBadgeIds: string[],
-  isAdmin: boolean
+  isAdmin: boolean,
+  ownedCustomAssets: CustomBadgeAssetRecord[] = [],
+  canUseCustomBadges: boolean = false
 ): { valid: boolean; error?: string } {
   if (isAdmin || !doc || !Array.isArray(doc.nodes)) {
     return { valid: true };
   }
 
   const ownedSet = new Set(ownedBadgeIds);
+  const customAssetIds = new Set(ownedCustomAssets.map((a) => a.id));
+  const customAssetUrls = new Set(
+    ownedCustomAssets.flatMap((a) => [a.processedUrl, a.originalUrl].filter((u): u is string => Boolean(u)))
+  );
 
   for (const node of doc.nodes) {
     if (!node || typeof node !== "object") continue;
@@ -106,6 +152,12 @@ export function validateBadgeOwnershipInDoc(
 
     if (node.type === "name-text" && typeof cfg.nameBadgeId === "string" && cfg.nameBadgeId.trim()) {
       const badgeId = cfg.nameBadgeId.trim();
+      if (badgeId.startsWith("custom:") || cfg.nameBadgeSource === "custom") {
+        return {
+          valid: false,
+          error: "Custom uploaded artwork cannot be used as a Name Badge.",
+        };
+      }
       if (!ownedSet.has(badgeId)) {
         return {
           valid: false,
@@ -114,9 +166,37 @@ export function validateBadgeOwnershipInDoc(
       }
     }
 
-    if (node.type === "profile-badge" && typeof cfg.badgeId === "string" && cfg.badgeId.trim()) {
-      const badgeId = cfg.badgeId.trim();
-      if (!ownedSet.has(badgeId)) {
+    if (node.type === "profile-badge") {
+      const badgeId = typeof cfg.badgeId === "string" ? cfg.badgeId.trim() : "";
+      const isCustom =
+        cfg.badgeSource === "custom" ||
+        badgeId.startsWith("custom:") ||
+        Boolean(cfg.badgeCustomImageUrl);
+
+      if (isCustom) {
+        if (!canUseCustomBadges) {
+          return {
+            valid: false,
+            error: "Custom uploaded badges require Pixel.gg Premium or an authorized staff role.",
+          };
+        }
+        const rawAssetId =
+          typeof cfg.badgeCustomAssetId === "string" && cfg.badgeCustomAssetId.trim()
+            ? cfg.badgeCustomAssetId.trim()
+            : badgeId.startsWith("custom:")
+            ? badgeId.slice("custom:".length)
+            : "";
+        const rawUrl = typeof cfg.badgeCustomImageUrl === "string" ? cfg.badgeCustomImageUrl.trim() : "";
+        const ownsAsset =
+          (rawAssetId && customAssetIds.has(rawAssetId)) ||
+          (rawUrl && customAssetUrls.has(rawUrl));
+        if (!ownsAsset) {
+          return {
+            valid: false,
+            error: "You can only use custom badge assets that you uploaded.",
+          };
+        }
+      } else if (badgeId && !ownedSet.has(badgeId)) {
         return {
           valid: false,
           error: "You can only display badges that you own on your profile.",

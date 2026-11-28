@@ -947,11 +947,24 @@ profileRouter.patch('/me', requireAuth, async (req: any, res) => {
       if (parsedCfg && typeof parsedCfg === 'object') {
         const ownedBadgeIds = getUserOwnedBadgeIds(req.user);
         const isAdminUser = caps.tier === 'ADMIN';
+        const canUseCustomBadges = caps.allowCustomBadgeUpload;
+        const ownedCustomAssets = canUseCustomBadges
+          ? await prisma.uploadedAsset.findMany({
+              where: { userId: req.user.id, targetSlot: 'custom_badge' },
+              select: { id: true, fileName: true, originalUrl: true, processedUrl: true, isAnimated: true },
+            })
+          : [];
         const existingCfg = parseDesignConfigObject(existingProfile?.designConfig);
         for (const docKey of ['draftProfileBuilder', 'profileBuilder'] as const) {
           const builderDoc = parsedCfg[docKey];
           const existingDoc = existingCfg[docKey];
-          const badgeCheck = validateBadgeOwnershipInDoc(builderDoc, ownedBadgeIds, isAdminUser);
+          const badgeCheck = validateBadgeOwnershipInDoc(
+            builderDoc,
+            ownedBadgeIds,
+            isAdminUser,
+            ownedCustomAssets,
+            canUseCustomBadges
+          );
           if (!badgeCheck.valid) {
             return res.status(403).json({ error: badgeCheck.error });
           }

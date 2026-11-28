@@ -31,7 +31,10 @@ export interface BadgeInventoryItem {
   icon: string;
   defaultColor?: string;
   owned: boolean;
-  source?: "official" | "store";
+  source?: "official" | "store" | "custom";
+  imageUrl?: string;
+  assetId?: string;
+  isAnimated?: boolean;
 }
 
 export const PREDEFINED_BADGE_COLORS: Array<{ label: string; value: string }> = [

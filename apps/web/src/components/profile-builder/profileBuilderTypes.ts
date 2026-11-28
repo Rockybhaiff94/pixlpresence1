@@ -193,6 +193,11 @@ export interface BuilderComponentConfig {
 
   // Independent Profile Badge Component
   badgeId?: string;
+  badgeSource?: "official" | "store" | "custom";
+  badgeCustomImageUrl?: string;
+  badgeCustomAssetId?: string;
+  badgeCustomName?: string;
+  badgeIsAnimated?: boolean;
   badgeDisplayMode?: "icon" | "icon-name";
   badgeColorMode?: "original" | "preset" | "custom";
   badgeColor?: string;

@@ -90,9 +90,12 @@ interface PropertiesPanelProps {
   badgeInventory?: BadgeInventoryItem[];
   onOpenBadgePicker?: (options: {
     title: string;
+    mode?: "name-badge" | "decoration-badge";
     selectedBadgeId?: string | null;
     onSelect: (badge: BadgeInventoryItem) => void;
   }) => void;
+  onAddDecorationBadge?: (badge: BadgeInventoryItem, anchorNode?: BuilderNode | null) => void;
+  onDeleteNode?: (id: string) => void;
   onAddGalleryImage?: (galleryId: string, url?: string) => void;
 }
 
@@ -147,6 +150,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   onOpenMediaPicker,
   badgeInventory = [],
   onOpenBadgePicker,
+  onAddDecorationBadge,
+  onDeleteNode,
   onAddGalleryImage,
 }) => {
   const [videoUploading, setVideoUploading] = useState(false);
@@ -1290,6 +1295,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                       onClick={() =>
                         onOpenBadgePicker?.({
                           title: "Select Name Badge",
+                          mode: "name-badge",
                           selectedBadgeId: activeBadgeId,
                           onSelect: (badge) =>
                             patchConfig({
@@ -1368,19 +1374,30 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <div className="space-y-2.5">
               <div className="p-2 rounded-lg bg-[#121217] border border-[#24242d] flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-7 h-7 rounded bg-[#0d0d13] border border-[#24242d] flex items-center justify-center shrink-0">
-                    {renderBadgeGlyph(
-                      currentBadgeMeta?.icon || "Award",
-                      14,
-                      currentBadgeMeta?.defaultColor || "#ffffff"
+                  <div className="w-7 h-7 rounded bg-[#0d0d13] border border-[#24242d] flex items-center justify-center shrink-0 overflow-hidden">
+                    {selectedNode.config.badgeCustomImageUrl ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={selectedNode.config.badgeCustomImageUrl}
+                        alt={selectedNode.config.badgeCustomName || "Custom Badge"}
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      renderBadgeGlyph(
+                        currentBadgeMeta?.icon || "Award",
+                        14,
+                        currentBadgeMeta?.defaultColor || "#ffffff"
+                      )
                     )}
                   </div>
                   <div className="min-w-0">
                     <div className="text-[10px] font-bold text-white truncate">
-                      {currentBadgeMeta?.name || "Badge"}
+                      {selectedNode.config.badgeCustomName || currentBadgeMeta?.name || "Badge"}
                     </div>
                     <div className="text-[9px] text-neutral-500 truncate">
-                      {currentBadgeMeta?.category || "Official"}
+                      {selectedNode.config.badgeSource === "custom"
+                        ? "Custom Uploaded"
+                        : currentBadgeMeta?.category || "Official"}
                     </div>
                   </div>
                 </div>
@@ -1389,10 +1406,16 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   onClick={() =>
                     onOpenBadgePicker?.({
                       title: "Select Profile Badge",
+                      mode: "decoration-badge",
                       selectedBadgeId: currentBadgeId,
                       onSelect: (badge) =>
                         patchConfig({
                           badgeId: badge.id,
+                          badgeSource: badge.source || "official",
+                          badgeCustomImageUrl: badge.imageUrl || undefined,
+                          badgeCustomAssetId: badge.assetId || undefined,
+                          badgeCustomName: badge.source === "custom" ? badge.name : undefined,
+                          badgeIsAnimated: badge.isAnimated,
                         }),
                     })
                   }
@@ -1637,85 +1660,149 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         </SectionGroup>
       )}
 
-      {/* Badges Group Editor */}
-      {selectedNode.type === "badges-group" && (
-        <SectionGroup title="Badges List">
-          <div className="space-y-2">
-            {(selectedNode.config.badges || []).map((badge, idx) => (
-              <div
-                key={badge.id}
-                className="p-2 rounded-lg bg-[#121217] border border-[#24242d] space-y-1.5"
-              >
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="text"
-                    value={badge.label}
-                    onChange={(e) => {
-                      const next = [...(selectedNode.config.badges || [])];
-                      next[idx] = { ...badge, label: e.target.value };
-                      patchConfig({ badges: next });
-                    }}
-                    className="flex-1 bg-[#0b0b0f] border border-[#24242d] rounded px-1.5 py-0.5 text-[10px] text-white outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = [...(selectedNode.config.badges || [])];
-                      next[idx] = { ...badge, visible: !badge.visible };
-                      patchConfig({ badges: next });
-                    }}
-                    className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-neutral-300 cursor-pointer"
-                  >
-                    {badge.visible ? "On" : "Off"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = (selectedNode.config.badges || []).filter((_, i) => i !== idx);
-                      patchConfig({ badges: next });
-                    }}
-                    className="text-neutral-500 hover:text-red-400 cursor-pointer"
-                  >
-                    <Trash2 size={11} />
-                  </button>
+      {/* Badges Group Editor — Connected to Badge Inventory & Independent Canvas Decorations */}
+      {selectedNode.type === "badges-group" && (() => {
+        const placedBadges = nodes.filter((n) => n.type === "profile-badge");
+        const legacyBadges = selectedNode.config.badges || [];
+        return (
+          <SectionGroup title="Badges List">
+            <div className="space-y-2.5">
+              <p className="text-[10px] text-neutral-400 leading-relaxed">
+                Add unlocked Pixel.gg badges, Store badges, or Custom artwork as independent canvas decorations. Removing a badge here only removes it from your profile canvas.
+              </p>
+
+              {/* Independent Placed Decoration Badges */}
+              {placedBadges.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-[9px] text-neutral-500 uppercase tracking-wider">
+                    Placed Decoration Badges ({placedBadges.length})
+                  </div>
+                  {placedBadges.map((bNode) => {
+                    const bId = bNode.config.badgeId || "early_supporter";
+                    const bMeta = badgeInventory.find((b) => b.id === bId) || findBadgeMeta(bId);
+                    const bName = bNode.config.badgeCustomName || bMeta?.name || bNode.name || "Badge";
+                    return (
+                      <div
+                        key={bNode.id}
+                        className="p-2 rounded-lg bg-[#121217] border border-[#24242d] flex items-center justify-between gap-2"
+                        data-testid={`badges-list-placed-${bNode.id}`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onSelect?.(bNode.id)}
+                          className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer"
+                        >
+                          <div className="w-6 h-6 rounded bg-[#0d0d13] border border-[#24242d] flex items-center justify-center shrink-0 overflow-hidden">
+                            {bNode.config.badgeCustomImageUrl ? (
+                              /* eslint-disable-next-line @next/next/no-img-element */
+                              <img
+                                src={bNode.config.badgeCustomImageUrl}
+                                alt={bName}
+                                className="w-full h-full object-contain"
+                              />
+                            ) : (
+                              renderBadgeGlyph(bMeta?.icon || "Award", 13, bMeta?.defaultColor || "#ffffff")
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-[10px] font-semibold text-white truncate">{bName}</div>
+                            <div className="text-[8px] text-neutral-500 uppercase">
+                              {bNode.config.badgeSource === "custom" ? "Custom" : bMeta?.category || "Official"}
+                            </div>
+                          </div>
+                        </button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => onUpdateNode(bNode.id, { visible: !bNode.visible })}
+                            className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-neutral-300 cursor-pointer"
+                          >
+                            {bNode.visible ? "On" : "Off"}
+                          </button>
+                          {onDeleteNode && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteNode(bNode.id)}
+                              className="text-neutral-500 hover:text-red-400 cursor-pointer p-0.5"
+                              title="Remove from profile"
+                              data-testid={`badges-list-remove-${bNode.id}`}
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <input
-                  type="text"
-                  value={badge.tooltip}
-                  placeholder="Tooltip text..."
-                  onChange={(e) => {
-                    const next = [...(selectedNode.config.badges || [])];
-                    next[idx] = { ...badge, tooltip: e.target.value };
-                    patchConfig({ badges: next });
-                  }}
-                  className="w-full bg-[#0b0b0f] border border-[#24242d] rounded px-1.5 py-0.5 text-[10px] text-neutral-400 outline-none"
-                />
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={() => {
-                const newBadge: ProfileBadgeItem = {
-                  id: createBuilderId("bdg"),
-                  label: "Verified",
-                  icon: "verified",
-                  color: "#e4e4e7",
-                  backgroundColor: "#17171f",
-                  borderColor: "#2e2e38",
-                  borderRadius: 6,
-                  tooltip: "Badge",
-                  visible: true,
-                };
-                patchConfig({ badges: [...(selectedNode.config.badges || []), newBadge] });
-              }}
-              className="w-full py-1.5 rounded bg-[#14141b] border border-[#282832] text-white text-[10px] flex items-center justify-center gap-1 cursor-pointer"
-            >
-              <Plus size={11} />
-              <span>Add Badge</span>
-            </button>
-          </div>
-        </SectionGroup>
-      )}
+              )}
+
+              {/* Legacy Badges Group Compatibility Entries (visibility/removal only; no manual creation) */}
+              {legacyBadges.length > 0 && (
+                <div className="space-y-1.5 pt-1 border-t border-[#1e1e26]">
+                  <div className="text-[9px] text-neutral-500 uppercase tracking-wider">
+                    Legacy Group Badges ({legacyBadges.length})
+                  </div>
+                  {legacyBadges.map((badge, idx) => (
+                    <div
+                      key={badge.id}
+                      className="p-2 rounded-lg bg-[#101015] border border-[#20202a] flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[10px] text-neutral-200 font-semibold truncate">{badge.label}</div>
+                        {badge.tooltip && (
+                          <div className="text-[9px] text-neutral-500 truncate">{badge.tooltip}</div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = [...legacyBadges];
+                            next[idx] = { ...badge, visible: !badge.visible };
+                            patchConfig({ badges: next });
+                          }}
+                          className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-neutral-300 cursor-pointer"
+                        >
+                          {badge.visible ? "On" : "Off"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = legacyBadges.filter((_, i) => i !== idx);
+                            patchConfig({ badges: next });
+                          }}
+                          className="text-neutral-500 hover:text-red-400 cursor-pointer p-0.5"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenBadgePicker?.({
+                    title: "Add Decoration Badges",
+                    mode: "decoration-badge",
+                    onSelect: (badge) => {
+                      onAddDecorationBadge?.(badge, selectedNode);
+                    },
+                  })
+                }
+                className="w-full py-1.5 rounded bg-[#14141b] hover:bg-[#1c1c26] border border-[#282832] text-white text-[10px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                data-testid="badges-list-add-btn"
+              >
+                <Plus size={11} />
+                <span>Add Badge</span>
+              </button>
+            </div>
+          </SectionGroup>
+        );
+      })()}
 
       {/* Music Display Editor */}
       {selectedNode.type === "music-display" && (

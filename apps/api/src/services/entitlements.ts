@@ -22,10 +22,26 @@ export interface UserCapabilities {
   allowAdvancedEffects: boolean;
   allowCustomIconDesigns: boolean;
   allowCustomRpcLayout: boolean;
+  allowCustomBadgeUpload: boolean;
   tier: "FREE" | "PREMIUM" | "NITRO" | "ADMIN";
 }
 
 export const FOUNDER_USER_ID = "cmw4fbemh0000a1sa2h3h5zzk";
+
+export function canUploadCustomBadges(user: {
+  id?: string;
+  role?: string;
+  premiumStatus?: boolean;
+  nitroStatus?: number;
+}): boolean {
+  return (
+    user.role === "ADMIN" ||
+    user.role === "MODERATOR" ||
+    user.id === FOUNDER_USER_ID ||
+    Boolean(user.premiumStatus) ||
+    (user.nitroStatus || 0) > 0
+  );
+}
 
 export function getUserCapabilities(user: {
   id?: string;
@@ -34,6 +50,7 @@ export function getUserCapabilities(user: {
   nitroStatus?: number;
 }): UserCapabilities {
   const isAdmin = user.role === "ADMIN" || user.id === FOUNDER_USER_ID;
+  const isModerator = user.role === "MODERATOR";
   const isPremium = Boolean(user.premiumStatus);
   const isNitro = (user.nitroStatus || 0) > 0;
 
@@ -54,6 +71,7 @@ export function getUserCapabilities(user: {
       allowAdvancedEffects: true,
       allowCustomIconDesigns: true,
       allowCustomRpcLayout: true,
+      allowCustomBadgeUpload: true,
       tier: "ADMIN",
     };
   }
@@ -75,6 +93,7 @@ export function getUserCapabilities(user: {
       allowAdvancedEffects: true,
       allowCustomIconDesigns: true,
       allowCustomRpcLayout: true,
+      allowCustomBadgeUpload: true,
       tier: isNitro ? "NITRO" : "PREMIUM",
     };
   }
@@ -96,6 +115,7 @@ export function getUserCapabilities(user: {
     allowAdvancedEffects: false,
     allowCustomIconDesigns: false,
     allowCustomRpcLayout: false,
+    allowCustomBadgeUpload: isModerator,
     tier: "FREE",
   };
 }
