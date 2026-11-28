@@ -141,6 +141,7 @@ export interface ProfileBadgeItem {
   borderRadius: number;
   tooltip: string;
   visible: boolean;
+  unifiedConfig?: import("./unifiedBadge").UnifiedBadgeConfig;
 }
 
 export interface SocialLinkItem {
@@ -183,6 +184,11 @@ export interface BuilderComponentConfig {
   showVerifiedBadge?: boolean;
   nameBadgeEnabled?: boolean;
   nameBadgeId?: string | null;
+  nameBadgeSource?: "official" | "store" | "custom";
+  nameBadgeCustomImageUrl?: string;
+  nameBadgeCustomAssetId?: string;
+  nameBadgeCustomName?: string;
+  nameBadgeConfig?: import("./unifiedBadge").UnifiedBadgeConfig;
   statusPillText?: string;
   statusPillActive?: boolean;
   maxWidth?: number;
@@ -198,12 +204,13 @@ export interface BuilderComponentConfig {
   badgeCustomAssetId?: string;
   badgeCustomName?: string;
   badgeIsAnimated?: boolean;
-  badgeDisplayMode?: "icon" | "icon-name";
+  badgeDisplayMode?: "icon" | "icon-only" | "icon-square" | "icon-name";
   badgeColorMode?: "original" | "preset" | "custom";
   badgeColor?: string;
   badgeGlowEnabled?: boolean;
   badgeGlowIntensity?: number;
   badgeGlowColor?: string;
+  unifiedBadge?: import("./unifiedBadge").UnifiedBadgeConfig;
 
   // Profile View Counter
   viewCounterShowIcon?: boolean;

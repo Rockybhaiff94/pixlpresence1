@@ -150,15 +150,40 @@ export function validateBadgeOwnershipInDoc(
     if (!node || typeof node !== "object") continue;
     const cfg = node.config || {};
 
-    if (node.type === "name-text" && typeof cfg.nameBadgeId === "string" && cfg.nameBadgeId.trim()) {
-      const badgeId = cfg.nameBadgeId.trim();
-      if (badgeId.startsWith("custom:") || cfg.nameBadgeSource === "custom") {
-        return {
-          valid: false,
-          error: "Custom uploaded artwork cannot be used as a Name Badge.",
-        };
-      }
-      if (!ownedSet.has(badgeId)) {
+    if (node.type === "name-text" && (typeof cfg.nameBadgeId === "string" || cfg.nameBadgeConfig)) {
+      const badgeId = typeof cfg.nameBadgeId === "string" ? cfg.nameBadgeId.trim() : "";
+      const nameCfg = cfg.nameBadgeConfig || {};
+      const customUrl =
+        (typeof cfg.nameBadgeCustomImageUrl === "string" && cfg.nameBadgeCustomImageUrl.trim()) ||
+        (typeof nameCfg.iconUrl === "string" && nameCfg.iconUrl.trim()) ||
+        "";
+      const isCustom =
+        cfg.nameBadgeSource === "custom" ||
+        nameCfg.source === "custom" ||
+        badgeId.startsWith("custom:") ||
+        Boolean(customUrl);
+
+      if (isCustom) {
+        if (!canUseCustomBadges) {
+          return {
+            valid: false,
+            error: "Custom uploaded badges require Pixel.gg Premium or an authorized staff role.",
+          };
+        }
+        const rawAssetId =
+          (typeof cfg.nameBadgeCustomAssetId === "string" && cfg.nameBadgeCustomAssetId.trim()) ||
+          (typeof nameCfg.assetId === "string" && nameCfg.assetId.trim()) ||
+          (badgeId.startsWith("custom:") ? badgeId.slice("custom:".length) : "");
+        const ownsAsset =
+          (rawAssetId && customAssetIds.has(rawAssetId)) ||
+          (customUrl && customAssetUrls.has(customUrl));
+        if (!ownsAsset) {
+          return {
+            valid: false,
+            error: "You can only use custom badge assets that you uploaded.",
+          };
+        }
+      } else if (badgeId && !ownedSet.has(badgeId)) {
         return {
           valid: false,
           error: "You can only assign badges that you own to your profile name.",

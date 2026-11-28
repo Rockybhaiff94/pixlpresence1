@@ -27,6 +27,12 @@ import {
 import { PlatformIcon } from "@/components/links/PlatformIcons";
 import { resolvePlatformDef } from "@/components/studio/socialsEngine";
 import { formatBannerUrl } from "@/lib/api";
+import { UnifiedBadge } from "./UnifiedBadgeRenderer";
+import {
+  normalizeLegacyBadgeItemConfig,
+  normalizeNameBadgeConfig,
+  normalizeProfileBadgeNodeConfig,
+} from "./unifiedBadge";
 import {
   BuilderCanvasSettings,
   BuilderComponentConfig,
@@ -824,21 +830,7 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           node.config.textFillType === "gradient"
             ? compileTextGradientStyle(node.config.textGradients, node.config.color || "#ffffff")
             : null;
-        const nameBadgeEnabled =
-          node.config.nameBadgeEnabled !== undefined
-            ? node.config.nameBadgeEnabled
-            : Boolean(node.config.showVerifiedBadge);
-        const resolvedNameBadgeId =
-          node.config.nameBadgeId !== undefined
-            ? node.config.nameBadgeId
-            : node.config.showVerifiedBadge
-              ? "verified"
-              : null;
-        const nameBadgeMeta =
-          nameBadgeEnabled && resolvedNameBadgeId
-            ? findBadgeMeta(resolvedNameBadgeId)
-            : null;
-        const nameBadgeSize = Math.max(13, Math.round(fontSize * 0.72));
+        const nameBadgeConfig = normalizeNameBadgeConfig(node);
         return (
           <div
             className="w-full h-full flex items-center gap-1.5 overflow-hidden select-none"
@@ -858,7 +850,7 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
             }}
           >
             <span
-              className="truncate"
+              className="truncate min-w-0"
               style={nameTextGrad || undefined}
               data-text-gradient={nameTextGrad ? "true" : undefined}
             >
@@ -866,19 +858,11 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
                 ? node.config.text
                 : liveData?.displayName || liveData?.username || node.config.text || "PIXEL USER"}
             </span>
-            {nameBadgeMeta && (
-              <span
-                className="inline-flex items-center justify-center shrink-0"
-                title={nameBadgeMeta.name}
-                data-testid={`name-badge-${node.id}`}
-                data-badge-id={nameBadgeMeta.id}
-              >
-                {renderBadgeGlyph(
-                  nameBadgeMeta.icon,
-                  nameBadgeSize,
-                  nameBadgeMeta.defaultColor || "#ffffff"
-                )}
-              </span>
+            {nameBadgeConfig && (
+              <UnifiedBadge
+                config={nameBadgeConfig}
+                dataTestId={`name-badge-${node.id}`}
+              />
             )}
           </div>
         );
@@ -969,20 +953,12 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               <span className="text-[10px] font-mono text-neutral-500">No visible badges</span>
             ) : (
               badges.map((badge) => (
-                <span
+                <UnifiedBadge
                   key={badge.id}
+                  config={normalizeLegacyBadgeItemConfig(badge)}
                   title={badge.tooltip || badge.label}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono font-semibold border"
-                  style={{
-                    color: badge.color,
-                    backgroundColor: badge.backgroundColor,
-                    borderColor: badge.borderColor,
-                    borderRadius: `${badge.borderRadius ?? 6}px`,
-                  }}
-                >
-                  {getBadgeIcon(badge.icon)}
-                  <span>{badge.label}</span>
-                </span>
+                  dataTestId={`badges-group-item-${badge.id}`}
+                />
               ))
             )}
           </div>
@@ -1449,92 +1425,13 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
       }
 
       case "profile-badge": {
-        const badgeMeta = findBadgeMeta(node.config.badgeId || "early_supporter");
-        const customImageUrl = node.config.badgeCustomImageUrl;
-        const badgeDisplayTitle = node.config.badgeCustomName || badgeMeta?.name || "Profile Badge";
-        const displayMode = node.config.badgeDisplayMode || "icon";
-        const colorMode = node.config.badgeColorMode || "original";
-        const effectiveColor =
-          colorMode === "original"
-            ? badgeMeta?.defaultColor || "#ffffff"
-            : node.config.badgeColor || "#ffffff";
-        const glowEnabled = Boolean(node.config.badgeGlowEnabled);
-        const glowIntensity = Math.max(4, Math.min(28, node.config.badgeGlowIntensity ?? 12));
-        const glowColor = node.config.badgeGlowColor || effectiveColor;
-        const bgColor = node.style.backgroundColor || "#111116";
-        const bgOpacity = node.style.backgroundOpacity ?? 0.85;
-        const radius = node.style.borderRadius ?? 10;
-        const minDim = Math.max(20, Math.min(node.width, node.height));
-        const iconSize =
-          displayMode === "icon-name"
-            ? Math.max(12, Math.min(24, Math.round(minDim * 0.48)))
-            : Math.max(14, Math.min(48, Math.round(minDim * 0.56)));
-        const badgeGrad =
-          node.style.backgroundType === "gradient"
-            ? compileGradientLayersCss(
-                node.style.backgroundGradients,
-                {
-                  colorA: bgColor,
-                  colorB: node.style.backgroundGradientTo || "#262634",
-                  angle: node.style.backgroundGradientAngle ?? 135,
-                  opacity: bgOpacity,
-                },
-                bgOpacity
-              )
-            : undefined;
-
+        const unifiedConfig = normalizeProfileBadgeNodeConfig(node);
         return (
-          <div
-            className="w-full h-full px-2 flex items-center justify-center gap-1.5 backdrop-blur-md select-none overflow-hidden"
-            style={{
-              backgroundColor: hexToRgbaSafe(bgColor, bgOpacity),
-              backgroundImage: badgeGrad,
-              borderColor: node.style.borderColor || "#2a2a34",
-              borderWidth: `${node.style.borderWidth ?? 1}px`,
-              borderStyle: node.style.borderStyle || "solid",
-              borderRadius: `${radius}px`,
-              boxShadow: glowEnabled
-                ? `0 0 ${glowIntensity}px ${hexToRgbaSafe(glowColor, 0.5)}`
-                : undefined,
-            }}
-            title={badgeDisplayTitle}
-            data-testid={`profile-badge-node-${node.id}`}
-            data-badge-id={node.config.badgeId || badgeMeta?.id || ""}
-            data-badge-source={node.config.badgeSource || "official"}
-            data-badge-mode={displayMode}
-          >
-            <span
-              className="inline-flex items-center justify-center shrink-0"
-              style={{
-                filter: glowEnabled
-                  ? `drop-shadow(0 0 ${Math.round(glowIntensity * 0.6)}px ${hexToRgbaSafe(glowColor, 0.75)})`
-                  : undefined,
-              }}
-            >
-              {customImageUrl ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={customImageUrl}
-                  alt={badgeDisplayTitle}
-                  style={{ width: `${iconSize}px`, height: `${iconSize}px` }}
-                  className="object-contain rounded-sm"
-                />
-              ) : (
-                renderBadgeGlyph(badgeMeta?.icon || "Award", iconSize, effectiveColor)
-              )}
-            </span>
-            {displayMode === "icon-name" && (
-              <span
-                className="font-mono font-semibold truncate"
-                style={{
-                  fontSize: `${node.config.fontSize ?? 12}px`,
-                  color: effectiveColor,
-                }}
-              >
-                {badgeDisplayTitle}
-              </span>
-            )}
-          </div>
+          <UnifiedBadge
+            config={unifiedConfig}
+            fillContainer
+            dataTestId={`profile-badge-node-${node.id}`}
+          />
         );
       }
 

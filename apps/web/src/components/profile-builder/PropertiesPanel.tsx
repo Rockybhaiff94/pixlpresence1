@@ -20,6 +20,14 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { uploadMediaAsset, validateUploadFile } from "@/lib/uploadAsset";
+import { UnifiedBadgeEditor } from "./UnifiedBadgeEditor";
+import {
+  createDefaultUnifiedBadgeConfig,
+  normalizeLegacyBadgeItemConfig,
+  normalizeNameBadgeConfig,
+  normalizeProfileBadgeNodeConfig,
+  unifiedConfigToProfileBadgeNodePatch,
+} from "./unifiedBadge";
 import { AVAILABLE_FONTS } from "@/components/editor/editorPresets";
 import { PLATFORMS } from "@/components/links/PlatformIcons";
 import {
@@ -169,6 +177,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
   const [tplCategoryFilter, setTplCategoryFilter] = useState<string>("all");
   const [rpcResetDialogForId, setRpcResetDialogForId] = useState<string | null>(null);
+  const [editingGroupBadgeId, setEditingGroupBadgeId] = useState<string | null>(null);
 
   const [rpcSyncPrefs, setRpcSyncPrefs] = useState<{
     loaded: boolean;
@@ -1306,89 +1315,109 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               selectedNode.config.nameBadgeEnabled !== undefined
                 ? selectedNode.config.nameBadgeEnabled
                 : Boolean(selectedNode.config.showVerifiedBadge);
-            const activeBadgeId =
-              selectedNode.config.nameBadgeId !== undefined
-                ? selectedNode.config.nameBadgeId
-                : selectedNode.config.showVerifiedBadge
-                  ? "verified"
-                  : null;
-            const activeBadgeMeta =
-              badgeInventory.find((b) => b.id === activeBadgeId) ||
-              findBadgeMeta(activeBadgeId);
+            const activeBadgeConfig = normalizeNameBadgeConfig(selectedNode);
             return (
-              <div className="pt-2 border-t border-[#1e1e26] space-y-2">
+              <div className="pt-2 border-t border-[#1e1e26] space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] text-neutral-300 font-semibold">Show Name Badge</span>
                   <input
                     type="checkbox"
                     checked={Boolean(nameBadgeEnabled)}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const nextEnabled = e.target.checked;
+                      const fallbackId = selectedNode.config.nameBadgeId || "verified";
                       patchConfig({
-                        nameBadgeEnabled: e.target.checked,
+                        nameBadgeEnabled: nextEnabled,
+                        nameBadgeId: nextEnabled ? fallbackId : selectedNode.config.nameBadgeId,
                         showVerifiedBadge: false,
-                      })
-                    }
+                      });
+                    }}
                     className="accent-white cursor-pointer"
                     data-testid="name-badge-toggle"
                   />
                 </div>
-                <div className="p-2 rounded-lg bg-[#121217] border border-[#24242d] flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-6 h-6 rounded bg-[#0d0d13] border border-[#24242d] flex items-center justify-center shrink-0">
-                      {activeBadgeMeta ? (
-                        renderBadgeGlyph(
-                          activeBadgeMeta.icon,
-                          13,
-                          activeBadgeMeta.defaultColor || "#ffffff"
-                        )
-                      ) : (
-                        <span className="text-[9px] text-neutral-600">—</span>
-                      )}
-                    </div>
-                    <span className="text-[10px] text-white truncate">
-                      {activeBadgeMeta ? activeBadgeMeta.name : "No badge selected"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
+                {nameBadgeEnabled && activeBadgeConfig ? (
+                  <div className="space-y-2">
+                    <UnifiedBadgeEditor
+                      config={activeBadgeConfig}
+                      badgeInventory={badgeInventory}
+                      isPremiumOrAdmin={isPremiumOrAdmin}
+                      onRestrictedFeature={onRestrictedFeature}
+                      onOpenBadgePicker={onOpenBadgePicker}
+                      pickerTitle="Select Name Badge"
+                      testIdPrefix="name-badge"
+                      onChange={(next) =>
+                        patchConfig({
+                          nameBadgeEnabled: true,
+                          nameBadgeId: next.id,
+                          nameBadgeSource: next.source,
+                          nameBadgeCustomImageUrl: next.iconUrl,
+                          nameBadgeCustomAssetId: next.assetId,
+                          nameBadgeCustomName: next.name,
+                          nameBadgeConfig: next,
+                          showVerifiedBadge: false,
+                        })
+                      }
+                    />
                     <button
                       type="button"
                       onClick={() =>
-                        onOpenBadgePicker?.({
-                          title: "Select Name Badge",
-                          mode: "name-badge",
-                          selectedBadgeId: activeBadgeId,
-                          onSelect: (badge) =>
-                            patchConfig({
-                              nameBadgeId: badge.id,
-                              nameBadgeEnabled: true,
-                              showVerifiedBadge: false,
-                            }),
+                        patchConfig({
+                          nameBadgeId: null,
+                          nameBadgeEnabled: false,
+                          nameBadgeSource: undefined,
+                          nameBadgeCustomImageUrl: undefined,
+                          nameBadgeCustomAssetId: undefined,
+                          nameBadgeCustomName: undefined,
+                          showVerifiedBadge: false,
                         })
                       }
-                      className="px-2 py-1 rounded bg-[#191924] hover:bg-[#222230] border border-[#2e2e3c] text-[9px] font-semibold text-white cursor-pointer"
-                      data-testid="name-badge-picker-btn"
+                      className="w-full py-1 rounded border border-[#2a2a34] text-[9px] text-neutral-400 hover:text-red-400 hover:border-red-500/40 cursor-pointer flex items-center justify-center gap-1"
+                      data-testid="name-badge-remove-btn"
                     >
-                      {activeBadgeMeta ? "Change" : "Add Badge"}
+                      <Trash2 size={10} />
+                      <span>Remove Name Badge</span>
                     </button>
-                    {activeBadgeId && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          patchConfig({
-                            nameBadgeId: null,
-                            nameBadgeEnabled: false,
-                            showVerifiedBadge: false,
-                          })
-                        }
-                        className="p-1 rounded text-neutral-500 hover:text-red-400 cursor-pointer"
-                        title="Remove name badge"
-                        data-testid="name-badge-remove-btn"
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                    )}
                   </div>
-                </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onOpenBadgePicker?.({
+                        title: "Select Name Badge",
+                        mode: "decoration-badge",
+                        selectedBadgeId: selectedNode.config.nameBadgeId || null,
+                        onSelect: (badge) => {
+                          const nextCfg = createDefaultUnifiedBadgeConfig({
+                            id: badge.id,
+                            name: badge.name,
+                            iconUrl: badge.imageUrl,
+                            assetId: badge.assetId,
+                            source: badge.source || "official",
+                            isAnimated: badge.isAnimated,
+                            glyphIcon: badge.icon,
+                            defaultColor: badge.defaultColor || "#ffffff",
+                            displayStyle: "icon-only",
+                          });
+                          patchConfig({
+                            nameBadgeId: badge.id,
+                            nameBadgeEnabled: true,
+                            nameBadgeSource: badge.source || "official",
+                            nameBadgeCustomImageUrl: badge.imageUrl,
+                            nameBadgeCustomAssetId: badge.assetId,
+                            nameBadgeCustomName: badge.name,
+                            nameBadgeConfig: nextCfg,
+                            showVerifiedBadge: false,
+                          });
+                        },
+                      })
+                    }
+                    className="w-full py-1.5 rounded bg-[#191924] hover:bg-[#222230] border border-[#2e2e3c] text-[10px] font-semibold text-white cursor-pointer"
+                    data-testid="name-badge-picker-btn"
+                  >
+                    Add Name Badge
+                  </button>
+                )}
               </div>
             );
           })()}
@@ -1420,251 +1449,29 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
       {/* Independent Profile Badge Component */}
       {selectedNode.type === "profile-badge" && (() => {
-        const currentBadgeId = selectedNode.config.badgeId || "early_supporter";
-        const currentBadgeMeta =
-          badgeInventory.find((b) => b.id === currentBadgeId) || findBadgeMeta(currentBadgeId);
-        const displayMode = selectedNode.config.badgeDisplayMode || "icon";
-        const colorMode = selectedNode.config.badgeColorMode || "original";
-        const currentColor = selectedNode.config.badgeColor || "#ffffff";
-        const glowEnabled = Boolean(selectedNode.config.badgeGlowEnabled);
-        const glowIntensity = selectedNode.config.badgeGlowIntensity ?? 12;
-
+        const unifiedConfig = normalizeProfileBadgeNodeConfig(selectedNode);
         return (
           <SectionGroup title="Profile Badge">
-            <div className="space-y-2.5">
-              <div className="p-2 rounded-lg bg-[#121217] border border-[#24242d] flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-7 h-7 rounded bg-[#0d0d13] border border-[#24242d] flex items-center justify-center shrink-0 overflow-hidden">
-                    {selectedNode.config.badgeCustomImageUrl ? (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img
-                        src={selectedNode.config.badgeCustomImageUrl}
-                        alt={selectedNode.config.badgeCustomName || "Custom Badge"}
-                        className="w-full h-full object-contain"
-                      />
-                    ) : (
-                      renderBadgeGlyph(
-                        currentBadgeMeta?.icon || "Award",
-                        14,
-                        currentBadgeMeta?.defaultColor || "#ffffff"
-                      )
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-bold text-white truncate">
-                      {selectedNode.config.badgeCustomName || currentBadgeMeta?.name || "Badge"}
-                    </div>
-                    <div className="text-[9px] text-neutral-500 truncate">
-                      {selectedNode.config.badgeSource === "custom"
-                        ? "Custom Uploaded"
-                        : currentBadgeMeta?.category || "Official"}
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onOpenBadgePicker?.({
-                      title: "Select Profile Badge",
-                      mode: "decoration-badge",
-                      selectedBadgeId: currentBadgeId,
-                      onSelect: (badge) =>
-                        patchConfig({
-                          badgeId: badge.id,
-                          badgeSource: badge.source || "official",
-                          badgeCustomImageUrl: badge.imageUrl || undefined,
-                          badgeCustomAssetId: badge.assetId || undefined,
-                          badgeCustomName: badge.source === "custom" ? badge.name : undefined,
-                          badgeIsAnimated: badge.isAnimated,
-                        }),
-                    })
-                  }
-                  className="px-2 py-1 rounded bg-[#191924] hover:bg-[#222230] border border-[#2e2e3c] text-[9px] font-semibold text-white cursor-pointer shrink-0"
-                  data-testid="profile-badge-picker-btn"
-                >
-                  Change Badge
-                </button>
-              </div>
-
-              <div>
-                <label className="text-[9px] text-neutral-500 uppercase block mb-1">Display Mode</label>
-                <div className="grid grid-cols-2 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => patchConfig({ badgeDisplayMode: "icon" })}
-                    className={`py-1 rounded border text-[10px] cursor-pointer ${
-                      displayMode === "icon"
-                        ? "bg-white text-black border-white font-bold"
-                        : "bg-[#121217] border-[#24242d] text-neutral-400"
-                    }`}
-                    data-testid="profile-badge-mode-icon"
-                  >
-                    Icon Only
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextW = Math.max(selectedNode.width, 128);
-                      onUpdateNode(selectedNode.id, {
-                        width: nextW,
-                        config: { ...selectedNode.config, badgeDisplayMode: "icon-name" },
-                      });
-                    }}
-                    className={`py-1 rounded border text-[10px] cursor-pointer ${
-                      displayMode === "icon-name"
-                        ? "bg-white text-black border-white font-bold"
-                        : "bg-[#121217] border-[#24242d] text-neutral-400"
-                    }`}
-                    data-testid="profile-badge-mode-icon-name"
-                  >
-                    Name + Icon
-                  </button>
-                </div>
-              </div>
-
-              {displayMode === "icon-name" && (
-                <div>
-                  <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Text Size</label>
-                  <input
-                    type="number"
-                    value={selectedNode.config.fontSize ?? 12}
-                    onChange={(e) =>
-                      patchConfig({ fontSize: safeNum(e.target.value, 12, 9, 36) })
-                    }
-                    className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="text-[9px] text-neutral-500 uppercase block mb-1">Badge Color</label>
-                <div className="grid grid-cols-2 gap-1 mb-2">
-                  <button
-                    type="button"
-                    onClick={() => patchConfig({ badgeColorMode: "original" })}
-                    className={`py-1 rounded border text-[10px] cursor-pointer ${
-                      colorMode === "original"
-                        ? "bg-white text-black border-white font-bold"
-                        : "bg-[#121217] border-[#24242d] text-neutral-400"
-                    }`}
-                    data-testid="profile-badge-color-original"
-                  >
-                    Original
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!isPremiumOrAdmin) {
-                        onRestrictedFeature?.(
-                          "Custom badge colors require Premium. Free users can use Original or preset colors."
-                        );
-                        return;
-                      }
-                      patchConfig({ badgeColorMode: "custom" });
-                    }}
-                    className={`py-1 rounded border text-[10px] flex items-center justify-center gap-1 ${
-                      colorMode === "custom"
-                        ? "bg-white text-black border-white font-bold cursor-pointer"
-                        : !isPremiumOrAdmin
-                          ? "bg-[#101014] border-[#202028] text-neutral-600 cursor-not-allowed"
-                          : "bg-[#121217] border-[#24242d] text-neutral-400 cursor-pointer"
-                    }`}
-                    data-testid="profile-badge-color-custom"
-                  >
-                    {!isPremiumOrAdmin && <Lock size={9} />}
-                    <span>Custom</span>
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {PREDEFINED_BADGE_COLORS.map((preset) => {
-                    const activePreset =
-                      colorMode === "preset" &&
-                      currentColor.toLowerCase() === preset.value.toLowerCase();
-                    return (
-                      <button
-                        key={preset.value}
-                        type="button"
-                        onClick={() =>
-                          patchConfig({
-                            badgeColorMode: "preset",
-                            badgeColor: preset.value,
-                          })
-                        }
-                        title={preset.label}
-                        className={`w-6 h-6 rounded border cursor-pointer ${
-                          activePreset
-                            ? "border-white ring-2 ring-white/40 scale-105"
-                            : "border-[#2e2e3a]"
-                        }`}
-                        style={{ backgroundColor: preset.value }}
-                        data-testid={`profile-badge-preset-${preset.label.toLowerCase()}`}
-                      />
-                    );
-                  })}
-                </div>
-
-                {colorMode === "custom" && isPremiumOrAdmin && (
-                  <div className="flex items-center gap-2 mt-2">
-                    <input
-                      type="color"
-                      value={currentColor.startsWith("#") ? currentColor : "#ffffff"}
-                      onChange={(e) =>
-                        patchConfig({ badgeColorMode: "custom", badgeColor: e.target.value })
-                      }
-                      className="w-7 h-7 rounded border border-[#2e2e38] bg-transparent cursor-pointer"
-                      data-testid="profile-badge-custom-color-input"
-                    />
-                    <input
-                      type="text"
-                      value={currentColor}
-                      onChange={(e) =>
-                        patchConfig({ badgeColorMode: "custom", badgeColor: e.target.value })
-                      }
-                      className="flex-1 bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="pt-1 border-t border-[#1e1e26] space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-neutral-300">Glow Effect</span>
-                  <input
-                    type="checkbox"
-                    checked={glowEnabled}
-                    onChange={(e) => patchConfig({ badgeGlowEnabled: e.target.checked })}
-                    className="accent-white cursor-pointer"
-                    data-testid="profile-badge-glow-toggle"
-                  />
-                </div>
-                {glowEnabled && (
-                  <div>
-                    <div className="flex items-center justify-between text-[9px] text-neutral-500 mb-0.5">
-                      <span>GLOW INTENSITY {!isPremiumOrAdmin ? "(PREMIUM)" : ""}</span>
-                      <span>{glowIntensity}px</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={4}
-                      max={28}
-                      value={glowIntensity}
-                      onChange={(e) => {
-                        if (!isPremiumOrAdmin) {
-                          onRestrictedFeature?.(
-                            "Advanced badge glow intensity requires Premium."
-                          );
-                          return;
-                        }
-                        patchConfig({ badgeGlowIntensity: Number(e.target.value) });
-                      }}
-                      className="w-full accent-white"
-                      data-testid="profile-badge-glow-intensity"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
+            <UnifiedBadgeEditor
+              config={unifiedConfig}
+              badgeInventory={badgeInventory}
+              isPremiumOrAdmin={isPremiumOrAdmin}
+              onRestrictedFeature={onRestrictedFeature}
+              onOpenBadgePicker={onOpenBadgePicker}
+              pickerTitle="Select Profile Badge"
+              testIdPrefix="profile-badge"
+              onChange={(next) => {
+                const patch = unifiedConfigToProfileBadgeNodePatch(next, selectedNode);
+                const nextWidth =
+                  next.displayStyle === "icon-name"
+                    ? Math.max(selectedNode.width, 128)
+                    : selectedNode.width;
+                onUpdateNode(selectedNode.id, {
+                  ...patch,
+                  width: nextWidth,
+                });
+              }}
+            />
           </SectionGroup>
         );
       })()}
@@ -1803,42 +1610,86 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   <div className="text-[9px] text-neutral-500 uppercase tracking-wider">
                     Legacy Group Badges ({legacyBadges.length})
                   </div>
-                  {legacyBadges.map((badge, idx) => (
-                    <div
-                      key={badge.id}
-                      className="p-2 rounded-lg bg-[#101015] border border-[#20202a] flex items-center justify-between gap-2"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[10px] text-neutral-200 font-semibold truncate">{badge.label}</div>
-                        {badge.tooltip && (
-                          <div className="text-[9px] text-neutral-500 truncate">{badge.tooltip}</div>
+                  {legacyBadges.map((badge, idx) => {
+                    const isEditing = editingGroupBadgeId === badge.id;
+                    return (
+                      <div
+                        key={badge.id}
+                        className="p-2 rounded-lg bg-[#101015] border border-[#20202a] space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[10px] text-neutral-200 font-semibold truncate">{badge.label}</div>
+                            {badge.tooltip && (
+                              <div className="text-[9px] text-neutral-500 truncate">{badge.tooltip}</div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditingGroupBadgeId(isEditing ? null : badge.id)
+                              }
+                              className={`text-[9px] px-1.5 py-0.5 rounded cursor-pointer ${
+                                isEditing
+                                  ? "bg-white text-black font-bold"
+                                  : "bg-[#191924] text-neutral-300 hover:text-white"
+                              }`}
+                              data-testid={`badges-group-edit-${badge.id}`}
+                            >
+                              {isEditing ? "Done" : "Edit"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = [...legacyBadges];
+                                next[idx] = { ...badge, visible: !badge.visible };
+                                patchConfig({ badges: next });
+                              }}
+                              className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-neutral-300 cursor-pointer"
+                            >
+                              {badge.visible ? "On" : "Off"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = legacyBadges.filter((_, i) => i !== idx);
+                                patchConfig({ badges: next });
+                                if (isEditing) setEditingGroupBadgeId(null);
+                              }}
+                              className="text-neutral-500 hover:text-red-400 cursor-pointer p-0.5"
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
+                        </div>
+                        {isEditing && (
+                          <UnifiedBadgeEditor
+                            config={normalizeLegacyBadgeItemConfig(badge)}
+                            badgeInventory={badgeInventory}
+                            isPremiumOrAdmin={isPremiumOrAdmin}
+                            onRestrictedFeature={onRestrictedFeature}
+                            onOpenBadgePicker={onOpenBadgePicker}
+                            pickerTitle="Select Group Badge"
+                            testIdPrefix={`group-badge-${badge.id}`}
+                            onChange={(nextUnified) => {
+                              const next = [...legacyBadges];
+                              next[idx] = {
+                                ...badge,
+                                label: nextUnified.name,
+                                color: nextUnified.text.color,
+                                backgroundColor: nextUnified.background.color,
+                                borderColor: nextUnified.border.color,
+                                borderRadius: nextUnified.border.radius,
+                                unifiedConfig: nextUnified,
+                              };
+                              patchConfig({ badges: next });
+                            }}
+                          />
                         )}
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const next = [...legacyBadges];
-                            next[idx] = { ...badge, visible: !badge.visible };
-                            patchConfig({ badges: next });
-                          }}
-                          className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-neutral-300 cursor-pointer"
-                        >
-                          {badge.visible ? "On" : "Off"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const next = legacyBadges.filter((_, i) => i !== idx);
-                            patchConfig({ badges: next });
-                          }}
-                          className="text-neutral-500 hover:text-red-400 cursor-pointer p-0.5"
-                        >
-                          <Trash2 size={11} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -3063,7 +2914,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         selectedNode.type === "custom-component" ||
         selectedNode.type === "heart-like" ||
         selectedNode.type === "claim-profile" ||
-        selectedNode.type === "profile-badge" ||
         selectedNode.type === "view-counter" ||
         selectedNode.type === "shape") && (
         <SectionGroup title="Background">
@@ -3298,6 +3148,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       )}
 
       {/* Border & Radius */}
+      {selectedNode.type !== "profile-badge" && (
       <SectionGroup title="Border & Radius" defaultOpen={isContainer || isMediaImage}>
         <div className="grid grid-cols-2 gap-2">
           <div>
@@ -3346,6 +3197,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           />
         </div>
       </SectionGroup>
+      )}
 
       {/* Effects */}
       <SectionGroup title="Effects" defaultOpen={false}>
