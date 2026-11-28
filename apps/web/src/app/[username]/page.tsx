@@ -1,8 +1,11 @@
+import { cache } from "react";
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { ViewTracker } from "@/components/effects/ViewTracker";
 import { ProfileClientView } from "@/components/nothing/ProfileClientView";
 import { ServiceWarmingView } from "@/components/nothing/ServiceWarmingView";
+import { SITE_NAME, getSiteUrl } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
 
@@ -149,7 +152,10 @@ type ProfileResult =
   | { kind: "not_found" }
   | { kind: "warming" };
 
-async function getProfile(rawUsername: string, isPreview = false): Promise<ProfileResult> {
+const getProfile = cache(async function getProfile(
+  rawUsername: string,
+  isPreview = false
+): Promise<ProfileResult> {
   const clean = decodeURIComponent(rawUsername).trim().replace(/^@+/, "");
   if (!clean) return { kind: "not_found" };
 
@@ -202,6 +208,63 @@ async function getProfile(rawUsername: string, isPreview = false): Promise<Profi
     // Network timeout or cold start
     return { kind: "warming" };
   }
+});
+
+export async function generateMetadata({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ username: string }>;
+  searchParams?: Promise<{ preview?: string }>;
+}): Promise<Metadata> {
+  const { username } = await params;
+  const resolvedSearch = searchParams ? await searchParams : {};
+  const isPreview = resolvedSearch?.preview === "1" || resolvedSearch?.preview === "true";
+  const clean = decodeURIComponent(username).trim().replace(/^@+/, "");
+
+  if (!clean || clean.toLowerCase() === "explore" || clean.toLowerCase() === "rpc") {
+    return { title: clean || SITE_NAME };
+  }
+
+  const result = await getProfile(clean, isPreview);
+  if (result.kind !== "ok") {
+    return {
+      title: `@${clean}`,
+      robots: { index: false, follow: false },
+    };
+  }
+
+  const { user, profile, richPresence } = result.data;
+  const handle = user?.username || clean;
+  const displayName = profile?.displayName || handle;
+  const livePart = richPresence?.appName ? ` · Currently in ${richPresence.appName}` : "";
+  const description =
+    profile?.bio?.trim() ||
+    `${displayName} (@${handle}) on ${SITE_NAME}${livePart} — Digital identity bio & live Discord Rich Presence.`;
+  const ogImage = profile?.bannerUrl || profile?.avatarUrl || "/icon-512.png";
+  const canonical = `/${encodeURIComponent(handle)}`;
+
+  return {
+    title: `${displayName} (@${handle})`,
+    description,
+    alternates: { canonical },
+    robots: isPreview ? { index: false, follow: false } : { index: true, follow: true },
+    openGraph: {
+      type: "profile",
+      username: handle,
+      title: `${displayName} (@${handle}) — ${SITE_NAME}`,
+      description,
+      url: canonical,
+      siteName: SITE_NAME,
+      images: [{ url: ogImage, alt: `${displayName} (@${handle})` }],
+    },
+    twitter: {
+      card: profile?.bannerUrl ? "summary_large_image" : "summary",
+      title: `${displayName} (@${handle}) — ${SITE_NAME}`,
+      description,
+      images: [ogImage],
+    },
+  };
 }
 
 export default async function ProfilePage({
@@ -234,10 +297,40 @@ export default async function ProfilePage({
     notFound();
   }
 
-  const { user, profile, richPresence } = result.data;
+  const { user, profile, richPresence, livePresence } = result.data as PublicProfilePayload & {
+    livePresence?: { status?: string; hasActivity?: boolean; activity?: Record<string, unknown> | null } | null;
+  };
+  const initialDiscordPresence = richPresence
+    ? { status: livePresence?.status, ...richPresence }
+    : livePresence
+    ? {
+        status: livePresence.status,
+        hasActivity: Boolean(livePresence.hasActivity),
+        ...(livePresence.activity || {}),
+      }
+    : null;
+  const siteUrl = getSiteUrl();
+  const handle = user?.username || clean;
+  const displayName = profile?.displayName || handle;
+  const profileJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "ProfilePage",
+    mainEntity: {
+      "@type": "Person",
+      name: displayName,
+      alternateName: `@${handle}`,
+      url: `${siteUrl}/${encodeURIComponent(handle)}`,
+      ...(profile?.bio ? { description: profile.bio } : {}),
+      ...(profile?.avatarUrl ? { image: profile.avatarUrl } : {}),
+    },
+  };
 
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(profileJsonLd) }}
+      />
       <ViewTracker username={clean} />
       <ProfileClientView
         username={user?.username || clean}
@@ -255,7 +348,7 @@ export default async function ProfilePage({
         buttons={profile?.buttons || []}
         links={profile?.links || []}
         musicUrl={profile?.musicUrl || null}
-        discordPresence={richPresence || null}
+        discordPresence={initialDiscordPresence}
         customCss={profile?.customCss || null}
         designConfig={profile?.designConfig || null}
         isPremium={Boolean(

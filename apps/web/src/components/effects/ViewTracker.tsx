@@ -35,9 +35,21 @@ export function ViewTracker({ username }: { username: string }) {
         ...(visitorId ? { "x-visitor-id": visitorId } : {}),
       },
       body: JSON.stringify({ visitorId }),
-    }).catch((err) => {
-      console.warn("[ViewTracker] Non-fatal view ping failed:", err);
-    });
+    })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = await res.json().catch(() => null);
+        if (data && typeof data.currentViews === "number") {
+          window.dispatchEvent(
+            new CustomEvent("pixel:profile-views-updated", {
+              detail: { views: data.currentViews },
+            })
+          );
+        }
+      })
+      .catch((err) => {
+        console.warn("[ViewTracker] Non-fatal view ping failed:", err);
+      });
   }, [username]);
 
   return null;

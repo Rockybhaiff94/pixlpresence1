@@ -428,6 +428,32 @@ export const PROFILE_BUILDER_REGISTRY: Record<BuilderComponentType, ComponentReg
     allowInRoot: true,
     preferEmbedParent: false,
   },
+  "profile-badge": {
+    type: "profile-badge",
+    category: "profile",
+    label: "Profile Badge",
+    shortDesc: "Independent customizable unlocked badge",
+    defaultWidth: 44,
+    defaultHeight: 44,
+    minWidth: 24,
+    minHeight: 24,
+    canHaveChildren: false,
+    allowInRoot: true,
+    preferEmbedParent: true,
+  },
+  "view-counter": {
+    type: "view-counter",
+    category: "profile",
+    label: "View Counter",
+    shortDesc: "Protected live profile view counter",
+    defaultWidth: 112,
+    defaultHeight: 36,
+    minWidth: 64,
+    minHeight: 28,
+    canHaveChildren: false,
+    allowInRoot: true,
+    preferEmbedParent: false,
+  },
 };
 
 export const MAX_HEART_COMPONENTS = 5;
@@ -442,8 +468,10 @@ export const LIBRARY_CATALOG_ORDER: BuilderComponentType[] = [
   "subtitle",
   "description",
   "badges-group",
+  "profile-badge",
   "social-group",
   "heart-like",
+  "view-counter",
   "claim-profile",
   "music-display",
   "custom-rpc",
@@ -936,6 +964,36 @@ export function createNodeFromRegistry(
       base.style.borderWidth = 1;
       base.style.borderColor = "#2e2e38";
       base.style.borderRadius = 8;
+      break;
+    case "profile-badge":
+      base.config = {
+        badgeId: "early_supporter",
+        badgeDisplayMode: "icon",
+        badgeColorMode: "original",
+        badgeColor: "#ffffff",
+        badgeGlowEnabled: false,
+        badgeGlowIntensity: 12,
+        fontSize: 12,
+      };
+      base.style.backgroundType = "solid";
+      base.style.backgroundColor = "#111116";
+      base.style.backgroundOpacity = 0.85;
+      base.style.borderWidth = 1;
+      base.style.borderColor = "#2a2a34";
+      base.style.borderRadius = 10;
+      break;
+    case "view-counter":
+      base.config = {
+        viewCounterShowIcon: true,
+        color: "#ffffff",
+        fontSize: 12,
+      };
+      base.style.backgroundType = "solid";
+      base.style.backgroundColor = "#111116";
+      base.style.backgroundOpacity = 0.85;
+      base.style.borderWidth = 1;
+      base.style.borderColor = "#2a2a34";
+      base.style.borderRadius = 9999;
       break;
     case "rpc-icon":
       base.aspectRatioLocked = true;
@@ -2034,16 +2092,13 @@ export function ensureDefaultSystemElements(
   const cw = Math.max(320, doc.canvas.width || 1920);
   const ch = Math.max(320, doc.canvas.height || 1080);
 
-  // For Premium/Admin, if defaults were already initialized once, never re-insert deleted defaults.
-  if (isPremiumOrAdmin && doc.metadata?.defaultElementsInitialized) {
-    return doc;
-  }
+  const skipOptionalDefaults = Boolean(isPremiumOrAdmin && doc.metadata?.defaultElementsInitialized);
 
   let nextNodes = doc.nodes;
   let changed = false;
 
   const hasHeart = nextNodes.some((n) => n.type === "heart-like");
-  if (!hasHeart) {
+  if (!skipOptionalDefaults && !hasHeart) {
     changed = true;
     nextNodes = [
       ...nextNodes,
@@ -2079,7 +2134,7 @@ export function ensureDefaultSystemElements(
   }
 
   const existingClaim = nextNodes.find((n) => n.type === "claim-profile");
-  if (!existingClaim) {
+  if (!skipOptionalDefaults && !existingClaim) {
     changed = true;
     nextNodes = [
       ...nextNodes,
@@ -2111,11 +2166,47 @@ export function ensureDefaultSystemElements(
         },
       },
     ];
-  } else if (!isPremiumOrAdmin && !existingClaim.visible) {
+  } else if (!isPremiumOrAdmin && existingClaim && !existingClaim.visible) {
     changed = true;
     nextNodes = nextNodes.map((n) =>
       n.type === "claim-profile" ? { ...n, visible: true } : n
     );
+  }
+
+  const hasViewCounter = nextNodes.some((n) => n.type === "view-counter");
+  if (!hasViewCounter) {
+    changed = true;
+    nextNodes = [
+      ...nextNodes,
+      {
+        id: "node-default-view-counter",
+        type: "view-counter",
+        name: "View Counter",
+        parentId: null,
+        x: 32,
+        y: Math.max(24, ch - 72),
+        width: 112,
+        height: 36,
+        zIndex: 50,
+        visible: true,
+        locked: false,
+        style: {
+          opacity: 1,
+          backgroundType: "solid",
+          backgroundColor: "#111116",
+          backgroundOpacity: 0.85,
+          borderWidth: 1,
+          borderColor: "#2a2a34",
+          borderRadius: 9999,
+        },
+        responsive: { hiddenOn: [], widthMode: "fixed" },
+        config: {
+          viewCounterShowIcon: true,
+          color: "#ffffff",
+          fontSize: 12,
+        },
+      },
+    ];
   }
 
   if (!changed && doc.metadata?.defaultElementsInitialized) {

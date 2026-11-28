@@ -13,6 +13,7 @@ import {
   Code2,
   CreditCard,
   ExternalLink,
+  Eye,
   FileText,
   Gamepad2,
   Heart,
@@ -61,11 +62,14 @@ export function getBuilderComponentIcon(
     case "description":
       return AlignLeft;
     case "badges-group":
+    case "profile-badge":
       return Award;
     case "social-group":
       return Share2;
     case "heart-like":
       return Heart;
+    case "view-counter":
+      return Eye;
     case "claim-profile":
       return ExternalLink;
     case "music-display":

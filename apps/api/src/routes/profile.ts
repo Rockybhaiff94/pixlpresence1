@@ -7,6 +7,7 @@ import { resolveTelemetry } from '../utils/geo';
 import { viewRateLimiter } from '../rateLimiter';
 import { presenceManager } from '../services/presenceManager';
 import { getUserCapabilities, validateProfileCapabilities } from '../services/entitlements';
+import { getUserOwnedBadgeIds, validateBadgeOwnershipInDoc } from '../services/badgeInventory';
 import { parseDesignConfigObject } from '../services/profileSyncService';
 import { resolveDiscordAvatarUrl, resolveDiscordBannerUrl } from '../auth';
 import {
@@ -206,6 +207,7 @@ profileRouter.get('/u/:username', async (req: any, res) => {
 
     // Omit sensitive data & normalize avatar + banner URLs (including raw Discord hashes in saved nodes)
     const { email, passwordHash, appToken, ...safeUser } = user as any;
+    safeUser.ownedBadgeIds = getUserOwnedBadgeIds(user as any);
     safeUser.avatar = resolveDiscordAvatarUrl(safeUser.discordId, safeUser.avatar);
     safeUser.banner = resolveDiscordBannerUrl(safeUser.discordId, safeUser.banner);
     responseProfile.avatarUrl = resolveDiscordAvatarUrl(
@@ -266,6 +268,8 @@ profileRouter.get('/u/:username', async (req: any, res) => {
     if (livePresence.hasActivity && livePresence.activity) {
       safeRpc = {
         ...livePresence.activity,
+        status: livePresence.status,
+        hasActivity: true,
         ...(rpcExtras || {}),
       };
     } else if (livePresence.status === 'offline' || !livePresence.hasActivity) {
@@ -274,7 +278,14 @@ profileRouter.get('/u/:username', async (req: any, res) => {
         // Only retain custom manual presence if explicitly configured as static custom presence
         safeRpc = {
           ...rawRpc,
+          status: livePresence.status !== 'offline' ? livePresence.status : 'online',
+          hasActivity: true,
           ...(rpcExtras || {}),
+        };
+      } else if (livePresence.status !== 'offline') {
+        safeRpc = {
+          status: livePresence.status,
+          hasActivity: false,
         };
       } else {
         safeRpc = null;
@@ -934,7 +945,28 @@ profileRouter.patch('/me', requireAuth, async (req: any, res) => {
         return res.status(403).json({ error: capValidation.error });
       }
       if (parsedCfg && typeof parsedCfg === 'object') {
+        const ownedBadgeIds = getUserOwnedBadgeIds(req.user);
+        const isAdminUser = caps.tier === 'ADMIN';
         const existingCfg = parseDesignConfigObject(existingProfile?.designConfig);
+        for (const docKey of ['draftProfileBuilder', 'profileBuilder'] as const) {
+          const builderDoc = parsedCfg[docKey];
+          const existingDoc = existingCfg[docKey];
+          const badgeCheck = validateBadgeOwnershipInDoc(builderDoc, ownedBadgeIds, isAdminUser);
+          if (!badgeCheck.valid) {
+            return res.status(403).json({ error: badgeCheck.error });
+          }
+          const existingHadViewCounter =
+            Array.isArray(existingDoc?.nodes) &&
+            existingDoc.nodes.some((n: any) => n && n.type === 'view-counter');
+          if (!isAdminUser && existingHadViewCounter && builderDoc && Array.isArray(builderDoc.nodes)) {
+            const hasViewCounter = builderDoc.nodes.some((n: any) => n && n.type === 'view-counter');
+            if (!hasViewCounter) {
+              return res.status(403).json({
+                error: 'The Profile View Counter is a mandatory system component and cannot be removed.',
+              });
+            }
+          }
+        }
         const countHearts = (doc: any) =>
           Array.isArray(doc?.nodes)
             ? doc.nodes.filter((n: any) => n && n.type === 'heart-like').length

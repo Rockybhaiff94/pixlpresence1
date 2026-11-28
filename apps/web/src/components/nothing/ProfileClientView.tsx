@@ -483,6 +483,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
                 musicUrl,
                 musicTitle,
                 musicArtist,
+                views,
                 discordPresence: livePresence,
               }}
             />

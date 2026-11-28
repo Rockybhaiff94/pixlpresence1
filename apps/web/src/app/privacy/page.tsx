@@ -1,6 +1,15 @@
 import React from "react";
+import type { Metadata } from "next";
 import { Navbar } from "@/components/nothing/Navbar";
 import { Footer } from "@/components/nothing/Footer";
+import { createPageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = createPageMetadata({
+  title: "Privacy Policy",
+  description:
+    "Pixel.gg Privacy Policy covering zero-cookie analytics, encrypted PostgreSQL storage, and Discord RPC privacy.",
+  path: "/privacy",
+});
 
 export default function PrivacyPage() {
   const sections = [

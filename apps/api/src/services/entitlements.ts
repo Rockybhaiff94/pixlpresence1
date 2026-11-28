@@ -1,3 +1,5 @@
+import { PREDEFINED_BADGE_COLORS } from "./badgeInventory";
+
 /**
  * entitlements.ts
  * Centralized, capability-based permission and premium feature architecture for Pixel.gg.
@@ -353,6 +355,40 @@ export function validateProfileCapabilities(
 
     const pubCheck = validateRpcEmbedDocForFree(designConfig.profileBuilder, permittedMap);
     if (!pubCheck.valid) return pubCheck;
+
+    // Validate Premium-only profile-badge custom colors & advanced glow intensity
+    for (const doc of [designConfig.draftProfileBuilder, designConfig.profileBuilder]) {
+      if (!doc || !Array.isArray(doc.nodes)) continue;
+      for (const node of doc.nodes) {
+        if (node?.type !== "profile-badge") continue;
+        const cfg = node.config || {};
+        if (cfg.badgeColorMode === "custom") {
+          return {
+            valid: false,
+            error: "Custom badge colors are an exclusive Premium feature. Free accounts can use Original or predefined colors.",
+          };
+        }
+        if (
+          cfg.badgeColorMode === "preset" &&
+          typeof cfg.badgeColor === "string" &&
+          !PREDEFINED_BADGE_COLORS.has(cfg.badgeColor.toLowerCase())
+        ) {
+          return {
+            valid: false,
+            error: "Custom badge colors are an exclusive Premium feature.",
+          };
+        }
+        if (
+          typeof cfg.badgeGlowIntensity === "number" &&
+          cfg.badgeGlowIntensity !== 12
+        ) {
+          return {
+            valid: false,
+            error: "Advanced badge glow customization requires a Premium subscription.",
+          };
+        }
+      }
+    }
   }
 
   return { valid: true };

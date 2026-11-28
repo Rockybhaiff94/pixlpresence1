@@ -9,6 +9,7 @@ import {
   Code2,
   Crown,
   ExternalLink,
+  Eye,
   Flame,
   Gamepad2,
   Heart,
@@ -42,6 +43,8 @@ import {
   sanitizeExternalUrl,
 } from "./componentRegistry";
 import { compileGradientLayersCss, compileTextGradientStyle } from "./gradientUtils";
+import { findBadgeMeta, renderBadgeGlyph } from "./badgeCatalog";
+import { formatCompactViews } from "@/lib/numberFormat";
 
 export interface ProfileLiveActivityData {
   discordId?: string | null;
@@ -53,6 +56,7 @@ export interface ProfileLiveActivityData {
   musicUrl?: string | null;
   musicTitle?: string | null;
   musicArtist?: string | null;
+  views?: number;
   discordPresence?: {
     hasActivity?: boolean;
     status?: string | null;
@@ -215,10 +219,27 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
   const bgVideoRef = useRef<HTMLVideoElement>(null);
   const [videoMuted, setVideoMuted] = useState<boolean>(initialVideoMuted);
   const [rpcNowMs, setRpcNowMs] = useState<number>(() => Date.now());
+  const [liveViews, setLiveViews] = useState<number>(liveData?.views ?? 0);
   const [measuredHostSize, setMeasuredHostSize] = useState<{ width: number; height: number }>({
     width: 1280,
     height: 720,
   });
+
+  useEffect(() => {
+    setLiveViews(liveData?.views ?? 0);
+  }, [liveData?.views]);
+
+  useEffect(() => {
+    if (isInteractive || typeof window === "undefined") return;
+    const onViewsUpdated = (e: Event) => {
+      const detail = (e as CustomEvent<{ views?: number }>).detail;
+      if (detail && typeof detail.views === "number") {
+        setLiveViews(detail.views);
+      }
+    };
+    window.addEventListener("pixel:profile-views-updated", onViewsUpdated);
+    return () => window.removeEventListener("pixel:profile-views-updated", onViewsUpdated);
+  }, [isInteractive]);
 
   const rpcStartRaw =
     liveData?.discordPresence?.timestamps?.start ?? liveData?.discordPresence?.startTimestamp ?? null;
@@ -652,12 +673,23 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           node.config.src === "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&q=80";
         const avatarSrc =
           isDefaultPlaceholderAvatar && liveData?.avatarUrl ? liveData.avatarUrl : node.config.src;
-        const shapeRadius =
-          node.config.avatarShape === "circle"
-            ? "9999px"
-            : node.config.avatarShape === "square"
-              ? "0px"
-              : `${node.style.borderRadius ?? 14}px`;
+        const isCircleAvatar = node.config.avatarShape === "circle";
+        const minDim = Math.max(24, Math.min(node.width, node.height));
+        const shapeRadiusPx = isCircleAvatar
+          ? minDim / 2
+          : node.config.avatarShape === "square"
+            ? 0
+            : Math.min(minDim / 2, Math.max(0, node.style.borderRadius ?? 14));
+        const shapeRadius = isCircleAvatar
+          ? "9999px"
+          : node.config.avatarShape === "square"
+            ? "0px"
+            : `${node.style.borderRadius ?? 14}px`;
+        const dotSize = Math.max(10, Math.min(20, Math.round(minDim * 0.22)));
+        const dotBorder = Math.max(2, Math.round(dotSize * 0.16));
+        // 45° bottom-right corner perimeter inset along the rounded/circular edge
+        const cornerInset = Math.round(shapeRadiusPx * (1 - Math.SQRT1_2));
+        const dotOffset = cornerInset - Math.round(dotSize * 0.25);
         const avatarOverlayCss = node.config.imageOverlayEnabled
           ? compileGradientLayersCss(node.config.imageOverlayGradients, {
               colorA: "#6366f1",
@@ -667,49 +699,114 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
             })
           : undefined;
         return (
-          <div className="relative w-full h-full">
+          <div className="relative w-full h-full flex items-center justify-center">
             <div
-              className="w-full h-full overflow-hidden bg-[#131318] relative"
+              className="relative shrink-0"
               style={{
-                borderRadius: shapeRadius,
-                borderWidth: `${node.style.borderWidth ?? 2}px`,
-                borderColor: node.style.borderColor || "#52525b",
-                borderStyle: node.style.borderStyle || "solid",
-                boxShadow: node.style.shadowBlur
-                  ? `0 8px ${node.style.shadowBlur}px ${node.style.shadowColor || "rgba(0,0,0,0.65)"}`
-                  : undefined,
+                width: isCircleAvatar ? `${minDim}px` : "100%",
+                height: isCircleAvatar ? `${minDim}px` : "100%",
               }}
+              data-testid={`avatar-wrapper-${node.id}`}
+              data-avatar-shape={node.config.avatarShape || "rounded"}
             >
-              {avatarSrc ? (
-                <img
-                  src={avatarSrc}
-                  alt={node.name}
-                  draggable={false}
-                  className="w-full h-full select-none pointer-events-none"
-                  style={{
-                    objectFit: node.config.fit || "cover",
-                    objectPosition: node.config.objectPosition || "center",
-                  }}
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-xs font-mono text-neutral-500">
-                  PFP
-                </div>
-              )}
-              {avatarOverlayCss && (
-                <div
-                  className="absolute inset-0 pointer-events-none"
-                  style={{ backgroundImage: avatarOverlayCss }}
-                  data-testid={`image-gradient-overlay-${node.id}`}
-                />
-              )}
+              <div
+                className="w-full h-full overflow-hidden bg-[#131318] relative"
+                style={{
+                  borderRadius: shapeRadius,
+                  borderWidth: `${node.style.borderWidth ?? 2}px`,
+                  borderColor: node.style.borderColor || "#52525b",
+                  borderStyle: node.style.borderStyle || "solid",
+                  boxShadow: node.style.shadowBlur
+                    ? `0 8px ${node.style.shadowBlur}px ${node.style.shadowColor || "rgba(0,0,0,0.65)"}`
+                    : undefined,
+                }}
+              >
+                {avatarSrc ? (
+                  <img
+                    src={avatarSrc}
+                    alt={node.name}
+                    draggable={false}
+                    className="w-full h-full select-none pointer-events-none"
+                    style={{
+                      objectFit: node.config.fit || "cover",
+                      objectPosition: node.config.objectPosition || "center",
+                    }}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-xs font-mono text-neutral-500">
+                    PFP
+                  </div>
+                )}
+                {avatarOverlayCss && (
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    style={{ backgroundImage: avatarOverlayCss }}
+                    data-testid={`image-gradient-overlay-${node.id}`}
+                  />
+                )}
+              </div>
+              {node.config.showStatusDot && (() => {
+                const syncDiscord = node.config.syncStatusWithDiscord !== false;
+                const rawLiveStatus = liveData?.discordPresence?.status;
+                const resolvedStatus: "online" | "idle" | "dnd" | "offline" = syncDiscord
+                  ? rawLiveStatus === "online" ||
+                    rawLiveStatus === "idle" ||
+                    rawLiveStatus === "dnd" ||
+                    rawLiveStatus === "offline"
+                    ? rawLiveStatus
+                    : liveData
+                    ? "offline"
+                    : "online"
+                  : node.config.manualStatus || "online";
+                const animateStatus = node.config.statusAnimationEnabled !== false;
+                const statusBg =
+                  resolvedStatus === "online"
+                    ? node.config.statusColor || "#23a55a"
+                    : resolvedStatus === "idle"
+                    ? "#f0b232"
+                    : resolvedStatus === "dnd"
+                    ? "#f23f43"
+                    : "#80848e";
+
+                return (
+                  <span
+                    className="absolute rounded-full border-[#0b0b0e] box-border pointer-events-none flex items-center justify-center"
+                    style={{
+                      width: `${dotSize}px`,
+                      height: `${dotSize}px`,
+                      right: `${dotOffset}px`,
+                      bottom: `${dotOffset}px`,
+                      borderWidth: `${dotBorder}px`,
+                      borderStyle: "solid",
+                      backgroundColor: resolvedStatus === "offline" ? "#0b0b0e" : statusBg,
+                    }}
+                    data-testid={`avatar-status-dot-${node.id}`}
+                    data-status={resolvedStatus}
+                    data-status-sync={syncDiscord ? "discord" : "manual"}
+                    aria-label={`Status: ${resolvedStatus}`}
+                  >
+                    {resolvedStatus === "online" && animateStatus && (
+                      <span
+                        className="absolute inset-0 rounded-full motion-safe:animate-ping opacity-40"
+                        style={{ backgroundColor: statusBg }}
+                      />
+                    )}
+                    {resolvedStatus === "idle" && (
+                      <svg viewBox="0 0 16 16" className="w-full h-full" aria-hidden="true">
+                        <circle cx="8" cy="8" r="8" fill="#f0b232" />
+                        <circle cx="5.2" cy="5.2" r="5.2" fill="#0b0b0e" />
+                      </svg>
+                    )}
+                    {resolvedStatus === "dnd" && (
+                      <span className="w-[62%] h-[20%] rounded-full bg-[#0b0b0e] block" />
+                    )}
+                    {resolvedStatus === "offline" && (
+                      <span className="w-full h-full rounded-full border-[2.5px] border-[#80848e] box-border block" />
+                    )}
+                  </span>
+                );
+              })()}
             </div>
-            {node.config.showStatusDot && (
-              <span
-                className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[#0b0b0e]"
-                style={{ backgroundColor: node.config.statusColor || "#22c55e" }}
-              />
-            )}
           </div>
         );
       }
@@ -724,6 +821,21 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           node.config.textFillType === "gradient"
             ? compileTextGradientStyle(node.config.textGradients, node.config.color || "#ffffff")
             : null;
+        const nameBadgeEnabled =
+          node.config.nameBadgeEnabled !== undefined
+            ? node.config.nameBadgeEnabled
+            : Boolean(node.config.showVerifiedBadge);
+        const resolvedNameBadgeId =
+          node.config.nameBadgeId !== undefined
+            ? node.config.nameBadgeId
+            : node.config.showVerifiedBadge
+              ? "verified"
+              : null;
+        const nameBadgeMeta =
+          nameBadgeEnabled && resolvedNameBadgeId
+            ? findBadgeMeta(resolvedNameBadgeId)
+            : null;
+        const nameBadgeSize = Math.max(13, Math.round(fontSize * 0.72));
         return (
           <div
             className="w-full h-full flex items-center gap-1.5 overflow-hidden select-none"
@@ -751,8 +863,19 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
                 ? node.config.text
                 : liveData?.displayName || liveData?.username || node.config.text || "PIXEL USER"}
             </span>
-            {node.config.showVerifiedBadge && (
-              <BadgeCheck size={Math.max(14, Math.round(fontSize * 0.72))} className="text-neutral-200 shrink-0" />
+            {nameBadgeMeta && (
+              <span
+                className="inline-flex items-center justify-center shrink-0"
+                title={nameBadgeMeta.name}
+                data-testid={`name-badge-${node.id}`}
+                data-badge-id={nameBadgeMeta.id}
+              >
+                {renderBadgeGlyph(
+                  nameBadgeMeta.icon,
+                  nameBadgeSize,
+                  nameBadgeMeta.defaultColor || "#ffffff"
+                )}
+              </span>
             )}
           </div>
         );
@@ -1318,6 +1441,133 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
         );
       }
 
+      case "profile-badge": {
+        const badgeMeta = findBadgeMeta(node.config.badgeId || "early_supporter");
+        const displayMode = node.config.badgeDisplayMode || "icon";
+        const colorMode = node.config.badgeColorMode || "original";
+        const effectiveColor =
+          colorMode === "original"
+            ? badgeMeta?.defaultColor || "#ffffff"
+            : node.config.badgeColor || "#ffffff";
+        const glowEnabled = Boolean(node.config.badgeGlowEnabled);
+        const glowIntensity = Math.max(4, Math.min(28, node.config.badgeGlowIntensity ?? 12));
+        const glowColor = node.config.badgeGlowColor || effectiveColor;
+        const bgColor = node.style.backgroundColor || "#111116";
+        const bgOpacity = node.style.backgroundOpacity ?? 0.85;
+        const radius = node.style.borderRadius ?? 10;
+        const minDim = Math.max(20, Math.min(node.width, node.height));
+        const iconSize =
+          displayMode === "icon-name"
+            ? Math.max(12, Math.min(24, Math.round(minDim * 0.48)))
+            : Math.max(14, Math.min(48, Math.round(minDim * 0.56)));
+        const badgeGrad =
+          node.style.backgroundType === "gradient"
+            ? compileGradientLayersCss(
+                node.style.backgroundGradients,
+                {
+                  colorA: bgColor,
+                  colorB: node.style.backgroundGradientTo || "#262634",
+                  angle: node.style.backgroundGradientAngle ?? 135,
+                  opacity: bgOpacity,
+                },
+                bgOpacity
+              )
+            : undefined;
+
+        return (
+          <div
+            className="w-full h-full px-2 flex items-center justify-center gap-1.5 backdrop-blur-md select-none overflow-hidden"
+            style={{
+              backgroundColor: hexToRgbaSafe(bgColor, bgOpacity),
+              backgroundImage: badgeGrad,
+              borderColor: node.style.borderColor || "#2a2a34",
+              borderWidth: `${node.style.borderWidth ?? 1}px`,
+              borderStyle: node.style.borderStyle || "solid",
+              borderRadius: `${radius}px`,
+              boxShadow: glowEnabled
+                ? `0 0 ${glowIntensity}px ${hexToRgbaSafe(glowColor, 0.5)}`
+                : undefined,
+            }}
+            title={badgeMeta?.name || "Profile Badge"}
+            data-testid={`profile-badge-node-${node.id}`}
+            data-badge-id={badgeMeta?.id || ""}
+            data-badge-mode={displayMode}
+          >
+            <span
+              className="inline-flex items-center justify-center shrink-0"
+              style={{
+                filter: glowEnabled
+                  ? `drop-shadow(0 0 ${Math.round(glowIntensity * 0.6)}px ${hexToRgbaSafe(glowColor, 0.75)})`
+                  : undefined,
+              }}
+            >
+              {renderBadgeGlyph(badgeMeta?.icon || "Award", iconSize, effectiveColor)}
+            </span>
+            {displayMode === "icon-name" && (
+              <span
+                className="font-mono font-semibold truncate"
+                style={{
+                  fontSize: `${node.config.fontSize ?? 12}px`,
+                  color: effectiveColor,
+                }}
+              >
+                {badgeMeta?.name || "Badge"}
+              </span>
+            )}
+          </div>
+        );
+      }
+
+      case "view-counter": {
+        const bgColor = node.style.backgroundColor || "#111116";
+        const bgOpacity = node.style.backgroundOpacity ?? 0.85;
+        const radius = node.style.borderRadius ?? 9999;
+        const textColor = node.config.color || "#ffffff";
+        const fontSize = node.config.fontSize ?? 12;
+        const showIcon = node.config.viewCounterShowIcon !== false;
+        const rawViews = isInteractive ? liveData?.views ?? 0 : liveViews;
+        const formatted = formatCompactViews(rawViews);
+        const viewGrad =
+          node.style.backgroundType === "gradient"
+            ? compileGradientLayersCss(
+                node.style.backgroundGradients,
+                {
+                  colorA: bgColor,
+                  colorB: node.style.backgroundGradientTo || "#262634",
+                  angle: node.style.backgroundGradientAngle ?? 135,
+                  opacity: bgOpacity,
+                },
+                bgOpacity
+              )
+            : undefined;
+
+        return (
+          <div
+            className="w-full h-full px-3 flex items-center justify-center gap-1.5 font-mono backdrop-blur-md select-none overflow-hidden"
+            style={{
+              backgroundColor: hexToRgbaSafe(bgColor, bgOpacity),
+              backgroundImage: viewGrad,
+              borderColor: node.style.borderColor || "#2a2a34",
+              borderWidth: `${node.style.borderWidth ?? 1}px`,
+              borderStyle: node.style.borderStyle || "solid",
+              borderRadius: `${radius}px`,
+              color: textColor,
+              fontSize: `${fontSize}px`,
+            }}
+            title={`${rawViews.toLocaleString()} profile views`}
+            data-testid={`view-counter-node-${node.id}`}
+            data-raw-views={rawViews}
+          >
+            {showIcon && (
+              <Eye size={Math.max(12, Math.round(fontSize * 1.08))} className="shrink-0 opacity-85" />
+            )}
+            <span className="font-bold tracking-tight truncate" data-testid={`view-counter-text-${node.id}`}>
+              {formatted}
+            </span>
+          </div>
+        );
+      }
+
       case "rpc-icon":
       case "rpc-status":
       case "rpc-title":
@@ -1702,9 +1952,9 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
             } else if (Number.isFinite(startMs) && startMs > 0) {
               timerLabel = `${fmtSec((rpcNowMs - startMs) / 1000)} elapsed`;
             }
-          } else if (!isOfflineLive) {
-            timerLabel = node.config.startTimestampText || "00:00 elapsed";
-          } else if (isInteractive) {
+          } else if (!isOfflineLive && node.config.startTimestampText) {
+            timerLabel = node.config.startTimestampText;
+          } else if (isInteractive && !activeLive) {
             timerLabel = "--:--";
           }
 
@@ -1785,14 +2035,18 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
         }
 
         // rpc-buttons (website-only action buttons; never mutates actual Discord RPC)
-        const configuredBtns = Array.isArray(node.config.rpcButtons) ? node.config.rpcButtons : [];
+        const configuredBtns = Array.isArray(node.config.rpcButtons)
+          ? node.config.rpcButtons.filter((b) => b && typeof b.label === "string" && b.label.trim().length > 0)
+          : [];
         const liveBtns =
           useLive && Array.isArray(activeLive?.buttons) && activeLive!.buttons!.length > 0
-            ? activeLive!.buttons!.map((b, i) => ({
-                id: `live-btn-${i}`,
-                label: b.label,
-                url: b.url,
-              }))
+            ? activeLive!.buttons!
+                .filter((b) => b && typeof b.label === "string" && b.label.trim().length > 0)
+                .map((b, i) => ({
+                  id: `live-btn-${i}`,
+                  label: b.label.trim(),
+                  url: b.url || "",
+                }))
             : [];
         const buttonsToRender = liveBtns.length > 0 ? liveBtns : configuredBtns;
 
@@ -1811,8 +2065,8 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               </div>
             ) : (
               buttonsToRender.slice(0, 2).map((btn) => {
-                const href = sanitizeExternalUrl(btn.url) || "/";
-                if (!isInteractive) {
+                const href = sanitizeExternalUrl(btn.url);
+                if (!isInteractive && href) {
                   return (
                     <a
                       key={btn.id}
@@ -1832,7 +2086,7 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
                     className="flex-1 h-full px-2 rounded-md bg-white/10 border border-white/15 text-[10px] font-semibold text-white flex items-center justify-center gap-1 truncate"
                   >
                     <span className="truncate">{btn.label || "Link"}</span>
-                    <ExternalLink size={9} className="shrink-0 opacity-75" />
+                    {href && <ExternalLink size={9} className="shrink-0 opacity-75" />}
                   </div>
                 );
               })

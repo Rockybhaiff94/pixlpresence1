@@ -541,22 +541,37 @@ async function run() {
       "Duplicate Custom RPC Embed must NOT exist in Add Elements modal"
     );
     await premPage.getByTestId("modal-add-custom-rpc").click();
+    await premPage.locator('[data-testid="add-elements-modal"]').waitFor({ state: "detached", timeout: 4000 }).catch(() => {});
     await premPage.waitForTimeout(150);
     const rootRpcCandidate = premPage.locator('[data-node-type="custom-rpc"][data-parent-id=""]').first();
     assert.strictEqual(await rootRpcCandidate.count(), 1, "Independent Add Elements modal must place Custom RPC at root");
     const rootRpcRawId = (await rootRpcCandidate.getAttribute("data-testid")).replace("canvas-node-", "");
     const rootRpcBox = await rootRpcCandidate.boundingBox();
     const outerEmbedBox = await premPage.getByTestId("canvas-node-embed-profile-root").boundingBox();
-    await rootRpcCandidate.click({ position: { x: 8, y: 8 } });
-    await premPage.mouse.move(rootRpcBox.x + 8, rootRpcBox.y + 8);
+    await premPage.waitForSelector('[data-testid="ft-drag-handle"]', { timeout: 3000 });
+    const ftDragBox = await premPage.getByTestId("ft-drag-handle").boundingBox();
+    let dxToEmbedCenter = (outerEmbedBox.x + outerEmbedBox.width / 2) - (rootRpcBox.x + rootRpcBox.width / 2);
+    let dyToEmbedCenter = (outerEmbedBox.y + outerEmbedBox.height / 2) - (rootRpcBox.y + rootRpcBox.height / 2);
+    if (Math.hypot(dxToEmbedCenter, dyToEmbedCenter) < 16) {
+      dxToEmbedCenter = 24;
+      dyToEmbedCenter = 24;
+    }
+    await premPage.mouse.move(ftDragBox.x + ftDragBox.width / 2, ftDragBox.y + ftDragBox.height / 2);
     await premPage.mouse.down();
-    const dropScreenX = outerEmbedBox.x + outerEmbedBox.width * 0.5 - rootRpcBox.width / 2 + 8;
-    const dropScreenY = outerEmbedBox.y + outerEmbedBox.height * 0.5 - rootRpcBox.height / 2 + 8;
-    await premPage.mouse.move(dropScreenX, dropScreenY, { steps: 8 });
+    await premPage.mouse.move(
+      ftDragBox.x + ftDragBox.width / 2 + dxToEmbedCenter,
+      ftDragBox.y + ftDragBox.height / 2 + dyToEmbedCenter,
+      { steps: 10 }
+    );
     await premPage.mouse.up();
-    await premPage.waitForTimeout(200);
+    await premPage.waitForTimeout(250);
+    const afterDragParent = await premPage.locator(`[data-testid="canvas-node-${rootRpcRawId}"]`).getAttribute("data-parent-id");
+    if (afterDragParent !== "embed-profile-root") {
+      const afterBox = await premPage.locator(`[data-testid="canvas-node-${rootRpcRawId}"]`).boundingBox();
+      console.error("[Debug Drag]", { rootRpcBox, outerEmbedBox, afterBox, dxToEmbedCenter, dyToEmbedCenter });
+    }
     assert.strictEqual(
-      await premPage.locator(`[data-testid="canvas-node-${rootRpcRawId}"]`).getAttribute("data-parent-id"),
+      afterDragParent,
       "embed-profile-root",
       "Dragging root Custom RPC into Profile Parent Embed must nest it inside embed-profile-root"
     );
@@ -967,6 +982,22 @@ async function run() {
           locked: false,
           style: { backgroundColor: "#141824", borderRadius: 14 },
           config: { text: "Legacy Status" },
+        },
+        {
+          id: "node-default-view-counter",
+          type: "view-counter",
+          name: "View Counter",
+          x: 32,
+          y: 980,
+          width: 112,
+          height: 36,
+          zIndex: 50,
+          parentId: null,
+          childIds: [],
+          visible: true,
+          locked: false,
+          style: { backgroundColor: "#111116", borderRadius: 9999 },
+          config: { viewCounterShowIcon: true },
         },
       ],
     };

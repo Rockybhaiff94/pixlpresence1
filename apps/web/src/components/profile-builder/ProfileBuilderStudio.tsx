@@ -43,6 +43,8 @@ import {
   serializeRpcEmbedAsTemplate,
 } from "./rpcTemplates";
 import { exportProfileBuilderJson, exportProfileBuilderPng } from "./profileBuilderExport";
+import { BadgePickerModal } from "./BadgePickerModal";
+import { BadgeInventoryItem } from "./badgeCatalog";
 import { TopToolbar } from "./TopToolbar";
 import { AddElementPanel } from "./AddElementPanel";
 import { ProfileCanvasWorkspace } from "./ProfileCanvasWorkspace";
@@ -160,6 +162,14 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     initialUrl: string;
     targetSlot?: string;
     onApply: (url: string) => void;
+  } | null>(null);
+  const [badgeInventory, setBadgeInventory] = useState<BadgeInventoryItem[]>([]);
+  const [badgeInventoryLoading, setBadgeInventoryLoading] = useState(false);
+  const [badgeModalState, setBadgeModalState] = useState<{
+    open: boolean;
+    title: string;
+    selectedBadgeId?: string | null;
+    onSelect: (badge: BadgeInventoryItem) => void;
   } | null>(null);
 
   // Isolated state for existing protected Dock
@@ -420,6 +430,25 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
     };
   }, [authStatus]);
 
+  useEffect(() => {
+    if (authStatus !== "AUTHENTICATED") return;
+    let active = true;
+    setBadgeInventoryLoading(true);
+    apiFetch("/api/account/badges")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload) => {
+        if (!active || !payload || !Array.isArray(payload.badges)) return;
+        setBadgeInventory(payload.badges as BadgeInventoryItem[]);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setBadgeInventoryLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [authStatus]);
+
   const liveData: ProfileLiveActivityData = useMemo(
     () => ({
       discordId: user?.discordId || null,
@@ -429,6 +458,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
       avatarUrl: profile?.avatarUrl || null,
       bannerUrl: profile?.bannerUrl || null,
       musicUrl: profile?.musicUrl || null,
+      views: profile?.views ?? 0,
       discordPresence: liveRpc,
     }),
     [liveRpc, profile, user]
@@ -904,6 +934,12 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         return null;
       }
 
+      if (!isAdmin && type === "view-counter" && doc.nodes.some((n) => n.type === "view-counter")) {
+        const msg = "Only one Profile View Counter is permitted per profile.";
+        showToast(msg);
+        return null;
+      }
+
       if (!isPremium && type === "heart-like" && countHeartNodes(doc.nodes) >= 5) {
         const msg = "Free plan limit reached! You can add up to 5 Like Buttons to your profile. Upgrade to Premium to unlock additional customization.";
         setErrorBanner(msg);
@@ -973,6 +1009,10 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         );
         return;
       }
+      if (!isAdmin && source?.type === "view-counter") {
+        showToast("The Profile View Counter cannot be duplicated.");
+        return;
+      }
       if (!isPremium && source?.type === "claim-profile") {
         const msg = "Claim Your Profile cannot be duplicated on the Free plan. Upgrade to Premium to unlock.";
         setErrorBanner(msg);
@@ -1011,6 +1051,17 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
         return;
       }
       const nextNodes = deleteNodeSubtree(id, doc.nodes);
+      if (
+        !isAdmin &&
+        doc.nodes.some((n) => n.type === "view-counter") &&
+        !nextNodes.some((n) => n.type === "view-counter")
+      ) {
+        const msg = "The Profile View Counter is a mandatory system component and cannot be removed.";
+        setErrorBanner(msg);
+        showToast(msg);
+        setTimeout(() => setErrorBanner(null), 4500);
+        return;
+      }
       if (
         !isPremium &&
         doc.nodes.some((n) => n.type === "claim-profile") &&
@@ -1926,6 +1977,7 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
             deviceMode={deviceMode}
             selectedId={selectedId}
             isPremiumOrAdmin={isPremium}
+            isAdmin={isAdmin}
             liveData={liveData}
             zoom={zoom}
             onZoomChange={setZoom}
@@ -2000,6 +2052,8 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
               onApply: cb,
             })
           }
+          badgeInventory={badgeInventory}
+          onOpenBadgePicker={(opts) => setBadgeModalState({ open: true, ...opts })}
           onAddGalleryImage={(galleryId, url) =>
             insertComponent("image", galleryId, undefined, undefined, {
               config: { src: url || "", fit: "cover" },
@@ -2094,6 +2148,18 @@ export const ProfileBuilderStudio: React.FC<ProfileBuilderStudioProps> = ({ chil
           initialUrl={mediaModalState.initialUrl}
           targetSlot={mediaModalState.targetSlot}
           onSelectMedia={mediaModalState.onApply}
+        />
+      )}
+
+      {badgeModalState && (
+        <BadgePickerModal
+          isOpen={badgeModalState.open}
+          title={badgeModalState.title}
+          badges={badgeInventory}
+          loading={badgeInventoryLoading}
+          selectedBadgeId={badgeModalState.selectedBadgeId}
+          onSelectBadge={badgeModalState.onSelect}
+          onClose={() => setBadgeModalState(null)}
         />
       )}
 

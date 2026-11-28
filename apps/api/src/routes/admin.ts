@@ -105,3 +105,31 @@ adminRouter.patch('/users/:id', async (req: any, res) => {
     res.status(500).json({ error: 'Failed to update user' });
   }
 });
+
+// Admin-only: Reset or adjust profile view count
+adminRouter.patch('/users/:id/views', async (req: any, res) => {
+  try {
+    const userId = req.params.id;
+    const nextViews = Math.max(0, Math.floor(Number(req.body?.views ?? 0)));
+    if (!Number.isFinite(nextViews)) {
+      return res.status(400).json({ error: 'Invalid views count' });
+    }
+
+    const updatedProfile = await prisma.profile.update({
+      where: { userId },
+      data: { views: nextViews },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        action: `Set profile views to ${nextViews} for user ${userId}`,
+        targetId: userId,
+        adminId: req.user.id,
+      },
+    });
+
+    res.json({ success: true, views: updatedProfile.views });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update profile view count' });
+  }
+});

@@ -1,6 +1,15 @@
 import React from "react";
+import type { Metadata } from "next";
 import { Navbar } from "@/components/nothing/Navbar";
 import { Footer } from "@/components/nothing/Footer";
+import { createPageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = createPageMetadata({
+  title: "Terms of Service",
+  description:
+    "Pixel.gg Terms of Service covering handle reservation, acceptable use, PixelsRPC plugin usage, and lifetime Premium.",
+  path: "/terms",
+});
 
 export default function TermsPage() {
   const sections = [

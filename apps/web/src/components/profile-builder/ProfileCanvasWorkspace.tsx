@@ -52,6 +52,7 @@ interface ProfileCanvasWorkspaceProps {
   deviceMode: BuilderDeviceMode;
   selectedId: string | null;
   isPremiumOrAdmin?: boolean;
+  isAdmin?: boolean;
   liveData?: ProfileLiveActivityData;
   zoom: number;
   onZoomChange: (zoom: number) => void;
@@ -92,6 +93,7 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
   deviceMode,
   selectedId,
   isPremiumOrAdmin = false,
+  isAdmin = false,
   liveData,
   zoom,
   onZoomChange,
@@ -1326,11 +1328,13 @@ export const ProfileCanvasWorkspace: React.FC<ProfileCanvasWorkspaceProps> = ({
                   (selectedNode.type === "custom-rpc" || selectedNode.type === "custom-rpc-embed");
                 const duplicateBlocked =
                   rpcChildLocked ||
+                  (!isAdmin && selectedNode.type === "view-counter") ||
                   (!isPremiumOrAdmin &&
                     (selectedNode.type === "claim-profile" ||
                       (selectedNode.type === "heart-like" && heartCount >= 5)));
                 const deleteBlocked =
                   rpcChildLocked ||
+                  (!isAdmin && selectedNode.type === "view-counter") ||
                   (!isPremiumOrAdmin &&
                     (selectedNode.type === "claim-profile" ||
                       (selectedNode.type === "heart-like" &&

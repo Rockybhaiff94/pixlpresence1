@@ -40,7 +40,9 @@ export type BuilderComponentType =
   | "shape"
   | "sticker"
   | "heart-like"
-  | "claim-profile";
+  | "claim-profile"
+  | "profile-badge"
+  | "view-counter";
 
 export type BuilderLayoutMode = "absolute" | "flex-col" | "flex-row" | "grid";
 
@@ -161,6 +163,9 @@ export interface BuilderComponentConfig {
   rpcImageShape?: "square" | "circle";
   showStatusDot?: boolean;
   statusColor?: string;
+  syncStatusWithDiscord?: boolean;
+  statusAnimationEnabled?: boolean;
+  manualStatus?: "online" | "idle" | "dnd" | "offline";
   imageOverlayEnabled?: boolean;
   imageOverlayGradients?: BuilderGradientLayer[];
 
@@ -176,6 +181,8 @@ export interface BuilderComponentConfig {
   letterSpacing?: number;
   lineHeight?: number;
   showVerifiedBadge?: boolean;
+  nameBadgeEnabled?: boolean;
+  nameBadgeId?: string | null;
   statusPillText?: string;
   statusPillActive?: boolean;
   maxWidth?: number;
@@ -183,6 +190,19 @@ export interface BuilderComponentConfig {
 
   // Badges Group
   badges?: ProfileBadgeItem[];
+
+  // Independent Profile Badge Component
+  badgeId?: string;
+  badgeDisplayMode?: "icon" | "icon-name";
+  badgeColorMode?: "original" | "preset" | "custom";
+  badgeColor?: string;
+  badgeGlowEnabled?: boolean;
+  badgeGlowIntensity?: number;
+  badgeGlowColor?: string;
+
+  // Profile View Counter
+  viewCounterShowIcon?: boolean;
+  viewCounterLabel?: string;
 
   // Music Display
   musicPlatform?: "Spotify" | "Apple Music" | "SoundCloud" | "Custom";

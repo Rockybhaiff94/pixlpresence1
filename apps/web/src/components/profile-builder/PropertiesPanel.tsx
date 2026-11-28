@@ -37,6 +37,12 @@ import {
 import { GradientLayersEditor } from "./GradientLayersEditor";
 import { normalizeGradientLayers } from "./gradientUtils";
 import {
+  BadgeInventoryItem,
+  PREDEFINED_BADGE_COLORS,
+  findBadgeMeta,
+  renderBadgeGlyph,
+} from "./badgeCatalog";
+import {
   PROFILE_BUILDER_REGISTRY,
   createBuilderId,
   isContainerType,
@@ -81,6 +87,12 @@ interface PropertiesPanelProps {
     options?: { skipHistory?: boolean }
   ) => void;
   onOpenMediaPicker: (callback: (url: string) => void, title: string, initialUrl?: string, targetSlot?: string) => void;
+  badgeInventory?: BadgeInventoryItem[];
+  onOpenBadgePicker?: (options: {
+    title: string;
+    selectedBadgeId?: string | null;
+    onSelect: (badge: BadgeInventoryItem) => void;
+  }) => void;
   onAddGalleryImage?: (galleryId: string, url?: string) => void;
 }
 
@@ -133,6 +145,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   onUpdateCanvas,
   onUpdateNode,
   onOpenMediaPicker,
+  badgeInventory = [],
+  onOpenBadgePicker,
   onAddGalleryImage,
 }) => {
   const [videoUploading, setVideoUploading] = useState(false);
@@ -974,14 +988,68 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 ))}
               </div>
               <div className="flex items-center justify-between pt-1">
-                <span className="text-[10px] text-neutral-400">Online Status Dot</span>
+                <span className="text-[10px] text-neutral-400">Online Status Indicator</span>
                 <input
                   type="checkbox"
                   checked={Boolean(selectedNode.config.showStatusDot)}
                   onChange={(e) => patchConfig({ showStatusDot: e.target.checked })}
                   className="accent-white cursor-pointer"
+                  data-testid="avatar-status-dot-toggle"
                 />
               </div>
+              {selectedNode.config.showStatusDot && (
+                <div className="space-y-2 pt-1.5 pl-2 border-l border-[#24242d]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-neutral-400">Sync Status with Discord</span>
+                    <input
+                      type="checkbox"
+                      checked={selectedNode.config.syncStatusWithDiscord !== false}
+                      onChange={(e) => patchConfig({ syncStatusWithDiscord: e.target.checked })}
+                      className="accent-white cursor-pointer"
+                      data-testid="avatar-status-sync-toggle"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-neutral-400">Status Animation</span>
+                    <input
+                      type="checkbox"
+                      checked={selectedNode.config.statusAnimationEnabled !== false}
+                      onChange={(e) => patchConfig({ statusAnimationEnabled: e.target.checked })}
+                      className="accent-white cursor-pointer"
+                      data-testid="avatar-status-animation-toggle"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-neutral-500 uppercase block mb-1">
+                      Manual Status {selectedNode.config.syncStatusWithDiscord !== false ? "(Discord Sync Active)" : ""}
+                    </label>
+                    <div className="grid grid-cols-4 gap-1">
+                      {(["online", "idle", "dnd", "offline"] as const).map((st) => {
+                        const isSynced = selectedNode.config.syncStatusWithDiscord !== false;
+                        const activeManual = (selectedNode.config.manualStatus || "online") === st;
+                        return (
+                          <button
+                            key={st}
+                            type="button"
+                            disabled={isSynced}
+                            onClick={() => patchConfig({ manualStatus: st })}
+                            data-testid={`avatar-manual-status-${st}`}
+                            className={`py-1 rounded border text-[9px] uppercase font-mono transition-colors ${
+                              isSynced
+                                ? "bg-[#0d0d12] border-[#1c1c24] text-neutral-600 cursor-not-allowed"
+                                : activeManual
+                                ? "bg-white text-black border-white font-bold cursor-pointer"
+                                : "bg-[#121217] border-[#24242d] text-neutral-400 hover:text-white cursor-pointer"
+                            }`}
+                          >
+                            {st}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1168,17 +1236,96 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             )}
           </div>
 
-          {selectedNode.type === "name-text" && (
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-neutral-400">Verified Tick</span>
-              <input
-                type="checkbox"
-                checked={Boolean(selectedNode.config.showVerifiedBadge)}
-                onChange={(e) => patchConfig({ showVerifiedBadge: e.target.checked })}
-                className="accent-white cursor-pointer"
-              />
-            </div>
-          )}
+          {selectedNode.type === "name-text" && (() => {
+            const nameBadgeEnabled =
+              selectedNode.config.nameBadgeEnabled !== undefined
+                ? selectedNode.config.nameBadgeEnabled
+                : Boolean(selectedNode.config.showVerifiedBadge);
+            const activeBadgeId =
+              selectedNode.config.nameBadgeId !== undefined
+                ? selectedNode.config.nameBadgeId
+                : selectedNode.config.showVerifiedBadge
+                  ? "verified"
+                  : null;
+            const activeBadgeMeta =
+              badgeInventory.find((b) => b.id === activeBadgeId) ||
+              findBadgeMeta(activeBadgeId);
+            return (
+              <div className="pt-2 border-t border-[#1e1e26] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-neutral-300 font-semibold">Show Name Badge</span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(nameBadgeEnabled)}
+                    onChange={(e) =>
+                      patchConfig({
+                        nameBadgeEnabled: e.target.checked,
+                        showVerifiedBadge: false,
+                      })
+                    }
+                    className="accent-white cursor-pointer"
+                    data-testid="name-badge-toggle"
+                  />
+                </div>
+                <div className="p-2 rounded-lg bg-[#121217] border border-[#24242d] flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-6 h-6 rounded bg-[#0d0d13] border border-[#24242d] flex items-center justify-center shrink-0">
+                      {activeBadgeMeta ? (
+                        renderBadgeGlyph(
+                          activeBadgeMeta.icon,
+                          13,
+                          activeBadgeMeta.defaultColor || "#ffffff"
+                        )
+                      ) : (
+                        <span className="text-[9px] text-neutral-600">—</span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-white truncate">
+                      {activeBadgeMeta ? activeBadgeMeta.name : "No badge selected"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onOpenBadgePicker?.({
+                          title: "Select Name Badge",
+                          selectedBadgeId: activeBadgeId,
+                          onSelect: (badge) =>
+                            patchConfig({
+                              nameBadgeId: badge.id,
+                              nameBadgeEnabled: true,
+                              showVerifiedBadge: false,
+                            }),
+                        })
+                      }
+                      className="px-2 py-1 rounded bg-[#191924] hover:bg-[#222230] border border-[#2e2e3c] text-[9px] font-semibold text-white cursor-pointer"
+                      data-testid="name-badge-picker-btn"
+                    >
+                      {activeBadgeMeta ? "Change" : "Add Badge"}
+                    </button>
+                    {activeBadgeId && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          patchConfig({
+                            nameBadgeId: null,
+                            nameBadgeEnabled: false,
+                            showVerifiedBadge: false,
+                          })
+                        }
+                        className="p-1 rounded text-neutral-500 hover:text-red-400 cursor-pointer"
+                        title="Remove name badge"
+                        data-testid="name-badge-remove-btn"
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {selectedNode.type === "subtitle" && (
             <div className="space-y-1.5 pt-1">
@@ -1202,6 +1349,291 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               )}
             </div>
           )}
+        </SectionGroup>
+      )}
+
+      {/* Independent Profile Badge Component */}
+      {selectedNode.type === "profile-badge" && (() => {
+        const currentBadgeId = selectedNode.config.badgeId || "early_supporter";
+        const currentBadgeMeta =
+          badgeInventory.find((b) => b.id === currentBadgeId) || findBadgeMeta(currentBadgeId);
+        const displayMode = selectedNode.config.badgeDisplayMode || "icon";
+        const colorMode = selectedNode.config.badgeColorMode || "original";
+        const currentColor = selectedNode.config.badgeColor || "#ffffff";
+        const glowEnabled = Boolean(selectedNode.config.badgeGlowEnabled);
+        const glowIntensity = selectedNode.config.badgeGlowIntensity ?? 12;
+
+        return (
+          <SectionGroup title="Profile Badge">
+            <div className="space-y-2.5">
+              <div className="p-2 rounded-lg bg-[#121217] border border-[#24242d] flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-7 h-7 rounded bg-[#0d0d13] border border-[#24242d] flex items-center justify-center shrink-0">
+                    {renderBadgeGlyph(
+                      currentBadgeMeta?.icon || "Award",
+                      14,
+                      currentBadgeMeta?.defaultColor || "#ffffff"
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-bold text-white truncate">
+                      {currentBadgeMeta?.name || "Badge"}
+                    </div>
+                    <div className="text-[9px] text-neutral-500 truncate">
+                      {currentBadgeMeta?.category || "Official"}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onOpenBadgePicker?.({
+                      title: "Select Profile Badge",
+                      selectedBadgeId: currentBadgeId,
+                      onSelect: (badge) =>
+                        patchConfig({
+                          badgeId: badge.id,
+                        }),
+                    })
+                  }
+                  className="px-2 py-1 rounded bg-[#191924] hover:bg-[#222230] border border-[#2e2e3c] text-[9px] font-semibold text-white cursor-pointer shrink-0"
+                  data-testid="profile-badge-picker-btn"
+                >
+                  Change Badge
+                </button>
+              </div>
+
+              <div>
+                <label className="text-[9px] text-neutral-500 uppercase block mb-1">Display Mode</label>
+                <div className="grid grid-cols-2 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => patchConfig({ badgeDisplayMode: "icon" })}
+                    className={`py-1 rounded border text-[10px] cursor-pointer ${
+                      displayMode === "icon"
+                        ? "bg-white text-black border-white font-bold"
+                        : "bg-[#121217] border-[#24242d] text-neutral-400"
+                    }`}
+                    data-testid="profile-badge-mode-icon"
+                  >
+                    Icon Only
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextW = Math.max(selectedNode.width, 128);
+                      onUpdateNode(selectedNode.id, {
+                        width: nextW,
+                        config: { ...selectedNode.config, badgeDisplayMode: "icon-name" },
+                      });
+                    }}
+                    className={`py-1 rounded border text-[10px] cursor-pointer ${
+                      displayMode === "icon-name"
+                        ? "bg-white text-black border-white font-bold"
+                        : "bg-[#121217] border-[#24242d] text-neutral-400"
+                    }`}
+                    data-testid="profile-badge-mode-icon-name"
+                  >
+                    Name + Icon
+                  </button>
+                </div>
+              </div>
+
+              {displayMode === "icon-name" && (
+                <div>
+                  <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Text Size</label>
+                  <input
+                    type="number"
+                    value={selectedNode.config.fontSize ?? 12}
+                    onChange={(e) =>
+                      patchConfig({ fontSize: safeNum(e.target.value, 12, 9, 36) })
+                    }
+                    className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="text-[9px] text-neutral-500 uppercase block mb-1">Badge Color</label>
+                <div className="grid grid-cols-2 gap-1 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => patchConfig({ badgeColorMode: "original" })}
+                    className={`py-1 rounded border text-[10px] cursor-pointer ${
+                      colorMode === "original"
+                        ? "bg-white text-black border-white font-bold"
+                        : "bg-[#121217] border-[#24242d] text-neutral-400"
+                    }`}
+                    data-testid="profile-badge-color-original"
+                  >
+                    Original
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isPremiumOrAdmin) {
+                        onRestrictedFeature?.(
+                          "Custom badge colors require Premium. Free users can use Original or preset colors."
+                        );
+                        return;
+                      }
+                      patchConfig({ badgeColorMode: "custom" });
+                    }}
+                    className={`py-1 rounded border text-[10px] flex items-center justify-center gap-1 ${
+                      colorMode === "custom"
+                        ? "bg-white text-black border-white font-bold cursor-pointer"
+                        : !isPremiumOrAdmin
+                          ? "bg-[#101014] border-[#202028] text-neutral-600 cursor-not-allowed"
+                          : "bg-[#121217] border-[#24242d] text-neutral-400 cursor-pointer"
+                    }`}
+                    data-testid="profile-badge-color-custom"
+                  >
+                    {!isPremiumOrAdmin && <Lock size={9} />}
+                    <span>Custom</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {PREDEFINED_BADGE_COLORS.map((preset) => {
+                    const activePreset =
+                      colorMode === "preset" &&
+                      currentColor.toLowerCase() === preset.value.toLowerCase();
+                    return (
+                      <button
+                        key={preset.value}
+                        type="button"
+                        onClick={() =>
+                          patchConfig({
+                            badgeColorMode: "preset",
+                            badgeColor: preset.value,
+                          })
+                        }
+                        title={preset.label}
+                        className={`w-6 h-6 rounded border cursor-pointer ${
+                          activePreset
+                            ? "border-white ring-2 ring-white/40 scale-105"
+                            : "border-[#2e2e3a]"
+                        }`}
+                        style={{ backgroundColor: preset.value }}
+                        data-testid={`profile-badge-preset-${preset.label.toLowerCase()}`}
+                      />
+                    );
+                  })}
+                </div>
+
+                {colorMode === "custom" && isPremiumOrAdmin && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <input
+                      type="color"
+                      value={currentColor.startsWith("#") ? currentColor : "#ffffff"}
+                      onChange={(e) =>
+                        patchConfig({ badgeColorMode: "custom", badgeColor: e.target.value })
+                      }
+                      className="w-7 h-7 rounded border border-[#2e2e38] bg-transparent cursor-pointer"
+                      data-testid="profile-badge-custom-color-input"
+                    />
+                    <input
+                      type="text"
+                      value={currentColor}
+                      onChange={(e) =>
+                        patchConfig({ badgeColorMode: "custom", badgeColor: e.target.value })
+                      }
+                      className="flex-1 bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-1 border-t border-[#1e1e26] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-neutral-300">Glow Effect</span>
+                  <input
+                    type="checkbox"
+                    checked={glowEnabled}
+                    onChange={(e) => patchConfig({ badgeGlowEnabled: e.target.checked })}
+                    className="accent-white cursor-pointer"
+                    data-testid="profile-badge-glow-toggle"
+                  />
+                </div>
+                {glowEnabled && (
+                  <div>
+                    <div className="flex items-center justify-between text-[9px] text-neutral-500 mb-0.5">
+                      <span>GLOW INTENSITY {!isPremiumOrAdmin ? "(PREMIUM)" : ""}</span>
+                      <span>{glowIntensity}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={4}
+                      max={28}
+                      value={glowIntensity}
+                      onChange={(e) => {
+                        if (!isPremiumOrAdmin) {
+                          onRestrictedFeature?.(
+                            "Advanced badge glow intensity requires Premium."
+                          );
+                          return;
+                        }
+                        patchConfig({ badgeGlowIntensity: Number(e.target.value) });
+                      }}
+                      className="w-full accent-white"
+                      data-testid="profile-badge-glow-intensity"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </SectionGroup>
+        );
+      })()}
+
+      {/* Profile View Counter */}
+      {selectedNode.type === "view-counter" && (
+        <SectionGroup title="Profile View Counter">
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-neutral-300">Show on Public Profile</span>
+              <input
+                type="checkbox"
+                checked={selectedNode.visible !== false}
+                onChange={(e) => onUpdateNode(selectedNode.id, { visible: e.target.checked })}
+                className="accent-white cursor-pointer"
+                data-testid="view-counter-visible-toggle"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-neutral-300">Show Eye Icon</span>
+              <input
+                type="checkbox"
+                checked={selectedNode.config.viewCounterShowIcon !== false}
+                onChange={(e) => patchConfig({ viewCounterShowIcon: e.target.checked })}
+                className="accent-white cursor-pointer"
+                data-testid="view-counter-icon-toggle"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Font Size</label>
+                <input
+                  type="number"
+                  value={selectedNode.config.fontSize ?? 12}
+                  onChange={(e) => patchConfig({ fontSize: safeNum(e.target.value, 12, 9, 32) })}
+                  className="w-full bg-[#121217] border border-[#24242d] rounded px-2 py-1 text-white outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Text Color</label>
+                <input
+                  type="color"
+                  value={selectedNode.config.color?.startsWith("#") ? selectedNode.config.color : "#ffffff"}
+                  onChange={(e) => patchConfig({ color: e.target.value })}
+                  className="w-full h-7 rounded border border-[#2e2e38] bg-transparent cursor-pointer"
+                />
+              </div>
+            </div>
+            <p className="text-[9px] text-neutral-500 leading-relaxed">
+              View tracking stays active even when hidden. Only administrators can permanently remove this component.
+            </p>
+          </div>
         </SectionGroup>
       )}
 
@@ -2413,6 +2845,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         selectedNode.type === "custom-component" ||
         selectedNode.type === "heart-like" ||
         selectedNode.type === "claim-profile" ||
+        selectedNode.type === "profile-badge" ||
+        selectedNode.type === "view-counter" ||
         selectedNode.type === "shape") && (
         <SectionGroup title="Background">
           <div className="space-y-2 pb-1">

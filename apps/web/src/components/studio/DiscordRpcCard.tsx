@@ -51,6 +51,14 @@ export interface DiscordRpcData {
   streaks?: any[] | null;
   statistics?: any[] | null;
   statusLabels?: any[] | null;
+  spotify?: {
+    track_id?: string | null;
+    song?: string | null;
+    artist?: string | null;
+    album?: string | null;
+    album_art_url?: string | null;
+    timestamps?: { start?: number | null; end?: number | null } | null;
+  } | null;
 }
 
 interface DiscordRpcCardProps {
@@ -94,35 +102,53 @@ export function DiscordRpcCard({
 
   // Live ticking timer
   useEffect(() => {
-    let startMs: number | null = null;
-    if (rpc.timestamps?.start) {
-      startMs = typeof rpc.timestamps.start === "number" ? rpc.timestamps.start : new Date(rpc.timestamps.start).getTime();
-    } else if (rpc.startTimestamp) {
-      startMs = typeof rpc.startTimestamp === "number" ? rpc.startTimestamp : new Date(rpc.startTimestamp).getTime();
-    }
+    const normalizeMs = (v: unknown): number | null => {
+      if (v === null || v === undefined || v === "") return null;
+      if (typeof v === "number") {
+        if (!Number.isFinite(v) || v <= 0) return null;
+        return v < 1e12 && v > 1e8 ? Math.round(v * 1000) : v >= 1e12 ? Math.round(v) : null;
+      }
+      if (typeof v === "string") {
+        const t = v.trim();
+        if (/^\d+(\.\d+)?$/.test(t)) return normalizeMs(Number(t));
+        const p = Date.parse(t);
+        return Number.isFinite(p) && p > 1e11 ? Math.round(p) : null;
+      }
+      return null;
+    };
 
-    if (!startMs || Number.isNaN(startMs)) {
+    const startMs = normalizeMs(rpc.timestamps?.start ?? rpc.startTimestamp);
+    const endMs = normalizeMs(rpc.timestamps?.end ?? rpc.endTimestamp);
+
+    if (!startMs && !endMs) {
       setElapsed("");
       return;
     }
 
-    const updateTimer = () => {
-      const now = Date.now();
-      const diffSec = Math.max(0, Math.floor((now - startMs!) / 1000));
+    const fmtSec = (diffSec: number) => {
       const hrs = Math.floor(diffSec / 3600);
       const mins = Math.floor((diffSec % 3600) / 60);
       const secs = diffSec % 60;
-      const formatted =
-        hrs > 0
-          ? `${hrs}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
-          : `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-      setElapsed(`${formatted} elapsed`);
+      return hrs > 0
+        ? `${hrs}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+        : `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    };
+
+    const updateTimer = () => {
+      const now = Date.now();
+      if (endMs && endMs > now) {
+        setElapsed(`${fmtSec(Math.max(0, Math.floor((endMs - now) / 1000)))} left`);
+      } else if (startMs) {
+        setElapsed(`${fmtSec(Math.max(0, Math.floor((now - startMs) / 1000)))} elapsed`);
+      } else {
+        setElapsed("");
+      }
     };
 
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, [rpc.timestamps?.start, rpc.startTimestamp]);
+  }, [rpc.timestamps?.start, rpc.timestamps?.end, rpc.startTimestamp, rpc.endTimestamp]);
 
   const imgSizeClass =
     config.imageSize === "small"
@@ -135,15 +161,32 @@ export function DiscordRpcCard({
   const numType = typeof rawType === "number" ? rawType : rawType === "streaming" ? 1 : rawType === "listening" ? 2 : rawType === "watching" ? 3 : rawType === "competing" ? 5 : 0;
 
   // Resolve buttons
-  const buttons: Array<{ label: string; url: string }> = [];
+  const sanitizeBtnUrl = (raw?: string | null): string | null => {
+    if (typeof raw !== "string") return null;
+    const t = raw.trim();
+    if (!t || t === "#") return null;
+    if (/^https?:\/\/.+/i.test(t)) return t;
+    if (t.startsWith("/") && !t.startsWith("//")) return t;
+    return null;
+  };
+
+  const buttons: Array<{ label: string; url: string | null }> = [];
   if (Array.isArray(rpc.buttons) && rpc.buttons.length > 0) {
-    buttons.push(...rpc.buttons.slice(0, 2));
-  } else {
+    for (const b of rpc.buttons) {
+      if (buttons.length >= 2) break;
+      const label = typeof b?.label === "string" ? b.label.trim() : "";
+      if (!label) continue;
+      buttons.push({ label, url: sanitizeBtnUrl(b.url) });
+    }
+  }
+  if (buttons.length === 0) {
     if (rpc.button1Enabled !== false && rpc.button1Url) {
-      buttons.push({ label: rpc.button1Label || "View Profile", url: rpc.button1Url });
+      const u1 = sanitizeBtnUrl(rpc.button1Url);
+      if (u1) buttons.push({ label: rpc.button1Label || "View Profile", url: u1 });
     }
     if (rpc.button2Enabled !== false && rpc.button2Url) {
-      buttons.push({ label: rpc.button2Label || "Get PixelsRPC", url: rpc.button2Url });
+      const u2 = sanitizeBtnUrl(rpc.button2Url);
+      if (u2) buttons.push({ label: rpc.button2Label || "Get PixelsRPC", url: u2 });
     }
   }
 
@@ -348,7 +391,7 @@ export function DiscordRpcCard({
                 </div>
               )}
 
-              {el.type === "timestamps" && (
+              {el.type === "timestamps" && elapsed && (
                 <div
                   style={{
                     fontFamily: el.style?.fontFamily || "monospace",
@@ -359,25 +402,34 @@ export function DiscordRpcCard({
                   }}
                   className="w-full h-full flex items-center truncate"
                 >
-                  <span className="truncate">{elapsed || "00:01 elapsed"}</span>
+                  <span className="truncate">{elapsed}</span>
                 </div>
               )}
 
               {el.type === "actionButtons" && (
                 <div className="w-full h-full flex flex-wrap gap-2 items-center">
                   {buttons.length > 0 ? (
-                    buttons.map((btn, idx) => (
-                      <a
-                        key={idx}
-                        href={btn.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-[10px] text-neutral-300 hover:text-white transition-colors flex items-center gap-1 font-mono"
+                    buttons.map((btn, idx) =>
+                      btn.url ? (
+                        <a
+                          key={idx}
+                          href={btn.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-[10px] text-neutral-300 hover:text-white transition-colors flex items-center gap-1 font-mono"
                       >
                         <span className="truncate">{btn.label}</span>
                         <ExternalLink size={9} className="opacity-60 shrink-0" />
                       </a>
-                    ))
+                      ) : (
+                        <span
+                          key={idx}
+                          className="px-2.5 py-1 rounded-lg bg-neutral-900/70 border border-neutral-800 text-[10px] text-neutral-400 flex items-center gap-1 font-mono"
+                        >
+                          <span className="truncate">{btn.label}</span>
+                        </span>
+                      )
+                    )
                   ) : (
                     isInteractiveEditor && (
                       <>
@@ -519,6 +571,36 @@ export function DiscordRpcCard({
 
             const tMode = String(rpc.timestampMode ?? "now").toLowerCase();
             const showTimestamp = tMode !== "none" && tMode !== "0" && config.showTimer;
+            const isSpotify =
+              numType === 2 &&
+              ((rpc.name || rpc.appName || "").toLowerCase().includes("spotify") || Boolean(rpc.spotify));
+            const rawStart = rpc.timestamps?.start ?? rpc.spotify?.timestamps?.start ?? rpc.startTimestamp;
+            const rawEnd = rpc.timestamps?.end ?? rpc.spotify?.timestamps?.end ?? rpc.endTimestamp;
+            const toMs = (v: unknown): number | null => {
+              if (v === null || v === undefined || v === "") return null;
+              if (typeof v === "number") {
+                if (!Number.isFinite(v) || v <= 0) return null;
+                return v < 1e12 && v > 1e8 ? v * 1000 : v >= 1e12 ? v : null;
+              }
+              if (typeof v === "string") {
+                const t = v.trim();
+                if (/^\d+(\.\d+)?$/.test(t)) return toMs(Number(t));
+                const p = Date.parse(t);
+                return Number.isFinite(p) && p > 1e11 ? p : null;
+              }
+              return null;
+            };
+            const spStartMs = toMs(rawStart);
+            const spEndMs = toMs(rawEnd);
+            const spTotalMs = spStartMs && spEndMs && spEndMs > spStartMs ? spEndMs - spStartMs : null;
+            const spElapsedMs = spStartMs && spTotalMs ? Math.max(0, Math.min(spTotalMs, Date.now() - spStartMs)) : null;
+            const spProgressPct = spTotalMs && spElapsedMs !== null ? Math.round((spElapsedMs / spTotalMs) * 100) : null;
+            const fmtClock = (ms: number) => {
+              const totalSec = Math.max(0, Math.floor(ms / 1000));
+              const m = Math.floor(totalSec / 60);
+              const s = totalSec % 60;
+              return `${m}:${String(s).padStart(2, "0")}`;
+            };
 
             return (
               <>
@@ -526,7 +608,14 @@ export function DiscordRpcCard({
                   <p className="text-neutral-400 text-[11px] truncate">{formattedDetails}</p>
                 )}
                 {formattedState && (
-                  <p className="text-neutral-500 text-[10px] truncate">{formattedState}</p>
+                  <p className="text-neutral-500 text-[10px] truncate">
+                    {isSpotify ? `by ${formattedState}` : formattedState}
+                  </p>
+                )}
+                {isSpotify && (rpc.spotify?.album || rpc.largeImageText) && (
+                  <p className="text-neutral-500 text-[10px] truncate">
+                    on {rpc.spotify?.album || rpc.largeImageText}
+                  </p>
                 )}
 
                 {/* Party size indicator */}
@@ -537,13 +626,29 @@ export function DiscordRpcCard({
                   </p>
                 )}
 
-                {/* Dynamic elapsed or local timer */}
-                {showTimestamp && (
-                  <p className="text-neutral-400 text-[10px] font-mono pt-0.5">
-                    {tMode === "time" || tMode === "2"
-                      ? new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-                      : elapsed || "00:01 elapsed"}
-                  </p>
+                {/* Spotify Playback Progress Bar */}
+                {isSpotify && spTotalMs && spElapsedMs !== null && spProgressPct !== null ? (
+                  <div className="pt-1.5 space-y-1">
+                    <div className="w-full h-1 rounded-full bg-neutral-800 overflow-hidden">
+                      <div
+                        className="h-full bg-[#1DB954] rounded-full transition-all duration-500"
+                        style={{ width: `${spProgressPct}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[9px] text-neutral-400 font-mono tabular-nums">
+                      <span>{fmtClock(spElapsedMs)}</span>
+                      <span>{fmtClock(spTotalMs)}</span>
+                    </div>
+                  </div>
+                ) : (
+                  showTimestamp &&
+                  (tMode === "time" || tMode === "2" || Boolean(elapsed)) && (
+                    <p className="text-neutral-400 text-[10px] font-mono pt-0.5">
+                      {tMode === "time" || tMode === "2"
+                        ? new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                        : elapsed}
+                    </p>
+                  )
                 )}
               </>
             );
@@ -554,18 +659,27 @@ export function DiscordRpcCard({
       {/* Buttons */}
       {buttons.length > 0 && (
         <div className="flex flex-wrap gap-2 pt-1 border-t border-neutral-800/60">
-          {buttons.map((btn, idx) => (
-            <a
-              key={idx}
-              href={btn.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-[10px] text-neutral-300 hover:text-white transition-colors flex items-center gap-1 font-mono"
-            >
-              <span>{btn.label}</span>
-              <ExternalLink size={9} className="opacity-60" />
-            </a>
-          ))}
+          {buttons.map((btn, idx) =>
+            btn.url ? (
+              <a
+                key={idx}
+                href={btn.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-[10px] text-neutral-300 hover:text-white transition-colors flex items-center gap-1 font-mono"
+              >
+                <span>{btn.label}</span>
+                <ExternalLink size={9} className="opacity-60" />
+              </a>
+            ) : (
+              <span
+                key={idx}
+                className="px-2.5 py-1 rounded-lg bg-neutral-900/70 border border-neutral-800 text-[10px] text-neutral-400 flex items-center gap-1 font-mono"
+              >
+                <span>{btn.label}</span>
+              </span>
+            )
+          )}
         </div>
       )}
     </div>
