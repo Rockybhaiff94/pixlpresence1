@@ -209,15 +209,36 @@ async function resolveDiscordAsset(
     assetInput: string | null | undefined,
     slot: "largeImage" | "smallImage" = "largeImage"
 ): Promise<string | undefined> {
-    return resolveAssetForDiscord({
+    const apiUrl = (settings.store.apiUrl || "https://pixlpresence1-web.vercel.app").trim().replace(/\/+$/, "");
+    let normalized = assetInput ? assetInput.trim() : assetInput;
+    if (normalized) {
+        if (normalized.startsWith("/") && !normalized.startsWith("//")) {
+            normalized = `${apiUrl}${normalized}`;
+        } else if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/uploads\/.*)/i.test(normalized)) {
+            const match = normalized.match(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/uploads\/.*)/i);
+            if (match?.[3]) {
+                normalized = `${apiUrl}${match[3]}`;
+            }
+        }
+    }
+    const assetUtils =
+        (ApplicationAssetUtils && typeof ApplicationAssetUtils.fetchAssetIds === "function"
+            ? ApplicationAssetUtils
+            : null) || findByProps("fetchAssetIds");
+    const resolved = await resolveAssetForDiscord({
         appId,
-        assetInput,
+        assetInput: normalized,
         slot,
         cache: assetResolutionCache,
-        fetchAssetIds: ApplicationAssetUtils?.fetchAssetIds?.bind(ApplicationAssetUtils),
-        getAssetImage: (ApplicationAssetUtils as any)?.getAssetImage?.bind(ApplicationAssetUtils),
+        fetchAssetIds: assetUtils?.fetchAssetIds?.bind(assetUtils),
+        getAssetImage: (assetUtils as any)?.getAssetImage?.bind(assetUtils),
+        mediaProxyBaseUrl: apiUrl,
         onDiagnostic: logGifDiagnostic
     });
+    if (normalized && !resolved) {
+        console.warn(`[PixelsRPC] Failed to resolve ${slot} asset for Discord:`, getSafeUrlHost(normalized));
+    }
+    return resolved;
 }
 
 async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> {
@@ -702,9 +723,11 @@ export async function fetchAndSync(): Promise<void> {
 
         const response = await fetch(`${apiUrl}/api/rpc/me`, {
             method: "GET",
+            cache: "no-store",
             headers: {
                 Authorization: `Bearer ${token}`,
-                Accept: "application/json"
+                Accept: "application/json",
+                "Cache-Control": "no-cache"
             },
             signal: activeAbortController.signal
         });
