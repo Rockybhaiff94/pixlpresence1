@@ -175,7 +175,7 @@ async function run() {
       throw new Error('503 temporary');
     },
   });
-  assert.strictEqual(failedRes, 'https://pixelgg-api.onrender.com/uploads/rpc/retry_test.gif', 'No fabricated mp: ID returned on failure');
+  assert.strictEqual(failedRes, undefined, 'Does not return raw HTTP URL or fabricated mp: ID on failure');
   assert.strictEqual(cache.has('ext:1523632136878559302:https://pixelgg-api.onrender.com/uploads/rpc/retry_test.gif'), false, 'Failed lookup not cached');
   console.log('  ✓ 3-category resolution, legacy wsrv unwrap, Discord CDN proxy & non-cached failure passed\n');
 

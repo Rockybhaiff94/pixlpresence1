@@ -25,6 +25,7 @@ let nativeFluxHandler: ((event?: any) => void) | null = null;
 let sessionNowTimestamp: number | null = null;
 let lastTimestampMode: string | null = null;
 let lastSessionAppName: string | null = null;
+let heartbeatTickCount = 0;
 
 let state: ConnectionState = {
     status: "not_linked",
@@ -111,6 +112,7 @@ async function sendHeartbeat(): Promise<void> {
         }
 
         if (res.ok) {
+            heartbeatTickCount += 1;
             const data = await res.json().catch(() => null);
             if (data?.runtime?.deviceId && !state.deviceId) {
                 updateState({ deviceId: data.runtime.deviceId });
@@ -121,12 +123,15 @@ async function sendHeartbeat(): Promise<void> {
                 discordAvailable,
                 ...(wasDisconnected ? { status: "connected", lastError: null } : {})
             });
+            const shouldForcePresence = Boolean(
+                wasDisconnected || data?.needsPresenceSync || heartbeatTickCount % 4 === 0
+            );
             if (wasDisconnected || (typeof data?.latestRevision === "number" && data.latestRevision > state.appliedRevision)) {
                 fetchAndSync();
-                pushNativePresenceSnapshot(true);
+                pushNativePresenceSnapshot(shouldForcePresence);
             } else {
-                // Keep native Discord status & activities synchronized periodically if a Flux event was missed
-                pushNativePresenceSnapshot(false);
+                // Keep native Discord status & activities synchronized if Flux missed an update or backend restarted
+                pushNativePresenceSnapshot(shouldForcePresence);
             }
         }
     } catch (err: any) {
@@ -354,24 +359,36 @@ async function resolveDiscordAsset(
     assetInput: string | null | undefined,
     slot: "largeImage" | "smallImage" = "largeImage"
 ): Promise<string | undefined> {
+    const apiUrl = (settings.store.apiUrl || "https://pixlpresence1-web.vercel.app").trim().replace(/\/+$/, "");
     let normalized = assetInput ? assetInput.trim() : assetInput;
-    if (normalized && normalized.startsWith("/") && !normalized.startsWith("//")) {
-        const apiUrl = (settings.store.apiUrl || "https://pixlpresence1-web.vercel.app").trim().replace(/\/+$/, "");
-        normalized = `${apiUrl}${normalized}`;
+    if (normalized) {
+        if (normalized.startsWith("/") && !normalized.startsWith("//")) {
+            normalized = `${apiUrl}${normalized}`;
+        } else if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/uploads\/.*)/i.test(normalized)) {
+            const match = normalized.match(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/uploads\/.*)/i);
+            if (match?.[3]) {
+                normalized = `${apiUrl}${match[3]}`;
+            }
+        }
     }
     const assetUtils =
         (ApplicationAssetUtils && typeof ApplicationAssetUtils.fetchAssetIds === "function"
             ? ApplicationAssetUtils
             : null) || findByProps("fetchAssetIds");
-    return resolveAssetForDiscord({
+    const resolved = await resolveAssetForDiscord({
         appId,
         assetInput: normalized,
         slot,
         cache: assetResolutionCache,
         fetchAssetIds: assetUtils?.fetchAssetIds?.bind(assetUtils),
         getAssetImage: (assetUtils as any)?.getAssetImage?.bind(assetUtils),
+        mediaProxyBaseUrl: apiUrl,
         onDiagnostic: logGifDiagnostic
     });
+    if (normalized && !resolved) {
+        console.warn(`[PixelsRPC] Failed to resolve ${slot} asset for Discord:`, getSafeUrlHost(normalized));
+    }
+    return resolved;
 }
 
 async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> {

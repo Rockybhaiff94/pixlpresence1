@@ -1,6 +1,7 @@
 import { prisma } from '@discord-rpc/database';
 import { io } from '../index';
 import { formatRichPresenceField } from '../utils/rpcFormat';
+import { resolveDiscordAvatarUrl } from '../auth';
 
 export interface LiveActivity {
   name: string;
@@ -340,13 +341,16 @@ class PresenceManager {
     const existingDiscord = this.discordPresenceByUsername.get(key);
     const now = update.timestamp || Date.now();
 
-    // Prevent race conditions: Ignore demonstrably older packets using timestamps or per-user client sequence
+    // Prevent race conditions: Ignore demonstrably older packets using timestamps or per-user client sequence.
+    // If timestamp advances >= 5s (e.g., plugin/Discord restart resetting local sequence), allow sequence reset.
     if (update.source === 'discord_bot' || update.source === 'lanyard' || update.source === 'client') {
       if (existingDiscord) {
         if (update.timestamp && existingDiscord.updatedAt > update.timestamp) {
           return existing || this.composeResolvedPresence(update.username, update.userId, update.discordId, update.source);
         }
+        const isSessionReset = Boolean(update.timestamp && update.timestamp - existingDiscord.updatedAt >= 5000);
         if (
+          !isSessionReset &&
           update.sequence !== undefined &&
           existingDiscord.clientSequence !== undefined &&
           existingDiscord.clientSequence > update.sequence
@@ -731,20 +735,43 @@ class PresenceManager {
     this.emitPresenceBroadcast(resolved);
   }
 
+  public hasFreshDiscordPresence(username: string, maxAgeMs = 90_000): boolean {
+    if (!username) return false;
+    const key = username.trim().toLowerCase();
+    const existing = this.discordPresenceByUsername.get(key);
+    return Boolean(existing && Date.now() - existing.updatedAt < maxAgeMs);
+  }
+
   public async getLivePresenceForUser(user: {
     id: string;
     username: string;
     discordId?: string | null;
+    avatar?: string | null;
+    profile?: { avatarUrl?: string | null } | null;
     richPresence?: any;
   }): Promise<LivePresence> {
     const key = user.username.trim().toLowerCase();
     const now = Date.now();
     const LIVE_CACHE_FRESH_MS = 8000;
+    const CLIENT_AUTHORITY_WINDOW_MS = 60_000;
     const LIVE_CACHE_MAX_STALE_MS = 5 * 60 * 1000; // 5 minutes max stale window
 
     const dbRpc = user.richPresence || (await prisma.richPresence.findUnique({
       where: { userId: user.id },
     }));
+
+    let avatarSource = user.avatar || user.profile?.avatarUrl || null;
+    if (dbRpc && dbRpc.useProfileAvatar !== false && !avatarSource) {
+      const userWithAvatar = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { avatar: true, profile: { select: { avatarUrl: true } } },
+      }).catch(() => null);
+      avatarSource = userWithAvatar?.avatar || userWithAvatar?.profile?.avatarUrl || null;
+    }
+    const resolvedDynamicAvatar =
+      dbRpc && dbRpc.useProfileAvatar !== false
+        ? resolveDiscordAvatarUrl(user.discordId, avatarSource)
+        : null;
 
     // Always sync Custom RPC config into customRpcByUsername without overwriting Discord status/activity
     const customEnabled = dbRpc ? dbRpc.showProfileRpc !== false : false;
@@ -790,7 +817,10 @@ class PresenceManager {
         type: parseActivityTypeNum(dbRpc.activityType),
         details: formattedDetails || null,
         state: formattedState || null,
-        largeImage: customCfg.largeImageEnabled !== false ? (dbRpc.largeImage || null) : null,
+        largeImage:
+          customCfg.largeImageEnabled !== false
+            ? ((dbRpc.useProfileAvatar !== false ? resolvedDynamicAvatar : null) || dbRpc.largeImage || null)
+            : null,
         largeImageText: customCfg.largeImageEnabled !== false ? (dbRpc.largeImageText || null) : null,
         smallImage: customCfg.smallImageEnabled !== false ? (dbRpc.smallImage || null) : null,
         smallImageText: customCfg.smallImageEnabled !== false ? (dbRpc.smallImageText || null) : null,
@@ -810,10 +840,14 @@ class PresenceManager {
       updatedAt: now,
     });
 
-    // Refresh Discord state if stale/missing and user has a Discord ID
+    // Refresh Discord state if stale/missing and user has a Discord ID.
+    // Do not let external Lanyard polling overwrite a recently active Vencord plugin ('client') snapshot.
     const existingDiscord = this.discordPresenceByUsername.get(key);
-    if (existingDiscord && (now - existingDiscord.updatedAt < LIVE_CACHE_FRESH_MS)) {
-      return this.composeResolvedPresence(user.username, user.id, user.discordId, existingDiscord.source, now);
+    if (existingDiscord) {
+      const ageMs = now - existingDiscord.updatedAt;
+      if (ageMs < LIVE_CACHE_FRESH_MS || (existingDiscord.source === 'client' && ageMs < CLIENT_AUTHORITY_WINDOW_MS)) {
+        return this.composeResolvedPresence(user.username, user.id, user.discordId, existingDiscord.source, now);
+      }
     }
 
     if (user.discordId) {
