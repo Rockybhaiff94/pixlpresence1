@@ -68,22 +68,6 @@ export function parseRpcPriority(customConfigRaw: unknown): RpcPriorityMode {
   return 'discord';
 }
 
-const NATIVE_ACTIVITY_RANK: Record<number, number> = {
-  1: 1, // Streaming
-  0: 2, // Playing Game
-  2: 3, // Listening (Spotify)
-  5: 4, // Competing
-  3: 5, // Watching
-};
-
-export function selectPrimaryNativeActivity(activities: LiveActivity[]): LiveActivity | null {
-  if (!Array.isArray(activities) || activities.length === 0) return null;
-  const eligible = activities.filter((a) => a && a.type !== 4 && Boolean(a.name));
-  if (eligible.length === 0) return null;
-  eligible.sort((a, b) => (NATIVE_ACTIVITY_RANK[a.type] ?? 99) - (NATIVE_ACTIVITY_RANK[b.type] ?? 99));
-  return eligible[0] || null;
-}
-
 export function resolveActivityByPriority(params: {
   discordActivity: LiveActivity | null;
   customActivity: LiveActivity | null;
@@ -357,22 +341,15 @@ class PresenceManager {
       }
     }
 
-    const cleanActivities = Array.isArray(update.activities) && update.status !== 'offline'
-      ? update.activities
-          .filter((a) => a && a.type !== 4 && Boolean(a.name))
-          .map((a) => this.sanitizeLiveActivity(a))
-      : [];
-
     let cleanActivity: LiveActivity | null = null;
-    if (update.status !== 'offline') {
-      if (update.hasActivity && update.activity && update.activity.type !== 4) {
-        cleanActivity = this.sanitizeLiveActivity(update.activity);
-      } else if (cleanActivities.length > 0) {
-        cleanActivity = selectPrimaryNativeActivity(cleanActivities);
-      }
+    if (update.hasActivity && update.activity && update.status !== 'offline') {
+      cleanActivity = this.sanitizeLiveActivity(update.activity);
     }
-
-    const finalActivities = cleanActivities.length > 0 ? cleanActivities : cleanActivity ? [cleanActivity] : [];
+    const cleanActivities = Array.isArray(update.activities) && update.status !== 'offline'
+      ? update.activities.map((a) => this.sanitizeLiveActivity(a))
+      : cleanActivity
+      ? [cleanActivity]
+      : [];
 
     if (update.source === 'discord_bot' || update.source === 'lanyard' || update.source === 'client') {
       this.discordPresenceByUsername.set(key, {
@@ -380,7 +357,7 @@ class PresenceManager {
         discordId: update.discordId || existingDiscord?.discordId || existing?.discordId || null,
         status: update.status,
         activity: cleanActivity,
-        activities: finalActivities,
+        activities: cleanActivities,
         updatedAt: now,
         clientSequence: update.sequence !== undefined ? update.sequence : existingDiscord?.clientSequence,
         source: update.source,
@@ -510,9 +487,9 @@ class PresenceManager {
       });
     }
 
-    // Map all supported non-custom activities and pick primary deterministically
-    const nonCustomActivities = rawPresence.activities.filter((a: any) => a && a.type !== 4 && a.name);
-    if (nonCustomActivities.length === 0) {
+    // Prefer non-custom status activity (Playing, Streaming, Listening, Watching, Competing)
+    const active = rawPresence.activities.find((a: any) => a.type !== 4) || rawPresence.activities[0];
+    if (!active || active.type === 4) {
       return this.updatePresence({
         username: user.username,
         userId: user.id,
@@ -520,50 +497,50 @@ class PresenceManager {
         status: rawPresence.status,
         hasActivity: false,
         activity: null,
-        activities: [],
         source: 'discord_bot',
       });
     }
 
-    const mappedActivities: LiveActivity[] = nonCustomActivities.map((rawAct: any) => {
-      const aId = rawAct.applicationId || rawAct.application_id;
-      const lImg = this.resolveDiscordAssetUrl(aId, rawAct.assets?.largeImage || rawAct.assets?.large_image);
-      const sImg = this.resolveDiscordAssetUrl(aId, rawAct.assets?.smallImage || rawAct.assets?.small_image);
-      const st = normalizeEpochMs(rawAct.timestamps?.start);
-      const en = normalizeEpochMs(rawAct.timestamps?.end);
-      const btns = normalizeActivityButtons(rawAct.buttons, rawAct.metadata?.button_urls);
-      const isSp = rawAct.name === 'Spotify' && (rawAct.type === 2 || rawAct.type === 'LISTENING');
-      return {
-        name: rawAct.name,
-        appName: rawAct.name,
-        applicationId: aId || null,
-        type: typeof rawAct.type === 'number' ? rawAct.type : 0,
-        details: rawAct.details || null,
-        state: rawAct.state || null,
-        largeImage: lImg,
-        largeImageText: rawAct.assets?.largeText || rawAct.assets?.large_text || null,
-        smallImage: sImg,
-        smallImageText: rawAct.assets?.smallText || rawAct.assets?.small_text || null,
-        streamUrl: rawAct.url || null,
-        timestamps: (st !== null || en !== null) ? { start: st, end: en } : null,
-        startTimestamp: st !== null ? new Date(st).toISOString() : null,
-        endTimestamp: en !== null ? new Date(en).toISOString() : null,
-        party: rawAct.party?.size ? { size: rawAct.party.size } : null,
-        buttons: btns,
-        spotify: isSp
-          ? {
-              track_id: rawAct.syncId || rawAct.sync_id || null,
-              song: rawAct.details || null,
-              artist: rawAct.state || null,
-              album: rawAct.assets?.largeText || rawAct.assets?.large_text || null,
-              album_art_url: lImg,
-              timestamps: (st !== null || en !== null) ? { start: st, end: en } : null,
-            }
-          : null,
-      };
-    });
+    const appId = active.applicationId || active.application_id;
+    const largeAsset = active.assets?.largeImage || active.assets?.large_image;
+    const smallAsset = active.assets?.smallImage || active.assets?.small_image;
 
-    const liveActivity = selectPrimaryNativeActivity(mappedActivities) || mappedActivities[0];
+    const largeImage = this.resolveDiscordAssetUrl(appId, largeAsset);
+    const smallImage = this.resolveDiscordAssetUrl(appId, smallAsset);
+
+    const startTime = normalizeEpochMs(active.timestamps?.start);
+    const endTime = normalizeEpochMs(active.timestamps?.end);
+    const normalizedBtns = normalizeActivityButtons(active.buttons, active.metadata?.button_urls);
+    const isSpotify = active.name === 'Spotify' && (active.type === 2 || active.type === 'LISTENING');
+
+    const liveActivity: LiveActivity = {
+      name: active.name,
+      appName: active.name,
+      applicationId: appId || null,
+      type: typeof active.type === 'number' ? active.type : 0,
+      details: active.details || null,
+      state: active.state || null,
+      largeImage,
+      largeImageText: active.assets?.largeText || active.assets?.large_text || null,
+      smallImage,
+      smallImageText: active.assets?.smallText || active.assets?.small_text || null,
+      streamUrl: active.url || null,
+      timestamps: (startTime !== null || endTime !== null) ? { start: startTime, end: endTime } : null,
+      startTimestamp: startTime !== null ? new Date(startTime).toISOString() : null,
+      endTimestamp: endTime !== null ? new Date(endTime).toISOString() : null,
+      party: active.party?.size ? { size: active.party.size } : null,
+      buttons: normalizedBtns,
+      spotify: isSpotify
+        ? {
+            track_id: active.syncId || null,
+            song: active.details || null,
+            artist: active.state || null,
+            album: active.assets?.largeText || active.assets?.large_text || null,
+            album_art_url: largeImage,
+            timestamps: (startTime !== null || endTime !== null) ? { start: startTime, end: endTime } : null,
+          }
+        : null,
+    };
 
     return this.updatePresence({
       username: user.username,
@@ -572,7 +549,6 @@ class PresenceManager {
       status: rawPresence.status,
       hasActivity: true,
       activity: liveActivity,
-      activities: mappedActivities,
       source: 'discord_bot',
     });
   }

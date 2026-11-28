@@ -1,27 +1,20 @@
 import definePlugin from "@utils/types";
-import { ApplicationAssetUtils, FluxDispatcher, PresenceStore, React, UserStore } from "@webpack/common";
+import { ApplicationAssetUtils, FluxDispatcher, React } from "@webpack/common";
 import { findByProps } from "@webpack";
 import { settings } from "./settings";
 import { SettingsAbout } from "./components/SettingsAbout";
 import { ConnectionState, DiscordActivity, RpcResponse } from "./types";
 import { formatRichPresenceField } from "./rpcFormat";
 import { resolveAssetForDiscord, getSafeUrlHost } from "./assetResolver";
-import { captureLocalPresenceSnapshot } from "./nativeActivityCapture";
 
 const SOCKET_ID = "pixels-rpc";
 const DEFAULT_APP_ID = "1523632136878559302";
-const PLUGIN_VERSION = "1.3.0";
+const PLUGIN_VERSION = "1.2.0";
 
 let syncTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let heartbeatTimerId: ReturnType<typeof setInterval> | null = null;
-let nativeSyncTimerId: ReturnType<typeof setTimeout> | null = null;
 let activeAbortController: AbortController | null = null;
 let lastActivityHash: string | null = null;
-let lastNativePresenceHash: string | null = null;
-let nativeSyncSequence = 0;
-let activeCustomAppId: string | null = DEFAULT_APP_ID;
-let isNativeSubscribed = false;
-let nativeFluxHandler: ((event?: any) => void) | null = null;
 let sessionNowTimestamp: number | null = null;
 let lastTimestampMode: string | null = null;
 
@@ -54,8 +47,6 @@ function handleServerDisconnection(reason: string) {
     logDebug(`Server disconnection detected: ${reason}`);
 
     stopHeartbeat();
-    unsubscribeNativePresence();
-    lastNativePresenceHash = null;
     clearActivity();
 
     store.deviceToken = "";
@@ -114,16 +105,11 @@ async function sendHeartbeat(): Promise<void> {
             if (data?.runtime?.deviceId && !state.deviceId) {
                 updateState({ deviceId: data.runtime.deviceId });
             }
-            const wasDisconnected = state.status === "offline" || state.status === "reconnecting";
             updateState({
                 lastHeartbeat: new Date(),
                 discordAvailable,
-                ...(wasDisconnected ? { status: "connected", lastError: null } : {})
+                ...(state.status === "offline" || state.status === "reconnecting" ? { status: "connected", lastError: null } : {})
             });
-            if (wasDisconnected || (typeof data?.latestRevision === "number" && data.latestRevision > state.appliedRevision)) {
-                fetchAndSync();
-                pushNativePresenceSnapshot(true);
-            }
         }
     } catch (err: any) {
         logDebug("Heartbeat ping failed:", err);
@@ -159,133 +145,6 @@ function logGifDiagnostic(stage: string, details: Record<string, any>) {
 
 function getDispatcher() {
     return FluxDispatcher ?? findByProps("dispatch", "isDispatching");
-}
-
-function getUserStoreSafe() {
-    if (UserStore && typeof UserStore.getCurrentUser === "function") return UserStore;
-    return findByProps("getCurrentUser");
-}
-
-function getPresenceStoreSafe() {
-    if (PresenceStore && typeof PresenceStore.getActivities === "function" && typeof PresenceStore.getStatus === "function") {
-        return PresenceStore;
-    }
-    return findByProps("getStatus", "getActivities");
-}
-
-export async function pushNativePresenceSnapshot(force: boolean = false): Promise<void> {
-    const token = getActiveToken();
-    const store = settings.store;
-    const apiUrl = (store.apiUrl || "https://pixlpresence1-web.vercel.app").trim().replace(/\/+$/, "");
-    if (!token) return;
-
-    const uStore = getUserStoreSafe();
-    const pStore = getPresenceStoreSafe();
-    const currentUser = uStore?.getCurrentUser?.();
-    if (!currentUser?.id || !pStore) return;
-
-    const snapshot = captureLocalPresenceSnapshot({
-        userId: currentUser.id,
-        getStatus: (uid) => pStore.getStatus(uid),
-        getActivities: (uid) => pStore.getActivities(uid),
-        customAppId: activeCustomAppId
-    });
-    if (!snapshot) return;
-
-    const hash = JSON.stringify(snapshot);
-    if (!force && hash === lastNativePresenceHash) {
-        return;
-    }
-
-    const seq = ++nativeSyncSequence;
-    try {
-        const res = await fetch(`${apiUrl}/api/rpc/presence`, {
-            method: "POST",
-            headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
-                Accept: "application/json"
-            },
-            body: JSON.stringify({
-                status: snapshot.status,
-                activity: snapshot.activity,
-                activities: snapshot.activities,
-                timestamp: Date.now(),
-                sequence: seq
-            })
-        });
-
-        if (res.status === 401) {
-            handleServerDisconnection("Device authorization revoked during presence sync.");
-            return;
-        }
-        if (res.ok) {
-            lastNativePresenceHash = hash;
-            logDebug("Synchronized native Discord presence snapshot:", {
-                status: snapshot.status,
-                primary: snapshot.activity?.name || null,
-                count: snapshot.activities.length
-            });
-        }
-    } catch (err: any) {
-        logDebug("Native presence push failed:", err);
-    }
-}
-
-function scheduleNativePresencePush(force: boolean = false) {
-    if (nativeSyncTimerId) {
-        clearTimeout(nativeSyncTimerId);
-    }
-    nativeSyncTimerId = setTimeout(() => {
-        nativeSyncTimerId = null;
-        pushNativePresenceSnapshot(force);
-    }, 150);
-}
-
-function subscribeNativePresence() {
-    if (isNativeSubscribed) return;
-    const pStore = getPresenceStoreSafe();
-    const dispatcher = getDispatcher();
-
-    nativeFluxHandler = (event?: any) => {
-        // Ignore our own LOCAL_ACTIVITY_UPDATE socketId echo so we don't trigger extra network traffic
-        if (event?.type === "LOCAL_ACTIVITY_UPDATE" && event?.socketId === SOCKET_ID) {
-            return;
-        }
-        scheduleNativePresencePush(false);
-    };
-
-    if (pStore && typeof pStore.addChangeListener === "function") {
-        pStore.addChangeListener(nativeFluxHandler);
-    }
-    if (dispatcher && typeof dispatcher.subscribe === "function") {
-        dispatcher.subscribe("PRESENCE_UPDATES", nativeFluxHandler);
-        dispatcher.subscribe("LOCAL_ACTIVITY_UPDATE", nativeFluxHandler);
-        dispatcher.subscribe("SPOTIFY_PLAYER_STATE", nativeFluxHandler);
-        dispatcher.subscribe("CONNECTION_OPEN", nativeFluxHandler);
-    }
-    isNativeSubscribed = true;
-}
-
-function unsubscribeNativePresence() {
-    if (nativeSyncTimerId) {
-        clearTimeout(nativeSyncTimerId);
-        nativeSyncTimerId = null;
-    }
-    if (!isNativeSubscribed || !nativeFluxHandler) return;
-    const pStore = getPresenceStoreSafe();
-    const dispatcher = getDispatcher();
-    if (pStore && typeof pStore.removeChangeListener === "function") {
-        pStore.removeChangeListener(nativeFluxHandler);
-    }
-    if (dispatcher && typeof dispatcher.unsubscribe === "function") {
-        dispatcher.unsubscribe("PRESENCE_UPDATES", nativeFluxHandler);
-        dispatcher.unsubscribe("LOCAL_ACTIVITY_UPDATE", nativeFluxHandler);
-        dispatcher.unsubscribe("SPOTIFY_PLAYER_STATE", nativeFluxHandler);
-        dispatcher.unsubscribe("CONNECTION_OPEN", nativeFluxHandler);
-    }
-    isNativeSubscribed = false;
-    nativeFluxHandler = null;
 }
 
 function getActiveToken(): string {
@@ -603,7 +462,6 @@ export async function applyActivity(rpc: RpcResponse) {
 
     const currentSeq = ++applySequence;
     const activity = await buildDiscordActivity(rpc);
-    activeCustomAppId = activity.application_id || DEFAULT_APP_ID;
     if (currentSeq !== applySequence) {
         logDebug(`Discarding stale async activity build #${currentSeq} (latest: #${applySequence})`);
         return;
@@ -755,10 +613,8 @@ export async function linkDeviceAccount(code: string): Promise<void> {
             logDebug(`Account successfully linked as @${data.username}`);
             isConnected = true;
 
-            // Immediately start heartbeat, native activity capture, and fetch presence
+            // Immediately start heartbeat and fetch presence
             startHeartbeat();
-            subscribeNativePresence();
-            await pushNativePresenceSnapshot(true);
             await fetchAndSync();
             break;
         } catch (err: any) {
@@ -786,8 +642,6 @@ export async function disconnectDeviceAccount(): Promise<void> {
     const apiUrl = (store.apiUrl || "https://pixlpresence1-web.vercel.app").trim().replace(/\/+$/, "");
 
     stopHeartbeat();
-    unsubscribeNativePresence();
-    lastNativePresenceHash = null;
 
     if (token) {
         try {
@@ -828,8 +682,6 @@ export async function fetchAndSync(): Promise<void> {
 
     if (!token) {
         stopHeartbeat();
-        unsubscribeNativePresence();
-        lastNativePresenceHash = null;
         clearActivity();
         updateState({
             status: "not_linked",
@@ -877,11 +729,7 @@ export async function fetchAndSync(): Promise<void> {
 
         const data: RpcResponse = await response.json();
 
-        const wasDisconnected = state.status === "offline" || state.status === "reconnecting";
         await applyActivity(data);
-        if (wasDisconnected) {
-            await pushNativePresenceSnapshot(true);
-        }
 
         updateState({
             status: "connected",
@@ -987,11 +835,9 @@ export default definePlugin({
     start() {
         logDebug("Plugin starting...");
 
-        // Only start network sync if account is linked or token is present
+        // Only start network polling if account is linked or token is present
         if (getActiveToken()) {
             startHeartbeat();
-            subscribeNativePresence();
-            pushNativePresenceSnapshot(true);
             fetchAndSync();
         } else {
             updateState({
@@ -1010,8 +856,6 @@ export default definePlugin({
         logDebug("Plugin stopping...");
 
         stopHeartbeat();
-        unsubscribeNativePresence();
-        lastNativePresenceHash = null;
 
         if (syncTimeoutId) {
             clearTimeout(syncTimeoutId);

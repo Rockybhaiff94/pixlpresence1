@@ -548,15 +548,9 @@ rpcRouter.post('/device/heartbeat', requireAuth, async (req: any, res) => {
       return res.status(401).json({ error: 'Device unauthorized or revoked', disconnected: true });
     }
 
-    const latestRpc = await prisma.richPresence.findUnique({
-      where: { userId: updated.userId },
-      select: { updatedAt: true },
-    });
-
     res.json({
       success: true,
       runtime: updated,
-      latestRevision: latestRpc?.updatedAt ? new Date(latestRpc.updatedAt).getTime() : 0,
       serverTime: new Date().toISOString(),
     });
   } catch (err) {
@@ -891,22 +885,14 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
  */
 rpcRouter.post('/presence', requireAuth, async (req: any, res) => {
   try {
-    const { activity, activities, status, timestamp, sequence } = req.body || {};
-    const validStatus =
-      status === 'online' || status === 'idle' || status === 'dnd' || status === 'offline'
-        ? status
-        : status === 'invisible'
-        ? 'offline'
-        : 'online';
-    const hasActivitiesList = Array.isArray(activities);
+    const { activity, status, timestamp, sequence } = req.body || {};
     const updated = presenceManager.updatePresence({
       username: req.user.username,
       userId: req.user.id,
       discordId: req.user.discordId,
-      status: validStatus,
-      hasActivity: Boolean((activity && activity.name) || (hasActivitiesList && activities.length > 0)),
+      status: status || 'online',
+      hasActivity: Boolean(activity && activity.name),
       activity: activity || null,
-      activities: hasActivitiesList ? activities : undefined,
       source: 'client',
       timestamp,
       sequence,

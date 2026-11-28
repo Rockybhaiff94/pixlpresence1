@@ -174,31 +174,26 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     loaded: boolean;
     showProfileRpc: boolean;
     rpcPriority: "discord" | "custom";
-    pluginOnline: boolean | null;
     saving: boolean;
-  }>({ loaded: false, showProfileRpc: true, rpcPriority: "discord", pluginOnline: null, saving: false });
+  }>({ loaded: false, showProfileRpc: true, rpcPriority: "discord", saving: false });
 
   React.useEffect(() => {
     if (!selectedNode || (selectedNode.type !== "custom-rpc" && selectedNode.type !== "custom-rpc-embed")) {
       return;
     }
     let active = true;
-    Promise.all([
-      apiFetch("/api/rpc/me").then((r) => (r.ok ? r.json() : null)).catch(() => null),
-      apiFetch("/api/rpc/device/list").then((r) => (r.ok ? r.json() : null)).catch(() => null),
-    ]).then(([rpcData, devData]) => {
-      if (!active || !rpcData) return;
-      const devs = Array.isArray(devData?.devices) ? devData.devices : Array.isArray(devData) ? devData : [];
-      const anyOnline = devs.some((d: any) => Boolean(d?.isOnline));
-      setRpcSyncPrefs((prev) => ({
-        ...prev,
-        loaded: true,
-        showProfileRpc: rpcData.showProfileRpc !== false,
-        rpcPriority: rpcData.rpcPriority === "custom" ? "custom" : "discord",
-        pluginOnline: devs.length > 0 ? anyOnline : null,
-        saving: false,
-      }));
-    });
+    apiFetch("/api/rpc/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!active || !data) return;
+        setRpcSyncPrefs({
+          loaded: true,
+          showProfileRpc: data.showProfileRpc !== false,
+          rpcPriority: data.rpcPriority === "custom" ? "custom" : "discord",
+          saving: false,
+        });
+      })
+      .catch(() => {});
     return () => {
       active = false;
     };
@@ -215,13 +210,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       if (res.ok) {
         const data = await res.json().catch(() => null);
         if (data) {
-          setRpcSyncPrefs((prev) => ({
-            ...prev,
+          setRpcSyncPrefs({
             loaded: true,
             showProfileRpc: data.showProfileRpc !== false,
             rpcPriority: data.rpcPriority === "custom" ? "custom" : "discord",
             saving: false,
-          }));
+          });
           return;
         }
       }
@@ -2023,27 +2017,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               />
             </label>
 
-            {/* Shared Custom RPC Enabled, Activity Priority & Plugin Connection Status */}
+            {/* Shared Custom RPC Enabled & Activity Priority (synced with /account/rpc) */}
             <div className="p-2 rounded-lg bg-[#121217] border border-[#24242d] space-y-2">
-              <div className="flex items-center justify-between text-[9px] font-mono border-b border-[#1e1e28] pb-1.5">
-                <span className="text-neutral-500 uppercase">PixelRPC Plugin</span>
-                <span
-                  data-testid="customizer-plugin-status"
-                  className={
-                    rpcSyncPrefs.pluginOnline === true
-                      ? "text-emerald-400 font-bold"
-                      : rpcSyncPrefs.pluginOnline === false
-                      ? "text-amber-400"
-                      : "text-neutral-500"
-                  }
-                >
-                  {rpcSyncPrefs.pluginOnline === true
-                    ? "Connected"
-                    : rpcSyncPrefs.pluginOnline === false
-                    ? "Disconnected"
-                    : "Not Linked"}
-                </span>
-              </div>
               <label className="flex items-center justify-between text-[10px] text-neutral-300 cursor-pointer">
                 <span>Custom RPC Enabled</span>
                 <input
