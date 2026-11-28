@@ -49,29 +49,141 @@
 
     let sessionNowTimestamp = null;
     const assetCache = new Map();
+    let nativePresenceHash = null;
+    let nativePresenceSeq = 0;
+    let nativeDebounce = null;
+    let nativeListener = null;
+
+    function resolveNativeImg(appId, val) {
+        if (!val || typeof val !== 'string') return null;
+        const r = val.trim();
+        if (!r) return null;
+        if (r.startsWith('http://') || r.startsWith('https://')) return r;
+        if (r.startsWith('spotify:')) return 'https://i.scdn.co/image/' + r.slice(8);
+        if (r.startsWith('mp:external/')) return 'https://media.discordapp.net/external/' + r.slice(12);
+        if (appId && /^[0-9a-zA-Z_-]+$/.test(r)) return 'https://cdn.discordapp.com/app-assets/' + appId + '/' + r + '.png';
+        return r;
+    }
+
+    async function pushNativePresence() {
+        if (!config.token) return;
+        const common = window.Vencord?.Webpack?.Common || {};
+        const findProps = window.Vencord?.Webpack?.findByProps;
+        const uStore = common.UserStore || (findProps && findProps('getCurrentUser'));
+        const pStore = common.PresenceStore || (findProps && findProps('getStatus', 'getActivities'));
+        const uid = uStore?.getCurrentUser?.()?.id;
+        if (!uid || !pStore) return;
+
+        const rawStatus = String(pStore.getStatus(uid) || 'offline').toLowerCase();
+        const status = (rawStatus === 'online' || rawStatus === 'idle' || rawStatus === 'dnd') ? rawStatus : 'offline';
+        const rawActs = status === 'offline' ? [] : (pStore.getActivities(uid) || []);
+        const activities = [];
+        for (const a of rawActs) {
+            if (!a || a.type === 4 || a.session_id === SOCKET_ID || a.id === SOCKET_ID || !a.name) continue;
+            const appId = a.application_id || a.applicationId || null;
+            const lImg = resolveNativeImg(appId, a.assets?.large_image || a.assets?.largeImage);
+            const sImg = resolveNativeImg(appId, a.assets?.small_image || a.assets?.smallImage);
+            const start = a.timestamps?.start || null;
+            const end = a.timestamps?.end || null;
+            const urls = Array.isArray(a.metadata?.button_urls) ? a.metadata.button_urls : [];
+            const btns = Array.isArray(a.buttons)
+                ? a.buttons.slice(0, 2).map((b, i) => typeof b === 'string'
+                    ? { label: b, url: urls[i] || '' }
+                    : { label: b?.label || '', url: b?.url || urls[i] || '' }).filter(x => x.label)
+                : null;
+            activities.push({
+                name: a.name,
+                appName: a.name,
+                applicationId: appId,
+                type: typeof a.type === 'number' ? a.type : 0,
+                details: a.details || null,
+                state: a.state || null,
+                largeImage: lImg,
+                largeImageText: a.assets?.large_text || a.assets?.largeText || null,
+                smallImage: sImg,
+                smallImageText: a.assets?.small_text || a.assets?.smallText || null,
+                streamUrl: a.url || null,
+                timestamps: (start || end) ? { start, end } : null,
+                party: a.party?.size ? { size: a.party.size } : null,
+                buttons: btns && btns.length > 0 ? btns : null
+            });
+        }
+        const primary = activities[0] || null;
+        const hash = JSON.stringify({ status, activities });
+        if (hash === nativePresenceHash) return;
+        try {
+            const url = config.apiUrl.replace(/\/+$/, '');
+            const r = await fetch(url + '/api/rpc/presence', {
+                method: 'POST',
+                headers: { Authorization: 'Bearer ' + config.token, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status, activity: primary, activities, timestamp: Date.now(), sequence: ++nativePresenceSeq })
+            });
+            if (r.ok) nativePresenceHash = hash;
+        } catch (_) {}
+    }
+
+    function subscribeNative() {
+        if (nativeListener) return;
+        const pStore = window.Vencord?.Webpack?.Common?.PresenceStore || window.Vencord?.Webpack?.findByProps?.('getStatus', 'getActivities');
+        const disp = getDispatcher();
+        nativeListener = (ev) => {
+            if (ev?.type === 'LOCAL_ACTIVITY_UPDATE' && ev?.socketId === SOCKET_ID) return;
+            if (nativeDebounce) clearTimeout(nativeDebounce);
+            nativeDebounce = setTimeout(pushNativePresence, 150);
+        };
+        pStore?.addChangeListener?.(nativeListener);
+        disp?.subscribe?.('PRESENCE_UPDATES', nativeListener);
+        disp?.subscribe?.('LOCAL_ACTIVITY_UPDATE', nativeListener);
+        disp?.subscribe?.('SPOTIFY_PLAYER_STATE', nativeListener);
+    }
+
+    function unsubscribeNative() {
+        if (!nativeListener) return;
+        const pStore = window.Vencord?.Webpack?.Common?.PresenceStore || window.Vencord?.Webpack?.findByProps?.('getStatus', 'getActivities');
+        const disp = getDispatcher();
+        pStore?.removeChangeListener?.(nativeListener);
+        disp?.unsubscribe?.('PRESENCE_UPDATES', nativeListener);
+        disp?.unsubscribe?.('LOCAL_ACTIVITY_UPDATE', nativeListener);
+        disp?.unsubscribe?.('SPOTIFY_PLAYER_STATE', nativeListener);
+        nativeListener = null;
+    }
 
     async function resolveAsset(appId, input) {
         if (!input || !String(input).trim()) return undefined;
-        const raw = String(input).trim();
+        const apiBase = config.apiUrl.replace(/\/+$/, '');
+        let raw = String(input).trim();
+        if (raw.startsWith('/') && !raw.startsWith('//')) {
+            raw = apiBase + raw;
+        } else if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/uploads\/.*)/i.test(raw)) {
+            const m = raw.match(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/uploads\/.*)/i);
+            if (m && m[3]) raw = apiBase + m[3];
+        }
         if (raw.startsWith('mp:') || raw.startsWith('spotify:') || raw.startsWith('twitch:')) return raw;
-        let target = raw;
-        if (/^https?:\/\/(cdn|media)\.discordapp\.(com|net)\//i.test(raw)) {
-            const anim = /(\ba_[a-f0-9]{8,}\b|\.gif|\.webp)/i.test(raw);
-            target = 'https://wsrv.nl/' + (anim ? 'avatar.gif' : 'avatar.png') + '?url=' + encodeURIComponent(raw) + (anim ? '&n=-1' : '');
-        }
-        const key = appId + ':' + target;
+        const isDiscordCdn = /^https?:\/\/(cdn|media)\.discordapp\.(com|net)\//i.test(raw);
+        const anim = /(\ba_[a-f0-9]{8,}\b|\.gif|\.webp|format=gif|tenor\.com|giphy\.com)/i.test(raw);
+        const proxyTarget = 'https://wsrv.nl/' + (anim ? 'avatar.gif' : 'avatar.png') + '?url=' + encodeURIComponent(raw) + (anim ? '&n=-1' : '');
+        const mediaProxyTarget = /^https:\/\//i.test(apiBase) && !raw.includes('/api/rpc/media-proxy')
+            ? apiBase + '/api/rpc/media-proxy?url=' + encodeURIComponent(raw)
+            : null;
+        const primaryTarget = isDiscordCdn ? proxyTarget : raw;
+        const key = appId + ':' + primaryTarget;
         if (assetCache.has(key)) return assetCache.get(key);
-        const utils = window.Vencord?.Webpack?.Common?.ApplicationAssetUtils;
+        const utils = window.Vencord?.Webpack?.Common?.ApplicationAssetUtils || window.Vencord?.Webpack?.findByProps?.('fetchAssetIds');
+        const candidates = isDiscordCdn ? [proxyTarget] : [primaryTarget, proxyTarget];
+        if (mediaProxyTarget) candidates.push(mediaProxyTarget);
         if (utils && typeof utils.fetchAssetIds === 'function') {
-            try {
-                const res = await utils.fetchAssetIds(appId, [target]);
-                if (Array.isArray(res) && res[0]) {
-                    assetCache.set(key, res[0]);
-                    return res[0];
-                }
-            } catch (_) {}
+            for (const candidate of candidates) {
+                try {
+                    const res = await utils.fetchAssetIds(appId, [candidate]);
+                    if (Array.isArray(res) && res[0] && !/^https?:\/\//i.test(res[0])) {
+                        assetCache.set(key, res[0]);
+                        return res[0];
+                    }
+                } catch (_) {}
+            }
         }
-        return target;
+        console.warn('[PixelsRPC] Failed to resolve Discord asset for:', raw);
+        return undefined;
     }
 
     function clearActivity() {
@@ -131,8 +243,11 @@
         }
 
         const tMode = String(rpc.timestampMode || 'now').toLowerCase();
-        if (tMode === 'now' || tMode === '1') {
-            if (!sessionNowTimestamp) sessionNowTimestamp = Date.now();
+        if (tMode === 'none' || tMode === '0') {
+            sessionNowTimestamp = null;
+        } else if (tMode === 'now' || tMode === '1') {
+            const staleTimer = sessionNowTimestamp ? Date.now() - sessionNowTimestamp > 12 * 60 * 60 * 1000 : false;
+            if (!sessionNowTimestamp || staleTimer) sessionNowTimestamp = Date.now();
             activity.timestamps = { start: sessionNowTimestamp };
         } else if (tMode === 'time' || tMode === '2') {
             const now = new Date();
@@ -180,9 +295,11 @@
         try {
             const url = config.apiUrl.replace(/\/+$/, '');
             const res = await fetch(url + '/api/rpc/me', {
+                cache: 'no-store',
                 headers: {
                     Authorization: 'Bearer ' + config.token,
-                    Accept: 'application/json'
+                    Accept: 'application/json',
+                    'Cache-Control': 'no-cache'
                 },
                 signal: abortController.signal
             });
@@ -216,7 +333,7 @@
 
     const PixelsRPC = {
         name: 'PixelsRPC',
-        version: '1.2.0',
+        version: '1.3.0',
         start(options = {}) {
             if (options.token) {
                 config.token = options.token.trim();
@@ -233,6 +350,8 @@
 
             if (syncTimer) clearInterval(syncTimer);
             fetchAndSync();
+            pushNativePresence();
+            subscribeNative();
             syncTimer = setInterval(fetchAndSync, config.interval * 1000);
             console.log('[PixelsRPC] Native plugin active. Connected to:', config.apiUrl);
         },
@@ -241,6 +360,11 @@
                 clearInterval(syncTimer);
                 syncTimer = null;
             }
+            if (nativeDebounce) {
+                clearTimeout(nativeDebounce);
+                nativeDebounce = null;
+            }
+            unsubscribeNative();
             if (abortController) {
                 abortController.abort();
                 abortController = null;

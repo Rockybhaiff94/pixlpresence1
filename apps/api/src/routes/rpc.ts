@@ -72,6 +72,16 @@ function checkVerifyRateLimit(ip: string): boolean {
 }
 
 // Middleware to check authentication via Session OR Bearer Token (App Token or Device Token) OR Token Cookie
+function parseActivityTypeNumber(rawType: unknown): number {
+  if (typeof rawType === 'number' && Number.isFinite(rawType)) return rawType;
+  const s = String(rawType || '').trim().toLowerCase();
+  if (s === '1' || s === 'streaming') return 1;
+  if (s === '2' || s === 'listening') return 2;
+  if (s === '3' || s === 'watching') return 3;
+  if (s === '5' || s === 'competing') return 5;
+  return 0;
+}
+
 export const requireAuth = async (req: any, res: any, next: any) => {
   // 1. Passport authenticated session or attached user
   if (req.user) {
@@ -548,9 +558,20 @@ rpcRouter.post('/device/heartbeat', requireAuth, async (req: any, res) => {
       return res.status(401).json({ error: 'Device unauthorized or revoked', disconnected: true });
     }
 
+    const latestRpc = await prisma.richPresence.findUnique({
+      where: { userId: updated.userId },
+      select: { updatedAt: true },
+    });
+
+    const needsPresenceSync = updated.username
+      ? !presenceManager.hasFreshDiscordPresence(updated.username)
+      : false;
+
     res.json({
       success: true,
       runtime: updated,
+      latestRevision: latestRpc?.updatedAt ? new Date(latestRpc.updatedAt).getTime() : 0,
+      needsPresenceSync,
       serverTime: new Date().toISOString(),
     });
   } catch (err) {
@@ -629,7 +650,14 @@ rpcRouter.get('/me', requireAuth, async (req: any, res) => {
     responseData.username = currentUser.username;
     responseData.userAvatar = resolvedAvatar;
     responseData.revision = rpc.updatedAt ? new Date(rpc.updatedAt).getTime() : Date.now();
+    // Never leak a stale ancient startTimestamp when timestampMode is "now" or "none"
+    const rTMode = String(responseData.timestampMode ?? 'now').toLowerCase();
+    if (rTMode === 'now' || rTMode === '1' || rTMode === 'none' || rTMode === '0') {
+      responseData.startTimestamp = null;
+      responseData.endTimestamp = null;
+    }
 
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.json(responseData);
   } catch (err) {
     console.error('[RPC Me Error]:', err);
@@ -664,7 +692,14 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
     if (rawData.largeImageCrop !== undefined) data.largeImageCrop = rawData.largeImageCrop ? String(rawData.largeImageCrop) : null;
     if (rawData.smallImageCrop !== undefined) data.smallImageCrop = rawData.smallImageCrop ? String(rawData.smallImageCrop) : null;
 
-    if (rawData.startTimestamp !== undefined) {
+    const { timestampMode: rawTMode } = rawData;
+    const normTMode = String(rawTMode ?? '').toLowerCase();
+    if (normTMode === 'now' || normTMode === '1' || normTMode === 'none' || normTMode === '0') {
+      data.startTimestamp = null;
+      data.endTimestamp = null;
+    }
+
+    if (rawData.startTimestamp !== undefined && normTMode !== 'now' && normTMode !== '1' && normTMode !== 'none' && normTMode !== '0') {
       if (rawData.startTimestamp === null || rawData.startTimestamp === '') {
         data.startTimestamp = null;
       } else {
@@ -673,7 +708,7 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
       }
     }
 
-    if (rawData.endTimestamp !== undefined) {
+    if (rawData.endTimestamp !== undefined && normTMode !== 'now' && normTMode !== '1' && normTMode !== 'none' && normTMode !== '0') {
       if (rawData.endTimestamp === null || rawData.endTimestamp === '') {
         data.endTimestamp = null;
       } else {
@@ -744,6 +779,11 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
     if (rawData.streaks !== undefined) updatedCustomConfig.streaks = Array.isArray(rawData.streaks) ? rawData.streaks : [];
     if (rawData.statistics !== undefined) updatedCustomConfig.statistics = Array.isArray(rawData.statistics) ? rawData.statistics : [];
     if (rawData.statusLabels !== undefined) updatedCustomConfig.statusLabels = Array.isArray(rawData.statusLabels) ? rawData.statusLabels : [];
+    if (rawData.rpcPriority === 'custom' || rawData.rpcPriority === 'discord') {
+      updatedCustomConfig.rpcPriority = rawData.rpcPriority;
+    } else if (!updatedCustomConfig.rpcPriority) {
+      updatedCustomConfig.rpcPriority = 'discord';
+    }
 
     data.customConfig = JSON.stringify(updatedCustomConfig);
 
@@ -821,48 +861,51 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
       fullPayload.statistics
     );
 
-    const customRpcActive =
-      rpcRecord.showProfileRpc !== false &&
-      rpcRecord.enableDiscordRpc !== false &&
-      Boolean(fullPayload.appName || formattedDetails || formattedState);
+    const customRpcEnabled = rpcRecord.showProfileRpc !== false;
+    const hasCustomContent = Boolean(fullPayload.appName || formattedDetails || formattedState);
+    const customActivityPayload: LiveActivity | null =
+      customRpcEnabled && hasCustomContent
+        ? {
+            name: fullPayload.appName || 'Active Application',
+            appName: fullPayload.appName || 'Active Application',
+            type: parseActivityTypeNumber(fullPayload.activityType),
+            details: formattedDetails || null,
+            state: formattedState || null,
+            largeImage: fullPayload.largeImageEnabled !== false ? (fullPayload.largeImage || null) : null,
+            smallImage: fullPayload.smallImageEnabled !== false ? (fullPayload.smallImage || null) : null,
+            largeImageText: fullPayload.largeImageEnabled !== false ? (fullPayload.largeImageText || null) : null,
+            smallImageText: fullPayload.smallImageEnabled !== false ? (fullPayload.smallImageText || null) : null,
+            streamUrl: fullPayload.streamUrl || null,
+            startTimestamp:
+              fullPayload.timestampMode === 'none' || fullPayload.timestampMode === '0'
+                ? null
+                : fullPayload.startTimestamp
+                ? new Date(fullPayload.startTimestamp).toISOString()
+                : new Date().toISOString(),
+            endTimestamp: fullPayload.endTimestamp ? new Date(fullPayload.endTimestamp).toISOString() : null,
+            party:
+              fullPayload.partySize && fullPayload.partyMax
+                ? { size: [fullPayload.partySize, fullPayload.partyMax] }
+                : null,
+            buttons: [
+              ...(fullPayload.button1Enabled !== false && fullPayload.button1Label && fullPayload.button1Url
+                ? [{ label: fullPayload.button1Label, url: fullPayload.button1Url }]
+                : []),
+              ...(fullPayload.button2Enabled !== false && fullPayload.button2Label && fullPayload.button2Url
+                ? [{ label: fullPayload.button2Label, url: fullPayload.button2Url }]
+                : []),
+            ],
+          }
+        : null;
 
-    if (customRpcActive) {
-      presenceManager.updatePresence({
-        username: currentUser.username,
-        userId: currentUser.id,
-        discordId: currentUser.discordId,
-        status: 'online',
-        hasActivity: true,
-        activity: {
-          name: fullPayload.appName || 'Active Application',
-          appName: fullPayload.appName || 'Active Application',
-          type: typeof fullPayload.activityType === 'number' ? fullPayload.activityType : 0,
-          details: formattedDetails || null,
-          state: formattedState || null,
-          largeImage: fullPayload.largeImageEnabled !== false ? (fullPayload.largeImage || null) : null,
-          smallImage: fullPayload.smallImageEnabled !== false ? (fullPayload.smallImage || null) : null,
-          largeImageText: fullPayload.largeImageEnabled !== false ? (fullPayload.largeImageText || null) : null,
-          smallImageText: fullPayload.smallImageEnabled !== false ? (fullPayload.smallImageText || null) : null,
-          streamUrl: fullPayload.streamUrl || null,
-          startTimestamp: fullPayload.timestampMode === 'none' || fullPayload.timestampMode === '0'
-            ? null
-            : (fullPayload.startTimestamp ? new Date(fullPayload.startTimestamp).toISOString() : new Date().toISOString()),
-          endTimestamp: fullPayload.endTimestamp ? new Date(fullPayload.endTimestamp).toISOString() : null,
-          party: (fullPayload.partySize && fullPayload.partyMax) ? { size: [fullPayload.partySize, fullPayload.partyMax] } : null,
-          buttons: [
-            ...(fullPayload.button1Enabled !== false && fullPayload.button1Label && fullPayload.button1Url
-              ? [{ label: fullPayload.button1Label, url: fullPayload.button1Url }]
-              : []),
-            ...(fullPayload.button2Enabled !== false && fullPayload.button2Label && fullPayload.button2Url
-              ? [{ label: fullPayload.button2Label, url: fullPayload.button2Url }]
-              : []),
-          ],
-        },
-        source: 'database',
-      });
-    } else {
-      presenceManager.clearDatabasePresence(currentUser.username, currentUser.discordId);
-    }
+    presenceManager.syncCustomRpcUpdate({
+      username: currentUser.username,
+      userId: currentUser.id,
+      discordId: currentUser.discordId,
+      showProfileRpc: customRpcEnabled,
+      rpcPriority: updatedCustomConfig.rpcPriority === 'custom' ? 'custom' : 'discord',
+      customActivity: customActivityPayload,
+    });
 
     res.json(fullPayload);
   } catch (err) {
@@ -877,14 +920,22 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
  */
 rpcRouter.post('/presence', requireAuth, async (req: any, res) => {
   try {
-    const { activity, status, timestamp, sequence } = req.body || {};
+    const { activity, activities, status, timestamp, sequence } = req.body || {};
+    const validStatus =
+      status === 'online' || status === 'idle' || status === 'dnd' || status === 'offline'
+        ? status
+        : status === 'invisible'
+        ? 'offline'
+        : 'online';
+    const hasActivitiesList = Array.isArray(activities);
     const updated = presenceManager.updatePresence({
       username: req.user.username,
       userId: req.user.id,
       discordId: req.user.discordId,
-      status: status || 'online',
-      hasActivity: Boolean(activity && activity.name),
+      status: validStatus,
+      hasActivity: Boolean((activity && activity.name) || (hasActivitiesList && activities.length > 0)),
       activity: activity || null,
+      activities: hasActivitiesList ? activities : undefined,
       source: 'client',
       timestamp,
       sequence,

@@ -168,6 +168,12 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
   const lastUpdatedRef = useRef<number>(0);
 
   useEffect(() => {
+    if (discordPresence && lastUpdatedRef.current === 0) {
+      setLivePresence(discordPresence);
+    }
+  }, [discordPresence]);
+
+  useEffect(() => {
     let isMounted = true;
     const socketUrl = getApiBaseUrl();
     const socket = io(socketUrl, {
@@ -179,30 +185,47 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
     const handlePresenceUpdate = (data: any) => {
       if (!isMounted || !data) return;
 
-      // Prevent race conditions: Ignore outdated presence packets
-      if (data.sequence !== undefined && data.sequence < lastSequenceRef.current) {
-        return;
-      }
-      if (data.updatedAt !== undefined && data.updatedAt < lastUpdatedRef.current) {
-        return;
+      // Prevent race conditions: Prioritize timestamp so backend restarts (resetting sequence -> 1) are never dropped.
+      if (typeof data.updatedAt === "number") {
+        if (data.updatedAt < lastUpdatedRef.current) {
+          return;
+        }
+        if (
+          data.updatedAt === lastUpdatedRef.current &&
+          data.sequence !== undefined &&
+          data.sequence < lastSequenceRef.current
+        ) {
+          return;
+        }
+        lastUpdatedRef.current = data.updatedAt;
+        if (data.sequence !== undefined) {
+          lastSequenceRef.current = data.sequence;
+        }
+      } else {
+        if (data.sequence !== undefined && data.sequence < lastSequenceRef.current) {
+          return;
+        }
+        lastSequenceRef.current = data.sequence || lastSequenceRef.current;
+        lastUpdatedRef.current = Date.now();
       }
 
-      lastSequenceRef.current = data.sequence || lastSequenceRef.current;
-      lastUpdatedRef.current = data.updatedAt || Date.now();
-
-      if (data.hasActivity && data.activity && data.status !== "offline") {
+      if (data.hasActivity && data.activity && (data.status !== "offline" || data.activitySource === "custom")) {
         setLivePresence((prev: any) => ({
           ...data.activity,
           streaks: data.activity.streaks ?? prev?.streaks ?? discordPresence?.streaks,
           statistics: data.activity.statistics ?? prev?.statistics ?? discordPresence?.statistics,
           statusLabels: data.activity.statusLabels ?? prev?.statusLabels ?? discordPresence?.statusLabels,
           status: data.status,
+          activitySource: data.activitySource,
+          rpcPriority: data.rpcPriority,
           hasActivity: true,
         }));
       } else {
         // User closed game, went offline, or is idle without activity
         setLivePresence({
           status: data.status || "offline",
+          activitySource: data.activitySource || "none",
+          rpcPriority: data.rpcPriority,
           hasActivity: false,
           appName: null,
           details: null,

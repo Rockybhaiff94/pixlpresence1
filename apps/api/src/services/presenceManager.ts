@@ -1,6 +1,7 @@
 import { prisma } from '@discord-rpc/database';
 import { io } from '../index';
 import { formatRichPresenceField } from '../utils/rpcFormat';
+import { resolveDiscordAvatarUrl } from '../auth';
 
 export interface LiveActivity {
   name: string;
@@ -37,6 +38,8 @@ export interface LiveActivity {
   } | null;
 }
 
+export type RpcPriorityMode = 'discord' | 'custom';
+
 export interface LivePresence {
   userId?: string | null;
   username: string;
@@ -44,10 +47,78 @@ export interface LivePresence {
   status: 'online' | 'idle' | 'dnd' | 'offline';
   hasActivity: boolean;
   activity: LiveActivity | null;
+  activities?: LiveActivity[];
+  discordActivity?: LiveActivity | null;
+  customRpcEnabled?: boolean;
+  rpcPriority?: RpcPriorityMode;
+  activitySource?: 'discord' | 'custom' | 'none';
   updatedAt: number;
   sequence: number;
   clientSequence?: number;
   source: 'discord_bot' | 'lanyard' | 'client' | 'database' | 'idle';
+}
+
+export function parseRpcPriority(customConfigRaw: unknown): RpcPriorityMode {
+  if (!customConfigRaw) return 'discord';
+  try {
+    const parsed = typeof customConfigRaw === 'string' ? JSON.parse(customConfigRaw) : customConfigRaw;
+    if (parsed && typeof parsed === 'object' && (parsed as any).rpcPriority === 'custom') {
+      return 'custom';
+    }
+  } catch {}
+  return 'discord';
+}
+
+const NATIVE_ACTIVITY_RANK: Record<number, number> = {
+  1: 1, // Streaming
+  0: 2, // Playing Game
+  2: 3, // Listening (Spotify)
+  5: 4, // Competing
+  3: 5, // Watching
+};
+
+export function selectPrimaryNativeActivity(activities: LiveActivity[]): LiveActivity | null {
+  if (!Array.isArray(activities) || activities.length === 0) return null;
+  const eligible = activities.filter((a) => a && a.type !== 4 && Boolean(a.name));
+  if (eligible.length === 0) return null;
+  eligible.sort((a, b) => (NATIVE_ACTIVITY_RANK[a.type] ?? 99) - (NATIVE_ACTIVITY_RANK[b.type] ?? 99));
+  return eligible[0] || null;
+}
+
+export function resolveActivityByPriority(params: {
+  discordActivity: LiveActivity | null;
+  customActivity: LiveActivity | null;
+  customRpcEnabled: boolean;
+  rpcPriority: RpcPriorityMode;
+}): { activity: LiveActivity | null; activitySource: 'discord' | 'custom' | 'none' } {
+  const { discordActivity, customActivity, customRpcEnabled, rpcPriority } = params;
+  const validCustom = customRpcEnabled && customActivity ? customActivity : null;
+
+  if (!customRpcEnabled) {
+    return discordActivity
+      ? { activity: discordActivity, activitySource: 'discord' }
+      : { activity: null, activitySource: 'none' };
+  }
+
+  if (rpcPriority === 'custom') {
+    if (validCustom) return { activity: validCustom, activitySource: 'custom' };
+    if (discordActivity) return { activity: discordActivity, activitySource: 'discord' };
+    return { activity: null, activitySource: 'none' };
+  }
+
+  if (discordActivity) return { activity: discordActivity, activitySource: 'discord' };
+  if (validCustom) return { activity: validCustom, activitySource: 'custom' };
+  return { activity: null, activitySource: 'none' };
+}
+
+function parseActivityTypeNum(rawType: unknown): number {
+  if (typeof rawType === 'number' && Number.isFinite(rawType)) return rawType;
+  const s = String(rawType || '').trim().toLowerCase();
+  if (s === '1' || s === 'streaming') return 1;
+  if (s === '2' || s === 'listening') return 2;
+  if (s === '3' || s === 'watching') return 3;
+  if (s === '5' || s === 'competing') return 5;
+  return 0;
 }
 
 function normalizeEpochMs(value: unknown): number | null {
@@ -109,9 +180,34 @@ function normalizeActivityButtons(
 }
 
 class PresenceManager {
-  // In-memory live presence stores
+  // Separate in-memory stores for:
+  // 1) Resolved public presence (status + prioritized activity)
+  // 2) Original Discord user presence & activities (discord_bot / lanyard / client)
+  // 3) Saved Custom RPC configuration & activity
   private presenceByUsername = new Map<string, LivePresence>();
   private presenceByDiscordId = new Map<string, LivePresence>();
+  private discordPresenceByUsername = new Map<
+    string,
+    {
+      userId?: string | null;
+      discordId?: string | null;
+      status: 'online' | 'idle' | 'dnd' | 'offline';
+      activity: LiveActivity | null;
+      activities: LiveActivity[];
+      updatedAt: number;
+      clientSequence?: number;
+      source: 'discord_bot' | 'lanyard' | 'client';
+    }
+  >();
+  private customRpcByUsername = new Map<
+    string,
+    {
+      enabled: boolean;
+      priority: RpcPriorityMode;
+      activity: LiveActivity | null;
+      updatedAt: number;
+    }
+  >();
   private userLookupCache = new Map<string, { id: string; username: string; discordId: string | null }>();
   private sequenceCounter = 0;
 
@@ -184,6 +280,50 @@ class PresenceManager {
   /**
    * Core atomic method to update a user's presence state and broadcast
    */
+  private sanitizeLiveActivity(act: LiveActivity): LiveActivity {
+    const normStart = normalizeEpochMs(act.timestamps?.start ?? act.startTimestamp);
+    const normEnd = normalizeEpochMs(act.timestamps?.end ?? act.endTimestamp);
+    const normalizedTimestamps =
+      normStart !== null || normEnd !== null ? { start: normStart, end: normEnd } : null;
+
+    return {
+      name: act.name,
+      appName: act.appName || act.name,
+      applicationId: act.applicationId || null,
+      type: typeof act.type === 'number' ? act.type : 0,
+      details: act.details || null,
+      state: act.state || null,
+      largeImage: act.largeImage || null,
+      largeImageText: act.largeImageText || null,
+      smallImage: act.smallImage || null,
+      smallImageText: act.smallImageText || null,
+      streamUrl: act.streamUrl || null,
+      timestamps: normalizedTimestamps,
+      startTimestamp: normStart !== null ? new Date(normStart).toISOString() : null,
+      endTimestamp: normEnd !== null ? new Date(normEnd).toISOString() : null,
+      party: act.party || null,
+      buttons: normalizeActivityButtons(act.buttons),
+      spotify: act.spotify || null,
+    };
+  }
+
+  private emitPresenceBroadcast(newPresence: LivePresence) {
+    const key = newPresence.username.trim().toLowerCase();
+    this.presenceByUsername.set(key, newPresence);
+    if (newPresence.discordId) {
+      this.presenceByDiscordId.set(newPresence.discordId, newPresence);
+    }
+    if (io) {
+      io.to(`profile:${key}`).emit('presence_update', newPresence);
+      if (newPresence.discordId) {
+        io.to(`profile:discord:${newPresence.discordId}`).emit('presence_update', newPresence);
+      }
+      if (newPresence.userId) {
+        io.to(`user_${newPresence.userId}`).emit('presence_update', newPresence);
+      }
+    }
+  }
+
   public updatePresence(update: {
     username: string;
     userId?: string | null;
@@ -191,16 +331,34 @@ class PresenceManager {
     status: 'online' | 'idle' | 'dnd' | 'offline';
     hasActivity: boolean;
     activity: LiveActivity | null;
+    activities?: LiveActivity[];
     source: LivePresence['source'];
     timestamp?: number;
     sequence?: number;
   }): LivePresence {
     const key = update.username.trim().toLowerCase();
     const existing = this.presenceByUsername.get(key);
+    const existingDiscord = this.discordPresenceByUsername.get(key);
     const now = update.timestamp || Date.now();
 
-    // Prevent race conditions: Ignore demonstrably older packets using timestamps or per-user client sequence
-    if (existing) {
+    // Prevent race conditions: Ignore demonstrably older packets using timestamps or per-user client sequence.
+    // If timestamp advances >= 5s (e.g., plugin/Discord restart resetting local sequence), allow sequence reset.
+    if (update.source === 'discord_bot' || update.source === 'lanyard' || update.source === 'client') {
+      if (existingDiscord) {
+        if (update.timestamp && existingDiscord.updatedAt > update.timestamp) {
+          return existing || this.composeResolvedPresence(update.username, update.userId, update.discordId, update.source);
+        }
+        const isSessionReset = Boolean(update.timestamp && update.timestamp - existingDiscord.updatedAt >= 5000);
+        if (
+          !isSessionReset &&
+          update.sequence !== undefined &&
+          existingDiscord.clientSequence !== undefined &&
+          existingDiscord.clientSequence > update.sequence
+        ) {
+          return existing || this.composeResolvedPresence(update.username, update.userId, update.discordId, update.source);
+        }
+      }
+    } else if (existing) {
       if (update.timestamp && existing.updatedAt > update.timestamp) {
         return existing;
       }
@@ -213,70 +371,132 @@ class PresenceManager {
       }
     }
 
-    this.sequenceCounter++;
-    const nextSequence = this.sequenceCounter;
+    const cleanActivities = Array.isArray(update.activities) && update.status !== 'offline'
+      ? update.activities
+          .filter((a) => a && a.type !== 4 && Boolean(a.name))
+          .map((a) => this.sanitizeLiveActivity(a))
+      : [];
 
-    // Build strictly clean activity without leaking fields from previous activities
     let cleanActivity: LiveActivity | null = null;
-    if (update.hasActivity && update.activity && update.status !== 'offline') {
-      const act = update.activity;
-      const normStart = normalizeEpochMs(act.timestamps?.start ?? act.startTimestamp);
-      const normEnd = normalizeEpochMs(act.timestamps?.end ?? act.endTimestamp);
-      const normalizedTimestamps =
-        normStart !== null || normEnd !== null ? { start: normStart, end: normEnd } : null;
-
-      cleanActivity = {
-        name: act.name,
-        appName: act.appName || act.name,
-        applicationId: act.applicationId || null,
-        type: typeof act.type === 'number' ? act.type : 0,
-        details: act.details || null,
-        state: act.state || null,
-        largeImage: act.largeImage || null,
-        largeImageText: act.largeImageText || null,
-        smallImage: act.smallImage || null,
-        smallImageText: act.smallImageText || null,
-        streamUrl: act.streamUrl || null,
-        timestamps: normalizedTimestamps,
-        startTimestamp: normStart !== null ? new Date(normStart).toISOString() : null,
-        endTimestamp: normEnd !== null ? new Date(normEnd).toISOString() : null,
-        party: act.party || null,
-        buttons: normalizeActivityButtons(act.buttons),
-        spotify: act.spotify || null,
-      };
+    if (update.status !== 'offline') {
+      if (update.hasActivity && update.activity && update.activity.type !== 4) {
+        cleanActivity = this.sanitizeLiveActivity(update.activity);
+      } else if (cleanActivities.length > 0) {
+        cleanActivity = selectPrimaryNativeActivity(cleanActivities);
+      }
     }
 
-    const newPresence: LivePresence = {
-      userId: update.userId || existing?.userId || null,
-      username: update.username,
-      discordId: update.discordId || existing?.discordId || null,
-      status: update.status,
-      hasActivity: Boolean(cleanActivity),
-      activity: cleanActivity,
+    const finalActivities = cleanActivities.length > 0 ? cleanActivities : cleanActivity ? [cleanActivity] : [];
+
+    if (update.source === 'discord_bot' || update.source === 'lanyard' || update.source === 'client') {
+      this.discordPresenceByUsername.set(key, {
+        userId: update.userId || existingDiscord?.userId || existing?.userId || null,
+        discordId: update.discordId || existingDiscord?.discordId || existing?.discordId || null,
+        status: update.status,
+        activity: cleanActivity,
+        activities: finalActivities,
+        updatedAt: now,
+        clientSequence: update.sequence !== undefined ? update.sequence : existingDiscord?.clientSequence,
+        source: update.source,
+      });
+    } else if (update.source === 'database') {
+      const prevCustom = this.customRpcByUsername.get(key);
+      this.customRpcByUsername.set(key, {
+        enabled: true,
+        priority: prevCustom?.priority || 'discord',
+        activity: cleanActivity,
+        updatedAt: now,
+      });
+    }
+
+    const resolved = this.composeResolvedPresence(
+      update.username,
+      update.userId || existing?.userId || null,
+      update.discordId || existing?.discordId || null,
+      update.source,
+      now,
+      update.sequence
+    );
+    this.emitPresenceBroadcast(resolved);
+    return resolved;
+  }
+
+  private composeResolvedPresence(
+    username: string,
+    userId?: string | null,
+    discordId?: string | null,
+    source: LivePresence['source'] = 'idle',
+    now: number = Date.now(),
+    clientSequence?: number
+  ): LivePresence {
+    const key = username.trim().toLowerCase();
+    const discordState = this.discordPresenceByUsername.get(key);
+    const customState = this.customRpcByUsername.get(key);
+
+    // Discord User Presence is strictly controlled by Discord/Lanyard/Client (never Custom RPC!)
+    const discordStatus: LivePresence['status'] = discordState?.status || 'offline';
+    const discordActivity: LiveActivity | null =
+      discordStatus !== 'offline' ? discordState?.activity || null : null;
+    const discordActivities: LiveActivity[] =
+      discordStatus !== 'offline' ? discordState?.activities || (discordActivity ? [discordActivity] : []) : [];
+
+    const customRpcEnabled = customState ? customState.enabled : false;
+    const rpcPriority: RpcPriorityMode = customState?.priority || 'discord';
+    const customActivity = customState?.activity || null;
+
+    const { activity, activitySource } = resolveActivityByPriority({
+      discordActivity,
+      customActivity,
+      customRpcEnabled,
+      rpcPriority,
+    });
+
+    this.sequenceCounter++;
+    return {
+      userId: userId || discordState?.userId || null,
+      username,
+      discordId: discordId || discordState?.discordId || null,
+      status: discordStatus,
+      hasActivity: Boolean(activity),
+      activity,
+      activities: discordActivities,
+      discordActivity,
+      customRpcEnabled,
+      rpcPriority,
+      activitySource,
       updatedAt: now,
-      sequence: nextSequence,
-      clientSequence: update.sequence !== undefined ? update.sequence : existing?.clientSequence,
-      source: update.source,
+      sequence: this.sequenceCounter,
+      clientSequence: clientSequence !== undefined ? clientSequence : discordState?.clientSequence,
+      source: activitySource === 'custom' ? 'database' : discordState?.source || source,
     };
+  }
 
-    // Store in-memory
-    this.presenceByUsername.set(key, newPresence);
-    if (newPresence.discordId) {
-      this.presenceByDiscordId.set(newPresence.discordId, newPresence);
-    }
+  public syncCustomRpcUpdate(params: {
+    username: string;
+    userId?: string | null;
+    discordId?: string | null;
+    showProfileRpc: boolean;
+    rpcPriority: RpcPriorityMode;
+    customActivity: LiveActivity | null;
+  }): LivePresence {
+    const key = params.username.trim().toLowerCase();
+    const now = Date.now();
+    this.customRpcByUsername.set(key, {
+      enabled: params.showProfileRpc,
+      priority: params.rpcPriority,
+      activity: params.showProfileRpc && params.customActivity ? this.sanitizeLiveActivity(params.customActivity) : null,
+      updatedAt: now,
+    });
 
-    // Broadcast in real time via Socket.io
-    if (io) {
-      io.to(`profile:${key}`).emit('presence_update', newPresence);
-      if (newPresence.discordId) {
-        io.to(`profile:discord:${newPresence.discordId}`).emit('presence_update', newPresence);
-      }
-      if (newPresence.userId) {
-        io.to(`user_${newPresence.userId}`).emit('presence_update', newPresence);
-      }
-    }
-
-    return newPresence;
+    const resolved = this.composeResolvedPresence(
+      params.username,
+      params.userId,
+      params.discordId,
+      'database',
+      now
+    );
+    this.emitPresenceBroadcast(resolved);
+    return resolved;
   }
 
   /**
@@ -304,9 +524,9 @@ class PresenceManager {
       });
     }
 
-    // Prefer non-custom status activity (Playing, Streaming, Listening, Watching, Competing)
-    const active = rawPresence.activities.find((a: any) => a.type !== 4) || rawPresence.activities[0];
-    if (!active || active.type === 4) {
+    // Map all supported non-custom activities and pick primary deterministically
+    const nonCustomActivities = rawPresence.activities.filter((a: any) => a && a.type !== 4 && a.name);
+    if (nonCustomActivities.length === 0) {
       return this.updatePresence({
         username: user.username,
         userId: user.id,
@@ -314,50 +534,50 @@ class PresenceManager {
         status: rawPresence.status,
         hasActivity: false,
         activity: null,
+        activities: [],
         source: 'discord_bot',
       });
     }
 
-    const appId = active.applicationId || active.application_id;
-    const largeAsset = active.assets?.largeImage || active.assets?.large_image;
-    const smallAsset = active.assets?.smallImage || active.assets?.small_image;
+    const mappedActivities: LiveActivity[] = nonCustomActivities.map((rawAct: any) => {
+      const aId = rawAct.applicationId || rawAct.application_id;
+      const lImg = this.resolveDiscordAssetUrl(aId, rawAct.assets?.largeImage || rawAct.assets?.large_image);
+      const sImg = this.resolveDiscordAssetUrl(aId, rawAct.assets?.smallImage || rawAct.assets?.small_image);
+      const st = normalizeEpochMs(rawAct.timestamps?.start);
+      const en = normalizeEpochMs(rawAct.timestamps?.end);
+      const btns = normalizeActivityButtons(rawAct.buttons, rawAct.metadata?.button_urls);
+      const isSp = rawAct.name === 'Spotify' && (rawAct.type === 2 || rawAct.type === 'LISTENING');
+      return {
+        name: rawAct.name,
+        appName: rawAct.name,
+        applicationId: aId || null,
+        type: typeof rawAct.type === 'number' ? rawAct.type : 0,
+        details: rawAct.details || null,
+        state: rawAct.state || null,
+        largeImage: lImg,
+        largeImageText: rawAct.assets?.largeText || rawAct.assets?.large_text || null,
+        smallImage: sImg,
+        smallImageText: rawAct.assets?.smallText || rawAct.assets?.small_text || null,
+        streamUrl: rawAct.url || null,
+        timestamps: (st !== null || en !== null) ? { start: st, end: en } : null,
+        startTimestamp: st !== null ? new Date(st).toISOString() : null,
+        endTimestamp: en !== null ? new Date(en).toISOString() : null,
+        party: rawAct.party?.size ? { size: rawAct.party.size } : null,
+        buttons: btns,
+        spotify: isSp
+          ? {
+              track_id: rawAct.syncId || rawAct.sync_id || null,
+              song: rawAct.details || null,
+              artist: rawAct.state || null,
+              album: rawAct.assets?.largeText || rawAct.assets?.large_text || null,
+              album_art_url: lImg,
+              timestamps: (st !== null || en !== null) ? { start: st, end: en } : null,
+            }
+          : null,
+      };
+    });
 
-    const largeImage = this.resolveDiscordAssetUrl(appId, largeAsset);
-    const smallImage = this.resolveDiscordAssetUrl(appId, smallAsset);
-
-    const startTime = normalizeEpochMs(active.timestamps?.start);
-    const endTime = normalizeEpochMs(active.timestamps?.end);
-    const normalizedBtns = normalizeActivityButtons(active.buttons, active.metadata?.button_urls);
-    const isSpotify = active.name === 'Spotify' && (active.type === 2 || active.type === 'LISTENING');
-
-    const liveActivity: LiveActivity = {
-      name: active.name,
-      appName: active.name,
-      applicationId: appId || null,
-      type: typeof active.type === 'number' ? active.type : 0,
-      details: active.details || null,
-      state: active.state || null,
-      largeImage,
-      largeImageText: active.assets?.largeText || active.assets?.large_text || null,
-      smallImage,
-      smallImageText: active.assets?.smallText || active.assets?.small_text || null,
-      streamUrl: active.url || null,
-      timestamps: (startTime !== null || endTime !== null) ? { start: startTime, end: endTime } : null,
-      startTimestamp: startTime !== null ? new Date(startTime).toISOString() : null,
-      endTimestamp: endTime !== null ? new Date(endTime).toISOString() : null,
-      party: active.party?.size ? { size: active.party.size } : null,
-      buttons: normalizedBtns,
-      spotify: isSpotify
-        ? {
-            track_id: active.syncId || null,
-            song: active.details || null,
-            artist: active.state || null,
-            album: active.assets?.largeText || active.assets?.large_text || null,
-            album_art_url: largeImage,
-            timestamps: (startTime !== null || endTime !== null) ? { start: startTime, end: endTime } : null,
-          }
-        : null,
-    };
+    const liveActivity = selectPrimaryNativeActivity(mappedActivities) || mappedActivities[0];
 
     return this.updatePresence({
       username: user.username,
@@ -366,6 +586,7 @@ class PresenceManager {
       status: rawPresence.status,
       hasActivity: true,
       activity: liveActivity,
+      activities: mappedActivities,
       source: 'discord_bot',
     });
   }
@@ -503,52 +724,68 @@ class PresenceManager {
    */
   public clearDatabasePresence(username: string, discordId?: string | null) {
     const key = username.trim().toLowerCase();
-    const existing = this.presenceByUsername.get(key);
-    if (existing && existing.source === 'database') {
-      this.presenceByUsername.delete(key);
-    }
-    if (discordId) {
-      const byDiscord = this.presenceByDiscordId.get(discordId);
-      if (byDiscord && byDiscord.source === 'database') {
-        this.presenceByDiscordId.delete(discordId);
-      }
-    }
+    const prevCustom = this.customRpcByUsername.get(key);
+    this.customRpcByUsername.set(key, {
+      enabled: false,
+      priority: prevCustom?.priority || 'discord',
+      activity: null,
+      updatedAt: Date.now(),
+    });
+    const resolved = this.composeResolvedPresence(username, null, discordId, 'idle');
+    this.emitPresenceBroadcast(resolved);
+  }
+
+  public hasFreshDiscordPresence(username: string, maxAgeMs = 90_000): boolean {
+    if (!username) return false;
+    const key = username.trim().toLowerCase();
+    const existing = this.discordPresenceByUsername.get(key);
+    return Boolean(existing && Date.now() - existing.updatedAt < maxAgeMs);
   }
 
   public async getLivePresenceForUser(user: {
     id: string;
     username: string;
     discordId?: string | null;
+    avatar?: string | null;
+    profile?: { avatarUrl?: string | null } | null;
     richPresence?: any;
   }): Promise<LivePresence> {
     const key = user.username.trim().toLowerCase();
-    const cached = this.presenceByUsername.get(key);
     const now = Date.now();
     const LIVE_CACHE_FRESH_MS = 8000;
+    const CLIENT_AUTHORITY_WINDOW_MS = 60_000;
     const LIVE_CACHE_MAX_STALE_MS = 5 * 60 * 1000; // 5 minutes max stale window
 
     const dbRpc = user.richPresence || (await prisma.richPresence.findUnique({
       where: { userId: user.id },
     }));
 
-    const buildDbFallbackPresence = (statusOverride?: 'online' | 'idle' | 'dnd' | 'offline'): LivePresence | null => {
-      if (!dbRpc || dbRpc.showProfileRpc === false || dbRpc.enableDiscordRpc === false) {
-        return null;
-      }
-      if (!dbRpc.appName && !dbRpc.details && !dbRpc.state) {
-        return null;
-      }
+    let avatarSource = user.avatar || user.profile?.avatarUrl || null;
+    if (dbRpc && dbRpc.useProfileAvatar !== false && !avatarSource) {
+      const userWithAvatar = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { avatar: true, profile: { select: { avatarUrl: true } } },
+      }).catch(() => null);
+      avatarSource = userWithAvatar?.avatar || userWithAvatar?.profile?.avatarUrl || null;
+    }
+    const resolvedDynamicAvatar =
+      dbRpc && dbRpc.useProfileAvatar !== false
+        ? resolveDiscordAvatarUrl(user.discordId, avatarSource)
+        : null;
 
+    // Always sync Custom RPC config into customRpcByUsername without overwriting Discord status/activity
+    const customEnabled = dbRpc ? dbRpc.showProfileRpc !== false : false;
+    const rpcPriority = parseRpcPriority(dbRpc?.customConfig);
+    let customActivity: LiveActivity | null = null;
+    if (dbRpc && customEnabled && (dbRpc.appName || dbRpc.details || dbRpc.state)) {
       const startTime = normalizeEpochMs(dbRpc.startTimestamp);
       const endTime = normalizeEpochMs(dbRpc.endTimestamp);
-
       let customCfg: any = {};
       if ((dbRpc as any).customConfig) {
         try {
           customCfg = JSON.parse((dbRpc as any).customConfig) || {};
         } catch (_) {}
       }
-
       const formattedDetails = formatRichPresenceField(
         dbRpc.details,
         customCfg.detailsEnabled,
@@ -557,7 +794,6 @@ class PresenceManager {
         customCfg.streaks,
         customCfg.statistics
       );
-
       const formattedState = formatRichPresenceField(
         dbRpc.state,
         customCfg.stateEnabled,
@@ -566,7 +802,6 @@ class PresenceManager {
         customCfg.streaks,
         customCfg.statistics
       );
-
       const buttons: Array<{ label: string; url: string }> = [];
       if (dbRpc.button1Enabled !== false && dbRpc.button1Url) {
         const u1 = sanitizeButtonUrl(dbRpc.button1Url);
@@ -576,17 +811,19 @@ class PresenceManager {
         const u2 = sanitizeButtonUrl(dbRpc.button2Url);
         if (u2) buttons.push({ label: dbRpc.button2Label || 'Get PixelsRPC', url: u2 });
       }
-
-      const dbActivity: LiveActivity = {
+      customActivity = {
         name: dbRpc.appName || 'Active Application',
         appName: dbRpc.appName || 'Active Application',
-        type: typeof dbRpc.activityType === 'number' ? dbRpc.activityType : 0,
+        type: parseActivityTypeNum(dbRpc.activityType),
         details: formattedDetails || null,
         state: formattedState || null,
-        largeImage: dbRpc.largeImage || null,
-        largeImageText: dbRpc.largeImageText || null,
-        smallImage: dbRpc.smallImage || null,
-        smallImageText: dbRpc.smallImageText || null,
+        largeImage:
+          customCfg.largeImageEnabled !== false
+            ? ((dbRpc.useProfileAvatar !== false ? resolvedDynamicAvatar : null) || dbRpc.largeImage || null)
+            : null,
+        largeImageText: customCfg.largeImageEnabled !== false ? (dbRpc.largeImageText || null) : null,
+        smallImage: customCfg.smallImageEnabled !== false ? (dbRpc.smallImage || null) : null,
+        smallImageText: customCfg.smallImageEnabled !== false ? (dbRpc.smallImageText || null) : null,
         streamUrl: dbRpc.streamUrl || null,
         timestamps: (startTime !== null || endTime !== null) ? { start: startTime, end: endTime } : null,
         startTimestamp: startTime !== null ? new Date(startTime).toISOString() : null,
@@ -594,75 +831,37 @@ class PresenceManager {
         party: (dbRpc.partySize && dbRpc.partyMax) ? { size: [dbRpc.partySize, dbRpc.partyMax] } : null,
         buttons: buttons.length > 0 ? buttons : null,
       };
-
-      return this.updatePresence({
-        username: user.username,
-        userId: user.id,
-        discordId: user.discordId,
-        status: statusOverride || 'online',
-        hasActivity: true,
-        activity: dbActivity,
-        source: 'database',
-      });
-    };
-
-    // 1. Fresh non-database live presence (Discord Gateway / Lanyard / Client)
-    if (cached && cached.source !== 'database' && cached.source !== 'idle' && (now - cached.updatedAt < LIVE_CACHE_FRESH_MS)) {
-      if (cached.hasActivity && cached.activity) {
-        return cached;
-      }
-      // User is online/idle/dnd on Discord with no Discord activity: preserve real status, optionally show custom RPC
-      if (cached.status !== 'offline') {
-        const dbFallback = buildDbFallbackPresence(cached.status);
-        if (dbFallback) return dbFallback;
-      }
-      return cached;
     }
 
-    // 2. If user has a linked Discord snowflake ID, check Lanyard REST API
+    this.customRpcByUsername.set(key, {
+      enabled: customEnabled,
+      priority: rpcPriority,
+      activity: customActivity,
+      updatedAt: now,
+    });
+
+    // Refresh Discord state if stale/missing and user has a Discord ID.
+    // Do not let external Lanyard polling overwrite a recently active Vencord plugin ('client') snapshot.
+    const existingDiscord = this.discordPresenceByUsername.get(key);
+    if (existingDiscord) {
+      const ageMs = now - existingDiscord.updatedAt;
+      if (ageMs < LIVE_CACHE_FRESH_MS || (existingDiscord.source === 'client' && ageMs < CLIENT_AUTHORITY_WINDOW_MS)) {
+        return this.composeResolvedPresence(user.username, user.id, user.discordId, existingDiscord.source, now);
+      }
+    }
+
     if (user.discordId) {
       const lanyardPresence = await this.fetchLanyardPresence(user.discordId);
       if (lanyardPresence) {
-        if (lanyardPresence.hasActivity && lanyardPresence.activity) {
-          return lanyardPresence;
-        }
-        // Online/idle/dnd Discord user without live Discord activity -> preserve real Discord status!
-        if (lanyardPresence.status !== 'offline') {
-          const dbFallback = buildDbFallbackPresence(lanyardPresence.status);
-          if (dbFallback) return dbFallback;
-        }
         return lanyardPresence;
       }
     }
 
-    // 3. Previously cached live presence within max stale window (never return stale game forever)
-    if (cached && cached.source !== 'database' && cached.source !== 'idle' && (now - cached.updatedAt < LIVE_CACHE_MAX_STALE_MS)) {
-      if (cached.hasActivity && cached.activity) {
-        return cached;
-      }
-      if (cached.status !== 'offline') {
-        const dbFallback = buildDbFallbackPresence(cached.status);
-        if (dbFallback) return dbFallback;
-      }
-      return cached;
+    if (existingDiscord && (now - existingDiscord.updatedAt < LIVE_CACHE_MAX_STALE_MS)) {
+      return this.composeResolvedPresence(user.username, user.id, user.discordId, existingDiscord.source, now);
     }
 
-    // 4. Fall back to database configured Custom Rich Presence (only if enabled)
-    const dbFallback = buildDbFallbackPresence('online');
-    if (dbFallback) {
-      return dbFallback;
-    }
-
-    // 5. Clean offline/idle state (never fabricate fake games)
-    return this.updatePresence({
-      username: user.username,
-      userId: user.id,
-      discordId: user.discordId,
-      status: 'offline',
-      hasActivity: false,
-      activity: null,
-      source: 'idle',
-    });
+    return this.composeResolvedPresence(user.username, user.id, user.discordId, 'idle', now);
   }
 }
 

@@ -18,6 +18,7 @@ import {
   Unlock,
   UploadCloud,
 } from "lucide-react";
+import { apiFetch } from "@/lib/api";
 import { uploadMediaAsset, validateUploadFile } from "@/lib/uploadAsset";
 import { AVAILABLE_FONTS } from "@/components/editor/editorPresets";
 import { PLATFORMS } from "@/components/links/PlatformIcons";
@@ -168,6 +169,65 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
   const [tplCategoryFilter, setTplCategoryFilter] = useState<string>("all");
   const [rpcResetDialogForId, setRpcResetDialogForId] = useState<string | null>(null);
+
+  const [rpcSyncPrefs, setRpcSyncPrefs] = useState<{
+    loaded: boolean;
+    showProfileRpc: boolean;
+    rpcPriority: "discord" | "custom";
+    pluginOnline: boolean | null;
+    saving: boolean;
+  }>({ loaded: false, showProfileRpc: true, rpcPriority: "discord", pluginOnline: null, saving: false });
+
+  React.useEffect(() => {
+    if (!selectedNode || (selectedNode.type !== "custom-rpc" && selectedNode.type !== "custom-rpc-embed")) {
+      return;
+    }
+    let active = true;
+    Promise.all([
+      apiFetch("/api/rpc/me").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      apiFetch("/api/rpc/device/list").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    ]).then(([rpcData, devData]) => {
+      if (!active || !rpcData) return;
+      const devs = Array.isArray(devData?.devices) ? devData.devices : Array.isArray(devData) ? devData : [];
+      const anyOnline = devs.some((d: any) => Boolean(d?.isOnline));
+      setRpcSyncPrefs((prev) => ({
+        ...prev,
+        loaded: true,
+        showProfileRpc: rpcData.showProfileRpc !== false,
+        rpcPriority: rpcData.rpcPriority === "custom" ? "custom" : "discord",
+        pluginOnline: devs.length > 0 ? anyOnline : null,
+        saving: false,
+      }));
+    });
+    return () => {
+      active = false;
+    };
+  }, [selectedNode?.id, selectedNode?.type]);
+
+  const updateSharedRpcSyncPrefs = async (patch: { showProfileRpc?: boolean; rpcPriority?: "discord" | "custom" }) => {
+    setRpcSyncPrefs((prev) => ({ ...prev, ...patch, saving: true }));
+    try {
+      const res = await apiFetch("/api/rpc/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data) {
+          setRpcSyncPrefs((prev) => ({
+            ...prev,
+            loaded: true,
+            showProfileRpc: data.showProfileRpc !== false,
+            rpcPriority: data.rpcPriority === "custom" ? "custom" : "discord",
+            saving: false,
+          }));
+          return;
+        }
+      }
+    } catch {}
+    setRpcSyncPrefs((prev) => ({ ...prev, saving: false }));
+  };
 
   // 1. CANVAS LEVEL PROPERTIES
   if (!selectedNode || selectedNode.type === "background") {
@@ -1962,6 +2022,77 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 data-testid="rpc-parent-live-toggle"
               />
             </label>
+
+            {/* Shared Custom RPC Enabled, Activity Priority & Plugin Connection Status */}
+            <div className="p-2 rounded-lg bg-[#121217] border border-[#24242d] space-y-2">
+              <div className="flex items-center justify-between text-[9px] font-mono border-b border-[#1e1e28] pb-1.5">
+                <span className="text-neutral-500 uppercase">PixelRPC Plugin</span>
+                <span
+                  data-testid="customizer-plugin-status"
+                  className={
+                    rpcSyncPrefs.pluginOnline === true
+                      ? "text-emerald-400 font-bold"
+                      : rpcSyncPrefs.pluginOnline === false
+                      ? "text-amber-400"
+                      : "text-neutral-500"
+                  }
+                >
+                  {rpcSyncPrefs.pluginOnline === true
+                    ? "Connected"
+                    : rpcSyncPrefs.pluginOnline === false
+                    ? "Disconnected"
+                    : "Not Linked"}
+                </span>
+              </div>
+              <label className="flex items-center justify-between text-[10px] text-neutral-300 cursor-pointer">
+                <span>Custom RPC Enabled</span>
+                <input
+                  type="checkbox"
+                  checked={rpcSyncPrefs.showProfileRpc}
+                  disabled={rpcSyncPrefs.saving}
+                  onChange={(e) => updateSharedRpcSyncPrefs({ showProfileRpc: e.target.checked })}
+                  className="accent-white cursor-pointer disabled:opacity-40"
+                  data-testid="customizer-rpc-enabled-toggle"
+                />
+              </label>
+              <div className="space-y-1">
+                <span className="text-[9px] text-neutral-500 uppercase block">
+                  Activity Priority {rpcSyncPrefs.showProfileRpc ? "" : "(Custom RPC Disabled)"}
+                </span>
+                <div className="grid grid-cols-2 gap-1">
+                  <button
+                    type="button"
+                    disabled={!rpcSyncPrefs.showProfileRpc || rpcSyncPrefs.saving}
+                    onClick={() => updateSharedRpcSyncPrefs({ rpcPriority: "discord" })}
+                    data-testid="customizer-rpc-priority-discord"
+                    className={`py-1 px-1.5 rounded border text-[9px] font-semibold transition-colors ${
+                      !rpcSyncPrefs.showProfileRpc
+                        ? "bg-[#0d0d12] border-[#1c1c24] text-neutral-600 cursor-not-allowed"
+                        : rpcSyncPrefs.rpcPriority === "discord"
+                        ? "bg-white text-black border-white cursor-pointer"
+                        : "bg-[#171720] border-[#282834] text-neutral-300 hover:text-white cursor-pointer"
+                    }`}
+                  >
+                    Discord First
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!rpcSyncPrefs.showProfileRpc || rpcSyncPrefs.saving}
+                    onClick={() => updateSharedRpcSyncPrefs({ rpcPriority: "custom" })}
+                    data-testid="customizer-rpc-priority-custom"
+                    className={`py-1 px-1.5 rounded border text-[9px] font-semibold transition-colors ${
+                      !rpcSyncPrefs.showProfileRpc
+                        ? "bg-[#0d0d12] border-[#1c1c24] text-neutral-600 cursor-not-allowed"
+                        : rpcSyncPrefs.rpcPriority === "custom"
+                        ? "bg-white text-black border-white cursor-pointer"
+                        : "bg-[#171720] border-[#282834] text-neutral-300 hover:text-white cursor-pointer"
+                    }`}
+                  >
+                    Custom First
+                  </button>
+                </div>
+              </div>
+            </div>
 
             <div>
               <label className="text-[9px] text-neutral-500 uppercase block mb-0.5">Offline Display Text</label>

@@ -92,5 +92,16 @@ export const ApplicationAssetUtils = {
     getAssetImage: (() => "") as (applicationId: string, assetId: string, size?: number) => string,
 };
 
+export const UserStore = {
+    getCurrentUser: (() => null) as () => { id: string; username?: string } | null
+};
+
+export const PresenceStore = {
+    getStatus: (() => "online") as (userId: string) => string,
+    getActivities: (() => []) as (userId: string) => any[],
+    addChangeListener: ((_cb: () => void) => {}) as (cb: () => void) => void,
+    removeChangeListener: ((_cb: () => void) => {}) as (cb: () => void) => void
+};
+
 export { React };
 
