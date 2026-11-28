@@ -312,7 +312,6 @@ profileRouter.get('/u/:username/presence', async (req: any, res) => {
     }
 
     const livePresence = await presenceManager.getLivePresenceForUser(user as any);
-    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.json({
       success: true,
       presence: livePresence,

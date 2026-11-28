@@ -72,16 +72,6 @@ function checkVerifyRateLimit(ip: string): boolean {
 }
 
 // Middleware to check authentication via Session OR Bearer Token (App Token or Device Token) OR Token Cookie
-function parseActivityTypeNumber(rawType: unknown): number {
-  if (typeof rawType === 'number' && Number.isFinite(rawType)) return rawType;
-  const s = String(rawType || '').trim().toLowerCase();
-  if (s === '1' || s === 'streaming') return 1;
-  if (s === '2' || s === 'listening') return 2;
-  if (s === '3' || s === 'watching') return 3;
-  if (s === '5' || s === 'competing') return 5;
-  return 0;
-}
-
 export const requireAuth = async (req: any, res: any, next: any) => {
   // 1. Passport authenticated session or attached user
   if (req.user) {
@@ -645,14 +635,7 @@ rpcRouter.get('/me', requireAuth, async (req: any, res) => {
     responseData.username = currentUser.username;
     responseData.userAvatar = resolvedAvatar;
     responseData.revision = rpc.updatedAt ? new Date(rpc.updatedAt).getTime() : Date.now();
-    // Never leak a stale ancient startTimestamp when timestampMode is "now" or "none"
-    const rTMode = String(responseData.timestampMode ?? 'now').toLowerCase();
-    if (rTMode === 'now' || rTMode === '1' || rTMode === 'none' || rTMode === '0') {
-      responseData.startTimestamp = null;
-      responseData.endTimestamp = null;
-    }
 
-    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.json(responseData);
   } catch (err) {
     console.error('[RPC Me Error]:', err);
@@ -687,14 +670,7 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
     if (rawData.largeImageCrop !== undefined) data.largeImageCrop = rawData.largeImageCrop ? String(rawData.largeImageCrop) : null;
     if (rawData.smallImageCrop !== undefined) data.smallImageCrop = rawData.smallImageCrop ? String(rawData.smallImageCrop) : null;
 
-    const { timestampMode: rawTMode } = rawData;
-    const normTMode = String(rawTMode ?? '').toLowerCase();
-    if (normTMode === 'now' || normTMode === '1' || normTMode === 'none' || normTMode === '0') {
-      data.startTimestamp = null;
-      data.endTimestamp = null;
-    }
-
-    if (rawData.startTimestamp !== undefined && normTMode !== 'now' && normTMode !== '1' && normTMode !== 'none' && normTMode !== '0') {
+    if (rawData.startTimestamp !== undefined) {
       if (rawData.startTimestamp === null || rawData.startTimestamp === '') {
         data.startTimestamp = null;
       } else {
@@ -703,7 +679,7 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
       }
     }
 
-    if (rawData.endTimestamp !== undefined && normTMode !== 'now' && normTMode !== '1' && normTMode !== 'none' && normTMode !== '0') {
+    if (rawData.endTimestamp !== undefined) {
       if (rawData.endTimestamp === null || rawData.endTimestamp === '') {
         data.endTimestamp = null;
       } else {
@@ -863,7 +839,7 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
         ? {
             name: fullPayload.appName || 'Active Application',
             appName: fullPayload.appName || 'Active Application',
-            type: parseActivityTypeNumber(fullPayload.activityType),
+            type: typeof fullPayload.activityType === 'number' ? fullPayload.activityType : 0,
             details: formattedDetails || null,
             state: formattedState || null,
             largeImage: fullPayload.largeImageEnabled !== false ? (fullPayload.largeImage || null) : null,

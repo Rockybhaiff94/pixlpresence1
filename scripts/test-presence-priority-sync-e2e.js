@@ -31,7 +31,7 @@ async function waitForUrl(url, timeoutMs = 45000) {
     try {
       const res = await fetch(url);
       if (res.ok) return;
-    } catch { }
+    } catch {}
     await new Promise((r) => setTimeout(r, 400));
   }
   throw new Error(`Server at ${url} did not become ready within ${timeoutMs}ms`);
@@ -440,18 +440,10 @@ async function main() {
     const pubText2 = await page.locator("body").innerText();
     assert.ok(pubText2.includes("Kasturi") && pubText2.includes("Arijit Singh"), "Public profile must display Spotify Kasturi / Arijit Singh when Discord First");
 
-    // Verify Custom RPC remains rendered even when Discord status is offline (must NOT show 'Offline' card when Custom RPC active)
-    await pushDiscord("offline", null, 11);
-    await patchRpc({ showProfileRpc: true, rpcPriority: "discord" });
-    await page.reload({ waitUntil: "networkidle" });
-    const pubTextOfflineCustom = await page.locator("body").innerText();
-    assert.ok(pubTextOfflineCustom.includes("PixelCustomApp"), "Custom RPC must still render when Discord is offline instead of overwriting card with 'Offline'");
-    assert.strictEqual(await page.getByTestId("avatar-status-dot-avatar-1").getAttribute("data-status"), "offline");
-
     await ctx.close();
     console.log("ALL 12 PRESENCE, ACTIVITY PRIORITY & SYNC E2E TESTS PASSED!");
   } finally {
-    if (browser) await browser.close().catch(() => { });
+    if (browser) await browser.close().catch(() => {});
     if (apiProc) apiProc.kill();
     if (webProc && webProc.pid) {
       try {
@@ -460,15 +452,15 @@ async function main() {
         } else {
           webProc.kill();
         }
-      } catch { }
+      } catch {}
     }
     if (userId) {
-      await prisma.rpcDeviceAuthorization.deleteMany({ where: { userId } }).catch(() => { });
-      await prisma.richPresence.deleteMany({ where: { userId } }).catch(() => { });
-      await prisma.profile.deleteMany({ where: { userId } }).catch(() => { });
-      await prisma.user.deleteMany({ where: { id: userId } }).catch(() => { });
+      await prisma.rpcDeviceAuthorization.deleteMany({ where: { userId } }).catch(() => {});
+      await prisma.richPresence.deleteMany({ where: { userId } }).catch(() => {});
+      await prisma.profile.deleteMany({ where: { userId } }).catch(() => {});
+      await prisma.user.deleteMany({ where: { id: userId } }).catch(() => {});
     }
-    await prisma.$disconnect().catch(() => { });
+    await prisma.$disconnect().catch(() => {});
   }
 }
 

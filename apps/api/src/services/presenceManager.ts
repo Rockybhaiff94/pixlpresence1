@@ -110,16 +110,6 @@ export function resolveActivityByPriority(params: {
   return { activity: null, activitySource: 'none' };
 }
 
-function parseActivityTypeNum(rawType: unknown): number {
-  if (typeof rawType === 'number' && Number.isFinite(rawType)) return rawType;
-  const s = String(rawType || '').trim().toLowerCase();
-  if (s === '1' || s === 'streaming') return 1;
-  if (s === '2' || s === 'listening') return 2;
-  if (s === '3' || s === 'watching') return 3;
-  if (s === '5' || s === 'competing') return 5;
-  return 0;
-}
-
 function normalizeEpochMs(value: unknown): number | null {
   if (value === null || value === undefined || value === '' || value === false) return null;
   if (typeof value === 'number') {
@@ -787,7 +777,7 @@ class PresenceManager {
       customActivity = {
         name: dbRpc.appName || 'Active Application',
         appName: dbRpc.appName || 'Active Application',
-        type: parseActivityTypeNum(dbRpc.activityType),
+        type: typeof dbRpc.activityType === 'number' ? dbRpc.activityType : 0,
         details: formattedDetails || null,
         state: formattedState || null,
         largeImage: customCfg.largeImageEnabled !== false ? (dbRpc.largeImage || null) : null,
