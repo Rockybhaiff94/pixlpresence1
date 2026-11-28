@@ -150,26 +150,30 @@
 
     async function resolveAsset(appId, input) {
         if (!input || !String(input).trim()) return undefined;
-        const raw = String(input).trim();
+        let raw = String(input).trim();
+        if (raw.startsWith('/') && !raw.startsWith('//')) {
+            raw = config.apiUrl.replace(/\/+$/, '') + raw;
+        }
         if (raw.startsWith('mp:') || raw.startsWith('spotify:') || raw.startsWith('twitch:')) return raw;
-        let target = raw;
-        if (/^https?:\/\/(cdn|media)\.discordapp\.(com|net)\//i.test(raw)) {
-            const anim = /(\ba_[a-f0-9]{8,}\b|\.gif|\.webp)/i.test(raw);
-            target = 'https://wsrv.nl/' + (anim ? 'avatar.gif' : 'avatar.png') + '?url=' + encodeURIComponent(raw) + (anim ? '&n=-1' : '');
-        }
-        const key = appId + ':' + target;
+        const isDiscordCdn = /^https?:\/\/(cdn|media)\.discordapp\.(com|net)\//i.test(raw);
+        const anim = /(\ba_[a-f0-9]{8,}\b|\.gif|\.webp|format=gif|tenor\.com|giphy\.com)/i.test(raw);
+        const proxyTarget = 'https://wsrv.nl/' + (anim ? 'avatar.gif' : 'avatar.png') + '?url=' + encodeURIComponent(raw) + (anim ? '&n=-1' : '');
+        const primaryTarget = isDiscordCdn ? proxyTarget : raw;
+        const key = appId + ':' + primaryTarget;
         if (assetCache.has(key)) return assetCache.get(key);
-        const utils = window.Vencord?.Webpack?.Common?.ApplicationAssetUtils;
+        const utils = window.Vencord?.Webpack?.Common?.ApplicationAssetUtils || window.Vencord?.Webpack?.findByProps?.('fetchAssetIds');
         if (utils && typeof utils.fetchAssetIds === 'function') {
-            try {
-                const res = await utils.fetchAssetIds(appId, [target]);
-                if (Array.isArray(res) && res[0]) {
-                    assetCache.set(key, res[0]);
-                    return res[0];
-                }
-            } catch (_) {}
+            for (const candidate of (isDiscordCdn ? [proxyTarget] : [primaryTarget, proxyTarget])) {
+                try {
+                    const res = await utils.fetchAssetIds(appId, [candidate]);
+                    if (Array.isArray(res) && res[0] && !/^https?:\/\//i.test(res[0])) {
+                        assetCache.set(key, res[0]);
+                        return res[0];
+                    }
+                } catch (_) {}
+            }
         }
-        return target;
+        return undefined;
     }
 
     function clearActivity() {
@@ -229,8 +233,11 @@
         }
 
         const tMode = String(rpc.timestampMode || 'now').toLowerCase();
-        if (tMode === 'now' || tMode === '1') {
-            if (!sessionNowTimestamp) sessionNowTimestamp = Date.now();
+        if (tMode === 'none' || tMode === '0') {
+            sessionNowTimestamp = null;
+        } else if (tMode === 'now' || tMode === '1') {
+            const staleTimer = sessionNowTimestamp ? Date.now() - sessionNowTimestamp > 12 * 60 * 60 * 1000 : false;
+            if (!sessionNowTimestamp || staleTimer) sessionNowTimestamp = Date.now();
             activity.timestamps = { start: sessionNowTimestamp };
         } else if (tMode === 'time' || tMode === '2') {
             const now = new Date();
@@ -278,9 +285,11 @@
         try {
             const url = config.apiUrl.replace(/\/+$/, '');
             const res = await fetch(url + '/api/rpc/me', {
+                cache: 'no-store',
                 headers: {
                     Authorization: 'Bearer ' + config.token,
-                    Accept: 'application/json'
+                    Accept: 'application/json',
+                    'Cache-Control': 'no-cache'
                 },
                 signal: abortController.signal
             });

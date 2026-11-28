@@ -24,6 +24,7 @@ let isNativeSubscribed = false;
 let nativeFluxHandler: ((event?: any) => void) | null = null;
 let sessionNowTimestamp: number | null = null;
 let lastTimestampMode: string | null = null;
+let lastSessionAppName: string | null = null;
 
 let state: ConnectionState = {
     status: "not_linked",
@@ -123,6 +124,9 @@ async function sendHeartbeat(): Promise<void> {
             if (wasDisconnected || (typeof data?.latestRevision === "number" && data.latestRevision > state.appliedRevision)) {
                 fetchAndSync();
                 pushNativePresenceSnapshot(true);
+            } else {
+                // Keep native Discord status & activities synchronized periodically if a Flux event was missed
+                pushNativePresenceSnapshot(false);
             }
         }
     } catch (err: any) {
@@ -350,13 +354,22 @@ async function resolveDiscordAsset(
     assetInput: string | null | undefined,
     slot: "largeImage" | "smallImage" = "largeImage"
 ): Promise<string | undefined> {
+    let normalized = assetInput ? assetInput.trim() : assetInput;
+    if (normalized && normalized.startsWith("/") && !normalized.startsWith("//")) {
+        const apiUrl = (settings.store.apiUrl || "https://pixlpresence1-web.vercel.app").trim().replace(/\/+$/, "");
+        normalized = `${apiUrl}${normalized}`;
+    }
+    const assetUtils =
+        (ApplicationAssetUtils && typeof ApplicationAssetUtils.fetchAssetIds === "function"
+            ? ApplicationAssetUtils
+            : null) || findByProps("fetchAssetIds");
     return resolveAssetForDiscord({
         appId,
-        assetInput,
+        assetInput: normalized,
         slot,
         cache: assetResolutionCache,
-        fetchAssetIds: ApplicationAssetUtils?.fetchAssetIds?.bind(ApplicationAssetUtils),
-        getAssetImage: (ApplicationAssetUtils as any)?.getAssetImage?.bind(ApplicationAssetUtils),
+        fetchAssetIds: assetUtils?.fetchAssetIds?.bind(assetUtils),
+        getAssetImage: (assetUtils as any)?.getAssetImage?.bind(assetUtils),
         onDiagnostic: logGifDiagnostic
     });
 }
@@ -485,10 +498,10 @@ async function buildDiscordActivity(rpc: RpcResponse): Promise<DiscordActivity> 
     const tMode = String(timestampMode ?? "now").toLowerCase();
     if (store.showTimestamps && tMode !== "none" && tMode !== "0") {
         if (tMode === "now" || tMode === "1") {
-            // Preserve a stable session start timestamp across polls so Discord does not
-            // reset the timer or restart GIF playback every 15 seconds.
-            if (!sessionNowTimestamp || lastTimestampMode !== "now") {
+            const staleTimer = sessionNowTimestamp ? Date.now() - sessionNowTimestamp > 12 * 60 * 60 * 1000 : false;
+            if (!sessionNowTimestamp || lastTimestampMode !== "now" || lastSessionAppName !== appName || staleTimer) {
                 sessionNowTimestamp = Date.now();
+                lastSessionAppName = appName;
             }
             lastTimestampMode = "now";
             activity.timestamps = {
@@ -850,9 +863,11 @@ export async function fetchAndSync(): Promise<void> {
 
         const response = await fetch(`${apiUrl}/api/rpc/me`, {
             method: "GET",
+            cache: "no-store",
             headers: {
                 Authorization: `Bearer ${token}`,
-                Accept: "application/json"
+                Accept: "application/json",
+                "Cache-Control": "no-cache"
             },
             signal: activeAbortController.signal
         });

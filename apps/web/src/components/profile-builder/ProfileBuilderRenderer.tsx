@@ -60,6 +60,8 @@ export interface ProfileLiveActivityData {
   discordPresence?: {
     hasActivity?: boolean;
     status?: string | null;
+    activitySource?: string | null;
+    rpcPriority?: string | null;
     type?: number | string | null;
     activityType?: number | string | null;
     appName?: string | null;
@@ -1093,22 +1095,26 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
 
       case "custom-rpc": {
         const live = liveData?.discordPresence;
-        const activeLive =
-          node.config.useLiveRpc && live && (live.hasActivity || live.appName || live.details)
-            ? live
-            : null;
-        const appName = activeLive ? activeLive.appName : node.config.appName;
+        const liveIsCustom = Boolean(live && live.activitySource === "custom" && live.hasActivity);
+        const liveHasRenderable = Boolean(
+          live &&
+            (live.hasActivity || live.appName || live.name || live.details) &&
+            (live.status !== "offline" || liveIsCustom)
+        );
+        const activeLive = node.config.useLiveRpc !== false && liveHasRenderable ? live : null;
+        const appName = activeLive ? activeLive.appName || activeLive.name : node.config.appName;
         const details = activeLive ? activeLive.details : node.config.details;
         const state = activeLive ? activeLive.state : node.config.state;
         const image = activeLive
           ? activeLive.largeImage || node.config.largeImage
           : node.config.largeImage;
+        const liveStatusVal = live?.status || node.config.statusIndicator || (activeLive ? "online" : "offline");
         const statusDot =
-          node.config.statusIndicator === "dnd"
+          liveStatusVal === "dnd"
             ? "#ef4444"
-            : node.config.statusIndicator === "idle"
+            : liveStatusVal === "idle"
               ? "#f59e0b"
-              : node.config.statusIndicator === "offline"
+              : liveStatusVal === "offline"
                 ? "#71717a"
                 : "#22c55e";
 
@@ -1130,7 +1136,7 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               </span>
               <span className="inline-flex items-center gap-1 uppercase text-[8px] text-neutral-400">
                 <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: statusDot }} />
-                {node.config.statusIndicator || "online"}
+                {liveStatusVal}
               </span>
             </div>
 
@@ -1595,11 +1601,14 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
           node.config.rpcDataSource !== "custom" &&
           node.config.useLiveRpc !== false &&
           parentEmbed?.config?.useLiveRpc !== false;
-        const liveIsOnline = Boolean(
-          live && live.status !== "offline" && (live.hasActivity || live.appName || live.name || live.details)
+        const liveIsCustom = Boolean(live && live.activitySource === "custom" && (live.hasActivity || live.appName || live.name || live.details));
+        const liveHasRenderable = Boolean(
+          live &&
+            (live.hasActivity || live.appName || live.name || live.details) &&
+            (live.status !== "offline" || liveIsCustom)
         );
-        const activeLive = useLive && liveIsOnline ? live : null;
-        const isOfflineLive = Boolean(useLive && (!live || live.status === "offline" || !live.hasActivity));
+        const activeLive = useLive && liveHasRenderable ? live : null;
+        const isOfflineLive = Boolean(useLive && !liveHasRenderable);
 
         if (node.type === "rpc-icon") {
           const isSmallBinding = node.config.rpcFieldBinding === "smallImage";
