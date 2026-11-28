@@ -79,6 +79,7 @@ export interface RpcResponse {
     button2Url?: string | null;
     showProfileRpc?: boolean | null;
     enableDiscordRpc?: boolean | null;
+    rpcPriority?: "discord" | "custom" | null;
     username?: string | null;
     revision?: number | null;
     customConfig?: string | null;
@@ -155,4 +156,43 @@ export interface DiscordActivity {
     metadata?: {
         button_urls: string[];
     };
+}
+
+export interface CapturedNativeActivity {
+    name: string;
+    appName?: string;
+    applicationId?: string | null;
+    type: number;
+    details?: string | null;
+    state?: string | null;
+    largeImage?: string | null;
+    largeImageText?: string | null;
+    smallImage?: string | null;
+    smallImageText?: string | null;
+    streamUrl?: string | null;
+    timestamps?: {
+        start?: number | null;
+        end?: number | null;
+    } | null;
+    party?: {
+        size: [number, number];
+    } | null;
+    buttons?: Array<{ label: string; url: string }> | null;
+    spotify?: {
+        track_id?: string | null;
+        song?: string | null;
+        artist?: string | null;
+        album?: string | null;
+        album_art_url?: string | null;
+        timestamps?: {
+            start?: number | null;
+            end?: number | null;
+        } | null;
+    } | null;
+}
+
+export interface NativePresenceSnapshot {
+    status: "online" | "idle" | "dnd" | "offline";
+    activities: CapturedNativeActivity[];
+    activity: CapturedNativeActivity | null;
 }

@@ -31,6 +31,7 @@ assert(fs.existsSync(path.join(srcDir, 'settings.ts')), 'src/settings.ts exists'
 assert(fs.existsSync(path.join(srcDir, 'types.ts')), 'src/types.ts exists');
 assert(fs.existsSync(path.join(srcDir, 'rpcFormat.ts')), 'src/rpcFormat.ts exists');
 assert(fs.existsSync(path.join(srcDir, 'assetResolver.ts')), 'src/assetResolver.ts exists');
+assert(fs.existsSync(path.join(srcDir, 'nativeActivityCapture.ts')), 'src/nativeActivityCapture.ts exists');
 assert(fs.existsSync(path.join(srcDir, 'styles.css')), 'src/styles.css exists');
 assert(fs.existsSync(path.join(srcDir, 'components', 'StatusCard.tsx')), 'src/components/StatusCard.tsx exists');
 assert(fs.existsSync(path.join(srcDir, 'components', 'ActionControls.tsx')), 'src/components/ActionControls.tsx exists');
@@ -54,6 +55,7 @@ assert(fs.existsSync(path.join(dropinDir, 'settings.ts')), 'Drop-in settings.ts 
 assert(fs.existsSync(path.join(dropinDir, 'types.ts')), 'Drop-in types.ts packaged');
 assert(fs.existsSync(path.join(dropinDir, 'rpcFormat.ts')), 'Drop-in rpcFormat.ts packaged');
 assert(fs.existsSync(path.join(dropinDir, 'assetResolver.ts')), 'Drop-in assetResolver.ts packaged');
+assert(fs.existsSync(path.join(dropinDir, 'nativeActivityCapture.ts')), 'Drop-in nativeActivityCapture.ts packaged');
 assert(fs.existsSync(path.join(dropinDir, 'styles.css')), 'Drop-in styles.css packaged');
 assert(fs.existsSync(path.join(dropinDir, 'components', 'SettingsAbout.tsx')), 'Drop-in SettingsAbout.tsx packaged');
 assert(fs.existsSync(path.join(dropinDir, 'README.md')), 'Drop-in README.md packaged');
@@ -197,6 +199,15 @@ assert(calcBackoff(1) === 10, 'Retry 1 backoff is 10s');
 assert(calcBackoff(2) === 20, 'Retry 2 backoff is 20s');
 assert(calcBackoff(3) === 40, 'Retry 3 backoff is 40s');
 assert(calcBackoff(10) === 300, 'Backoff caps at 300s (5 minutes)');
+
+// 8. Native Activity Capture & Filtering Checks
+console.log('\nTest Group 8: Native Activity Capture & Filtering Checks');
+const captureSrc = fs.readFileSync(path.join(srcDir, 'nativeActivityCapture.ts'), 'utf8');
+assert(indexCode.includes('pushNativePresenceSnapshot'), 'Plugin pushes native presence snapshots to backend');
+assert(indexCode.includes('PresenceStore') && indexCode.includes('UserStore'), 'Plugin reads native PresenceStore & UserStore');
+assert(captureSrc.includes('https://i.scdn.co/image/'), 'Resolves Spotify scdn album artwork');
+assert(captureSrc.includes('isOwnCustomRpcActivity'), 'Filters out own PixelRPC custom activity from native capture');
+assert(captureSrc.includes('mapDiscordStatus'), 'Normalizes Discord status including invisible->offline privacy mapping');
 
 console.log('\n====================================================');
 console.log(`Test Results: ${passed} Passed, ${failed} Failed`);

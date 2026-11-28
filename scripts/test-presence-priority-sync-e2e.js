@@ -348,6 +348,63 @@ async function main() {
     assert.strictEqual(p.status, "online");
     assert.strictEqual(p.activity.details, "Kasturi");
 
+    // Test 10.5: Device-token plugin auth, multi-activity deterministic ordering & heartbeat latestRevision
+    console.log("[Test 10.5] Plugin deviceToken presence push, multi-activity deterministic selection & heartbeat revision...");
+    const deviceToken = crypto.randomBytes(24).toString("hex");
+    await prisma.rpcDeviceAuthorization.create({
+      data: {
+        userId,
+        codeHash: crypto.createHash("sha256").update(`E2E-${suffix.toUpperCase()}`).digest("hex"),
+        deviceName: "Vencord Plugin E2E",
+        deviceToken,
+        status: "CONSUMED",
+        consumedAt: new Date(),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      },
+    });
+
+    const devHeartbeatRes = await fetch(`${API_URL}/api/rpc/device/heartbeat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${deviceToken}` },
+      body: JSON.stringify({ pluginVersion: "1.3.0", discordAvailable: true, lastAppliedRevision: 0 }),
+    });
+    assert.strictEqual(devHeartbeatRes.status, 200);
+    const devHeartbeatData = await devHeartbeatRes.json();
+    assert.strictEqual(devHeartbeatData.success, true);
+    assert.strictEqual(typeof devHeartbeatData.latestRevision, "number");
+
+    const gameAct = {
+      name: "Valorant",
+      type: 0,
+      details: "Competitive",
+      state: "Ascent 10-8",
+    };
+    const devPresenceRes = await fetch(`${API_URL}/api/rpc/presence`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${deviceToken}` },
+      body: JSON.stringify({
+        status: "dnd",
+        activities: [
+          { name: "Custom Status", type: 4, state: "Chilling" },
+          spotifyAct,
+          gameAct,
+        ],
+        sequence: 9,
+      }),
+    });
+    assert.strictEqual(devPresenceRes.status, 200);
+    await patchRpc({ showProfileRpc: true, rpcPriority: "discord" });
+    p = await getLive();
+    assert.strictEqual(p.status, "dnd");
+    assert.strictEqual(p.activity.name, "Valorant", "Deterministic native policy prioritizes active game (type 0) over listening (type 2) and skips type 4");
+    assert.ok(Array.isArray(p.activities) && p.activities.length === 2, "Preserves all supported non-custom activities in normalized array");
+
+    // Stop game (leave Spotify only) -> Spotify immediately becomes primary
+    await pushDiscord("dnd", spotifyAct, 10);
+    p = await getLive();
+    assert.strictEqual(p.status, "dnd");
+    assert.strictEqual(p.activity.details, "Kasturi");
+
     // Test 11: Playwright Profile Customizer <-> RPC Editor <-> Public Profile Consistency
     console.log("[Test 11] Playwright Customizer <-> RPC Editor <-> Public Profile consistency...");
     await patchRpc({ showProfileRpc: true, rpcPriority: "discord" });
@@ -355,12 +412,13 @@ async function main() {
     const ctx = await createAuthedContext(browser, token);
     const page = await ctx.newPage();
 
-    // Open Profile Customizer (/customize), select Custom RPC node, switch to Custom First
+    // Open Profile Customizer (/customize), select Custom RPC node, verify plugin badge & switch to Custom First
     await page.goto(`${WEB_URL}/customize`, { waitUntil: "networkidle" });
     await page.waitForSelector('[data-testid="builder-canvas-surface"]', { timeout: 15000 });
     await page.getByTestId("secondary-dock-btn-layers").click();
     await page.getByTestId("layer-row-rpc-1").click();
     await page.getByTestId("unified-tab-properties").click();
+    await page.getByTestId("customizer-plugin-status").waitFor({ state: "visible", timeout: 8000 });
     await page.getByTestId("customizer-rpc-priority-custom").waitFor({ state: "visible", timeout: 8000 });
     await page.getByTestId("customizer-rpc-priority-custom").click();
     await page.waitForTimeout(400);
@@ -370,11 +428,11 @@ async function main() {
     const customBtnClass = await page.getByTestId("rpc-editor-priority-custom").getAttribute("class");
     assert.ok(customBtnClass.includes("bg-white"), "RPC Editor must reflect Custom RPC Priority saved in Customizer");
 
-    // Check public profile renders PixelCustomApp (since Custom First) & online status
+    // Check public profile renders PixelCustomApp (since Custom First) & preserves Discord DND status
     await page.goto(`${WEB_URL}/${username}`, { waitUntil: "networkidle" });
     const pubText1 = await page.locator("body").innerText();
     assert.ok(pubText1.includes("PixelCustomApp"), "Public profile must display Custom RPC when Custom First");
-    assert.strictEqual(await page.getByTestId("avatar-status-dot-avatar-1").getAttribute("data-status"), "online");
+    assert.strictEqual(await page.getByTestId("avatar-status-dot-avatar-1").getAttribute("data-status"), "dnd");
 
     // Switch back to Discord First via API and verify public profile displays Kasturi / Arijit Singh
     await patchRpc({ rpcPriority: "discord" });
@@ -397,6 +455,7 @@ async function main() {
       } catch {}
     }
     if (userId) {
+      await prisma.rpcDeviceAuthorization.deleteMany({ where: { userId } }).catch(() => {});
       await prisma.richPresence.deleteMany({ where: { userId } }).catch(() => {});
       await prisma.profile.deleteMany({ where: { userId } }).catch(() => {});
       await prisma.user.deleteMany({ where: { id: userId } }).catch(() => {});
