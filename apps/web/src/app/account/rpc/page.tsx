@@ -143,6 +143,7 @@ interface RpcConfig {
   buttonSize?: "small" | "medium" | "large";
   showProfileRpc?: boolean;
   enableDiscordRpc?: boolean;
+  rpcPriority?: "discord" | "custom";
   streaks?: CustomStreak[];
   statistics?: CustomStatistic[];
   statusLabels?: CustomStatusLabel[];
@@ -179,6 +180,7 @@ const DEFAULT_RPC: RpcConfig = {
   buttonSize: "medium",
   showProfileRpc: true,
   enableDiscordRpc: true,
+  rpcPriority: "discord",
   partySize: null,
   partyMax: null,
   timestampMode: "now",
@@ -1890,6 +1892,59 @@ export default function AccountRpcStudioPage() {
                 >
                   {rpc.enableDiscordRpc !== false ? "ENABLED" : "DISABLED"}
                 </button>
+              </div>
+
+              {/* Control C: Activity Priority */}
+              <div className="p-3.5 rounded-xl bg-black border border-[#222222] space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-white font-bold text-xs">Activity Priority</span>
+                      <span className="text-[9px] px-2 py-0.5 rounded font-bold uppercase bg-white/10 text-neutral-300">
+                        {rpc.showProfileRpc === false
+                          ? "CUSTOM RPC DISABLED"
+                          : (rpc.rpcPriority || "discord") === "custom"
+                          ? "CUSTOM FIRST"
+                          : "DISCORD FIRST"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-neutral-400 mt-0.5">
+                      Choose whether your original Discord activity (e.g. Spotify, Games) or Custom Pixel.gg RPC takes precedence on your public profile.
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    disabled={rpc.showProfileRpc === false}
+                    onClick={() => updateRpc({ rpcPriority: "discord" })}
+                    data-testid="rpc-editor-priority-discord"
+                    className={`py-2 px-3 rounded-lg border text-xs font-bold transition-colors ${
+                      rpc.showProfileRpc === false
+                        ? "bg-[#101015] border-[#1c1c24] text-neutral-600 cursor-not-allowed"
+                        : (rpc.rpcPriority || "discord") === "discord"
+                        ? "bg-white text-black border-white cursor-pointer"
+                        : "bg-[#121217] border-[#262632] text-neutral-300 hover:text-white cursor-pointer"
+                    }`}
+                  >
+                    Discord Activity Priority
+                  </button>
+                  <button
+                    type="button"
+                    disabled={rpc.showProfileRpc === false}
+                    onClick={() => updateRpc({ rpcPriority: "custom" })}
+                    data-testid="rpc-editor-priority-custom"
+                    className={`py-2 px-3 rounded-lg border text-xs font-bold transition-colors ${
+                      rpc.showProfileRpc === false
+                        ? "bg-[#101015] border-[#1c1c24] text-neutral-600 cursor-not-allowed"
+                        : rpc.rpcPriority === "custom"
+                        ? "bg-white text-black border-white cursor-pointer"
+                        : "bg-[#121217] border-[#262632] text-neutral-300 hover:text-white cursor-pointer"
+                    }`}
+                  >
+                    Custom RPC Priority
+                  </button>
+                </div>
               </div>
 
               {/* Matrix Status Callout */}
