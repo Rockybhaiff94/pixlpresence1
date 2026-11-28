@@ -51,6 +51,7 @@ export interface PreviewData {
     order?: number;
   }>;
   discordPresence?: any | null;
+  accountStatus?: string | null;
   isPremium?: boolean;
 }
 

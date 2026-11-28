@@ -32,6 +32,7 @@ assert(fs.existsSync(path.join(srcDir, 'types.ts')), 'src/types.ts exists');
 assert(fs.existsSync(path.join(srcDir, 'rpcFormat.ts')), 'src/rpcFormat.ts exists');
 assert(fs.existsSync(path.join(srcDir, 'assetResolver.ts')), 'src/assetResolver.ts exists');
 assert(fs.existsSync(path.join(srcDir, 'nativeActivityCapture.ts')), 'src/nativeActivityCapture.ts exists');
+assert(fs.existsSync(path.join(srcDir, 'accountStatus.ts')), 'src/accountStatus.ts exists');
 assert(fs.existsSync(path.join(srcDir, 'styles.css')), 'src/styles.css exists');
 assert(fs.existsSync(path.join(srcDir, 'components', 'StatusCard.tsx')), 'src/components/StatusCard.tsx exists');
 assert(fs.existsSync(path.join(srcDir, 'components', 'ActionControls.tsx')), 'src/components/ActionControls.tsx exists');
@@ -56,6 +57,7 @@ assert(fs.existsSync(path.join(dropinDir, 'types.ts')), 'Drop-in types.ts packag
 assert(fs.existsSync(path.join(dropinDir, 'rpcFormat.ts')), 'Drop-in rpcFormat.ts packaged');
 assert(fs.existsSync(path.join(dropinDir, 'assetResolver.ts')), 'Drop-in assetResolver.ts packaged');
 assert(fs.existsSync(path.join(dropinDir, 'nativeActivityCapture.ts')), 'Drop-in nativeActivityCapture.ts packaged');
+assert(fs.existsSync(path.join(dropinDir, 'accountStatus.ts')), 'Drop-in accountStatus.ts packaged');
 assert(fs.existsSync(path.join(dropinDir, 'styles.css')), 'Drop-in styles.css packaged');
 assert(fs.existsSync(path.join(dropinDir, 'components', 'SettingsAbout.tsx')), 'Drop-in SettingsAbout.tsx packaged');
 assert(fs.existsSync(path.join(dropinDir, 'README.md')), 'Drop-in README.md packaged');
@@ -208,6 +210,15 @@ assert(indexCode.includes('PresenceStore') && indexCode.includes('UserStore'), '
 assert(captureSrc.includes('https://i.scdn.co/image/'), 'Resolves Spotify scdn album artwork');
 assert(captureSrc.includes('isOwnCustomRpcActivity'), 'Filters out own PixelRPC custom activity from native capture');
 assert(captureSrc.includes('mapDiscordStatus'), 'Normalizes Discord status including invisible->offline privacy mapping');
+
+// 9. Dedicated Account Status Synchronization Checks
+console.log('\nTest Group 9: Dedicated Account Status Synchronization');
+const accountStatusSrc = fs.readFileSync(path.join(srcDir, 'accountStatus.ts'), 'utf8');
+assert(accountStatusSrc.includes('readCurrentDiscordAccountStatus'), 'Exports readCurrentDiscordAccountStatus');
+assert(accountStatusSrc.includes('normalizeDiscordAccountStatus'), 'Exports normalizeDiscordAccountStatus');
+assert(indexCode.includes('pushAccountStatus'), 'Plugin implements dedicated pushAccountStatus');
+assert(indexCode.includes('/api/rpc/account-status'), 'Plugin posts account status to dedicated /api/rpc/account-status endpoint');
+assert(indexCode.includes('SELF_PRESENCE_STORE_UPDATE') && indexCode.includes('USER_SETTINGS_PROTO_UPDATE'), 'Plugin subscribes to Discord self presence and status settings events');
 
 console.log('\n====================================================');
 console.log(`Test Results: ${passed} Passed, ${failed} Failed`);

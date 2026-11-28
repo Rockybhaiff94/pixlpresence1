@@ -61,6 +61,12 @@ io.on('connection', (socket) => {
         if (user) {
           const currentPresence = await presenceManager.getLivePresenceForUser(user);
           socket.emit('presence_sync', currentPresence);
+          socket.emit('account_status_sync', {
+            type: 'account_status_sync',
+            username: user.username,
+            accountStatus: currentPresence.accountStatus || currentPresence.status || 'offline',
+            updatedAt: currentPresence.updatedAt,
+          });
         }
       } catch (err) {
         console.error('[Socket Presence Sync Error]:', err);

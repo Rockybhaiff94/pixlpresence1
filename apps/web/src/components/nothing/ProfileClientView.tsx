@@ -56,6 +56,7 @@ interface ProfileClientProps {
   musicTitle?: string | null;
   musicArtist?: string | null;
   discordPresence?: any | null;
+  initialAccountStatus?: string | null;
   customCss?: string | null;
   designConfig?: string | null;
   isPremium?: boolean;
@@ -80,6 +81,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
   musicTitle = "Nothing Soundscape (01)",
   musicArtist = "Ambient Audio",
   discordPresence,
+  initialAccountStatus,
   customCss,
   designConfig,
   isPremium = false,
@@ -162,6 +164,24 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
     }
   };
 
+  // Dedicated Discord Account Status state (online | idle | dnd | offline), strictly independent from RPC activity
+  const normalizeAcctStatus = (raw: unknown): "online" | "idle" | "dnd" | "offline" | null => {
+    const clean = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+    if (clean === "online" || clean === "idle" || clean === "dnd" || clean === "offline") return clean;
+    return null;
+  };
+  const [accountStatus, setAccountStatus] = useState<"online" | "idle" | "dnd" | "offline">(
+    () => normalizeAcctStatus(initialAccountStatus ?? discordPresence?.status) || "offline"
+  );
+  const lastAccountStatusUpdatedRef = useRef<number>(0);
+
+  useEffect(() => {
+    const next = normalizeAcctStatus(initialAccountStatus ?? discordPresence?.status);
+    if (next && lastAccountStatusUpdatedRef.current === 0) {
+      setAccountStatus(next);
+    }
+  }, [initialAccountStatus, discordPresence?.status]);
+
   // Live Discord Rich Presence state management with real-time websocket and anti-race ordering
   const [livePresence, setLivePresence] = useState<any>(discordPresence || null);
   const lastSequenceRef = useRef<number>(0);
@@ -182,8 +202,36 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
       reconnectionDelay: 2000,
     });
 
+    const handleAccountStatusSync = (payload: any) => {
+      if (!isMounted || !payload) return;
+      if (
+        typeof payload.username === "string" &&
+        payload.username.trim().toLowerCase() !== username.trim().toLowerCase()
+      ) {
+        return;
+      }
+      const nextStatus = normalizeAcctStatus(payload.accountStatus ?? payload.status);
+      if (!nextStatus) return;
+
+      const updatedAt = typeof payload.updatedAt === "number" ? payload.updatedAt : Date.now();
+      if (updatedAt < lastAccountStatusUpdatedRef.current) {
+        return;
+      }
+      lastAccountStatusUpdatedRef.current = updatedAt;
+      setAccountStatus(nextStatus);
+    };
+
     const handlePresenceUpdate = (data: any) => {
       if (!isMounted || !data) return;
+
+      const incomingStatus = normalizeAcctStatus(data.accountStatus ?? data.status);
+      if (incomingStatus) {
+        const ts = typeof data.updatedAt === "number" ? data.updatedAt : Date.now();
+        if (ts >= lastAccountStatusUpdatedRef.current) {
+          lastAccountStatusUpdatedRef.current = ts;
+          setAccountStatus(incomingStatus);
+        }
+      }
 
       // Prevent race conditions: Prioritize timestamp so backend restarts (resetting sequence -> 1) are never dropped.
       if (typeof data.updatedAt === "number") {
@@ -249,6 +297,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
 
     socket.on("presence_sync", handlePresenceUpdate);
     socket.on("presence_update", handlePresenceUpdate);
+    socket.on("account_status_sync", handleAccountStatusSync);
     socket.on("profile_like_updated", (payload: { likesCount?: number }) => {
       if (isMounted && typeof payload?.likesCount === "number") {
         setLikes(Math.max(0, payload.likesCount));
@@ -566,6 +615,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
                 musicTitle,
                 musicArtist,
                 views: liveViews,
+                accountStatus,
                 discordPresence: livePresence,
               }}
             />
@@ -586,6 +636,7 @@ export const ProfileClientView: React.FC<ProfileClientProps> = ({
               likes,
               buttons,
               links,
+              accountStatus,
               discordPresence: livePresence,
               isPremium,
             }}

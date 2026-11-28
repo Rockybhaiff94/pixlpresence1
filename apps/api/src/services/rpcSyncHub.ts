@@ -1,5 +1,6 @@
 import { Server, Socket } from 'socket.io';
 import { prisma } from '@discord-rpc/database';
+import { presenceManager } from './presenceManager';
 
 export type ConnectionState =
   | 'not_linked'
@@ -389,8 +390,22 @@ class RpcSyncHub {
       },
     });
 
-    // 2. Remove runtime cache
+    // 2. Remove runtime cache & re-aggregate account status across any remaining active devices
+    const prevRuntime = this.runtimeDevices.get(deviceId);
     this.runtimeDevices.delete(deviceId);
+    let targetUsername = prevRuntime?.username || null;
+    let targetDiscordId: string | null = null;
+    if (!targetUsername) {
+      const u = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { username: true, discordId: true },
+      }).catch(() => null);
+      targetUsername = u?.username || null;
+      targetDiscordId = u?.discordId || null;
+    }
+    if (targetUsername) {
+      presenceManager.handleAccountStatusDeviceDisconnect(targetUsername, userId, targetDiscordId, deviceId);
+    }
 
     // 3. Broadcast real-time revocation to user room AND device-specific room
     if (this.io) {
@@ -434,9 +449,9 @@ class RpcSyncHub {
   }
 
   /**
-   * Periodically check for stale heartbeats (> 45s) and mark them as offline
+   * Periodically check for stale heartbeats (> 60s) and mark them as offline
    */
-  private startStaleConnectionMonitor(intervalMs: number = 15000, timeoutMs: number = 45000) {
+  private startStaleConnectionMonitor(intervalMs: number = 15000, timeoutMs: number = 60000) {
     if (this.monitorTimer) clearInterval(this.monitorTimer);
 
     this.monitorTimer = setInterval(() => {
@@ -451,6 +466,9 @@ class RpcSyncHub {
             state.connectionState = 'offline';
             this.runtimeDevices.set(deviceId, state);
             this.broadcastDeviceStatus(state.userId, deviceId);
+            if (state.username) {
+              presenceManager.handleAccountStatusDeviceDisconnect(state.username, state.userId, null, deviceId);
+            }
           }
         }
       }

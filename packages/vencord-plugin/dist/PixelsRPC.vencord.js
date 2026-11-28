@@ -53,6 +53,42 @@
     let nativePresenceSeq = 0;
     let nativeDebounce = null;
     let nativeListener = null;
+    let lastAccountStatus = null;
+    let accountStatusTimer = null;
+    let accountStatusListener = null;
+
+    function readAccountStatusSnap() {
+        const common = window.Vencord?.Webpack?.Common || {};
+        const findProps = window.Vencord?.Webpack?.findByProps;
+        const uStore = common.UserStore || (findProps && findProps('getCurrentUser'));
+        const pStore = common.PresenceStore || (findProps && findProps('getStatus', 'getActivities'));
+        const selfStore = findProps && findProps('getLocalPresence', 'getStatus');
+        const uid = uStore?.getCurrentUser?.()?.id;
+        if (!uid) return null;
+        let raw = pStore?.getStatus?.(uid);
+        if ((raw === undefined || raw === null || raw === '' || raw === 'unknown') && selfStore?.getStatus) {
+            raw = selfStore.getStatus();
+        }
+        const clean = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+        const accountStatus = (clean === 'online' || clean === 'idle' || clean === 'dnd') ? clean : 'offline';
+        return { discordUserId: String(uid), accountStatus, statusUpdatedAt: new Date().toISOString(), source: 'vencord_client' };
+    }
+
+    async function pushAccountStatus(force) {
+        if (!config.token) return;
+        const snap = readAccountStatusSnap();
+        if (!snap) return;
+        if (!force && snap.accountStatus === lastAccountStatus) return;
+        try {
+            const url = config.apiUrl.replace(/\/+$/, '');
+            const r = await fetch(url + '/api/rpc/account-status', {
+                method: 'POST',
+                headers: { Authorization: 'Bearer ' + config.token, 'Content-Type': 'application/json' },
+                body: JSON.stringify(snap)
+            });
+            if (r.ok) lastAccountStatus = snap.accountStatus;
+        } catch (_) {}
+    }
 
     function resolveNativeImg(appId, val) {
         if (!val || typeof val !== 'string') return null;
@@ -135,9 +171,37 @@
         disp?.subscribe?.('PRESENCE_UPDATES', nativeListener);
         disp?.subscribe?.('LOCAL_ACTIVITY_UPDATE', nativeListener);
         disp?.subscribe?.('SPOTIFY_PLAYER_STATE', nativeListener);
+
+        if (!accountStatusListener) {
+            accountStatusListener = () => {
+                if (accountStatusTimer) clearTimeout(accountStatusTimer);
+                accountStatusTimer = setTimeout(() => pushAccountStatus(false), 120);
+            };
+            pStore?.addChangeListener?.(accountStatusListener);
+            disp?.subscribe?.('PRESENCE_UPDATES', accountStatusListener);
+            disp?.subscribe?.('SELF_PRESENCE_STORE_UPDATE', accountStatusListener);
+            disp?.subscribe?.('SESSIONS_REPLACE', accountStatusListener);
+            disp?.subscribe?.('USER_SETTINGS_PROTO_UPDATE', accountStatusListener);
+            disp?.subscribe?.('CONNECTION_OPEN', accountStatusListener);
+        }
     }
 
     function unsubscribeNative() {
+        if (accountStatusListener) {
+            const pStore2 = window.Vencord?.Webpack?.Common?.PresenceStore || window.Vencord?.Webpack?.findByProps?.('getStatus', 'getActivities');
+            const disp2 = getDispatcher();
+            pStore2?.removeChangeListener?.(accountStatusListener);
+            disp2?.unsubscribe?.('PRESENCE_UPDATES', accountStatusListener);
+            disp2?.unsubscribe?.('SELF_PRESENCE_STORE_UPDATE', accountStatusListener);
+            disp2?.unsubscribe?.('SESSIONS_REPLACE', accountStatusListener);
+            disp2?.unsubscribe?.('USER_SETTINGS_PROTO_UPDATE', accountStatusListener);
+            disp2?.unsubscribe?.('CONNECTION_OPEN', accountStatusListener);
+            accountStatusListener = null;
+        }
+        if (accountStatusTimer) {
+            clearTimeout(accountStatusTimer);
+            accountStatusTimer = null;
+        }
         if (!nativeListener) return;
         const pStore = window.Vencord?.Webpack?.Common?.PresenceStore || window.Vencord?.Webpack?.findByProps?.('getStatus', 'getActivities');
         const disp = getDispatcher();
@@ -350,6 +414,7 @@
 
             if (syncTimer) clearInterval(syncTimer);
             fetchAndSync();
+            pushAccountStatus(true);
             pushNativePresence();
             subscribeNative();
             syncTimer = setInterval(fetchAndSync, config.interval * 1000);

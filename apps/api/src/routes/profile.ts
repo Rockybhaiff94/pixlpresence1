@@ -290,6 +290,7 @@ profileRouter.get('/u/:username', async (req: any, res) => {
       profile: responseProfile,
       richPresence: safeRpc,
       livePresence,
+      accountStatus: livePresence.accountStatus || livePresence.status || 'offline',
       isOwnerPreview: Boolean(isOwner && isPreviewMode),
     });
   } catch (err) {

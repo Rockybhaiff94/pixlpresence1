@@ -297,14 +297,17 @@ export default async function ProfilePage({
     notFound();
   }
 
-  const { user, profile, richPresence, livePresence } = result.data as PublicProfilePayload & {
-    livePresence?: { status?: string; hasActivity?: boolean; activity?: Record<string, unknown> | null } | null;
+  const { user, profile, richPresence, livePresence, accountStatus: payloadAccountStatus } = result.data as PublicProfilePayload & {
+    accountStatus?: string | null;
+    livePresence?: { status?: string; accountStatus?: string; hasActivity?: boolean; activity?: Record<string, unknown> | null } | null;
   };
+  const resolvedInitialAccountStatus =
+    payloadAccountStatus || livePresence?.accountStatus || livePresence?.status || null;
   const initialDiscordPresence = richPresence
-    ? { status: livePresence?.status, ...richPresence }
+    ? { status: resolvedInitialAccountStatus || livePresence?.status, ...richPresence }
     : livePresence
     ? {
-        status: livePresence.status,
+        status: resolvedInitialAccountStatus || livePresence.status,
         hasActivity: Boolean(livePresence.hasActivity),
         ...(livePresence.activity || {}),
       }
@@ -349,6 +352,7 @@ export default async function ProfilePage({
         links={profile?.links || []}
         musicUrl={profile?.musicUrl || null}
         discordPresence={initialDiscordPresence}
+        initialAccountStatus={resolvedInitialAccountStatus}
         customCss={profile?.customCss || null}
         designConfig={profile?.designConfig || null}
         isPremium={Boolean(

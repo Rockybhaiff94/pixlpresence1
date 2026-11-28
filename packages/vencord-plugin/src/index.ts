@@ -7,6 +7,7 @@ import { ConnectionState, DiscordActivity, RpcResponse } from "./types";
 import { formatRichPresenceField } from "./rpcFormat";
 import { resolveAssetForDiscord, getSafeUrlHost } from "./assetResolver";
 import { captureLocalPresenceSnapshot } from "./nativeActivityCapture";
+import { DiscordAccountStatus, readCurrentDiscordAccountStatus } from "./accountStatus";
 
 const SOCKET_ID = "pixels-rpc";
 const DEFAULT_APP_ID = "1523632136878559302";
@@ -15,13 +16,17 @@ const PLUGIN_VERSION = "1.3.0";
 let syncTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let heartbeatTimerId: ReturnType<typeof setInterval> | null = null;
 let nativeSyncTimerId: ReturnType<typeof setTimeout> | null = null;
+let accountStatusTimerId: ReturnType<typeof setTimeout> | null = null;
 let activeAbortController: AbortController | null = null;
 let lastActivityHash: string | null = null;
 let lastNativePresenceHash: string | null = null;
+let lastSentAccountStatus: DiscordAccountStatus | null = null;
 let nativeSyncSequence = 0;
 let activeCustomAppId: string | null = DEFAULT_APP_ID;
 let isNativeSubscribed = false;
+let isAccountStatusSubscribed = false;
 let nativeFluxHandler: ((event?: any) => void) | null = null;
+let accountStatusFluxHandler: ((event?: any) => void) | null = null;
 let sessionNowTimestamp: number | null = null;
 let lastTimestampMode: string | null = null;
 let lastSessionAppName: string | null = null;
@@ -56,8 +61,10 @@ function handleServerDisconnection(reason: string) {
     logDebug(`Server disconnection detected: ${reason}`);
 
     stopHeartbeat();
+    unsubscribeAccountStatus();
     unsubscribeNativePresence();
     lastNativePresenceHash = null;
+    lastSentAccountStatus = null;
     clearActivity();
 
     store.deviceToken = "";
@@ -84,6 +91,7 @@ async function sendHeartbeat(): Promise<void> {
 
     const dispatcher = getDispatcher();
     const discordAvailable = Boolean(dispatcher);
+    const statusSnap = getCurrentAccountStatusSnapshot();
 
     try {
         const res = await fetch(`${apiUrl}/api/rpc/device/heartbeat`, {
@@ -98,6 +106,9 @@ async function sendHeartbeat(): Promise<void> {
                 deviceToken: token,
                 pluginVersion: PLUGIN_VERSION,
                 discordAvailable,
+                discordUserId: statusSnap?.discordUserId || undefined,
+                accountStatus: statusSnap?.accountStatus || undefined,
+                statusUpdatedAt: statusSnap?.statusUpdatedAt || undefined,
                 publishingStatus: state.publishingStatus,
                 lastAppliedRevision: state.appliedRevision,
                 activeTitle: state.activeTitle,
@@ -123,6 +134,10 @@ async function sendHeartbeat(): Promise<void> {
                 discordAvailable,
                 ...(wasDisconnected ? { status: "connected", lastError: null } : {})
             });
+            const shouldForceStatus = Boolean(wasDisconnected || data?.needsAccountStatusSync);
+            if (shouldForceStatus) {
+                pushAccountStatus(true);
+            }
             const shouldForcePresence = Boolean(
                 wasDisconnected || data?.needsPresenceSync || heartbeatTickCount % 4 === 0
             );
@@ -180,6 +195,111 @@ function getPresenceStoreSafe() {
         return PresenceStore;
     }
     return findByProps("getStatus", "getActivities");
+}
+
+function getSelfPresenceStoreSafe() {
+    return findByProps("getLocalPresence", "getStatus");
+}
+
+function getCurrentAccountStatusSnapshot() {
+    const uStore = getUserStoreSafe();
+    const pStore = getPresenceStoreSafe();
+    const selfStore = getSelfPresenceStoreSafe();
+    return readCurrentDiscordAccountStatus({
+        getCurrentUser: () => uStore?.getCurrentUser?.() ?? null,
+        getPresenceStatus: pStore?.getStatus ? (uid: string) => pStore.getStatus(uid) : undefined,
+        getSelfPresenceStatus: selfStore?.getStatus ? () => selfStore.getStatus() : undefined
+    });
+}
+
+export async function pushAccountStatus(force: boolean = false): Promise<void> {
+    const token = getActiveToken();
+    const store = settings.store;
+    const apiUrl = (store.apiUrl || "https://pixlpresence1-web.vercel.app").trim().replace(/\/+$/, "");
+    if (!token) return;
+
+    const snap = getCurrentAccountStatusSnapshot();
+    if (!snap) return;
+
+    if (!force && snap.accountStatus === lastSentAccountStatus) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`${apiUrl}/api/rpc/account-status`, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+                Accept: "application/json"
+            },
+            body: JSON.stringify(snap)
+        });
+        if (res.status === 401) {
+            handleServerDisconnection("Device authorization revoked during account status sync.");
+            return;
+        }
+        if (res.ok) {
+            lastSentAccountStatus = snap.accountStatus;
+            logDebug("Synchronized Discord account status:", snap.accountStatus);
+        }
+    } catch (err: any) {
+        logDebug("Account status push failed:", err);
+    }
+}
+
+function scheduleAccountStatusPush(force: boolean = false) {
+    if (accountStatusTimerId) {
+        clearTimeout(accountStatusTimerId);
+    }
+    accountStatusTimerId = setTimeout(() => {
+        accountStatusTimerId = null;
+        pushAccountStatus(force);
+    }, 120);
+}
+
+function subscribeAccountStatus() {
+    if (isAccountStatusSubscribed) return;
+    const pStore = getPresenceStoreSafe();
+    const dispatcher = getDispatcher();
+
+    accountStatusFluxHandler = () => {
+        scheduleAccountStatusPush(false);
+    };
+
+    if (pStore && typeof pStore.addChangeListener === "function") {
+        pStore.addChangeListener(accountStatusFluxHandler);
+    }
+    if (dispatcher && typeof dispatcher.subscribe === "function") {
+        dispatcher.subscribe("PRESENCE_UPDATES", accountStatusFluxHandler);
+        dispatcher.subscribe("SELF_PRESENCE_STORE_UPDATE", accountStatusFluxHandler);
+        dispatcher.subscribe("SESSIONS_REPLACE", accountStatusFluxHandler);
+        dispatcher.subscribe("USER_SETTINGS_PROTO_UPDATE", accountStatusFluxHandler);
+        dispatcher.subscribe("CONNECTION_OPEN", accountStatusFluxHandler);
+    }
+    isAccountStatusSubscribed = true;
+}
+
+function unsubscribeAccountStatus() {
+    if (accountStatusTimerId) {
+        clearTimeout(accountStatusTimerId);
+        accountStatusTimerId = null;
+    }
+    if (!isAccountStatusSubscribed || !accountStatusFluxHandler) return;
+    const pStore = getPresenceStoreSafe();
+    const dispatcher = getDispatcher();
+    if (pStore && typeof pStore.removeChangeListener === "function") {
+        pStore.removeChangeListener(accountStatusFluxHandler);
+    }
+    if (dispatcher && typeof dispatcher.unsubscribe === "function") {
+        dispatcher.unsubscribe("PRESENCE_UPDATES", accountStatusFluxHandler);
+        dispatcher.unsubscribe("SELF_PRESENCE_STORE_UPDATE", accountStatusFluxHandler);
+        dispatcher.unsubscribe("SESSIONS_REPLACE", accountStatusFluxHandler);
+        dispatcher.unsubscribe("USER_SETTINGS_PROTO_UPDATE", accountStatusFluxHandler);
+        dispatcher.unsubscribe("CONNECTION_OPEN", accountStatusFluxHandler);
+    }
+    isAccountStatusSubscribed = false;
+    accountStatusFluxHandler = null;
 }
 
 export async function pushNativePresenceSnapshot(force: boolean = false): Promise<void> {
@@ -785,9 +905,11 @@ export async function linkDeviceAccount(code: string): Promise<void> {
             logDebug(`Account successfully linked as @${data.username}`);
             isConnected = true;
 
-            // Immediately start heartbeat, native activity capture, and fetch presence
+            // Immediately start heartbeat, account status sync, native activity capture, and fetch presence
             startHeartbeat();
+            subscribeAccountStatus();
             subscribeNativePresence();
+            await pushAccountStatus(true);
             await pushNativePresenceSnapshot(true);
             await fetchAndSync();
             break;
@@ -816,8 +938,10 @@ export async function disconnectDeviceAccount(): Promise<void> {
     const apiUrl = (store.apiUrl || "https://pixlpresence1-web.vercel.app").trim().replace(/\/+$/, "");
 
     stopHeartbeat();
+    unsubscribeAccountStatus();
     unsubscribeNativePresence();
     lastNativePresenceHash = null;
+    lastSentAccountStatus = null;
 
     if (token) {
         try {
@@ -858,8 +982,10 @@ export async function fetchAndSync(): Promise<void> {
 
     if (!token) {
         stopHeartbeat();
+        unsubscribeAccountStatus();
         unsubscribeNativePresence();
         lastNativePresenceHash = null;
+        lastSentAccountStatus = null;
         clearActivity();
         updateState({
             status: "not_linked",
@@ -1022,7 +1148,9 @@ export default definePlugin({
         // Only start network sync if account is linked or token is present
         if (getActiveToken()) {
             startHeartbeat();
+            subscribeAccountStatus();
             subscribeNativePresence();
+            pushAccountStatus(true);
             pushNativePresenceSnapshot(true);
             fetchAndSync();
         } else {
@@ -1042,8 +1170,10 @@ export default definePlugin({
         logDebug("Plugin stopping...");
 
         stopHeartbeat();
+        unsubscribeAccountStatus();
         unsubscribeNativePresence();
         lastNativePresenceHash = null;
+        lastSentAccountStatus = null;
 
         if (syncTimeoutId) {
             clearTimeout(syncTimeoutId);

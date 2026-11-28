@@ -39,12 +39,18 @@ export interface LiveActivity {
 }
 
 export type RpcPriorityMode = 'discord' | 'custom';
+export type AccountStatus = 'online' | 'idle' | 'dnd' | 'offline';
+
+export function isValidAccountStatus(value: unknown): value is AccountStatus {
+  return value === 'online' || value === 'idle' || value === 'dnd' || value === 'offline';
+}
 
 export interface LivePresence {
   userId?: string | null;
   username: string;
   discordId?: string | null;
-  status: 'online' | 'idle' | 'dnd' | 'offline';
+  status: AccountStatus;
+  accountStatus?: AccountStatus;
   hasActivity: boolean;
   activity: LiveActivity | null;
   activities?: LiveActivity[];
@@ -209,6 +215,32 @@ class PresenceManager {
     }
   >();
   private userLookupCache = new Map<string, { id: string; username: string; discordId: string | null }>();
+  private accountStatusDevicesByUser = new Map<
+    string,
+    Map<
+      string,
+      {
+        deviceId: string;
+        discordUserId: string | null;
+        accountStatus: AccountStatus;
+        statusUpdatedAt: number;
+        lastSeenAt: number;
+        source: string;
+      }
+    >
+  >();
+  private accountStatusByUsername = new Map<
+    string,
+    {
+      userId?: string | null;
+      username: string;
+      discordId?: string | null;
+      accountStatus: AccountStatus;
+      updatedAt: number;
+      source: string;
+    }
+  >();
+  private readonly ACCOUNT_STATUS_STALE_MS = 65_000;
   private sequenceCounter = 0;
 
   /**
@@ -305,6 +337,248 @@ class PresenceManager {
       buttons: normalizeActivityButtons(act.buttons),
       spotify: act.spotify || null,
     };
+  }
+
+  private emitAccountStatusBroadcast(payload: {
+    username: string;
+    userId?: string | null;
+    discordId?: string | null;
+    accountStatus: AccountStatus;
+    updatedAt: number;
+  }) {
+    if (!io) return;
+    const key = payload.username.trim().toLowerCase();
+    const event = {
+      type: 'account_status_sync',
+      username: payload.username,
+      accountStatus: payload.accountStatus,
+      updatedAt: payload.updatedAt,
+    };
+    io.to(`profile:${key}`).emit('account_status_sync', event);
+    if (payload.discordId) {
+      io.to(`profile:discord:${payload.discordId}`).emit('account_status_sync', event);
+    }
+    if (payload.userId) {
+      io.to(`user_${payload.userId}`).emit('account_status_sync', event);
+    }
+  }
+
+  private aggregateAccountStatusForUser(key: string, now: number): {
+    accountStatus: AccountStatus;
+    updatedAt: number;
+    source: string;
+  } {
+    const devices = this.accountStatusDevicesByUser.get(key);
+    if (!devices || devices.size === 0) {
+      return { accountStatus: 'offline', updatedAt: now, source: 'timeout' };
+    }
+    let best: {
+      accountStatus: AccountStatus;
+      statusUpdatedAt: number;
+      lastSeenAt: number;
+      source: string;
+    } | null = null;
+    for (const [devId, entry] of devices.entries()) {
+      if (now - entry.lastSeenAt > this.ACCOUNT_STATUS_STALE_MS) {
+        devices.delete(devId);
+        continue;
+      }
+      if (
+        !best ||
+        entry.statusUpdatedAt > best.statusUpdatedAt ||
+        (entry.statusUpdatedAt === best.statusUpdatedAt && entry.lastSeenAt > best.lastSeenAt)
+      ) {
+        best = entry;
+      }
+    }
+    if (!best) {
+      return { accountStatus: 'offline', updatedAt: now, source: 'timeout' };
+    }
+    return {
+      accountStatus: best.accountStatus,
+      updatedAt: best.statusUpdatedAt,
+      source: best.source,
+    };
+  }
+
+  public updateAccountStatus(params: {
+    username: string;
+    userId?: string | null;
+    discordId?: string | null;
+    discordUserId?: string | null;
+    deviceId?: string | null;
+    accountStatus: AccountStatus;
+    statusUpdatedAt?: number | string | null;
+    source?: string;
+    forceBroadcast?: boolean;
+  }): { accountStatus: AccountStatus; updatedAt: number; changed: boolean } {
+    const key = params.username.trim().toLowerCase();
+    const now = Date.now();
+    const parsedUpdatedAt = normalizeEpochMs(params.statusUpdatedAt) ?? now;
+    const devId = (params.deviceId || 'default').trim();
+    const source = params.source || 'vencord_client';
+
+    let devices = this.accountStatusDevicesByUser.get(key);
+    if (!devices) {
+      devices = new Map();
+      this.accountStatusDevicesByUser.set(key, devices);
+    }
+
+    const existingDev = devices.get(devId);
+    if (existingDev && parsedUpdatedAt < existingDev.statusUpdatedAt) {
+      // Stale out-of-order status packet for this device: refresh lastSeenAt only
+      existingDev.lastSeenAt = Math.max(existingDev.lastSeenAt, now);
+      const current = this.accountStatusByUsername.get(key);
+      return {
+        accountStatus: current?.accountStatus || existingDev.accountStatus,
+        updatedAt: current?.updatedAt || existingDev.statusUpdatedAt,
+        changed: false,
+      };
+    }
+
+    devices.set(devId, {
+      deviceId: devId,
+      discordUserId: params.discordUserId || params.discordId || null,
+      accountStatus: params.accountStatus,
+      statusUpdatedAt: parsedUpdatedAt,
+      lastSeenAt: now,
+      source,
+    });
+
+    const prevEntry = this.accountStatusByUsername.get(key);
+    const aggregated = this.aggregateAccountStatusForUser(key, now);
+    const changed = !prevEntry || prevEntry.accountStatus !== aggregated.accountStatus;
+
+    this.accountStatusByUsername.set(key, {
+      userId: params.userId || prevEntry?.userId || null,
+      username: params.username,
+      discordId: params.discordId || prevEntry?.discordId || null,
+      accountStatus: aggregated.accountStatus,
+      updatedAt: aggregated.updatedAt,
+      source: aggregated.source,
+    });
+
+    // Sync ONLY the status field on discordPresenceByUsername without touching any RPC/native activity
+    const existingDiscord = this.discordPresenceByUsername.get(key);
+    if (existingDiscord) {
+      existingDiscord.status = aggregated.accountStatus;
+      existingDiscord.updatedAt = Math.max(existingDiscord.updatedAt, now);
+      this.discordPresenceByUsername.set(key, existingDiscord);
+    } else {
+      this.discordPresenceByUsername.set(key, {
+        userId: params.userId || null,
+        discordId: params.discordId || null,
+        status: aggregated.accountStatus,
+        activity: null,
+        activities: [],
+        updatedAt: now,
+        source: 'client',
+      });
+    }
+
+    if (changed || params.forceBroadcast) {
+      this.emitAccountStatusBroadcast({
+        username: params.username,
+        userId: params.userId || prevEntry?.userId || null,
+        discordId: params.discordId || prevEntry?.discordId || null,
+        accountStatus: aggregated.accountStatus,
+        updatedAt: aggregated.updatedAt,
+      });
+      const resolved = this.composeResolvedPresence(
+        params.username,
+        params.userId || prevEntry?.userId || null,
+        params.discordId || prevEntry?.discordId || null,
+        'client',
+        now
+      );
+      this.emitPresenceBroadcast(resolved);
+    }
+
+    return {
+      accountStatus: aggregated.accountStatus,
+      updatedAt: aggregated.updatedAt,
+      changed,
+    };
+  }
+
+  public touchAccountStatusDevice(username: string, deviceId?: string | null) {
+    if (!username) return;
+    const key = username.trim().toLowerCase();
+    const devices = this.accountStatusDevicesByUser.get(key);
+    if (!devices) return;
+    const devId = (deviceId || 'default').trim();
+    const entry = devices.get(devId);
+    if (entry) {
+      entry.lastSeenAt = Date.now();
+    }
+  }
+
+  public handleAccountStatusDeviceDisconnect(
+    username: string,
+    userId?: string | null,
+    discordId?: string | null,
+    deviceId?: string | null
+  ) {
+    if (!username) return;
+    const key = username.trim().toLowerCase();
+    const devices = this.accountStatusDevicesByUser.get(key);
+    if (!devices || devices.size === 0) return;
+
+    if (deviceId) {
+      devices.delete(deviceId.trim());
+    }
+    const now = Date.now();
+    const prevEntry = this.accountStatusByUsername.get(key);
+    const aggregated = this.aggregateAccountStatusForUser(key, now);
+    const changed = !prevEntry || prevEntry.accountStatus !== aggregated.accountStatus;
+
+    this.accountStatusByUsername.set(key, {
+      userId: userId || prevEntry?.userId || null,
+      username,
+      discordId: discordId || prevEntry?.discordId || null,
+      accountStatus: aggregated.accountStatus,
+      updatedAt: now,
+      source: aggregated.source,
+    });
+
+    const existingDiscord = this.discordPresenceByUsername.get(key);
+    if (existingDiscord) {
+      existingDiscord.status = aggregated.accountStatus;
+      existingDiscord.updatedAt = Math.max(existingDiscord.updatedAt, now);
+      this.discordPresenceByUsername.set(key, existingDiscord);
+    }
+
+    if (changed) {
+      this.emitAccountStatusBroadcast({
+        username,
+        userId: userId || prevEntry?.userId || null,
+        discordId: discordId || prevEntry?.discordId || null,
+        accountStatus: aggregated.accountStatus,
+        updatedAt: now,
+      });
+      const resolved = this.composeResolvedPresence(
+        username,
+        userId || prevEntry?.userId || null,
+        discordId || prevEntry?.discordId || null,
+        'client',
+        now
+      );
+      this.emitPresenceBroadcast(resolved);
+    }
+  }
+
+  public hasFreshAccountStatus(username: string, maxAgeMs = this.ACCOUNT_STATUS_STALE_MS): boolean {
+    if (!username) return false;
+    const key = username.trim().toLowerCase();
+    const devices = this.accountStatusDevicesByUser.get(key);
+    if (!devices || devices.size === 0) return false;
+    const now = Date.now();
+    for (const entry of devices.values()) {
+      if (now - entry.lastSeenAt < maxAgeMs) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private emitPresenceBroadcast(newPresence: LivePresence) {
@@ -432,9 +706,13 @@ class PresenceManager {
     const key = username.trim().toLowerCase();
     const discordState = this.discordPresenceByUsername.get(key);
     const customState = this.customRpcByUsername.get(key);
+    const accountEntry = this.accountStatusByUsername.get(key);
+    const hasFreshDeviceStatus = this.hasFreshAccountStatus(username);
 
-    // Discord User Presence is strictly controlled by Discord/Lanyard/Client (never Custom RPC!)
-    const discordStatus: LivePresence['status'] = discordState?.status || 'offline';
+    // Discord Account Status is strictly independent from Custom RPC / activities
+    const discordStatus: AccountStatus = hasFreshDeviceStatus && accountEntry
+      ? accountEntry.accountStatus
+      : discordState?.status || accountEntry?.accountStatus || 'offline';
     const discordActivity: LiveActivity | null =
       discordStatus !== 'offline' ? discordState?.activity || null : null;
     const discordActivities: LiveActivity[] =
@@ -457,6 +735,7 @@ class PresenceManager {
       username,
       discordId: discordId || discordState?.discordId || null,
       status: discordStatus,
+      accountStatus: discordStatus,
       hasActivity: Boolean(activity),
       activity,
       activities: discordActivities,
@@ -841,13 +1120,20 @@ class PresenceManager {
     });
 
     // Refresh Discord state if stale/missing and user has a Discord ID.
-    // Do not let external Lanyard polling overwrite a recently active Vencord plugin ('client') snapshot.
+    // Do not let external Lanyard polling overwrite a recently active Vencord plugin ('client') snapshot or fresh accountStatus.
     const existingDiscord = this.discordPresenceByUsername.get(key);
+    const hasFreshAcct = this.hasFreshAccountStatus(user.username);
     if (existingDiscord) {
       const ageMs = now - existingDiscord.updatedAt;
-      if (ageMs < LIVE_CACHE_FRESH_MS || (existingDiscord.source === 'client' && ageMs < CLIENT_AUTHORITY_WINDOW_MS)) {
+      if (
+        hasFreshAcct ||
+        ageMs < LIVE_CACHE_FRESH_MS ||
+        (existingDiscord.source === 'client' && ageMs < CLIENT_AUTHORITY_WINDOW_MS)
+      ) {
         return this.composeResolvedPresence(user.username, user.id, user.discordId, existingDiscord.source, now);
       }
+    } else if (hasFreshAcct) {
+      return this.composeResolvedPresence(user.username, user.id, user.discordId, 'client', now);
     }
 
     if (user.discordId) {

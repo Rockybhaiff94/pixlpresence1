@@ -6,7 +6,7 @@ import { prisma } from '@discord-rpc/database';
 import { io } from '../index'; // Import socket io
 import { uploadRateLimiter } from '../rateLimiter'; // Import upload rate limiter
 import { resolveDiscordAvatarUrl } from '../auth';
-import { presenceManager, LiveActivity } from '../services/presenceManager';
+import { presenceManager, LiveActivity, isValidAccountStatus } from '../services/presenceManager';
 import { rpcSyncHub } from '../services/rpcSyncHub';
 import { ImageAssetService, UploadServiceError } from '../services/imageAssetService';
 import { FOUNDER_USER_ID } from '../services/entitlements';
@@ -567,11 +567,35 @@ rpcRouter.post('/device/heartbeat', requireAuth, async (req: any, res) => {
       ? !presenceManager.hasFreshDiscordPresence(updated.username)
       : false;
 
+    if (updated.username) {
+      const discordUid = payload.discordUserId ? String(payload.discordUserId).trim() : null;
+      const discordMatch = !discordUid || !req.user?.discordId || discordUid === String(req.user.discordId);
+      if (discordMatch && isValidAccountStatus(payload.accountStatus)) {
+        presenceManager.updateAccountStatus({
+          username: updated.username,
+          userId: updated.userId,
+          discordId: req.user?.discordId || null,
+          discordUserId: discordUid || req.user?.discordId || null,
+          deviceId: updated.deviceId,
+          accountStatus: payload.accountStatus,
+          statusUpdatedAt: payload.statusUpdatedAt || payload.timestamp,
+          source: 'vencord_client',
+        });
+      } else {
+        presenceManager.touchAccountStatusDevice(updated.username, updated.deviceId);
+      }
+    }
+
+    const needsAccountStatusSync = updated.username
+      ? !presenceManager.hasFreshAccountStatus(updated.username)
+      : false;
+
     res.json({
       success: true,
       runtime: updated,
       latestRevision: latestRpc?.updatedAt ? new Date(latestRpc.updatedAt).getTime() : 0,
       needsPresenceSync,
+      needsAccountStatusSync,
       serverTime: new Date().toISOString(),
     });
   } catch (err) {
@@ -911,6 +935,50 @@ rpcRouter.patch('/me', requireAuth, async (req: any, res) => {
   } catch (err) {
     console.error('[RPC Update Error]:', err);
     res.status(500).json({ error: 'Failed to update RPC' });
+  }
+});
+
+/**
+ * POST /api/rpc/account-status
+ * Dedicated authenticated Discord account status endpoint (online | idle | dnd | offline).
+ * Strictly separated from Rich Presence activities and Custom RPC configuration.
+ */
+rpcRouter.post('/account-status', requireAuth, async (req: any, res) => {
+  try {
+    const { discordUserId, accountStatus, statusUpdatedAt, source, deviceId } = req.body || {};
+
+    if (!isValidAccountStatus(accountStatus)) {
+      return res.status(400).json({
+        error: 'Invalid accountStatus. Allowed values: online, idle, dnd, offline.',
+      });
+    }
+
+    const cleanDiscordUid = discordUserId ? String(discordUserId).trim() : null;
+    if (cleanDiscordUid && req.user.discordId && cleanDiscordUid !== String(req.user.discordId)) {
+      return res.status(403).json({
+        error: 'Discord user ID does not match the authorized Pixel.gg account.',
+      });
+    }
+
+    const result = presenceManager.updateAccountStatus({
+      username: req.user.username,
+      userId: req.user.id,
+      discordId: req.user.discordId,
+      discordUserId: cleanDiscordUid || req.user.discordId || null,
+      deviceId: req.deviceAuth?.id || deviceId || 'api',
+      accountStatus,
+      statusUpdatedAt,
+      source: typeof source === 'string' && source.trim() ? source.trim() : 'vencord_client',
+    });
+
+    res.json({
+      success: true,
+      accountStatus: result.accountStatus,
+      updatedAt: result.updatedAt,
+    });
+  } catch (err) {
+    console.error('[RPC Account Status Error]:', err);
+    res.status(500).json({ error: 'Failed to synchronize account status' });
   }
 });
 

@@ -57,6 +57,7 @@ export interface ProfileLiveActivityData {
   musicTitle?: string | null;
   musicArtist?: string | null;
   views?: number;
+  accountStatus?: "online" | "idle" | "dnd" | "offline" | null;
   discordPresence?: {
     hasActivity?: boolean;
     status?: string | null;
@@ -749,7 +750,7 @@ export const ProfileBuilderRenderer: React.FC<ProfileBuilderRendererProps> = ({
               </div>
               {node.config.showStatusDot && (() => {
                 const syncDiscord = node.config.syncStatusWithDiscord !== false;
-                const rawLiveStatus = liveData?.discordPresence?.status;
+                const rawLiveStatus = liveData?.accountStatus ?? liveData?.discordPresence?.status;
                 const resolvedStatus: "online" | "idle" | "dnd" | "offline" = syncDiscord
                   ? rawLiveStatus === "online" ||
                     rawLiveStatus === "idle" ||
